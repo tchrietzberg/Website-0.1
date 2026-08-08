@@ -289,9 +289,6 @@
               <option value="checkbox">Checkbox</option>
             </select>
           </label>
-          <label>Select options (comma-separated)
-            <input name="options" placeholder="Discovery, Trial, Appeal" />
-          </label>
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add type field</button>
           </div>
@@ -367,10 +364,6 @@
         ev.preventDefault();
         const fd = new FormData(typeFieldForm);
         const fieldType = fd.get('fieldType');
-        const options = String(fd.get('options') || '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean);
         try {
           await api('/api/custom-fields', {
             method: 'POST',
@@ -378,7 +371,6 @@
               label: fd.get('label'),
               fieldType,
               recordTypeKey: fd.get('recordTypeKey'),
-              options: fieldType === 'select' ? options : undefined,
             }),
           });
           $('#typeFieldMsg').innerHTML = '<div class="ok-banner">Record-type field added to that type layout.</div>';
@@ -507,9 +499,6 @@
               <option value="checkbox">Checkbox</option>
             </select>
           </label>
-          <label class="span-all">Select options (comma-separated)
-            <input name="options" placeholder="A, B, C" />
-          </label>
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add custom field</button>
             ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Switch this matter to its own layout</button>' : ''}
@@ -584,14 +573,12 @@
         ev.preventDefault();
         const fd = new FormData(rf);
         const fieldType = fd.get('fieldType');
-        const options = String(fd.get('options') || '').split(',').map((s) => s.trim()).filter(Boolean);
         try {
           await api(`/api/matters/${m.id}/custom-fields`, {
             method: 'POST',
             body: JSON.stringify({
               label: fd.get('label'),
               fieldType,
-              options: fieldType === 'select' ? options : undefined,
             }),
           });
           $('#recordFieldMsg').innerHTML = '<div class="ok-banner">Record field added.</div>';
