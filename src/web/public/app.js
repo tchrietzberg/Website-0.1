@@ -8,7 +8,7 @@
     clients: [],
     settings: null,
     matterId: null,
-    matterSearch: { q: '', status: '', type: '' },
+    matterSearch: { q: '', status: '', type: '', showCreate: true },
   };
 
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -214,10 +214,17 @@
     state.matters = allMatters;
     state.clients = clients;
 
+    const showCreate = canEdit && state.matterSearch.showCreate !== false;
+
     main.innerHTML = `
       <div class="card stack">
-        <h1>Matter Search</h1>
-        <p class="lead">Search the matter index (number, name, client, court, jurisdiction, type, custom fields). New matters are indexed automatically.</p>
+        <div class="row-actions" style="justify-content:space-between;align-items:flex-start">
+          <div>
+            <h1 style="margin-bottom:.35rem">Matter Search</h1>
+            <p class="lead" style="margin:0">Search the matter index, or create a new matter.</p>
+          </div>
+          ${canEdit ? `<button type="button" class="primary" id="toggleCreateMatter">${showCreate ? 'Hide create form' : 'Create matter'}</button>` : ''}
+        </div>
         <form id="matterSearch" class="grid two">
           <label class="span-all">Search index
             <input name="q" value="${state.matterSearch.q || ''}"
@@ -246,31 +253,10 @@
         </form>
       </div>
 
-      <div class="card">
-        <h2>Results</h2>
-        ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
-        <div class="table-wrap"><table>
-          <thead>
-            <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
-          </thead>
-          <tbody>
-            ${hits.map((m) => `
-              <tr class="click-row" data-matter="${m.id}">
-                <td><strong>${m.number}</strong></td>
-                <td>${m.name}</td>
-                <td>${m.client_name}</td>
-                <td><span class="pill">${m.matter_type}</span></td>
-                <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
-                <td>${m.attorney_name || '—'}</td>
-              </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
-          </tbody>
-        </table></div>`}
-      </div>
-
       ${canEdit ? `
-      <div class="card stack">
-        <h2>New matter</h2>
-        <p class="hint">Creating a matter adds it to the search index immediately.</p>
+      <div class="card stack" id="createMatterCard" ${showCreate ? '' : 'hidden'}>
+        <h2>Create matter</h2>
+        <p class="hint">Saved matters are added to the search index immediately.</p>
         <form id="newMatterForm" class="grid two">
           <label class="span-all">Name
             <input name="name" required placeholder="Securities Class Action — WidgetCo" />
@@ -296,11 +282,32 @@
           </label>
           <label>Opened on <input name="openedOn" type="date" value="${today}" required /></label>
           <div class="row-actions span-all">
-            <button class="primary" type="submit">Create &amp; index matter</button>
+            <button class="primary" type="submit">Create matter</button>
           </div>
         </form>
         <div id="newMatterMsg"></div>
       </div>` : ''}
+
+      <div class="card">
+        <h2>Results</h2>
+        ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
+        <div class="table-wrap"><table>
+          <thead>
+            <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
+          </thead>
+          <tbody>
+            ${hits.map((m) => `
+              <tr class="click-row" data-matter="${m.id}">
+                <td><strong>${m.number}</strong></td>
+                <td>${m.name}</td>
+                <td>${m.client_name}</td>
+                <td><span class="pill">${m.matter_type}</span></td>
+                <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
+                <td>${m.attorney_name || '—'}</td>
+              </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
+          </tbody>
+        </table></div>`}
+      </div>
 
       ${canConfigure ? `
       <div class="card stack">
@@ -339,6 +346,7 @@
       ev.preventDefault();
       const fd = new FormData(ev.target);
       state.matterSearch = {
+        ...state.matterSearch,
         q: String(fd.get('q') || '').trim(),
         status: String(fd.get('status') || ''),
         type: String(fd.get('type') || ''),
@@ -346,9 +354,16 @@
       await renderMatters();
     };
     $('#clearSearch').onclick = async () => {
-      state.matterSearch = { q: '', status: '', type: '' };
+      state.matterSearch = { ...state.matterSearch, q: '', status: '', type: '' };
       await renderMatters();
     };
+    const toggleCreate = $('#toggleCreateMatter');
+    if (toggleCreate) {
+      toggleCreate.onclick = async () => {
+        state.matterSearch.showCreate = !showCreate;
+        await renderMatters();
+      };
+    }
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => openMatter(Number(row.dataset.matter));
     });
@@ -374,7 +389,13 @@
           });
           $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${page.matter.number}.</div>`;
           await refreshRefs();
-          state.matterSearch = { q: page.matter.number, status: '', type: '' };
+          state.matterSearch = {
+            ...state.matterSearch,
+            q: page.matter.number,
+            status: '',
+            type: '',
+            showCreate: false,
+          };
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
@@ -579,7 +600,6 @@
     ]);
     state.settings = settings;
     const today = new Date().toISOString().slice(0, 10);
-    const inc = settings.roundingIncrements.find((r) => r.minutes === settings.roundIncrementMinutes);
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
