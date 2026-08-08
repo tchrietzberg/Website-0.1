@@ -16,6 +16,47 @@ function openDb(dbFile = DEFAULT_DB) {
 function migrate(db) {
   const schema = fs.readFileSync(path.join(ROOT, 'db', 'schema.sql'), 'utf8');
   db.exec(schema);
+  migrateTimeEntryRoundingCheck(db);
+}
+
+/** SQLite cannot ALTER CHECK; rebuild time_entries if still on rounded_minutes > 0. */
+function migrateTimeEntryRoundingCheck(db) {
+  const row = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='time_entries'"
+  ).get();
+  if (!row?.sql || !row.sql.includes('rounded_minutes > 0')) return;
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec(`
+    CREATE TABLE time_entries_mig (
+      id INTEGER PRIMARY KEY,
+      matter_id INTEGER NOT NULL REFERENCES matters(id),
+      timekeeper_id INTEGER NOT NULL REFERENCES users(id),
+      service_date TEXT NOT NULL,
+      entered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      raw_minutes INTEGER NOT NULL CHECK (raw_minutes > 0),
+      rounded_minutes INTEGER NOT NULL CHECK (rounded_minutes >= 0),
+      description TEXT NOT NULL,
+      billable INTEGER NOT NULL DEFAULT 1 CHECK (billable IN (0,1)),
+      category TEXT,
+      subcategory TEXT,
+      utbms_task TEXT,
+      utbms_activity TEXT,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft','submitted','approved','rejected','invoiced')),
+      rejection_reason TEXT,
+      approved_by INTEGER REFERENCES users(id),
+      approved_at TEXT,
+      invoice_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO time_entries_mig SELECT * FROM time_entries;
+    DROP TABLE time_entries;
+    ALTER TABLE time_entries_mig RENAME TO time_entries;
+    CREATE INDEX IF NOT EXISTS idx_time_entries_matter_date
+      ON time_entries(matter_id, service_date, timekeeper_id);
+  `);
+  db.exec('PRAGMA foreign_keys = ON;');
 }
 
 function resetDb(dbFile = DEFAULT_DB) {

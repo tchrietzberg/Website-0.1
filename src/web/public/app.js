@@ -6,6 +6,7 @@
     matters: [],
     users: [],
     clients: [],
+    settings: null,
   };
 
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -34,8 +35,31 @@
     return `${sign}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
   }
 
-  function hours(mins) {
-    return (mins / 60).toFixed(2);
+  function formatDuration(mins, format) {
+    const n = Number(mins) || 0;
+    const fmt = format || state.settings?.durationFormat || 'decimal';
+    const neg = n < 0;
+    const abs = Math.abs(n);
+    if (fmt === 'decimal') {
+      const hundredths = Math.trunc((abs * 100 + 30) / 60); // half-up, matches server
+      return `${neg ? '-' : ''}${(hundredths / 100).toFixed(2)}`;
+    }
+    const totalSec = abs * 60;
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const pad = (x) => String(x).padStart(2, '0');
+    const core = fmt === 'hms' ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}`;
+    return neg ? `-${core}` : core;
+  }
+
+  function roundModeLabel(id) {
+    return ({
+      up: 'Round up to',
+      nearest: 'Round to the Nearest',
+      down: 'Round Down',
+      none: 'Do Not Round',
+    })[id] || id;
   }
 
   async function boot() {
@@ -52,14 +76,16 @@
   }
 
   async function refreshRefs() {
-    const [matters, users, clients] = await Promise.all([
+    const [matters, users, clients, settings] = await Promise.all([
       api('/api/matters'),
       api('/api/users'),
       api('/api/clients'),
+      api('/api/settings'),
     ]);
     state.matters = matters;
     state.users = users;
     state.clients = clients;
+    state.settings = settings;
   }
 
   function renderLogin() {
@@ -110,6 +136,7 @@
       ['billing', 'Billing'],
       ['payments', 'Payments'],
       ['reports', 'Reports'],
+      ['settings', 'Settings'],
     ];
     if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
     if (state.view === 'approvals') state.view = 'time';
@@ -138,6 +165,7 @@
       else if (state.view === 'billing') await renderBilling();
       else if (state.view === 'payments') await renderPayments();
       else if (state.view === 'reports') await renderReports();
+      else if (state.view === 'settings') await renderSettings();
       else if (state.view === 'audit') await renderAudit();
     } catch (e) {
       const msg = e.message === 'forbidden'
@@ -152,23 +180,21 @@
       api('/api/time-entries'),
       api('/api/settings'),
     ]);
+    state.settings = settings;
     const today = new Date().toISOString().slice(0, 10);
+    const inc = settings.roundingIncrements.find((r) => r.minutes === settings.roundIncrementMinutes);
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
-        <p class="lead">Round up to the selected increment (6 / 10 / 12 / 15 / 30 min). Zero minutes blocked. N.D. Cal matters need category/subcategory.</p>
+        <p class="lead">
+          ${roundModeLabel(settings.roundMode)}${settings.roundMode === 'none' ? '' : ` ${inc?.label || (settings.roundIncrementMinutes + ' min')}`}.
+          Display: ${settings.durationFormats.find((f) => f.id === settings.durationFormat)?.label || settings.durationFormat}.
+          Change these in Settings. Zero raw minutes blocked. N.D. Cal matters need category/subcategory.
+        </p>
         <form id="timeForm" class="grid two">
           <label class="span-all">Matter
             <select name="matterId" required>
               ${state.matters.map((m) => `<option value="${m.id}">${m.number} — ${m.name}</option>`).join('')}
-            </select>
-          </label>
-          <label class="span-all">Billing increment
-            <select name="roundIncrementMinutes">
-              ${settings.roundingIncrements.map((r) => `
-                <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
-                  ${r.label}
-                </option>`).join('')}
             </select>
           </label>
           <label>Service date
@@ -208,7 +234,8 @@
               <tr>
                 <td>${e.service_date}</td>
                 <td>${e.matter_number}<div class="muted">${e.description}</div></td>
-                <td>${e.raw_minutes} → ${e.rounded_minutes} <span class="muted">(${hours(e.rounded_minutes)}h)</span></td>
+                <td>${e.raw_minutes}m → <strong>${formatDuration(e.rounded_minutes)}</strong>
+                  <span class="muted">(${e.rounded_minutes} min)</span></td>
                 <td><span class="pill" data-status="${e.status}">${e.status}</span></td>
                 <td class="row-actions">
                   ${e.status === 'draft' || e.status === 'rejected'
@@ -226,12 +253,9 @@
       body.matterId = Number(body.matterId);
       body.timekeeperId = Number(body.timekeeperId);
       body.rawMinutes = Number(body.rawMinutes);
-      body.roundIncrementMinutes = Number(
-        body.roundIncrementMinutes || settings.roundIncrementMinutes
-      );
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
-        let msg = `Saved #${entry.id}: ${entry.rawMinutes} → ${entry.roundedMinutes} minutes.`;
+        let msg = `Saved #${entry.id}: ${entry.rawMinutes}m → ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min).`;
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
@@ -263,7 +287,7 @@
                 <td>${e.service_date}</td>
                 <td>${e.matter_number}<div class="muted">${e.description}</div></td>
                 <td>${e.timekeeper_name}</td>
-                <td>${hours(e.rounded_minutes)}h</td>
+                <td>${formatDuration(e.rounded_minutes)}</td>
                 <td class="row-actions">
                   <button class="primary" data-approve="${e.id}">Approve</button>
                   <button data-reject="${e.id}">Reject</button>
@@ -365,7 +389,7 @@
               <tr>
                 <td>${l.service_date}<div class="muted">${l.description}</div></td>
                 <td>${l.timekeeper_name}</td>
-                <td>${hours(l.minutes)}</td>
+                <td>${formatDuration(l.minutes)}</td>
                 <td>${money(l.rate_cents)}</td>
                 <td>${money(l.amount_cents)}</td>
                 <td>${money(l.write_down_cents)}</td>
@@ -541,6 +565,91 @@
           </table></div>`;
       };
     });
+  }
+
+  async function renderSettings() {
+    const settings = await api('/api/settings');
+    state.settings = settings;
+    const canEdit = ['admin', 'billing_clerk'].includes(state.user.role);
+    main.innerHTML = `
+      <div class="card stack">
+        <h1>Settings</h1>
+        <p class="lead">Time and billing preferences for timers and time entries.</p>
+        ${canEdit ? '' : '<p class="hint">View only — ask a billing clerk or admin to change these.</p>'}
+      </div>
+      <form id="settingsForm" class="card stack">
+        <h2>Time and Billing</h2>
+
+        <fieldset class="settings-block" ${canEdit ? '' : 'disabled'}>
+          <legend>Duration Format</legend>
+          <p class="hint">How timers and time entries are shown.</p>
+          ${settings.durationFormats.map((f) => `
+            <label class="choice">
+              <input type="radio" name="durationFormat" value="${f.id}"
+                ${settings.durationFormat === f.id ? 'checked' : ''} />
+              <span>
+                <strong>${f.label}</strong>
+                <span class="muted">${f.description}</span>
+              </span>
+            </label>`).join('')}
+        </fieldset>
+
+        <fieldset class="settings-block" ${canEdit ? '' : 'disabled'}>
+          <legend>Time Rounding</legend>
+          <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
+            Rounding to the nearest rounds up if the duration is in the middle of the interval.</p>
+          ${settings.roundingModes.map((m) => `
+            <label class="choice">
+              <input type="radio" name="roundMode" value="${m.id}"
+                ${settings.roundMode === m.id ? 'checked' : ''} />
+              <span>
+                <strong>${m.label}</strong>
+                <span class="muted">${m.description}</span>
+              </span>
+            </label>`).join('')}
+
+          <label class="interval-label">Interval (X minutes)
+            <select name="roundIncrementMinutes" id="roundIncrementMinutes">
+              ${settings.roundingIncrements.map((r) => `
+                <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
+                  ${r.label}
+                </option>`).join('')}
+            </select>
+          </label>
+          <p class="hint">Interval applies to Round up / Nearest / Down. Ignored when Do Not Round is selected.</p>
+        </fieldset>
+
+        ${canEdit ? '<div class="row-actions"><button class="primary" type="submit">Save settings</button></div>' : ''}
+        <div id="settingsMsg"></div>
+      </form>`;
+
+    const form = $('#settingsForm');
+    const syncInterval = () => {
+      const mode = form.roundMode.value;
+      form.roundIncrementMinutes.disabled = !canEdit || mode === 'none';
+    };
+    form.querySelectorAll('input[name="roundMode"]').forEach((el) => {
+      el.onchange = syncInterval;
+    });
+    syncInterval();
+
+    if (!canEdit) return;
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      const body = {
+        durationFormat: fd.get('durationFormat'),
+        roundMode: fd.get('roundMode'),
+        roundIncrementMinutes: Number(fd.get('roundIncrementMinutes')),
+      };
+      try {
+        state.settings = await api('/api/settings', { method: 'PATCH', body: JSON.stringify(body) });
+        $('#settingsMsg').innerHTML = '<div class="ok-banner">Settings saved.</div>';
+        await renderSettings();
+      } catch (e) {
+        $('#settingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
+      }
+    };
   }
 
   async function renderAudit() {

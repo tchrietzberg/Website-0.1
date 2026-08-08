@@ -2,7 +2,14 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { openDb, migrate, DEFAULT_DB, getSetting, setSetting } = require('../db');
-const { ROUNDING_INCREMENTS, assertAllowedIncrement } = require('../money');
+const {
+  ROUNDING_INCREMENTS,
+  DURATION_FORMATS,
+  ROUNDING_MODES,
+  assertAllowedIncrement,
+  assertRoundMode,
+  assertDurationFormat,
+} = require('../money');
 const timeSvc = require('../services/time');
 const matterSvc = require('../services/matters');
 const invoiceSvc = require('../services/invoices');
@@ -93,6 +100,17 @@ function serveStatic(req, res) {
   return true;
 }
 
+function readSettings(db) {
+  return {
+    roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
+    roundMode: getSetting(db, 'round_mode', 'up'),
+    durationFormat: getSetting(db, 'duration_format', 'decimal'),
+    roundingIncrements: ROUNDING_INCREMENTS,
+    durationFormats: DURATION_FORMATS,
+    roundingModes: ROUNDING_MODES,
+  };
+}
+
 function createServer(db = openDb()) {
   migrate(db);
 
@@ -168,12 +186,7 @@ function createServer(db = openDb()) {
         }));
       }
       if (req.method === 'GET' && pathname === '/api/settings') {
-        const minutes = Number(getSetting(db, 'round_increment_minutes', '15'));
-        return json(res, 200, {
-          roundIncrementMinutes: minutes,
-          roundMode: getSetting(db, 'round_mode', 'up'),
-          roundingIncrements: ROUNDING_INCREMENTS,
-        });
+        return json(res, 200, readSettings(db));
       }
       if (req.method === 'PATCH' && pathname === '/api/settings') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
@@ -183,16 +196,12 @@ function createServer(db = openDb()) {
           setSetting(db, 'round_increment_minutes', String(minutes));
         }
         if (body.roundMode != null) {
-          if (!['up', 'nearest', 'down'].includes(body.roundMode)) {
-            return json(res, 400, { error: 'roundMode must be up, nearest, or down' });
-          }
-          setSetting(db, 'round_mode', body.roundMode);
+          setSetting(db, 'round_mode', assertRoundMode(body.roundMode));
         }
-        return json(res, 200, {
-          roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
-          roundMode: getSetting(db, 'round_mode', 'up'),
-          roundingIncrements: ROUNDING_INCREMENTS,
-        });
+        if (body.durationFormat != null) {
+          setSetting(db, 'duration_format', assertDurationFormat(body.durationFormat));
+        }
+        return json(res, 200, readSettings(db));
       }
 
       if (req.method === 'POST' && pathname === '/api/time-entries') {

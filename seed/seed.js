@@ -13,6 +13,7 @@ const db = resetDb(dbFile);
 
 setSetting(db, 'round_increment_minutes', '15');
 setSetting(db, 'round_mode', 'up');
+setSetting(db, 'duration_format', 'decimal');
 setSetting(db, 'firm_timezone', 'America/New_York');
 setSetting(db, 'firm_name', 'Demo Securities Litigation LLP');
 

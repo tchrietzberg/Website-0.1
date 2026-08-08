@@ -364,6 +364,59 @@ a.btn {
   text-decoration: none;
 }
 
+.settings-block {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.1rem 1.15rem;
+  margin: 0;
+  background: #fbfcfd;
+}
+
+.settings-block legend {
+  font-family: var(--font);
+  font-weight: 650;
+  font-size: 1.05rem;
+  padding: 0 0.35rem;
+}
+
+.settings-block .hint { margin: 0.15rem 0 0.85rem; }
+
+label.choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.65rem;
+  align-items: start;
+  padding: 0.55rem 0.35rem;
+  border-radius: 8px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+label.choice:hover { background: rgba(24, 78, 74, 0.05); }
+
+label.choice input {
+  width: auto;
+  margin-top: 0.2rem;
+}
+
+label.choice strong {
+  display: block;
+  font-size: 0.95rem;
+}
+
+label.choice .muted {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 450;
+  margin-top: 0.15rem;
+}
+
+label.interval-label {
+  margin-top: 0.75rem;
+  max-width: 28rem;
+}
+
 .report-row {
   display: flex;
   align-items: center;

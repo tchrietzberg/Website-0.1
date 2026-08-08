@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
   service_date TEXT NOT NULL,
   entered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   raw_minutes INTEGER NOT NULL CHECK (raw_minutes > 0),
-  rounded_minutes INTEGER NOT NULL CHECK (rounded_minutes > 0),
+  -- 0 allowed when nearest/down rounds below the interval (e.g. 14 min → 0 at 30-min nearest)
+  rounded_minutes INTEGER NOT NULL CHECK (rounded_minutes >= 0),
   description TEXT NOT NULL,
   billable INTEGER NOT NULL DEFAULT 1 CHECK (billable IN (0,1)),
   category TEXT,

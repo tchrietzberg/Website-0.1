@@ -1,4 +1,4 @@
-const { roundMinutes, assertAllowedIncrement } = require('../money');
+const { roundMinutes, assertAllowedIncrement, assertRoundMode } = require('../money');
 const { getSetting, setSetting, audit } = require('../db');
 
 function evaluateRules(db, entry) {
@@ -30,21 +30,14 @@ function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinu
 }
 
 function createEntry(db, actor, input) {
+  const mode = assertRoundMode(getSetting(db, 'round_mode', 'up'));
   const defaultInc = Number(getSetting(db, 'round_increment_minutes', '15'));
-  const increment = assertAllowedIncrement(
-    input.roundIncrementMinutes != null ? Number(input.roundIncrementMinutes) : defaultInc
-  );
-  const mode = getSetting(db, 'round_mode', 'up');
+  const increment = mode === 'none'
+    ? defaultInc
+    : assertAllowedIncrement(
+      input.roundIncrementMinutes != null ? Number(input.roundIncrementMinutes) : defaultInc
+    );
   const rounded = roundMinutes(input.rawMinutes, increment, mode);
-
-  // Persist firm default when a permitted user picks an increment.
-  if (
-    input.roundIncrementMinutes != null
-    && (actor.role === 'admin' || actor.role === 'billing_clerk')
-    && increment !== defaultInc
-  ) {
-    setSetting(db, 'round_increment_minutes', String(increment));
-  }
 
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(input.matterId);
   if (!matter) throw new Error('matter not found');

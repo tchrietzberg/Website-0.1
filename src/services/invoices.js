@@ -18,6 +18,7 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
     entries = db.prepare(`
       SELECT * FROM time_entries
       WHERE matter_id = ? AND status = 'approved' AND invoice_id IS NULL
+        AND rounded_minutes > 0
       ORDER BY service_date, id
     `).all(matterId);
   }
