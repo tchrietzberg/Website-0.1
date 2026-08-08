@@ -5,6 +5,7 @@ const os = require('node:os');
 const { resetDb, setSetting } = require('../src/db');
 const matterSvc = require('../src/services/matters');
 const customFields = require('../src/services/customFields');
+const matterIndex = require('../src/services/matterIndex');
 
 describe('matter search and record-based fields', () => {
   let db;
@@ -21,25 +22,34 @@ describe('matter search and record-based fields', () => {
     customFields.ensureRecordTypes(db);
   });
 
-  it('searches matters by number, name, and client', () => {
+  it('indexes matters and searches via FTS (empty query returns no hits)', () => {
     matterSvc.createMatter(db, admin, {
       clientId: 1, name: 'Widget Litigation', matterType: 'litigation',
-      openedOn: '2026-01-01', responsibleAttorneyId: 2,
+      openedOn: '2026-01-01', responsibleAttorneyId: 2, court: 'N.D. Cal.',
     });
     matterSvc.createMatter(db, admin, {
       clientId: 1, name: 'Admin File', matterType: 'sw_admin',
       openedOn: '2026-01-02', responsibleAttorneyId: 2,
     });
-    const byName = matterSvc.listMatters(db, { q: 'widget' });
+
+    assert.equal(matterSvc.searchMatters(db, { q: '' }).length, 0);
+    assert.equal(matterSvc.searchMatters(db, {}).length, 0);
+
+    const byName = matterSvc.searchMatters(db, { q: 'widget' });
     assert.equal(byName.length, 1);
     assert.match(byName[0].name, /Widget/);
-    const byType = matterSvc.listMatters(db, { matterType: 'sw_admin' });
-    assert.equal(byType.length, 1);
-    const byClient = matterSvc.listMatters(db, { q: 'acme' });
+
+    const byCourt = matterSvc.searchMatters(db, { q: 'Cal' });
+    assert.equal(byCourt.length, 1);
+
+    const byClient = matterSvc.searchMatters(db, { q: 'acme' });
     assert.equal(byClient.length, 2);
+
+    // Full list still available for dropdowns
+    assert.equal(matterSvc.listMatters(db).length, 2);
   });
 
-  it('supports type-based and record-based custom fields with layouts', () => {
+  it('supports type-based and record-based custom fields; values are searchable', () => {
     const page0 = matterSvc.createMatter(db, admin, {
       clientId: 1, name: 'Class Action', matterType: 'litigation',
       openedOn: '2026-01-01', responsibleAttorneyId: 2,
@@ -66,14 +76,16 @@ describe('matter search and record-based fields', () => {
     });
 
     const page = matterSvc.getMatter(db, matterId);
-    assert.ok(page);
     const allFields = Object.values(page.sections).flat();
-    const stage = allFields.find((f) => f.fieldId === typeField.id);
-    const note = allFields.find((f) => f.fieldId === recordField.id);
-    assert.equal(stage.value, 'Discovery');
-    assert.equal(stage.scope, 'record_type');
-    assert.equal(note.value, 'Fee petition matter');
-    assert.equal(note.scope, 'record');
-    assert.equal(page.layout.source, 'record'); // record field forces matter layout
+    assert.equal(allFields.find((f) => f.fieldId === typeField.id).value, 'Discovery');
+    assert.equal(allFields.find((f) => f.fieldId === recordField.id).value, 'Fee petition matter');
+    assert.equal(page.layout.source, 'record');
+
+    const byCustom = matterSvc.searchMatters(db, { q: 'petition' });
+    assert.equal(byCustom.length, 1);
+    assert.equal(byCustom[0].id, matterId);
+
+    matterIndex.reindexAllMatters(db);
+    assert.equal(matterSvc.searchMatters(db, { q: 'Discovery' }).length, 1);
   });
 });

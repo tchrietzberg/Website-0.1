@@ -38,7 +38,7 @@ Then open http://localhost:3000.
 
 ## Demo flow (Definition of Done walkthrough)
 
-1. Sign in as **avery** → **Matters** → search → open a matter → see type/record custom fields → add a record-based field.
+1. Sign in as **avery** → **Matters** → create a matter (indexed automatically) → Matter Search → open record → add fields.
 2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked;
    try a N.D. Cal matter without category → blocked).
 3. Submit the entry, sign in as **billie** → approve via API/queue (nav hidden) or continue billing.

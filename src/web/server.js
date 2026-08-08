@@ -217,12 +217,28 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.listRecordTypes(db));
       }
       if (req.method === 'GET' && pathname === '/api/matters') {
-        return json(res, 200, matterSvc.listMatters(db, {
-          q: url.searchParams.get('q'),
+        const q = url.searchParams.get('q');
+        const filters = {
+          q,
           status: url.searchParams.get('status'),
           matterType: url.searchParams.get('type'),
           clientId: url.searchParams.get('clientId'),
-        }));
+        };
+        // Matter Search (indexed) when q is present; otherwise full list for dropdowns
+        if (q != null && String(q).trim() !== '') {
+          return json(res, 200, matterSvc.searchMatters(db, filters));
+        }
+        if (url.searchParams.get('search') === '1') {
+          return json(res, 200, []); // indexed search with empty query → no hits
+        }
+        return json(res, 200, matterSvc.listMatters(db, filters));
+      }
+      if (req.method === 'POST' && pathname === '/api/matters/reindex') {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const matterIndex = require('../services/matterIndex');
+        matterIndex.reindexAllMatters(db);
+        const count = db.prepare('SELECT COUNT(*) AS n FROM matter_search_index').get().n;
+        return json(res, 200, { ok: true, indexed: count });
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/matters\/\d+$/)) {
         const id = Number(pathname.split('/')[3]);

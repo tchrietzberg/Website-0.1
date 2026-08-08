@@ -195,25 +195,33 @@
 
   async function renderMatters() {
     const params = new URLSearchParams();
+    params.set('search', '1'); // indexed Matter Search mode
     if (state.matterSearch.q) params.set('q', state.matterSearch.q);
     if (state.matterSearch.status) params.set('status', state.matterSearch.status);
     if (state.matterSearch.type) params.set('type', state.matterSearch.type);
-    const qs = params.toString();
-    const [matters, recordTypes] = await Promise.all([
-      api(`/api/matters${qs ? `?${qs}` : ''}`),
-      api('/api/record-types'),
-    ]);
-    state.matters = matters;
+
+    const hasQuery = !!state.matterSearch.q;
+    const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
     const canConfigure = ['admin', 'billing_clerk'].includes(state.user.role);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const [hits, recordTypes, clients, allMatters] = await Promise.all([
+      api(`/api/matters?${params}`),
+      api('/api/record-types'),
+      api('/api/clients'),
+      api('/api/matters'), // full list for dropdowns elsewhere; not shown here
+    ]);
+    state.matters = allMatters;
+    state.clients = clients;
 
     main.innerHTML = `
       <div class="card stack">
-        <h1>Matters</h1>
-        <p class="lead">Search matters and open a record page. Layouts and custom fields are record-type or record-based.</p>
+        <h1>Matter Search</h1>
+        <p class="lead">Search the matter index (number, name, client, court, jurisdiction, type, custom fields). New matters are indexed automatically.</p>
         <form id="matterSearch" class="grid two">
-          <label class="span-all">Search
+          <label class="span-all">Search index
             <input name="q" value="${state.matterSearch.q || ''}"
-              placeholder="Number, name, client, court…" />
+              placeholder="e.g. Widget, Northwind, N.D. Cal" autofocus />
           </label>
           <label>Status
             <select name="status">
@@ -239,12 +247,14 @@
       </div>
 
       <div class="card">
+        <h2>Results</h2>
+        ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
         <div class="table-wrap"><table>
           <thead>
             <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
           </thead>
           <tbody>
-            ${matters.map((m) => `
+            ${hits.map((m) => `
               <tr class="click-row" data-matter="${m.id}">
                 <td><strong>${m.number}</strong></td>
                 <td>${m.name}</td>
@@ -252,15 +262,50 @@
                 <td><span class="pill">${m.matter_type}</span></td>
                 <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
                 <td>${m.attorney_name || '—'}</td>
-              </tr>`).join('') || '<tr><td colspan="6" class="muted">No matters match</td></tr>'}
+              </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
           </tbody>
-        </table></div>
+        </table></div>`}
       </div>
+
+      ${canEdit ? `
+      <div class="card stack">
+        <h2>New matter</h2>
+        <p class="hint">Creating a matter adds it to the search index immediately.</p>
+        <form id="newMatterForm" class="grid two">
+          <label class="span-all">Name
+            <input name="name" required placeholder="Securities Class Action — WidgetCo" />
+          </label>
+          <label>Client
+            <select name="clientId" required>
+              ${clients.map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}
+            </select>
+          </label>
+          <label>Record type
+            <select name="matterType" required>
+              ${recordTypes.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
+            </select>
+          </label>
+          <label>Jurisdiction <input name="jurisdiction" placeholder="N.D. Cal." /></label>
+          <label>Court <input name="court" placeholder="N.D. Cal." /></label>
+          <label>Responsible attorney
+            <select name="responsibleAttorneyId">
+              <option value="">—</option>
+              ${state.users.filter((u) => u.role === 'attorney' || u.role === 'admin').map((u) =>
+                `<option value="${u.id}">${u.name}</option>`).join('')}
+            </select>
+          </label>
+          <label>Opened on <input name="openedOn" type="date" value="${today}" required /></label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Create &amp; index matter</button>
+          </div>
+        </form>
+        <div id="newMatterMsg"></div>
+      </div>` : ''}
 
       ${canConfigure ? `
       <div class="card stack">
         <h2>Record-type custom fields</h2>
-        <p class="hint">Fields added here appear on all matters of that record type (and their type layout).</p>
+        <p class="hint">Fields added here appear on all matters of that record type (and their type layout). Values are included in the search index.</p>
         <form id="typeFieldForm" class="grid two">
           <label>Record type
             <select name="recordTypeKey" required>
@@ -307,6 +352,35 @@
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => openMatter(Number(row.dataset.matter));
     });
+
+    const newMatterForm = $('#newMatterForm');
+    if (newMatterForm) {
+      newMatterForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(newMatterForm);
+        try {
+          const page = await api('/api/matters', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: fd.get('name'),
+              clientId: Number(fd.get('clientId')),
+              matterType: fd.get('matterType'),
+              jurisdiction: fd.get('jurisdiction') || null,
+              court: fd.get('court') || null,
+              responsibleAttorneyId: fd.get('responsibleAttorneyId')
+                ? Number(fd.get('responsibleAttorneyId')) : null,
+              openedOn: fd.get('openedOn'),
+            }),
+          });
+          $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${page.matter.number}.</div>`;
+          await refreshRefs();
+          state.matterSearch = { q: page.matter.number, status: '', type: '' };
+          await openMatter(page.matter.id);
+        } catch (e) {
+          $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
 
     const typeFieldForm = $('#typeFieldForm');
     if (typeFieldForm) {

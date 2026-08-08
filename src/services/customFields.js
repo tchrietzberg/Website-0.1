@@ -1,4 +1,5 @@
 const { audit } = require('../db');
+const matterIndex = require('./matterIndex');
 
 const STANDARD_FIELDS = [
   { key: 'std:number', label: 'Matter number', type: 'text', readonly: true, width: 'half' },
@@ -334,6 +335,7 @@ function setCustomValues(db, actor, matterId, customValues) {
       VALUES (?, ?, NULL, ?, ?)
     `).run(matterId, `cf:${id}`, text, actor.id);
   }
+  matterIndex.indexMatter(db, matterId);
 }
 
 function saveLayoutItems(db, actor, layoutId, items) {

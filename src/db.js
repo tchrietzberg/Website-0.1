@@ -17,6 +17,14 @@ function migrate(db) {
   const schema = fs.readFileSync(path.join(ROOT, 'db', 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateTimeEntryRoundingCheck(db);
+  const matterIndex = require('./services/matterIndex');
+  matterIndex.ensureMatterIndex(db);
+  // Rebuild index only when matters exist but search index is empty (first boot / upgrade)
+  const matterCount = db.prepare('SELECT COUNT(*) AS n FROM matters').get().n;
+  const idxCount = db.prepare('SELECT COUNT(*) AS n FROM matter_search_index').get().n;
+  if (matterCount > 0 && idxCount === 0) {
+    matterIndex.reindexAllMatters(db);
+  }
 }
 
 /** SQLite cannot ALTER CHECK; rebuild time_entries if still on rounded_minutes > 0. */

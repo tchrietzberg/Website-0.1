@@ -29,7 +29,7 @@ Filled-in profile for the master build brief (Section 2):
 | D16 | UTC storage; service_date (date of work) distinct from entered_at (timestamp of entry) | Project rule §4. Firm-local display assumed America/New_York. |
 | D17 | Native .xlsx export written from scratch (`src/xlsx.js`: minimal ZIP + SpreadsheetML) | Keeps zero-dependency principle. Currency strings exported as numeric cells with currency format so Excel can sum them. Added 2026-08-08. |
 
-| D18 | Matters are record-based: searchable Matters list + per-matter page; custom fields and page layouts scoped by record type and/or individual matter | Type fields apply to all matters of that `matter_type`; record fields/layouts attach to one matter. Adding a record field clones a matter-specific layout from the type layout. |
+| D18 | Matters are record-based: Matter Search uses `matter_search_index` (denormalized body; no FTS5 — unavailable in Node’s SQLite); per-matter page; custom fields/layouts by record type or individual matter | No sample matters in seed. Search requires a query (index hits only). Create/update/custom values reindex the matter. Type fields apply to all matters of that `matter_type`; record fields/layouts attach to one matter. |
 
 ## Deferred
 
