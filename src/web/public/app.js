@@ -177,8 +177,9 @@
       ['reports', 'Reports'],
       ['settings', 'Settings'],
     ];
-    if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
-    if (state.view === 'approvals' || state.view === 'payments') state.view = 'matters';
+    if (state.view === 'approvals' || state.view === 'payments' || state.view === 'audit') {
+      state.view = 'matters';
+    }
     const activeView = state.view === 'matter' ? 'matters' : state.view;
 
     if (sidebarActions) {
@@ -209,7 +210,7 @@
     nav.innerHTML = `
       <p class="sidebar-label">Navigate</p>
       ${items.map(([id, label]) =>
-        `<button type="button" data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
+        `<button type="button" data-view="${id}" class="sidebar-nav-btn ${activeView === id ? 'active' : ''}">${label}</button>`
       ).join('')}`;
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.onclick = () => {
