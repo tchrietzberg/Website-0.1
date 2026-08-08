@@ -129,8 +129,8 @@ body {
   font-weight: 600;
 }
 
-.nav .nav-add-matter,
-.nav button.nav-add-matter.primary {
+.nav .nav-create-matter,
+.nav button.nav-create-matter.primary {
   margin-left: 0.35rem;
   background: var(--accent);
   border: 1px solid var(--accent);
@@ -138,15 +138,19 @@ body {
   font-weight: 600;
 }
 
-.nav .nav-add-matter:hover,
-.nav button.nav-add-matter.primary:hover {
+.nav .nav-create-matter:hover,
+.nav button.nav-create-matter.primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: var(--accent-ink);
 }
 
-.add-matter-btn {
+.create-matter-btn {
   min-width: 8.5rem;
+}
+
+.create-matter-panel[hidden] {
+  display: none !important;
 }
 
 .btn, button {
