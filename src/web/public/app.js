@@ -119,8 +119,9 @@
     nav.querySelectorAll('button').forEach((b) => {
       b.onclick = () => { state.view = b.dataset.view; renderShell(); renderView(); };
     });
-    userbar.innerHTML = `${state.user.name} · ${state.user.role}
-      <button id="logout" style="margin-left:.5rem">Sign out</button>`;
+    userbar.innerHTML = `
+      <div class="who"><strong>${state.user.name}</strong><span>${state.user.role.replace('_', ' ')}</span></div>
+      <button id="logout">Sign out</button>`;
     $('#logout').onclick = async () => {
       await api('/api/logout', { method: 'POST' });
       state.token = null;
@@ -139,7 +140,10 @@
       else if (state.view === 'reports') await renderReports();
       else if (state.view === 'audit') await renderAudit();
     } catch (e) {
-      main.innerHTML = `<div class="error">${e.message}</div>`;
+      const msg = e.message === 'forbidden'
+        ? 'You do not have access to this section with your current role.'
+        : e.message;
+      main.innerHTML = `<div class="card"><div class="error">${msg}</div></div>`;
     }
   }
 
@@ -186,7 +190,7 @@
       </div>
       <div class="card">
         <h2>Recent entries</h2>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Matter</th><th>Raw→Rnd</th><th>Status</th><th></th></tr></thead>
           <tbody>
             ${entries.slice(0, 30).map((e) => `
@@ -194,14 +198,14 @@
                 <td>${e.service_date}</td>
                 <td>${e.matter_number}<div class="muted">${e.description}</div></td>
                 <td>${e.raw_minutes} → ${e.rounded_minutes} <span class="muted">(${hours(e.rounded_minutes)}h)</span></td>
-                <td><span class="pill">${e.status}</span></td>
+                <td><span class="pill" data-status="${e.status}">${e.status}</span></td>
                 <td class="row-actions">
                   ${e.status === 'draft' || e.status === 'rejected'
                     ? `<button data-submit="${e.id}">Submit</button>` : ''}
                 </td>
               </tr>`).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>'}
           </tbody>
-        </table>
+        </table></div>
       </div>`;
 
     $('#timeForm').onsubmit = async (ev) => {
@@ -217,7 +221,7 @@
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
-        $('#timeMsg').innerHTML = `<div class="ok">${msg}</div>`;
+        $('#timeMsg').innerHTML = `<div class="ok-banner">${msg}</div>`;
         await renderTime();
       } catch (e) {
         $('#timeMsg').innerHTML = `<div class="error">${e.message}</div>`;
@@ -237,7 +241,7 @@
       <div class="card">
         <h1>Approval Queue</h1>
         <p class="lead">Billing clerks/admins approve anything; lead attorneys approve their matters.</p>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Matter</th><th>Timekeeper</th><th>Time</th><th></th></tr></thead>
           <tbody>
             ${queue.map((e) => `
@@ -252,7 +256,7 @@
                 </td>
               </tr>`).join('') || '<tr><td colspan="5" class="muted">Queue empty</td></tr>'}
           </tbody>
-        </table>
+        </table></div>
         <div id="apprMsg"></div>
       </div>`;
     main.querySelectorAll('[data-approve]').forEach((b) => {
@@ -297,19 +301,19 @@
       </div>
       <div class="card">
         <h2>Invoices</h2>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Number</th><th>Matter</th><th>Status</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${invoices.map((i) => `
               <tr>
                 <td>${i.number}</td>
                 <td>${i.matter_number}<div class="muted">${i.client_name}</div></td>
-                <td><span class="pill">${i.status}</span></td>
+                <td><span class="pill" data-status="${i.status}">${i.status}</span></td>
                 <td>${money(i.total_cents)}</td>
                 <td><button data-open="${i.id}">Open</button></td>
               </tr>`).join('') || '<tr><td colspan="5" class="muted">No invoices</td></tr>'}
           </tbody>
-        </table>
+        </table></div>
       </div>
       <div id="invoiceDetail"></div>`;
 
@@ -320,7 +324,7 @@
         const inv = await api('/api/invoices/prebill', {
           method: 'POST', body: JSON.stringify({ matterId }),
         });
-        $('#billMsg').innerHTML = `<div class="ok">Created ${inv.number}</div>`;
+        $('#billMsg').innerHTML = `<div class="ok-banner">Created ${inv.number}</div>`;
         await renderBilling();
         await showInvoice(inv.id);
       } catch (e) {
@@ -337,10 +341,10 @@
     const el = $('#invoiceDetail');
     el.innerHTML = `
       <div class="card stack">
-        <h2>${inv.number} <span class="pill">${inv.status}</span></h2>
+        <h2>${inv.number} <span class="pill" data-status="${inv.status}">${inv.status}</span></h2>
         <p class="muted">${inv.client_name} · ${inv.matter_number} · Subtotal ${money(inv.subtotal_cents)}
           · Write-down ${money(inv.write_down_cents)} · Total ${money(inv.total_cents)}</p>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Rate</th><th>Amount</th><th>WD</th><th></th></tr></thead>
           <tbody>
             ${inv.lines.map((l) => `
@@ -355,7 +359,7 @@
                   ? `<button data-wd="${l.id}">Write-down</button>` : ''}</td>
               </tr>`).join('')}
           </tbody>
-        </table>
+        </table></div>
         <div class="row-actions" id="invActions"></div>
         <div id="invMsg"></div>
       </div>`;
@@ -423,7 +427,7 @@
       </div>
       <div class="card">
         <h2>Payments</h2>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Client</th><th>Amount</th><th>Applied</th><th>Unapplied</th></tr></thead>
           <tbody>
             ${payments.map((p) => `
@@ -435,7 +439,7 @@
                 <td class="${p.unapplied_cents ? 'warn' : ''}">${money(p.unapplied_cents)}</td>
               </tr>`).join('') || '<tr><td colspan="5" class="muted">None</td></tr>'}
           </tbody>
-        </table>
+        </table></div>
       </div>`;
     $('#payForm').onsubmit = async (ev) => {
       ev.preventDefault();
@@ -448,7 +452,7 @@
       };
       try {
         const p = await api('/api/payments', { method: 'POST', body: JSON.stringify(body) });
-        $('#payMsg').innerHTML = `<div class="ok">Payment #${p.id} recorded. Unapplied: ${money(p.unappliedCents)}</div>`;
+        $('#payMsg').innerHTML = `<div class="ok-banner">Payment #${p.id} recorded. Unapplied: ${money(p.unappliedCents)}</div>`;
         await renderPayments();
       } catch (e) {
         $('#payMsg').innerHTML = `<div class="error">${e.message}</div>`;
@@ -470,10 +474,10 @@
       <div class="card">
         <h1>Reports</h1>
         <p class="lead">Export CSV or Excel (.xlsx with numeric currency cells).</p>
-        <div class="stack">
+        <div>
           ${names.map(([id, label]) => `
-            <div class="row-actions">
-              <strong style="min-width:10rem">${label}</strong>
+            <div class="report-row">
+              <strong>${label}</strong>
               <button data-view-report="${id}">View</button>
               <a class="btn" href="/api/reports/${id}?format=csv" target="_blank">CSV</a>
               <a class="btn" href="/api/reports/${id}?format=xlsx">Excel</a>
@@ -511,7 +515,7 @@
         const keys = Object.keys(rows[0]);
         out.innerHTML = `
           <h2>${b.dataset.viewReport}</h2>
-          <table>
+          <div class="table-wrap"><table>
             <thead><tr>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
             <tbody>
               ${rows.map((r) => `<tr>${keys.map((k) => {
@@ -520,7 +524,7 @@
                 return `<td>${v ?? ''}</td>`;
               }).join('')}</tr>`).join('')}
             </tbody>
-          </table>`;
+          </table></div>`;
       };
     });
   }
@@ -530,7 +534,7 @@
     main.innerHTML = `
       <div class="card">
         <h1>Audit Log</h1>
-        <table>
+        <div class="table-wrap"><table>
           <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Entity</th><th>Detail</th></tr></thead>
           <tbody>
             ${rows.map((r) => `
@@ -542,7 +546,7 @@
                 <td class="muted">${r.detail_json || ''}</td>
               </tr>`).join('')}
           </tbody>
-        </table>
+        </table></div>
       </div>`;
   }
 
