@@ -193,7 +193,8 @@ p.lead {
 }
 
 .grid { display: grid; gap: 0.9rem; }
-.grid.two { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.span-all { grid-column: 1 / -1; min-width: 0; }
 
 label {
   display: grid;
@@ -202,18 +203,28 @@ label {
   font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.01em;
+  min-width: 0;
 }
 
 input, select, textarea {
   font: inherit;
   font-weight: 450;
   font-size: 0.95rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
   transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+select {
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 input:hover, select:hover, textarea:hover { border-color: var(--line-strong); }
@@ -383,4 +394,5 @@ a.btn {
   main { padding: 1.1rem 1rem 2.5rem; }
   .card { padding: 1.1rem; }
   h1 { font-size: 1.4rem; }
+  .grid.two { grid-template-columns: 1fr; }
 }

@@ -82,7 +82,7 @@
           </datalist>
           <button class="primary" id="loginBtn">Continue</button>
           <div id="loginErr"></div>
-          <p class="hint">Demo: sam (paralegal) → billie (billing clerk) → lodestar reports.</p>
+          <p class="hint">Demo: sam@firm.example or billie@firm.example → Time Entry → Billing → Reports.</p>
         </div>
       </div>`;
     $('#loginBtn').onclick = async () => {
@@ -107,12 +107,12 @@
     nav.hidden = false;
     const items = [
       ['time', 'Time Entry'],
-      ['approvals', 'Approval Queue'],
       ['billing', 'Billing'],
       ['payments', 'Payments'],
       ['reports', 'Reports'],
     ];
     if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
+    if (state.view === 'approvals') state.view = 'time';
     nav.innerHTML = items.map(([id, label]) =>
       `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${label}</button>`
     ).join('');
@@ -155,7 +155,7 @@
         <h1>Time Entry</h1>
         <p class="lead">15-minute round-up. Zero minutes blocked. N.D. Cal matters need category/subcategory.</p>
         <form id="timeForm" class="grid two">
-          <label>Matter
+          <label class="span-all">Matter
             <select name="matterId" required>
               ${state.matters.map((m) => `<option value="${m.id}">${m.number} — ${m.name}</option>`).join('')}
             </select>
@@ -179,10 +179,10 @@
           <label>Subcategory
             <input name="subcategory" placeholder="e.g. Document review" />
           </label>
-          <label style="grid-column:1/-1">Description
+          <label class="span-all">Description
             <textarea name="description" rows="2" required>Reviewed production set</textarea>
           </label>
-          <div class="row-actions">
+          <div class="row-actions span-all">
             <button class="primary" type="submit">Save draft</button>
           </div>
         </form>
@@ -288,12 +288,12 @@
         <h1>Billing</h1>
         <p class="lead">Generate pre-bill from approved WIP → write-down → review → approve → send.</p>
         <form id="prebillForm" class="grid two">
-          <label>Matter
+          <label class="span-all">Matter
             <select name="matterId">
               ${state.matters.map((m) => `<option value="${m.id}">${m.number} — ${m.name}</option>`).join('')}
             </select>
           </label>
-          <div class="row-actions" style="align-items:end">
+          <div class="row-actions span-all">
             <button class="primary" type="submit">Generate pre-bill</button>
           </div>
         </form>
