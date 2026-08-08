@@ -60,7 +60,7 @@ describe('time entry rules', () => {
     assert.equal(e.roundedMinutes, 15);
   });
 
-  it('rounds up and defaults billable by matter type', () => {
+  it('rounds up and defaults new entries to billable', () => {
     const e = timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: 7, description: 'call',
     });
