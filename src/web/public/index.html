@@ -7,17 +7,20 @@
   <title>Firm Billing</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="/styles.css?v=10" />
+  <link rel="stylesheet" href="/styles.css?v=11" />
 </head>
 <body>
   <div id="app">
-    <header class="top">
-      <div class="brand">Firm Billing</div>
-      <nav id="nav" class="nav" hidden></nav>
-      <div id="userbar" class="userbar"></div>
-    </header>
-    <main id="main"></main>
+    <aside id="sidebar" class="sidebar" hidden>
+      <div class="sidebar-brand">Firm Billing</div>
+      <div class="sidebar-actions" id="sidebarActions"></div>
+      <nav id="nav" class="sidebar-nav"></nav>
+      <div id="userbar" class="sidebar-user"></div>
+    </aside>
+    <div class="workspace">
+      <main id="main"></main>
+    </div>
   </div>
-  <script src="/app.js?v=10"></script>
+  <script src="/app.js?v=11"></script>
 </body>
 </html>

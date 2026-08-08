@@ -10,6 +10,7 @@
     matterId: null,
     matterSearch: { q: '' },
     showCreateMatter: false,
+    focusTimeEntry: false,
   };
 
   function canCreateMatter(user) {
@@ -20,6 +21,9 @@
   const main = $('#main');
   const nav = $('#nav');
   const userbar = $('#userbar');
+  const sidebar = $('#sidebar');
+  const sidebarActions = $('#sidebarActions');
+  const appEl = $('#app');
 
   async function api(path, opts = {}) {
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
@@ -96,8 +100,11 @@
   }
 
   function renderLogin() {
-    nav.hidden = true;
-    userbar.textContent = '';
+    if (sidebar) sidebar.hidden = true;
+    if (appEl) appEl.classList.remove('app-shell');
+    if (nav) nav.innerHTML = '';
+    if (userbar) userbar.textContent = '';
+    if (sidebarActions) sidebarActions.innerHTML = '';
     main.innerHTML = `
       <div class="login-wrap">
         <div class="card stack">
@@ -115,7 +122,7 @@
           </datalist>
           <button class="primary" id="loginBtn">Continue</button>
           <div id="loginErr"></div>
-          <p class="hint">Demo: avery@firm.example → Matters → Create matter → Search → Time Entry → Billing.</p>
+          <p class="hint">Demo: avery@firm.example → Add Matter → Search → Add Time Entry → Billing.</p>
         </div>
       </div>`;
     $('#loginBtn').onclick = async () => {
@@ -136,19 +143,56 @@
     };
   }
 
+  function goAddMatter() {
+    if (!canCreateMatter(state.user)) {
+      state.view = 'matters';
+      state.matterId = null;
+      renderShell();
+      renderView();
+      return;
+    }
+    state.showCreateMatter = true;
+    state.view = 'matters';
+    state.matterId = null;
+    renderShell();
+    renderView();
+  }
+
+  function goAddTimeEntry() {
+    state.focusTimeEntry = true;
+    state.view = 'time';
+    state.matterId = null;
+    state.showCreateMatter = false;
+    renderShell();
+    renderView();
+  }
+
   function renderShell() {
-    nav.hidden = false;
+    if (sidebar) sidebar.hidden = false;
+    if (appEl) appEl.classList.add('app-shell');
     const items = [
       ['matters', 'Matters'],
       ['time', 'Time Entry'],
       ['billing', 'Billing'],
-      ['payments', 'Payments'],
       ['reports', 'Reports'],
       ['settings', 'Settings'],
     ];
     if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
-    if (state.view === 'approvals') state.view = 'time';
+    if (state.view === 'approvals' || state.view === 'payments') state.view = 'matters';
     const activeView = state.view === 'matter' ? 'matters' : state.view;
+
+    if (sidebarActions) {
+      sidebarActions.innerHTML = `
+        ${canCreateMatter(state.user)
+          ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">Add Matter</button>`
+          : ''}
+        <button type="button" class="sidebar-action" id="sideAddTime">Add Time Entry</button>`;
+      const sideAddMatter = $('#sideAddMatter');
+      if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
+      const sideAddTime = $('#sideAddTime');
+      if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
+    }
+
     nav.innerHTML = items.map(([id, label]) =>
       `<button data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
     ).join('');
@@ -180,10 +224,10 @@
       else if (state.view === 'time') await renderTime();
       else if (state.view === 'approvals') await renderApprovals();
       else if (state.view === 'billing') await renderBilling();
-      else if (state.view === 'payments') await renderPayments();
       else if (state.view === 'reports') await renderReports();
       else if (state.view === 'settings') await renderSettings();
       else if (state.view === 'audit') await renderAudit();
+      else await renderMatters();
     } catch (e) {
       const msg = e.message === 'forbidden'
         ? 'You do not have access to this section with your current role.'
@@ -228,10 +272,6 @@
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearSearch">Clear</button>
           </form>
-          ${canEdit ? `
-            <button type="button" class="primary create-matter-btn" id="createMatterBtn">
-              ${showCreate ? 'Cancel' : 'Create matter'}
-            </button>` : ''}
         </div>
 
         ${showCreate ? `
@@ -289,13 +329,6 @@
       state.matterSearch = { q: '' };
       await renderMatters();
     };
-    const createMatterBtn = $('#createMatterBtn');
-    if (createMatterBtn) {
-      createMatterBtn.onclick = async () => {
-        state.showCreateMatter = !showCreate;
-        await renderMatters();
-      };
-    }
     const cancelCreate = $('#cancelCreateMatter');
     if (cancelCreate) {
       cancelCreate.onclick = async () => {
@@ -865,6 +898,16 @@
         await renderTime();
       };
     });
+
+    if (state.focusTimeEntry) {
+      state.focusTimeEntry = false;
+      const form = $('#timeForm');
+      const minutes = form && form.querySelector('input[name="rawMinutes"]');
+      setTimeout(() => {
+        if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (minutes) minutes.focus();
+      }, 0);
+    }
   }
 
   async function renderApprovals() {
