@@ -276,6 +276,30 @@ function createServer(db = openDb()) {
         const body = await parseBody(req);
         return json(res, 200, customFields.addStandardFieldToMatter(db, user, matterId, body.fieldKey));
       }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/matters\/\d+\/layout-fields$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        const matterId = Number(pathname.split('/')[3]);
+        const fieldKey = url.searchParams.get('fieldKey');
+        if (!fieldKey) return json(res, 400, { error: 'fieldKey required' });
+        return json(res, 200, customFields.removeFieldFromMatter(db, user, matterId, fieldKey));
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/record-types\/[^/]+\/layout$/)) {
+        const key = decodeURIComponent(pathname.split('/')[3]);
+        return json(res, 200, customFields.getTypeLayout(db, key));
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/record-types\/[^/]+\/standard-fields$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const key = decodeURIComponent(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        return json(res, 200, customFields.addStandardFieldToType(db, user, key, body.fieldKey));
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/record-types\/[^/]+\/layout-fields$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const key = decodeURIComponent(pathname.split('/')[3]);
+        const fieldKey = url.searchParams.get('fieldKey');
+        if (!fieldKey) return json(res, 400, { error: 'fieldKey required' });
+        return json(res, 200, customFields.removeFieldFromType(db, user, key, fieldKey));
+      }
       if (req.method === 'GET' && pathname === '/api/custom-fields') {
         return json(res, 200, customFields.listCustomFields(db, {
           recordTypeKey: url.searchParams.get('type'),

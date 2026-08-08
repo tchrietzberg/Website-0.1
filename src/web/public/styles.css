@@ -206,6 +206,52 @@ body {
   margin-top: 0.65rem;
 }
 
+h3 {
+  font-family: var(--font);
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.field-mgmt-list {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  background: #fbfcfd;
+}
+
+.field-mgmt-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.field-mgmt-row:last-child { border-bottom: none; }
+
+.field-mgmt-add {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: end;
+  align-items: end;
+  gap: 0.55rem;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+}
+
+.field-mgmt-add label {
+  -webkit-flex: 1 1 14rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
 .btn, button {
   font: inherit;
   font-weight: 550;

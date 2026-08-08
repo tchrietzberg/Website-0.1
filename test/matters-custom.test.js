@@ -102,4 +102,23 @@ describe('matter search and record-based fields', () => {
     assert.equal(page1.layout.source, 'record');
     assert.ok(!page1.availableStandardFields.some((f) => f.key === 'std:client'));
   });
+
+  it('can add and delete fields on default type and matter layouts', () => {
+    const type0 = customFields.getTypeLayout(db, 'other');
+    assert.deepEqual(type0.fields.map((f) => f.fieldKey).sort(), ['std:name', 'std:number']);
+
+    const type1 = customFields.addStandardFieldToType(db, admin, 'other', 'std:court');
+    assert.ok(type1.fields.some((f) => f.fieldKey === 'std:court'));
+    const type2 = customFields.removeFieldFromType(db, admin, 'other', 'std:court');
+    assert.ok(!type2.fields.some((f) => f.fieldKey === 'std:court'));
+
+    const page = matterSvc.createMatter(db, admin, { name: 'Field Mgmt' });
+    customFields.addStandardFieldToMatter(db, admin, page.matter.id, 'std:status');
+    const page2 = customFields.removeFieldFromMatter(db, admin, page.matter.id, 'std:status');
+    assert.ok(!page2.layoutFields.some((f) => f.fieldKey === 'std:status'));
+    assert.throws(
+      () => customFields.removeFieldFromMatter(db, admin, page.matter.id, 'std:name'),
+      /core fields/
+    );
+  });
 });

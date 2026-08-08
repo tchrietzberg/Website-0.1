@@ -22,12 +22,26 @@ const OPTIONAL_STANDARD_KEYS = STANDARD_FIELDS
   .map((f) => f.key)
   .filter((key) => !CORE_LAYOUT_KEYS.includes(key));
 
-function pruneTypeLayoutToCore(db, layoutId) {
-  for (const key of OPTIONAL_STANDARD_KEYS) {
-    db.prepare(
-      'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
-    ).run(layoutId, key);
+function fieldLabelForKey(db, fieldKey) {
+  const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
+  if (std) return std.label;
+  if (String(fieldKey).startsWith('cf:')) {
+    const id = Number(String(fieldKey).slice(3));
+    const f = db.prepare('SELECT label FROM custom_fields WHERE id = ?').get(id);
+    return f?.label || fieldKey;
   }
+  return fieldKey;
+}
+
+function describeLayoutFields(db, layoutId) {
+  return layoutItems(db, layoutId).map((item) => ({
+    fieldKey: item.field_key,
+    label: fieldLabelForKey(db, item.field_key),
+    width: item.width,
+    section: item.section,
+    removable: !CORE_LAYOUT_KEYS.includes(item.field_key),
+    kind: String(item.field_key).startsWith('cf:') ? 'custom' : 'standard',
+  }));
 }
 
 function ensureRecordTypes(db) {
@@ -49,10 +63,7 @@ function ensureTypeLayout(db, recordTypeKey) {
   let layout = db.prepare(
     'SELECT * FROM page_layouts WHERE record_type_key = ? AND matter_id IS NULL'
   ).get(recordTypeKey);
-  if (layout) {
-    pruneTypeLayoutToCore(db, layout.id);
-    return db.prepare('SELECT * FROM page_layouts WHERE id = ?').get(layout.id);
-  }
+  if (layout) return layout;
 
   const info = db.prepare(`
     INSERT INTO page_layouts(record_type_key, matter_id, name) VALUES (?, NULL, 'Default')
@@ -67,6 +78,80 @@ function ensureTypeLayout(db, recordTypeKey) {
     insert.run(layoutId, key, i, std?.width || 'half');
   });
   return db.prepare('SELECT * FROM page_layouts WHERE id = ?').get(layoutId);
+}
+
+function getTypeLayout(db, recordTypeKey) {
+  const layout = ensureTypeLayout(db, recordTypeKey);
+  const fields = describeLayoutFields(db, layout.id);
+  const present = new Set(fields.map((f) => f.fieldKey));
+  const availableStandardFields = STANDARD_FIELDS
+    .filter((f) => OPTIONAL_STANDARD_KEYS.includes(f.key) && !present.has(f.key))
+    .map((f) => ({ ...f, kind: 'standard' }));
+  const type = db.prepare('SELECT * FROM record_types WHERE key = ?').get(recordTypeKey);
+  return {
+    recordTypeKey,
+    label: type?.label || recordTypeKey,
+    layout: { id: layout.id, name: layout.name, source: 'record_type' },
+    fields,
+    availableStandardFields,
+    customFields: listCustomFields(db, { recordTypeKey }),
+  };
+}
+
+function addFieldToLayout(db, layoutId, fieldKey, width = 'half') {
+  const existing = db.prepare(
+    'SELECT id FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
+  ).get(layoutId, fieldKey);
+  if (existing) return false;
+  const max = db.prepare(
+    'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
+  ).get(layoutId).m;
+  db.prepare(`
+    INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
+    VALUES (?, ?, 'details', ?, ?)
+  `).run(layoutId, fieldKey, max + 1, width);
+  return true;
+}
+
+function addStandardFieldToType(db, actor, recordTypeKey, fieldKey) {
+  if (!OPTIONAL_STANDARD_KEYS.includes(fieldKey)) throw new Error('field cannot be added');
+  const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
+  if (!std) throw new Error('unknown field');
+  const layout = ensureTypeLayout(db, recordTypeKey);
+  addFieldToLayout(db, layout.id, fieldKey, std.width || 'half');
+  audit(db, {
+    actorId: actor.id,
+    action: 'type.layout.add_field',
+    entityType: 'record_type',
+    entityId: null,
+    detail: { recordTypeKey, fieldKey },
+  });
+  return getTypeLayout(db, recordTypeKey);
+}
+
+function removeFieldFromType(db, actor, recordTypeKey, fieldKey) {
+  if (CORE_LAYOUT_KEYS.includes(fieldKey)) throw new Error('core fields cannot be removed');
+  const layout = ensureTypeLayout(db, recordTypeKey);
+  db.prepare(
+    'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
+  ).run(layout.id, fieldKey);
+  if (String(fieldKey).startsWith('cf:')) {
+    const id = Number(String(fieldKey).slice(3));
+    const field = db.prepare(
+      'SELECT * FROM custom_fields WHERE id = ? AND record_type_key = ? AND matter_id IS NULL'
+    ).get(id, recordTypeKey);
+    if (field) {
+      db.prepare('UPDATE custom_fields SET active = 0 WHERE id = ?').run(id);
+    }
+  }
+  audit(db, {
+    actorId: actor.id,
+    action: 'type.layout.remove_field',
+    entityType: 'record_type',
+    entityId: null,
+    detail: { recordTypeKey, fieldKey },
+  });
+  return getTypeLayout(db, recordTypeKey);
 }
 
 function listRecordTypes(db) {
@@ -325,8 +410,10 @@ function getMatterPage(db, matterId) {
     matter,
     layout: { id: layout.id, name: layout.name, source },
     sections,
+    layoutFields: describeLayoutFields(db, layout.id),
     availableFields: [...defs.values()],
     availableStandardFields,
+    typeLayout: getTypeLayout(db, matter.matter_type),
   };
 }
 
@@ -339,22 +426,36 @@ function addStandardFieldToMatter(db, actor, matterId, fieldKey) {
   if (!std) throw new Error('unknown field');
 
   const layout = ensureMatterLayout(db, matterId);
-  const existing = db.prepare(
-    'SELECT id FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
-  ).get(layout.id, fieldKey);
-  if (existing) return getMatterPage(db, matterId);
-
-  const max = db.prepare(
-    'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
-  ).get(layout.id).m;
-  db.prepare(`
-    INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
-    VALUES (?, ?, 'details', ?, ?)
-  `).run(layout.id, fieldKey, max + 1, std.width || 'half');
+  addFieldToLayout(db, layout.id, fieldKey, std.width || 'half');
 
   audit(db, {
     actorId: actor.id,
     action: 'matter.layout.add_field',
+    entityType: 'matter',
+    entityId: matterId,
+    detail: { fieldKey },
+  });
+  return getMatterPage(db, matterId);
+}
+
+function removeFieldFromMatter(db, actor, matterId, fieldKey) {
+  if (CORE_LAYOUT_KEYS.includes(fieldKey)) throw new Error('core fields cannot be removed');
+  const layout = ensureMatterLayout(db, matterId);
+  db.prepare(
+    'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
+  ).run(layout.id, fieldKey);
+  if (String(fieldKey).startsWith('cf:')) {
+    const id = Number(String(fieldKey).slice(3));
+    const field = db.prepare(
+      'SELECT * FROM custom_fields WHERE id = ? AND matter_id = ?'
+    ).get(id, matterId);
+    if (field) {
+      db.prepare('UPDATE custom_fields SET active = 0 WHERE id = ?').run(id);
+    }
+  }
+  audit(db, {
+    actorId: actor.id,
+    action: 'matter.layout.remove_field',
     entityType: 'matter',
     entityId: matterId,
     detail: { fieldKey },
@@ -433,8 +534,12 @@ module.exports = {
   getCustomField,
   listCustomFields,
   getMatterPage,
+  getTypeLayout,
   setCustomValues,
   saveLayoutItems,
   resolveLayout,
   addStandardFieldToMatter,
+  removeFieldFromMatter,
+  addStandardFieldToType,
+  removeFieldFromType,
 };
