@@ -183,19 +183,34 @@
 
     if (sidebarActions) {
       sidebarActions.innerHTML = `
+        <p class="sidebar-label">Quick actions</p>
         ${canCreateMatter(state.user)
-          ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">Add Matter</button>`
+          ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">
+              <span class="sidebar-action-mark" aria-hidden="true">+</span>
+              <span class="sidebar-action-text">
+                <strong>Add Matter</strong>
+                <small>Create a new matter</small>
+              </span>
+            </button>`
           : ''}
-        <button type="button" class="sidebar-action" id="sideAddTime">Add Time Entry</button>`;
+        <button type="button" class="sidebar-action secondary" id="sideAddTime">
+          <span class="sidebar-action-mark" aria-hidden="true">T</span>
+          <span class="sidebar-action-text">
+            <strong>Add Time Entry</strong>
+            <small>Log time on a matter</small>
+          </span>
+        </button>`;
       const sideAddMatter = $('#sideAddMatter');
       if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
     }
 
-    nav.innerHTML = items.map(([id, label]) =>
-      `<button data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
-    ).join('');
+    nav.innerHTML = `
+      <p class="sidebar-label">Navigate</p>
+      ${items.map(([id, label]) =>
+        `<button type="button" data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
+      ).join('')}`;
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.onclick = () => {
         state.view = b.dataset.view;
@@ -206,8 +221,9 @@
       };
     });
     userbar.innerHTML = `
+      <p class="sidebar-label">Signed in</p>
       <div class="who"><strong>${state.user.name}</strong><span>${state.user.role.replace('_', ' ')}</span></div>
-      <button id="logout">Sign out</button>`;
+      <button type="button" id="logout" class="sidebar-logout">Sign out</button>`;
     $('#logout').onclick = async () => {
       await api('/api/logout', { method: 'POST' });
       state.token = null;
