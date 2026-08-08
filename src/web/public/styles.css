@@ -131,6 +131,43 @@ body {
 
 .create-matter-btn {
   min-width: 8.5rem;
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+}
+
+.matters-toolbar {
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.matters-toolbar h1 {
+  margin: 0;
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+}
+
+.matter-search-bar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 0.45rem;
+  -webkit-flex: 1 1 16rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.matter-search-bar input {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.matter-search-bar button {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .btn, button {
@@ -253,11 +290,11 @@ p.lead {
 .page-head {
   display: -webkit-flex;
   display: flex;
-  -webkit-align-items: flex-start;
-  align-items: flex-start;
+  -webkit-align-items: center;
+  align-items: center;
   -webkit-justify-content: space-between;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
   -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
 }
@@ -604,7 +641,10 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   .top { padding: 0.75rem var(--page-pad-x); }
   .userbar .who { -webkit-align-items: flex-end; align-items: flex-end; }
   .grid.two { grid-template-columns: 1fr; }
-  .page-head > .primary { width: 100%; }
+  .page-head > .primary,
+  .create-matter-btn { width: 100%; }
+  .matter-search-bar { width: 100%; -webkit-flex-basis: 100%; flex-basis: 100%; }
+  .matters-toolbar h1 { width: 100%; }
   table { min-width: 28rem; }
 }
 

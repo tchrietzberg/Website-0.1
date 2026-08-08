@@ -221,11 +221,14 @@
 
     main.innerHTML = `
       <div class="card stack page-card">
-        <div class="page-head">
-          <div class="page-head-copy">
-            <h1>Matters</h1>
-            <p class="lead">Search the index or create a new matter on this page.</p>
-          </div>
+        <div class="page-head matters-toolbar">
+          <h1>Matters</h1>
+          <form id="matterSearch" class="matter-search-bar">
+            <input name="q" value="${state.matterSearch.q || ''}"
+              placeholder="Search matters…" aria-label="Search matters" />
+            <button class="primary" type="submit">Search</button>
+            <button type="button" id="clearSearch">Clear</button>
+          </form>
           ${canEdit ? `
             <button type="button" class="primary create-matter-btn" id="createMatterBtn">
               ${showCreate ? 'Cancel' : 'Create matter'}
@@ -266,20 +269,6 @@
           </form>
           <div id="newMatterMsg"></div>
         </div>` : ''}
-
-        <div class="page-section">
-          <h2>Matter Search</h2>
-          <form id="matterSearch" class="stack">
-            <label>Search index
-              <input name="q" value="${state.matterSearch.q || ''}"
-                placeholder="e.g. Widget, Northwind, N.D. Cal" />
-            </label>
-            <div class="row-actions">
-              <button class="primary" type="submit">Search</button>
-              <button type="button" id="clearSearch">Clear</button>
-            </div>
-          </form>
-        </div>
 
         <div class="page-section">
           <h2>Results</h2>
