@@ -110,7 +110,7 @@
           </datalist>
           <button class="primary" id="loginBtn">Continue</button>
           <div id="loginErr"></div>
-          <p class="hint">Demo: sam@firm.example or billie@firm.example → Time Entry → Billing → Reports.</p>
+          <p class="hint">Demo: avery@firm.example → Matters → Add matter → Search → Time Entry → Billing.</p>
         </div>
       </div>`;
     $('#loginBtn').onclick = async () => {
