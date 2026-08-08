@@ -122,7 +122,7 @@
           </datalist>
           <button class="primary" id="loginBtn">Continue</button>
           <div id="loginErr"></div>
-          <p class="hint">Demo: avery@firm.example → Add Matter → Search → Add Time Entry → Billing.</p>
+          <p class="hint">Demo: avery@firm.example → Create Matter → Search matters → Add Time Entry → Billing.</p>
         </div>
       </div>`;
     $('#loginBtn').onclick = async () => {
@@ -188,8 +188,8 @@
           ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">
               <span class="sidebar-action-mark" aria-hidden="true">+</span>
               <span class="sidebar-action-text">
-                <strong>Add Matter</strong>
-                <small>Create a new matter</small>
+                <strong>Create Matter</strong>
+                <small>Open create + search</small>
               </span>
             </button>`
           : ''}
@@ -283,7 +283,25 @@
     main.innerHTML = `
       <div class="card stack page-card">
         <div class="page-head matters-toolbar">
-          <h1>Matters</h1>
+          <h1>${showCreate ? 'Create Matter' : 'Matters'}</h1>
+        </div>
+
+        ${showCreate ? `
+        <div id="createMatterSection" class="create-matter-panel page-section">
+          <form id="newMatterForm" class="create-matter-form">
+            <label class="create-matter-label" for="createMatterName">Create Matter</label>
+            <div class="create-matter-row">
+              <input id="createMatterName" name="name" required
+                placeholder="Create Matter" aria-label="Create Matter" />
+              <button class="primary" type="submit">Create</button>
+              <button type="button" id="cancelCreateMatter">Cancel</button>
+            </div>
+          </form>
+          <div id="newMatterMsg"></div>
+        </div>` : ''}
+
+        <div class="page-section">
+          <h2>Search matters</h2>
           <form id="matterSearch" class="matter-search-bar">
             <input name="q" value="${state.matterSearch.q || ''}"
               placeholder="Search matters…" aria-label="Search matters" />
@@ -291,16 +309,6 @@
             <button type="button" id="clearSearch">Clear</button>
           </form>
         </div>
-
-        ${showCreate ? `
-        <div id="createMatterSection" class="create-matter-panel">
-          <form id="newMatterForm" class="create-matter-form">
-            <input name="name" required placeholder="Matter name" aria-label="Matter name" />
-            <button class="primary" type="submit">Save</button>
-            <button type="button" id="cancelCreateMatter">Cancel</button>
-          </form>
-          <div id="newMatterMsg"></div>
-        </div>` : ''}
 
         <div class="page-section">
           <h2>Results</h2>

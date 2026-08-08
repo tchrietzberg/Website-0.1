@@ -373,11 +373,24 @@ body {
 
 .create-matter-panel {
   margin: 0;
-  padding: 0;
+  padding: 0.9rem 0 0;
   border: none;
 }
 
 .create-matter-form {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.create-matter-label {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.create-matter-row {
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
@@ -387,16 +400,23 @@ body {
   min-width: 0;
 }
 
-.create-matter-form input {
+.create-matter-form input,
+.create-matter-row input {
   -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.create-matter-form button {
+.create-matter-form button,
+.create-matter-row button {
   -webkit-flex: 0 0 auto;
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.page-section .matter-search-bar {
+  width: 100%;
+  margin-top: 0.35rem;
 }
 
 .create-matter-panel #newMatterMsg:empty {
