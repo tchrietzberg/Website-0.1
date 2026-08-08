@@ -118,6 +118,20 @@ CREATE TABLE IF NOT EXISTS page_layout_items (
 CREATE INDEX IF NOT EXISTS idx_page_layout_items_layout
   ON page_layout_items(layout_id, sort_order);
 
+-- Matter-level OneDrive / SharePoint folder link (prototype; Graph OAuth deferred)
+CREATE TABLE IF NOT EXISTS matter_onedrive (
+  matter_id INTEGER PRIMARY KEY REFERENCES matters(id) ON DELETE CASCADE,
+  folder_url TEXT NOT NULL,
+  folder_name TEXT,
+  drive_item_id TEXT,
+  status TEXT NOT NULL DEFAULT 'linked'
+    CHECK (status IN ('linked','error')),
+  notes TEXT,
+  linked_by INTEGER REFERENCES users(id),
+  linked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE TABLE IF NOT EXISTS rates (
   id INTEGER PRIMARY KEY,
   scope TEXT NOT NULL CHECK (scope IN ('matter','client','timekeeper')),

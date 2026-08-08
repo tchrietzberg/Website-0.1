@@ -443,6 +443,7 @@ function getMatterPage(db, matterId) {
     .filter((f) => OPTIONAL_STANDARD_KEYS.includes(f.key) && !presentKeys.has(f.key))
     .map((f) => ({ ...f, kind: 'standard' }));
 
+  const onedrive = require('./onedrive');
   return {
     matter,
     layout: { id: layout.id, name: layout.name, source },
@@ -451,6 +452,8 @@ function getMatterPage(db, matterId) {
     availableFields: [...defs.values()],
     availableStandardFields,
     typeLayout: getTypeLayout(db, matter.matter_type),
+    onedrive: onedrive.getMatterOneDrive(db, matterId),
+    onedriveSuggestedName: onedrive.suggestFolderName(matter),
   };
 }
 

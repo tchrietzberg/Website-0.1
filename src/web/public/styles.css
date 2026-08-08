@@ -518,6 +518,30 @@ body {
   margin-top: 0.65rem;
 }
 
+.onedrive-status {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.onedrive-url a {
+  color: var(--accent);
+  font-weight: 650;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(26, 58, 107, 0.28);
+}
+
+.onedrive-url a:hover {
+  border-bottom-color: var(--accent);
+}
+
+#onedriveCard .hint {
+  margin-top: 0;
+}
+
 h3 {
   font-family: var(--font);
   font-size: 1.05rem;

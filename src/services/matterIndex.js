@@ -42,6 +42,9 @@ function indexMatter(db, matterId) {
     return;
   }
   const customText = buildCustomText(db, matterId);
+  const od = db.prepare(
+    'SELECT folder_name, folder_url FROM matter_onedrive WHERE matter_id = ?'
+  ).get(matterId);
   const body = [
     row.number,
     row.name,
@@ -52,6 +55,9 @@ function indexMatter(db, matterId) {
     row.status,
     row.attorney_name,
     customText,
+    od?.folder_name,
+    od?.folder_url,
+    od ? 'onedrive' : null,
   ]
     .filter(Boolean)
     .join(' ')

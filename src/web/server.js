@@ -283,6 +283,36 @@ function createServer(db = openDb()) {
         if (!fieldKey) return json(res, 400, { error: 'fieldKey required' });
         return json(res, 200, customFields.removeFieldFromMatter(db, user, matterId, fieldKey));
       }
+      if (req.method === 'GET' && pathname.match(/^\/api\/matters\/\d+\/onedrive$/)) {
+        const onedrive = require('../services/onedrive');
+        const matterId = Number(pathname.split('/')[3]);
+        const matter = db.prepare('SELECT id FROM matters WHERE id = ?').get(matterId);
+        if (!matter) return json(res, 404, { error: 'not found' });
+        return json(res, 200, onedrive.getMatterOneDrive(db, matterId));
+      }
+      if (req.method === 'PUT' && pathname.match(/^\/api\/matters\/\d+\/onedrive$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        const onedrive = require('../services/onedrive');
+        const matterIndex = require('../services/matterIndex');
+        const matterId = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        try {
+          const link = onedrive.linkMatterOneDrive(db, user, matterId, body);
+          matterIndex.indexMatter(db, matterId);
+          return json(res, 200, { onedrive: link, page: matterSvc.getMatter(db, matterId) });
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/matters\/\d+\/onedrive$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        const onedrive = require('../services/onedrive');
+        const matterIndex = require('../services/matterIndex');
+        const matterId = Number(pathname.split('/')[3]);
+        const link = onedrive.disconnectMatterOneDrive(db, user, matterId);
+        matterIndex.indexMatter(db, matterId);
+        return json(res, 200, { onedrive: link, page: matterSvc.getMatter(db, matterId) });
+      }
       if (req.method === 'GET' && pathname.match(/^\/api\/record-types\/[^/]+\/layout$/)) {
         const key = decodeURIComponent(pathname.split('/')[3]);
         return json(res, 200, customFields.getTypeLayout(db, key));

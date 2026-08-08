@@ -581,6 +581,70 @@
         <div id="matterMsg"></div>
       </form>
 
+      <div class="card stack" id="onedriveCard">
+        <h2>OneDrive</h2>
+        <p class="hint">Link a OneDrive or SharePoint folder to this matter. Microsoft Graph sync is deferred — this stores the folder link at matter level.</p>
+        ${(page.onedrive && page.onedrive.linked) ? `
+          <div class="onedrive-status">
+            <span class="pill" data-status="open">Linked</span>
+            <strong>${(page.onedrive.folderName || 'Matter folder').replace(/</g, '&lt;')}</strong>
+          </div>
+          <p class="onedrive-url">
+            <a href="${String(page.onedrive.folderUrl || '').replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">
+              Open folder in OneDrive
+            </a>
+          </p>
+          ${page.onedrive.notes ? `<p class="muted">${String(page.onedrive.notes).replace(/</g, '&lt;')}</p>` : ''}
+          <p class="muted">Linked${page.onedrive.linkedByName ? ` by ${page.onedrive.linkedByName}` : ''}${page.onedrive.linkedAt ? ` · ${String(page.onedrive.linkedAt).slice(0, 10)}` : ''}</p>
+          ${canEdit ? `
+          <div class="row-actions">
+            <button type="button" id="onedriveEdit">Update link</button>
+            <button type="button" id="onedriveDisconnect">Disconnect</button>
+          </div>
+          <form id="onedriveForm" class="grid two" hidden>
+            <label class="span-all">Folder URL
+              <input name="folderUrl" required
+                value="${String(page.onedrive.folderUrl || '').replace(/"/g, '&quot;')}"
+                placeholder="https://…sharepoint.com/… or onedrive.live.com/…" />
+            </label>
+            <label>Folder name
+              <input name="folderName"
+                value="${String(page.onedrive.folderName || '').replace(/"/g, '&quot;')}"
+                placeholder="${String(page.onedriveSuggestedName || '').replace(/"/g, '&quot;')}" />
+            </label>
+            <label>Notes
+              <input name="notes" value="${String(page.onedrive.notes || '').replace(/"/g, '&quot;')}"
+                placeholder="Optional" />
+            </label>
+            <div class="row-actions span-all">
+              <button class="primary" type="submit">Save OneDrive link</button>
+              <button type="button" id="onedriveCancelEdit">Cancel</button>
+            </div>
+          </form>` : ''}
+        ` : `
+          <p class="muted">No OneDrive folder linked yet.</p>
+          ${canEdit ? `
+          <form id="onedriveForm" class="grid two">
+            <label class="span-all">Folder URL
+              <input name="folderUrl" required
+                placeholder="https://contoso.sharepoint.com/… or https://onedrive.live.com/…" />
+            </label>
+            <label>Folder name
+              <input name="folderName"
+                value="${String(page.onedriveSuggestedName || '').replace(/"/g, '&quot;')}"
+                placeholder="${String(page.onedriveSuggestedName || '').replace(/"/g, '&quot;')}" />
+            </label>
+            <label>Notes
+              <input name="notes" placeholder="Optional" />
+            </label>
+            <div class="row-actions span-all">
+              <button class="primary" type="submit">Link OneDrive folder</button>
+            </div>
+          </form>` : ''}
+        `}
+        <div id="onedriveMsg"></div>
+      </div>
+
       ${canEdit ? `
       <div class="card stack">
         <h2>Manage fields</h2>
@@ -707,6 +771,52 @@
           await refreshRefs();
         } catch (e) {
           $('#matterMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+
+    const onedriveForm = $('#onedriveForm');
+    if (onedriveForm) {
+      onedriveForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(onedriveForm);
+        try {
+          await api(`/api/matters/${m.id}/onedrive`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              folderUrl: fd.get('folderUrl'),
+              folderName: fd.get('folderName'),
+              notes: fd.get('notes'),
+            }),
+          });
+          $('#onedriveMsg').innerHTML = '<div class="ok-banner">OneDrive folder linked.</div>';
+          await renderMatterDetail();
+        } catch (e) {
+          $('#onedriveMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+    const onedriveEdit = $('#onedriveEdit');
+    if (onedriveEdit && onedriveForm) {
+      onedriveEdit.onclick = () => {
+        onedriveForm.hidden = false;
+        onedriveEdit.hidden = true;
+      };
+    }
+    const onedriveCancelEdit = $('#onedriveCancelEdit');
+    if (onedriveCancelEdit) {
+      onedriveCancelEdit.onclick = async () => {
+        await renderMatterDetail();
+      };
+    }
+    const onedriveDisconnect = $('#onedriveDisconnect');
+    if (onedriveDisconnect) {
+      onedriveDisconnect.onclick = async () => {
+        try {
+          await api(`/api/matters/${m.id}/onedrive`, { method: 'DELETE' });
+          await renderMatterDetail();
+        } catch (e) {
+          $('#onedriveMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
     }

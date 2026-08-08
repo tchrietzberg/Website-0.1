@@ -6,7 +6,8 @@ Filled-in profile for the master build brief (Section 2):
 - **Roles:** admin, attorney, paralegal, billing_clerk (no client portal)
 - **Stack:** Node ≥22.13 built-ins only (`node:sqlite`, `node:http`, `node:test`); zero npm deps
 - **Deploy:** local prototype / Docker; not production
-- **Integrations deferred:** QuickBooks API, LEDES 1998B, LawPay/Stripe
+- **Integrations deferred:** QuickBooks API, LEDES 1998B, LawPay/Stripe, Microsoft Graph OAuth for OneDrive sync
+- **OneDrive (v1 prototype):** matter-level folder link only (URL + name + notes); no Graph file listing yet
 - **Trust/IOLTA:** explicitly out of scope for v1 (see D2) — VERIFY WITH BAR RULES before any production use if trust funds are ever held
 
 | # | Decision | Rationale / Notes |
