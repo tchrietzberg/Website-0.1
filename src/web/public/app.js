@@ -459,7 +459,7 @@
           <span class="pill">${page.layout.source === 'record' ? 'Record layout' : 'Record-type layout'}</span>
         </div>
         <h1>${m.number}</h1>
-        <p class="lead">${m.name} · ${m.client_name || 'No client set'}</p>
+        <p class="lead">${m.name}</p>
       </div>
 
       <form id="matterForm" class="card stack">
@@ -480,8 +480,21 @@
 
       ${canEdit ? `
       <div class="card stack">
-        <h2>Add record-based custom field</h2>
-        <p class="hint">Creates a field and layout item only for this matter record.</p>
+        <h2>Add fields</h2>
+        <p class="hint">Add optional default fields (client, status, type, court, attorney, opened on) or a custom field to this matter.</p>
+        ${(page.availableStandardFields || []).length ? `
+        <form id="addStandardFieldForm" class="row-actions" style="gap:.65rem;align-items:end">
+          <label style="flex:1;min-width:12rem">Default field
+            <select name="fieldKey" required>
+              ${(page.availableStandardFields || []).map((f) =>
+                `<option value="${f.key}">${f.label}</option>`).join('')}
+            </select>
+          </label>
+          <button class="primary" type="submit">Add field</button>
+        </form>
+        <div id="standardFieldMsg"></div>` : '<p class="muted">All default fields are already on this matter.</p>'}
+
+        <h2>Add custom field</h2>
         <form id="recordFieldForm" class="grid two">
           <label>Field label <input name="label" required placeholder="Special billing note" /></label>
           <label>Field type
@@ -498,7 +511,7 @@
             <input name="options" placeholder="A, B, C" />
           </label>
           <div class="row-actions span-all">
-            <button class="primary" type="submit">Add field to this matter</button>
+            <button class="primary" type="submit">Add custom field</button>
             ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Switch this matter to its own layout</button>' : ''}
           </div>
         </form>
@@ -544,6 +557,23 @@
           await refreshRefs();
         } catch (e) {
           $('#matterMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+
+    const addStd = $('#addStandardFieldForm');
+    if (addStd) {
+      addStd.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(addStd);
+        try {
+          await api(`/api/matters/${m.id}/standard-fields`, {
+            method: 'POST',
+            body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
+          });
+          await renderMatterDetail();
+        } catch (e) {
+          $('#standardFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
     }

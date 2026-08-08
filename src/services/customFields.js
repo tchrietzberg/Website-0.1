@@ -14,7 +14,21 @@ const STANDARD_FIELDS = [
   { key: 'std:opened_on', label: 'Opened on', type: 'date', width: 'half' },
 ];
 
-const DEFAULT_LAYOUT_KEYS = STANDARD_FIELDS.map((f) => f.key);
+/** Shown on every new matter / type layout. */
+const CORE_LAYOUT_KEYS = ['std:number', 'std:name'];
+
+/** Optional standard fields — add later on a matter record page. */
+const OPTIONAL_STANDARD_KEYS = STANDARD_FIELDS
+  .map((f) => f.key)
+  .filter((key) => !CORE_LAYOUT_KEYS.includes(key));
+
+function pruneTypeLayoutToCore(db, layoutId) {
+  for (const key of OPTIONAL_STANDARD_KEYS) {
+    db.prepare(
+      'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
+    ).run(layoutId, key);
+  }
+}
 
 function ensureRecordTypes(db) {
   const defaults = [
@@ -35,7 +49,10 @@ function ensureTypeLayout(db, recordTypeKey) {
   let layout = db.prepare(
     'SELECT * FROM page_layouts WHERE record_type_key = ? AND matter_id IS NULL'
   ).get(recordTypeKey);
-  if (layout) return layout;
+  if (layout) {
+    pruneTypeLayoutToCore(db, layout.id);
+    return db.prepare('SELECT * FROM page_layouts WHERE id = ?').get(layout.id);
+  }
 
   const info = db.prepare(`
     INSERT INTO page_layouts(record_type_key, matter_id, name) VALUES (?, NULL, 'Default')
@@ -45,7 +62,7 @@ function ensureTypeLayout(db, recordTypeKey) {
     INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
     VALUES (?, ?, 'details', ?, ?)
   `);
-  DEFAULT_LAYOUT_KEYS.forEach((key, i) => {
+  CORE_LAYOUT_KEYS.forEach((key, i) => {
     const std = STANDARD_FIELDS.find((f) => f.key === key);
     insert.run(layoutId, key, i, std?.width || 'half');
   });
@@ -299,12 +316,50 @@ function getMatterPage(db, matterId) {
     });
   }
 
+  const presentKeys = new Set(items.map((i) => i.field_key));
+  const availableStandardFields = STANDARD_FIELDS
+    .filter((f) => OPTIONAL_STANDARD_KEYS.includes(f.key) && !presentKeys.has(f.key))
+    .map((f) => ({ ...f, kind: 'standard' }));
+
   return {
     matter,
     layout: { id: layout.id, name: layout.name, source },
     sections,
     availableFields: [...defs.values()],
+    availableStandardFields,
   };
+}
+
+/** Add an optional standard field to this matter's record layout. */
+function addStandardFieldToMatter(db, actor, matterId, fieldKey) {
+  if (!OPTIONAL_STANDARD_KEYS.includes(fieldKey)) {
+    throw new Error('field cannot be added');
+  }
+  const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
+  if (!std) throw new Error('unknown field');
+
+  const layout = ensureMatterLayout(db, matterId);
+  const existing = db.prepare(
+    'SELECT id FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
+  ).get(layout.id, fieldKey);
+  if (existing) return getMatterPage(db, matterId);
+
+  const max = db.prepare(
+    'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
+  ).get(layout.id).m;
+  db.prepare(`
+    INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
+    VALUES (?, ?, 'details', ?, ?)
+  `).run(layout.id, fieldKey, max + 1, std.width || 'half');
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'matter.layout.add_field',
+    entityType: 'matter',
+    entityId: matterId,
+    detail: { fieldKey },
+  });
+  return getMatterPage(db, matterId);
 }
 
 function setCustomValues(db, actor, matterId, customValues) {
@@ -368,6 +423,8 @@ function saveLayoutItems(db, actor, layoutId, items) {
 
 module.exports = {
   STANDARD_FIELDS,
+  CORE_LAYOUT_KEYS,
+  OPTIONAL_STANDARD_KEYS,
   ensureRecordTypes,
   ensureTypeLayout,
   ensureMatterLayout,
@@ -379,4 +436,5 @@ module.exports = {
   setCustomValues,
   saveLayoutItems,
   resolveLayout,
+  addStandardFieldToMatter,
 };

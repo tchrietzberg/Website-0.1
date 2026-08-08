@@ -88,4 +88,18 @@ describe('matter search and record-based fields', () => {
     matterIndex.reindexAllMatters(db);
     assert.equal(matterSvc.searchMatters(db, { q: 'Discovery' }).length, 1);
   });
+
+  it('new matters show only core fields; optional standards can be added later', () => {
+    const page0 = matterSvc.createMatter(db, admin, { name: 'Lean Matter' });
+    const keys = Object.values(page0.sections).flat().map((f) => f.key);
+    assert.deepEqual(keys.sort(), ['std:name', 'std:number']);
+    assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:client'));
+    assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:court'));
+
+    const page1 = customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:client');
+    const keys1 = Object.values(page1.sections).flat().map((f) => f.key);
+    assert.ok(keys1.includes('std:client'));
+    assert.equal(page1.layout.source, 'record');
+    assert.ok(!page1.availableStandardFields.some((f) => f.key === 'std:client'));
+  });
 });

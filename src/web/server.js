@@ -270,6 +270,12 @@ function createServer(db = openDb()) {
         const layout = customFields.ensureMatterLayout(db, matterId);
         return json(res, 200, { layout, page: matterSvc.getMatter(db, matterId) });
       }
+      if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/standard-fields$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        const matterId = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        return json(res, 200, customFields.addStandardFieldToMatter(db, user, matterId, body.fieldKey));
+      }
       if (req.method === 'GET' && pathname === '/api/custom-fields') {
         return json(res, 200, customFields.listCustomFields(db, {
           recordTypeKey: url.searchParams.get('type'),
