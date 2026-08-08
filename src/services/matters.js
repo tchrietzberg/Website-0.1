@@ -2,24 +2,31 @@ const { allocateNumber, audit } = require('../db');
 const customFields = require('./customFields');
 const matterIndex = require('./matterIndex');
 
-function createMatter(db, actor, input) {
+function createMatter(db, actor, input = {}) {
   const name = String(input.name || '').trim();
   if (!name) throw new Error('name required');
 
-  const openedOn = input.openedOn || new Date().toISOString().slice(0, 10);
-  const year = Number(String(openedOn).slice(0, 4));
+  const openedOn = String(input.openedOn || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const year = Number(openedOn.slice(0, 4));
+  if (!Number.isFinite(year)) throw new Error('invalid openedOn');
   const number = allocateNumber(db, 'matter', year, '');
   customFields.ensureRecordTypes(db);
 
-  const matterType = input.matterType || 'other';
+  const matterType = String(input.matterType || 'other');
   customFields.ensureTypeLayout(db, matterType);
 
-  let clientId = input.clientId != null ? Number(input.clientId) : null;
-  if (!clientId) {
+  let clientId = input.clientId != null && input.clientId !== ''
+    ? Number(input.clientId)
+    : null;
+  if (!clientId || !Number.isFinite(clientId)) {
     const firstClient = db.prepare('SELECT id FROM clients ORDER BY id LIMIT 1').get();
     if (!firstClient) throw new Error('add a client before creating matters');
-    clientId = firstClient.id;
+    clientId = Number(firstClient.id);
   }
+
+  const attorneyId = input.responsibleAttorneyId != null && input.responsibleAttorneyId !== ''
+    ? Number(input.responsibleAttorneyId)
+    : null;
 
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
@@ -30,9 +37,9 @@ function createMatter(db, actor, input) {
     number,
     name,
     matterType,
-    input.jurisdiction || null,
-    input.court || null,
-    input.responsibleAttorneyId || null,
+    input.jurisdiction != null && input.jurisdiction !== '' ? String(input.jurisdiction) : null,
+    input.court != null && input.court !== '' ? String(input.court) : null,
+    Number.isFinite(attorneyId) ? attorneyId : null,
     openedOn
   );
   const id = Number(info.lastInsertRowid);
@@ -78,7 +85,12 @@ function updateMatter(db, actor, id, patch) {
     let newVal = patch[key];
     if (key === 'clientId' || key === 'responsibleAttorneyId') {
       newVal = newVal === '' || newVal == null ? null : Number(newVal);
+      if (newVal != null && !Number.isFinite(newVal)) newVal = null;
       if (key === 'clientId' && !newVal) throw new Error('client required');
+    } else if (newVal != null) {
+      newVal = String(newVal);
+    } else {
+      newVal = null;
     }
     if (String(oldVal ?? '') === String(newVal ?? '')) continue;
     db.prepare(`UPDATE matters SET ${col} = ? WHERE id = ?`).run(newVal, id);
