@@ -234,7 +234,7 @@ function disconnectMatterOneDrive(db, actor, matterId) {
 async function graphFetch(db, pathOrUrl, { method = 'GET' } = {}) {
   const token = String(await ensureGraphToken(db) || '').trim();
   if (!token) {
-    throw new Error('Connect Microsoft in Settings → OneDrive (no Graph Explorer token needed)');
+    throw new Error('Connect Microsoft in Settings → OneDrive');
   }
   const url = pathOrUrl.startsWith('http')
     ? pathOrUrl
@@ -295,7 +295,7 @@ async function syncMatterOneDriveFromShare(db, actor, matterId, { parentItemId =
   const link = db.prepare('SELECT * FROM matter_onedrive WHERE matter_id = ?').get(matterId);
   if (!link) throw new Error('OneDrive folder not linked');
   if (!graphConfigured(db)) {
-    throw new Error('Connect Microsoft in Settings → OneDrive first (sign in — no Graph Explorer token)');
+    throw new Error('Connect Microsoft in Settings → OneDrive first');
   }
 
   try {

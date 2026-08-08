@@ -98,7 +98,12 @@ function serveStatic(req, res) {
     '.svg': 'image/svg+xml',
   };
   const body = fs.readFileSync(file);
-  res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream' });
+  const headers = { 'Content-Type': types[ext] || 'application/octet-stream' };
+  // Avoid stale SPA assets after deploys (query ?v= also used for busting)
+  if (ext === '.html' || ext === '.js' || ext === '.css') {
+    headers['Cache-Control'] = 'no-cache, must-revalidate';
+  }
+  res.writeHead(200, headers);
   res.end(body);
   return true;
 }

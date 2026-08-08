@@ -800,15 +800,39 @@
     const syncBtn = $('#onedriveSync');
     if (syncBtn) {
       syncBtn.onclick = async () => {
-        if (!onedriveMeta.graphConfigured) {
+        // Re-check live settings — stale page meta can say "not connected"
+        let connected = !!onedriveMeta.graphConfigured;
+        try {
+          const live = await api('/api/settings');
+          connected = !!(live.msGraphConfigured || live.microsoft?.connected);
+          state.settings = live;
+        } catch { /* keep page meta */ }
+
+        if (!connected) {
           $('#onedriveMsg').innerHTML = `
-            <div class="error">
-              Connect Microsoft once in <strong>Settings → OneDrive / SharePoint</strong> (no Graph Explorer token).
-              <div class="hint" style="margin-top:.5rem">
-                Admin saves the Application (client) ID, then click <strong>Connect Microsoft account</strong> and approve in the browser.
-                Or use <strong>Load demo files</strong> / the <strong>OneDrive view</strong> tab for now.
+            <div class="ok-banner">
+              Next step: connect Microsoft in Settings (sign in — no tokens to copy).
+              <div class="row-actions" style="margin-top:.65rem">
+                <button type="button" class="primary" id="goOneDriveSettings">Open Settings → OneDrive</button>
+                <button type="button" id="onedriveDemoSeedInline">Load demo files</button>
               </div>
             </div>`;
+          const go = $('#goOneDriveSettings');
+          if (go) {
+            go.onclick = () => {
+              state.view = 'settings';
+              state.matterId = null;
+              renderShell();
+              renderView();
+            };
+          }
+          const demoInline = $('#onedriveDemoSeedInline');
+          if (demoInline) {
+            demoInline.onclick = () => {
+              const demoBtn = $('#onedriveDemoSeed');
+              if (demoBtn) demoBtn.click();
+            };
+          }
           return;
         }
         try {
@@ -820,7 +844,27 @@
           $('#onedriveMsg').innerHTML = '<div class="ok-banner">Folder refreshed from OneDrive.</div>';
           renderBrowser(data);
         } catch (e) {
-          $('#onedriveMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          const msg = String(e.message || '');
+          if (/Connect Microsoft|not configured|Graph token/i.test(msg)) {
+            $('#onedriveMsg').innerHTML = `
+              <div class="error">
+                Microsoft is not connected yet.
+                <div class="row-actions" style="margin-top:.65rem">
+                  <button type="button" class="primary" id="goOneDriveSettings2">Open Settings → Connect Microsoft</button>
+                </div>
+              </div>`;
+            const go2 = $('#goOneDriveSettings2');
+            if (go2) {
+              go2.onclick = () => {
+                state.view = 'settings';
+                state.matterId = null;
+                renderShell();
+                renderView();
+              };
+            }
+          } else {
+            $('#onedriveMsg').innerHTML = `<div class="error">${escapeHtml(msg)}</div>`;
+          }
         } finally {
           syncBtn.disabled = false;
         }
