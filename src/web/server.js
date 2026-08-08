@@ -15,6 +15,8 @@ const matterSvc = require('../services/matters');
 const invoiceSvc = require('../services/invoices');
 const paymentSvc = require('../services/payments');
 const reports = require('../services/reports');
+const usersSvc = require('../services/users');
+const ratesAdmin = require('../services/ratesAdmin');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -162,7 +164,50 @@ function createServer(db = openDb()) {
 
       // Reference data
       if (req.method === 'GET' && pathname === '/api/users') {
-        return json(res, 200, db.prepare('SELECT id, email, name, role FROM users WHERE active = 1').all());
+        const includeInactive = url.searchParams.get('all') === '1';
+        if (includeInactive && !['admin', 'billing_clerk'].includes(user.role)) {
+          return json(res, 403, { error: 'forbidden' });
+        }
+        return json(res, 200, usersSvc.listUsers(db, { includeInactive }));
+      }
+      if (req.method === 'POST' && pathname === '/api/users') {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const body = await parseBody(req);
+        const created = usersSvc.createUser(db, user, body);
+        if (body.defaultRateCents != null) {
+          ratesAdmin.addRate(db, user, {
+            scope: 'timekeeper',
+            scopeId: created.id,
+            amountCents: Number(body.defaultRateCents),
+            effectiveDate: body.rateEffectiveDate || new Date().toISOString().slice(0, 10),
+          });
+        }
+        return json(res, 201, created);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/users\/\d+\/active$/)) {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const id = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        return json(res, 200, usersSvc.setUserActive(db, user, id, !!body.active));
+      }
+      if (req.method === 'GET' && pathname === '/api/rates') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const scope = url.searchParams.get('scope');
+        const scopeId = url.searchParams.get('scopeId');
+        return json(res, 200, ratesAdmin.listRates(db, {
+          scope: scope || null,
+          scopeId: scopeId ? Number(scopeId) : null,
+        }));
+      }
+      if (req.method === 'POST' && pathname === '/api/rates') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const body = await parseBody(req);
+        return json(res, 201, ratesAdmin.addRate(db, user, body));
+      }
+      if (req.method === 'GET' && pathname === '/api/timekeepers') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const asOf = url.searchParams.get('asOf') || undefined;
+        return json(res, 200, ratesAdmin.timekeeperRatesSummary(db, asOf));
       }
       if (req.method === 'GET' && pathname === '/api/clients') {
         return json(res, 200, matterSvc.listClients(db));

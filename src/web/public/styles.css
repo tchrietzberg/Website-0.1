@@ -381,40 +381,64 @@ a.btn {
 
 .settings-block .hint { margin: 0.15rem 0 0.85rem; }
 
-label.choice {
+.choice {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.65rem;
+  gap: 0.7rem;
   align-items: start;
-  padding: 0.55rem 0.35rem;
+  padding: 0.7rem 0.8rem;
   border-radius: 8px;
+  border: 1px solid transparent;
   font-weight: 500;
   color: var(--ink);
   cursor: pointer;
+  user-select: none;
+  margin: 0.25rem 0;
+  background: #fff;
 }
 
-label.choice:hover { background: rgba(24, 78, 74, 0.05); }
+.choice:hover { background: rgba(24, 78, 74, 0.05); border-color: var(--line); }
 
-label.choice input {
-  width: auto;
-  margin-top: 0.2rem;
+.choice.is-selected {
+  background: var(--accent-soft);
+  border-color: rgba(24, 78, 74, 0.35);
 }
 
-label.choice strong {
+.choice input[type="radio"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  min-width: 1.1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+  pointer-events: none;
+}
+
+.choice strong {
   display: block;
   font-size: 0.95rem;
+  pointer-events: none;
 }
 
-label.choice .muted {
+.choice .muted {
   display: block;
   font-size: 0.85rem;
   font-weight: 450;
   margin-top: 0.15rem;
+  pointer-events: none;
 }
 
-label.interval-label {
+.interval-label {
   margin-top: 0.75rem;
   max-width: 28rem;
+}
+
+.settings-block:disabled,
+.settings-block[disabled] {
+  opacity: 0.72;
+}
+
+.rate-dollars {
+  max-width: 10rem;
 }
 
 .report-row {

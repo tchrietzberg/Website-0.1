@@ -567,89 +567,253 @@
     });
   }
 
+  function wireChoiceGroup(root, name) {
+    const rows = [...root.querySelectorAll(`.choice[data-name="${name}"]`)];
+    const sync = () => {
+      rows.forEach((row) => {
+        const input = row.querySelector('input');
+        row.classList.toggle('is-selected', !!input.checked);
+      });
+    };
+    rows.forEach((row) => {
+      row.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        if (row.dataset.disabled === '1') return;
+        const input = row.querySelector('input');
+        input.checked = true;
+        sync();
+        row.dispatchEvent(new CustomEvent('choice-change', { bubbles: true, detail: { name, value: input.value } }));
+      });
+    });
+    sync();
+  }
+
+  function dollarsToCents(value) {
+    const raw = String(value || '').trim().replace(/[$,]/g, '');
+    if (!raw) throw new Error('rate required');
+    const parts = raw.split('.');
+    const dollars = Number(parts[0] || '0');
+    const frac = (parts[1] || '0').padEnd(2, '0').slice(0, 2);
+    if (!Number.isFinite(dollars)) throw new Error('invalid rate');
+    return dollars * 100 + Number(frac);
+  }
+
   async function renderSettings() {
+    const isAdmin = state.user.role === 'admin';
+    const canEditBilling = isAdmin || state.user.role === 'billing_clerk';
     const settings = await api('/api/settings');
     state.settings = settings;
-    const canEdit = ['admin', 'billing_clerk'].includes(state.user.role);
+
+    let timekeepers = [];
+    if (canEditBilling) {
+      try { timekeepers = await api('/api/timekeepers'); }
+      catch { timekeepers = []; }
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+
     main.innerHTML = `
       <div class="card stack">
         <h1>Settings</h1>
-        <p class="lead">Time and billing preferences for timers and time entries.</p>
-        ${canEdit ? '' : '<p class="hint">View only — ask a billing clerk or admin to change these.</p>'}
+        <p class="lead">Time and billing preferences${isAdmin ? ', timekeepers, and rates' : ''}.</p>
+        ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
       </div>
+
       <form id="settingsForm" class="card stack">
         <h2>Time and Billing</h2>
 
-        <fieldset class="settings-block" ${canEdit ? '' : 'disabled'}>
-          <legend>Duration Format</legend>
+        <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+          <h3 style="margin:0 0 .35rem;font-family:var(--font)">Duration Format</h3>
           <p class="hint">How timers and time entries are shown.</p>
           ${settings.durationFormats.map((f) => `
-            <label class="choice">
+            <div class="choice ${settings.durationFormat === f.id ? 'is-selected' : ''}"
+                 data-name="durationFormat" data-disabled="${canEditBilling ? '0' : '1'}">
               <input type="radio" name="durationFormat" value="${f.id}"
-                ${settings.durationFormat === f.id ? 'checked' : ''} />
+                ${settings.durationFormat === f.id ? 'checked' : ''}
+                ${canEditBilling ? '' : 'disabled'} />
               <span>
                 <strong>${f.label}</strong>
                 <span class="muted">${f.description}</span>
               </span>
-            </label>`).join('')}
-        </fieldset>
+            </div>`).join('')}
+        </div>
 
-        <fieldset class="settings-block" ${canEdit ? '' : 'disabled'}>
-          <legend>Time Rounding</legend>
+        <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+          <h3 style="margin:0 0 .35rem;font-family:var(--font)">Time Rounding</h3>
           <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
-            Rounding to the nearest rounds up if the duration is in the middle of the interval.</p>
+            Nearest rounds up if the duration is exactly in the middle of the interval.</p>
           ${settings.roundingModes.map((m) => `
-            <label class="choice">
+            <div class="choice ${settings.roundMode === m.id ? 'is-selected' : ''}"
+                 data-name="roundMode" data-disabled="${canEditBilling ? '0' : '1'}">
               <input type="radio" name="roundMode" value="${m.id}"
-                ${settings.roundMode === m.id ? 'checked' : ''} />
+                ${settings.roundMode === m.id ? 'checked' : ''}
+                ${canEditBilling ? '' : 'disabled'} />
               <span>
                 <strong>${m.label}</strong>
                 <span class="muted">${m.description}</span>
               </span>
-            </label>`).join('')}
+            </div>`).join('')}
 
           <label class="interval-label">Interval (X minutes)
-            <select name="roundIncrementMinutes" id="roundIncrementMinutes">
+            <select name="roundIncrementMinutes" id="roundIncrementMinutes" ${canEditBilling ? '' : 'disabled'}>
               ${settings.roundingIncrements.map((r) => `
                 <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
                   ${r.label}
                 </option>`).join('')}
             </select>
           </label>
+          <input type="hidden" name="roundIncrementMinutesFallback" value="${settings.roundIncrementMinutes}" />
           <p class="hint">Interval applies to Round up / Nearest / Down. Ignored when Do Not Round is selected.</p>
-        </fieldset>
+        </div>
 
-        ${canEdit ? '<div class="row-actions"><button class="primary" type="submit">Save settings</button></div>' : ''}
+        ${canEditBilling ? '<div class="row-actions"><button class="primary" type="submit">Save time &amp; billing settings</button></div>' : ''}
         <div id="settingsMsg"></div>
-      </form>`;
+      </form>
+
+      ${canEditBilling ? `
+      <div class="card stack">
+        <h2>Timekeepers &amp; Rates</h2>
+        <p class="lead">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates.</p>
+
+        ${isAdmin ? `
+        <form id="tkForm" class="grid two">
+          <label>Name <input name="name" required placeholder="Alex Associate" /></label>
+          <label>Email <input name="email" type="email" required placeholder="alex@firm.example" /></label>
+          <label>Role
+            <select name="role">
+              <option value="attorney">Attorney</option>
+              <option value="paralegal">Paralegal</option>
+              <option value="billing_clerk">Billing clerk</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <label>Default rate ($/hr)
+            <input class="rate-dollars" name="defaultRate" type="text" inputmode="decimal" placeholder="350.00" required />
+          </label>
+          <label>Rate effective date
+            <input name="rateEffectiveDate" type="date" value="${today}" required />
+          </label>
+          <div class="row-actions" style="align-items:end">
+            <button class="primary" type="submit">Add timekeeper</button>
+          </div>
+        </form>
+        <div id="tkMsg"></div>
+        ` : '<p class="hint">Only admins can add timekeepers. Billing clerks can add/change rates.</p>'}
+
+        <div class="table-wrap"><table>
+          <thead>
+            <tr><th>Timekeeper</th><th>Role</th><th>Current rate</th><th>Effective</th><th>Add rate change</th></tr>
+          </thead>
+          <tbody>
+            ${timekeepers.map((t) => `
+              <tr data-tk="${t.id}">
+                <td>${t.name}<div class="muted">${t.email}</div></td>
+                <td>${t.role.replace('_', ' ')}</td>
+                <td>${t.current_rate_cents == null ? '—' : money(t.current_rate_cents) + '/hr'}</td>
+                <td>${t.current_effective_date || '—'}</td>
+                <td>
+                  <form class="rate-form row-actions" data-scope-id="${t.id}">
+                    <input name="amount" class="rate-dollars" type="text" inputmode="decimal" placeholder="375.00" required style="width:6.5rem" />
+                    <input name="effectiveDate" type="date" value="${today}" required />
+                    <button type="submit">Add</button>
+                  </form>
+                  <details class="hint" style="margin-top:.4rem">
+                    <summary>Rate history (${t.rates.length})</summary>
+                    <ul>
+                      ${t.rates.map((r) => `<li>${r.effective_date}: ${money(r.amount_cents)}/hr</li>`).join('') || '<li>None</li>'}
+                    </ul>
+                  </details>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="5" class="muted">No timekeepers</td></tr>'}
+          </tbody>
+        </table></div>
+        <div id="rateMsg"></div>
+      </div>` : ''}`;
+
+    wireChoiceGroup(main, 'durationFormat');
+    wireChoiceGroup(main, 'roundMode');
 
     const form = $('#settingsForm');
+    const interval = $('#roundIncrementMinutes');
     const syncInterval = () => {
-      const mode = form.roundMode.value;
-      form.roundIncrementMinutes.disabled = !canEdit || mode === 'none';
+      const mode = form.querySelector('input[name="roundMode"]:checked')?.value;
+      if (interval) interval.disabled = !canEditBilling || mode === 'none';
     };
-    form.querySelectorAll('input[name="roundMode"]').forEach((el) => {
-      el.onchange = syncInterval;
+    main.querySelectorAll('.choice[data-name="roundMode"]').forEach((row) => {
+      row.addEventListener('choice-change', syncInterval);
     });
     syncInterval();
 
-    if (!canEdit) return;
-    form.onsubmit = async (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(form);
-      const body = {
-        durationFormat: fd.get('durationFormat'),
-        roundMode: fd.get('roundMode'),
-        roundIncrementMinutes: Number(fd.get('roundIncrementMinutes')),
+    if (canEditBilling) {
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const durationFormat = form.querySelector('input[name="durationFormat"]:checked')?.value;
+        const roundMode = form.querySelector('input[name="roundMode"]:checked')?.value;
+        const roundIncrementMinutes = Number(
+          interval?.disabled
+            ? form.roundIncrementMinutesFallback.value
+            : interval.value
+        );
+        try {
+          state.settings = await api('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ durationFormat, roundMode, roundIncrementMinutes }),
+          });
+          $('#settingsMsg').innerHTML = '<div class="ok-banner">Time &amp; billing settings saved.</div>';
+          await renderSettings();
+        } catch (e) {
+          $('#settingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
       };
-      try {
-        state.settings = await api('/api/settings', { method: 'PATCH', body: JSON.stringify(body) });
-        $('#settingsMsg').innerHTML = '<div class="ok-banner">Settings saved.</div>';
-        await renderSettings();
-      } catch (e) {
-        $('#settingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
-      }
-    };
+    }
+
+    const tkForm = $('#tkForm');
+    if (tkForm) {
+      tkForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(tkForm);
+        try {
+          const defaultRateCents = dollarsToCents(fd.get('defaultRate'));
+          await api('/api/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: fd.get('name'),
+              email: fd.get('email'),
+              role: fd.get('role'),
+              defaultRateCents,
+              rateEffectiveDate: fd.get('rateEffectiveDate'),
+            }),
+          });
+          $('#tkMsg').innerHTML = '<div class="ok-banner">Timekeeper added.</div>';
+          await refreshRefs();
+          await renderSettings();
+        } catch (e) {
+          $('#tkMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+
+    main.querySelectorAll('form.rate-form').forEach((rf) => {
+      rf.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(rf);
+        try {
+          await api('/api/rates', {
+            method: 'POST',
+            body: JSON.stringify({
+              scope: 'timekeeper',
+              scopeId: Number(rf.dataset.scopeId),
+              amountCents: dollarsToCents(fd.get('amount')),
+              effectiveDate: fd.get('effectiveDate'),
+            }),
+          });
+          $('#rateMsg').innerHTML = '<div class="ok-banner">Rate change saved.</div>';
+          await renderSettings();
+        } catch (e) {
+          $('#rateMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    });
   }
 
   async function renderAudit() {
