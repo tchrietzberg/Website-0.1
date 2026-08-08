@@ -895,11 +895,6 @@
     const names = [
       ['lodestar-summary', 'Lodestar Summary'],
       ['lodestar-detail', 'Lodestar Detail'],
-      ['wip', 'WIP'],
-      ['ar-aging', 'AR Aging'],
-      ['write-offs', 'Write-offs'],
-      ['realization', 'Realization'],
-      ['unapplied-cash', 'Unapplied Cash'],
     ];
     main.innerHTML = `
       <div class="card">
