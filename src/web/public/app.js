@@ -235,16 +235,11 @@
         </div>
 
         ${showCreate ? `
-        <div id="createMatterSection" class="page-section create-matter-panel">
-          <p class="hint">Enter a name to create the matter. Add client, type, court, and other details on the matter page.</p>
-          <form id="newMatterForm" class="stack">
-            <label>Name
-              <input name="name" required placeholder="Securities Class Action — WidgetCo" />
-            </label>
-            <div class="row-actions">
-              <button class="primary" type="submit">Save matter</button>
-              <button type="button" id="cancelCreateMatter">Cancel</button>
-            </div>
+        <div id="createMatterSection" class="create-matter-panel">
+          <form id="newMatterForm" class="create-matter-form">
+            <input name="name" required placeholder="Matter name" aria-label="Matter name" />
+            <button class="primary" type="submit">Save</button>
+            <button type="button" id="cancelCreateMatter">Cancel</button>
           </form>
           <div id="newMatterMsg"></div>
         </div>` : ''}
