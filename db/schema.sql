@@ -44,6 +44,80 @@ CREATE TABLE IF NOT EXISTS matter_field_history (
   changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- Record types drive type-based layouts/fields (keys align with matters.matter_type)
+CREATE TABLE IF NOT EXISTS record_types (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Custom fields: global, record-type-based, or record-based (single matter)
+CREATE TABLE IF NOT EXISTS custom_fields (
+  id INTEGER PRIMARY KEY,
+  api_name TEXT NOT NULL,
+  label TEXT NOT NULL,
+  field_type TEXT NOT NULL
+    CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
+  options_json TEXT,
+  record_type_key TEXT REFERENCES record_types(key),
+  matter_id INTEGER REFERENCES matters(id),
+  required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK (
+    (matter_id IS NOT NULL AND record_type_key IS NULL)
+    OR (matter_id IS NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
+  ON custom_fields(
+    api_name,
+    IFNULL(record_type_key, ''),
+    IFNULL(matter_id, 0)
+  );
+
+CREATE TABLE IF NOT EXISTS custom_field_values (
+  matter_id INTEGER NOT NULL REFERENCES matters(id),
+  field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+  value_text TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by INTEGER REFERENCES users(id),
+  PRIMARY KEY (matter_id, field_id)
+);
+
+-- Page layouts: one per record type, optional per-matter override
+CREATE TABLE IF NOT EXISTS page_layouts (
+  id INTEGER PRIMARY KEY,
+  record_type_key TEXT REFERENCES record_types(key),
+  matter_id INTEGER REFERENCES matters(id),
+  name TEXT NOT NULL DEFAULT 'Default',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK (
+    (matter_id IS NOT NULL AND record_type_key IS NULL)
+    OR (matter_id IS NULL AND record_type_key IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_page_layouts_type
+  ON page_layouts(record_type_key) WHERE matter_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_page_layouts_matter
+  ON page_layouts(matter_id) WHERE matter_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS page_layout_items (
+  id INTEGER PRIMARY KEY,
+  layout_id INTEGER NOT NULL REFERENCES page_layouts(id) ON DELETE CASCADE,
+  field_key TEXT NOT NULL,
+  section TEXT NOT NULL DEFAULT 'details',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  width TEXT NOT NULL DEFAULT 'half' CHECK (width IN ('half','full'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_page_layout_items_layout
+  ON page_layout_items(layout_id, sort_order);
+
 CREATE TABLE IF NOT EXISTS rates (
   id INTEGER PRIMARY KEY,
   scope TEXT NOT NULL CHECK (scope IN ('matter','client','timekeeper')),

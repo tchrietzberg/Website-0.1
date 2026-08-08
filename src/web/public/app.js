@@ -7,6 +7,8 @@
     users: [],
     clients: [],
     settings: null,
+    matterId: null,
+    matterSearch: { q: '', status: '', type: '' },
   };
 
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -132,6 +134,7 @@
   function renderShell() {
     nav.hidden = false;
     const items = [
+      ['matters', 'Matters'],
       ['time', 'Time Entry'],
       ['billing', 'Billing'],
       ['payments', 'Payments'],
@@ -140,11 +143,17 @@
     ];
     if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
     if (state.view === 'approvals') state.view = 'time';
+    const activeView = state.view === 'matter' ? 'matters' : state.view;
     nav.innerHTML = items.map(([id, label]) =>
-      `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${label}</button>`
+      `<button data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
     ).join('');
     nav.querySelectorAll('button').forEach((b) => {
-      b.onclick = () => { state.view = b.dataset.view; renderShell(); renderView(); };
+      b.onclick = () => {
+        state.view = b.dataset.view;
+        if (state.view !== 'matter') state.matterId = null;
+        renderShell();
+        renderView();
+      };
     });
     userbar.innerHTML = `
       <div class="who"><strong>${state.user.name}</strong><span>${state.user.role.replace('_', ' ')}</span></div>
@@ -160,7 +169,9 @@
 
   async function renderView() {
     try {
-      if (state.view === 'time') await renderTime();
+      if (state.view === 'matters') await renderMatters();
+      else if (state.view === 'matter') await renderMatterDetail();
+      else if (state.view === 'time') await renderTime();
       else if (state.view === 'approvals') await renderApprovals();
       else if (state.view === 'billing') await renderBilling();
       else if (state.view === 'payments') await renderPayments();
@@ -172,6 +183,318 @@
         ? 'You do not have access to this section with your current role.'
         : e.message;
       main.innerHTML = `<div class="card"><div class="error">${msg}</div></div>`;
+    }
+  }
+
+  async function openMatter(id) {
+    state.matterId = id;
+    state.view = 'matter';
+    renderShell();
+    await renderView();
+  }
+
+  async function renderMatters() {
+    const params = new URLSearchParams();
+    if (state.matterSearch.q) params.set('q', state.matterSearch.q);
+    if (state.matterSearch.status) params.set('status', state.matterSearch.status);
+    if (state.matterSearch.type) params.set('type', state.matterSearch.type);
+    const qs = params.toString();
+    const [matters, recordTypes] = await Promise.all([
+      api(`/api/matters${qs ? `?${qs}` : ''}`),
+      api('/api/record-types'),
+    ]);
+    state.matters = matters;
+    const canConfigure = ['admin', 'billing_clerk'].includes(state.user.role);
+
+    main.innerHTML = `
+      <div class="card stack">
+        <h1>Matters</h1>
+        <p class="lead">Search matters and open a record page. Layouts and custom fields are record-type or record-based.</p>
+        <form id="matterSearch" class="grid two">
+          <label class="span-all">Search
+            <input name="q" value="${state.matterSearch.q || ''}"
+              placeholder="Number, name, client, court…" />
+          </label>
+          <label>Status
+            <select name="status">
+              <option value="">All</option>
+              <option value="open" ${state.matterSearch.status === 'open' ? 'selected' : ''}>Open</option>
+              <option value="closed" ${state.matterSearch.status === 'closed' ? 'selected' : ''}>Closed</option>
+            </select>
+          </label>
+          <label>Record type
+            <select name="type">
+              <option value="">All types</option>
+              ${recordTypes.map((t) => `
+                <option value="${t.key}" ${state.matterSearch.type === t.key ? 'selected' : ''}>
+                  ${t.label}
+                </option>`).join('')}
+            </select>
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Search</button>
+            <button type="button" id="clearSearch">Clear</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead>
+            <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
+          </thead>
+          <tbody>
+            ${matters.map((m) => `
+              <tr class="click-row" data-matter="${m.id}">
+                <td><strong>${m.number}</strong></td>
+                <td>${m.name}</td>
+                <td>${m.client_name}</td>
+                <td><span class="pill">${m.matter_type}</span></td>
+                <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
+                <td>${m.attorney_name || '—'}</td>
+              </tr>`).join('') || '<tr><td colspan="6" class="muted">No matters match</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+
+      ${canConfigure ? `
+      <div class="card stack">
+        <h2>Record-type custom fields</h2>
+        <p class="hint">Fields added here appear on all matters of that record type (and their type layout).</p>
+        <form id="typeFieldForm" class="grid two">
+          <label>Record type
+            <select name="recordTypeKey" required>
+              ${recordTypes.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
+            </select>
+          </label>
+          <label>Field label
+            <input name="label" required placeholder="Case stage" />
+          </label>
+          <label>Field type
+            <select name="fieldType">
+              <option value="text">Text</option>
+              <option value="textarea">Text area</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
+              <option value="select">Select</option>
+              <option value="checkbox">Checkbox</option>
+            </select>
+          </label>
+          <label>Select options (comma-separated)
+            <input name="options" placeholder="Discovery, Trial, Appeal" />
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Add type field</button>
+          </div>
+        </form>
+        <div id="typeFieldMsg"></div>
+      </div>` : ''}`;
+
+    $('#matterSearch').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      state.matterSearch = {
+        q: String(fd.get('q') || '').trim(),
+        status: String(fd.get('status') || ''),
+        type: String(fd.get('type') || ''),
+      };
+      await renderMatters();
+    };
+    $('#clearSearch').onclick = async () => {
+      state.matterSearch = { q: '', status: '', type: '' };
+      await renderMatters();
+    };
+    main.querySelectorAll('[data-matter]').forEach((row) => {
+      row.onclick = () => openMatter(Number(row.dataset.matter));
+    });
+
+    const typeFieldForm = $('#typeFieldForm');
+    if (typeFieldForm) {
+      typeFieldForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(typeFieldForm);
+        const fieldType = fd.get('fieldType');
+        const options = String(fd.get('options') || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        try {
+          await api('/api/custom-fields', {
+            method: 'POST',
+            body: JSON.stringify({
+              label: fd.get('label'),
+              fieldType,
+              recordTypeKey: fd.get('recordTypeKey'),
+              options: fieldType === 'select' ? options : undefined,
+            }),
+          });
+          $('#typeFieldMsg').innerHTML = '<div class="ok-banner">Record-type field added to that type layout.</div>';
+          typeFieldForm.reset();
+        } catch (e) {
+          $('#typeFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+  }
+
+  function renderFieldInput(field) {
+    const name = field.kind === 'custom' ? `cf_${field.fieldId}` : field.key;
+    const val = field.value ?? '';
+    const disabled = field.readonly ? 'disabled' : '';
+    const req = field.required ? 'required' : '';
+    if (field.type === 'textarea') {
+      return `<textarea name="${name}" ${disabled} ${req} rows="3">${val}</textarea>`;
+    }
+    if (field.type === 'select') {
+      const opts = (field.options || []).map((o) =>
+        `<option value="${o}" ${String(val) === String(o) ? 'selected' : ''}>${o}</option>`
+      ).join('');
+      return `<select name="${name}" ${disabled} ${req}>
+        <option value=""></option>${opts}
+        ${val && !(field.options || []).includes(val) ? `<option value="${val}" selected>${val}</option>` : ''}
+      </select>`;
+    }
+    if (field.type === 'checkbox') {
+      return `<input type="checkbox" name="${name}" ${disabled} ${val === '1' || val === 'true' ? 'checked' : ''} />`;
+    }
+    const inputType = field.type === 'number' ? 'number' : (field.type === 'date' ? 'date' : 'text');
+    return `<input type="${inputType}" name="${name}" value="${String(val).replace(/"/g, '&quot;')}" ${disabled} ${req} />`;
+  }
+
+  async function renderMatterDetail() {
+    if (!state.matterId) {
+      state.view = 'matters';
+      return renderMatters();
+    }
+    const page = await api(`/api/matters/${state.matterId}`);
+    const m = page.matter;
+    const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
+    const sections = Object.entries(page.sections || {});
+
+    main.innerHTML = `
+      <div class="card stack">
+        <div class="row-actions">
+          <button type="button" id="backMatters">← Matters</button>
+          <span class="pill">${page.layout.source === 'record' ? 'Record layout' : 'Record-type layout'}</span>
+        </div>
+        <h1>${m.number}</h1>
+        <p class="lead">${m.name} · ${m.client_name}</p>
+      </div>
+
+      <form id="matterForm" class="card stack">
+        ${sections.map(([section, fields]) => `
+          <h2>${section.charAt(0).toUpperCase() + section.slice(1)}</h2>
+          <div class="grid two">
+            ${fields.map((f) => `
+              <label class="${f.width === 'full' ? 'span-all' : ''}">
+                ${f.label}${f.scope === 'record' ? ' <span class="muted">(record field)</span>' : ''}
+                ${f.scope === 'record_type' ? ' <span class="muted">(type field)</span>' : ''}
+                ${renderFieldInput(f)}
+              </label>`).join('')}
+          </div>
+        `).join('') || '<p class="muted">No layout fields</p>'}
+        ${canEdit ? '<div class="row-actions"><button class="primary" type="submit">Save matter</button></div>' : ''}
+        <div id="matterMsg"></div>
+      </form>
+
+      ${canEdit ? `
+      <div class="card stack">
+        <h2>Add record-based custom field</h2>
+        <p class="hint">Creates a field and layout item only for this matter record.</p>
+        <form id="recordFieldForm" class="grid two">
+          <label>Field label <input name="label" required placeholder="Special billing note" /></label>
+          <label>Field type
+            <select name="fieldType">
+              <option value="text">Text</option>
+              <option value="textarea">Text area</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
+              <option value="select">Select</option>
+              <option value="checkbox">Checkbox</option>
+            </select>
+          </label>
+          <label class="span-all">Select options (comma-separated)
+            <input name="options" placeholder="A, B, C" />
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Add field to this matter</button>
+            ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Switch this matter to its own layout</button>' : ''}
+          </div>
+        </form>
+        <div id="recordFieldMsg"></div>
+      </div>` : ''}`;
+
+    $('#backMatters').onclick = () => {
+      state.view = 'matters';
+      state.matterId = null;
+      renderShell();
+      renderView();
+    };
+
+    const form = $('#matterForm');
+    if (canEdit) {
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(form);
+        const patch = {};
+        const customValues = {};
+        for (const [key, value] of fd.entries()) {
+          if (key.startsWith('cf_')) {
+            customValues[key.slice(3)] = value;
+          } else if (key === 'std:name') patch.name = value;
+          else if (key === 'std:status') patch.status = value;
+          else if (key === 'std:jurisdiction') patch.jurisdiction = value;
+          else if (key === 'std:court') patch.court = value;
+        }
+        // checkboxes unchecked are omitted
+        form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
+          customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
+        });
+        patch.customValues = customValues;
+        try {
+          await api(`/api/matters/${m.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+          $('#matterMsg').innerHTML = '<div class="ok-banner">Matter saved.</div>';
+          await renderMatterDetail();
+          await refreshRefs();
+        } catch (e) {
+          $('#matterMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+
+    const rf = $('#recordFieldForm');
+    if (rf) {
+      rf.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(rf);
+        const fieldType = fd.get('fieldType');
+        const options = String(fd.get('options') || '').split(',').map((s) => s.trim()).filter(Boolean);
+        try {
+          await api(`/api/matters/${m.id}/custom-fields`, {
+            method: 'POST',
+            body: JSON.stringify({
+              label: fd.get('label'),
+              fieldType,
+              options: fieldType === 'select' ? options : undefined,
+            }),
+          });
+          $('#recordFieldMsg').innerHTML = '<div class="ok-banner">Record field added.</div>';
+          await renderMatterDetail();
+        } catch (e) {
+          $('#recordFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    }
+    const useRec = $('#useRecordLayout');
+    if (useRec) {
+      useRec.onclick = async () => {
+        try {
+          await api(`/api/matters/${m.id}/use-record-layout`, { method: 'POST', body: '{}' });
+          await renderMatterDetail();
+        } catch (e) {
+          $('#recordFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
     }
   }
 

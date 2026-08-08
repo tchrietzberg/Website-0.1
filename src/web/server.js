@@ -17,6 +17,7 @@ const paymentSvc = require('../services/payments');
 const reports = require('../services/reports');
 const usersSvc = require('../services/users');
 const ratesAdmin = require('../services/ratesAdmin');
+const customFields = require('../services/customFields');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -212,13 +213,64 @@ function createServer(db = openDb()) {
       if (req.method === 'GET' && pathname === '/api/clients') {
         return json(res, 200, matterSvc.listClients(db));
       }
+      if (req.method === 'GET' && pathname === '/api/record-types') {
+        return json(res, 200, customFields.listRecordTypes(db));
+      }
       if (req.method === 'GET' && pathname === '/api/matters') {
-        return json(res, 200, matterSvc.listMatters(db));
+        return json(res, 200, matterSvc.listMatters(db, {
+          q: url.searchParams.get('q'),
+          status: url.searchParams.get('status'),
+          matterType: url.searchParams.get('type'),
+          clientId: url.searchParams.get('clientId'),
+        }));
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/matters\/\d+$/)) {
+        const id = Number(pathname.split('/')[3]);
+        const page = matterSvc.getMatter(db, id);
+        if (!page) return json(res, 404, { error: 'not found' });
+        return json(res, 200, page);
       }
       if (req.method === 'POST' && pathname === '/api/matters') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         const body = await parseBody(req);
         return json(res, 201, matterSvc.createMatter(db, user, body));
+      }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/matters\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        const id = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        return json(res, 200, matterSvc.updateMatter(db, user, id, body));
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/custom-fields$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        const matterId = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        const field = customFields.createCustomField(db, user, { ...body, matterId });
+        return json(res, 201, { field, page: matterSvc.getMatter(db, matterId) });
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/use-record-layout$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const matterId = Number(pathname.split('/')[3]);
+        const layout = customFields.ensureMatterLayout(db, matterId);
+        return json(res, 200, { layout, page: matterSvc.getMatter(db, matterId) });
+      }
+      if (req.method === 'GET' && pathname === '/api/custom-fields') {
+        return json(res, 200, customFields.listCustomFields(db, {
+          recordTypeKey: url.searchParams.get('type'),
+          matterId: url.searchParams.get('matterId')
+            ? Number(url.searchParams.get('matterId')) : null,
+        }));
+      }
+      if (req.method === 'POST' && pathname === '/api/custom-fields') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const body = await parseBody(req);
+        return json(res, 201, customFields.createCustomField(db, user, body));
+      }
+      if (req.method === 'PUT' && pathname.match(/^\/api\/layouts\/\d+\/items$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const layoutId = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        return json(res, 200, customFields.saveLayoutItems(db, user, layoutId, body.items || []));
       }
 
       // Time

@@ -38,13 +38,14 @@ Then open http://localhost:3000.
 
 ## Demo flow (Definition of Done walkthrough)
 
-1. Sign in as **sam** → Time Entry → log time (watch 15-min round-up; try 0 minutes → blocked;
+1. Sign in as **avery** → **Matters** → search → open a matter → see type/record custom fields → add a record-based field.
+2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked;
    try a N.D. Cal matter without category → blocked).
-2. Submit the entry, sign in as **billie** → Approval Queue → approve (or reject with a reason).
-3. Billing → Generate pre-bill → Write-down (recorded with who/why/delta) → To review → Approve → Send.
-4. Record a payment (partial payments and oldest-first application supported; overpayment stays unapplied).
-5. Reports → Lodestar Summary/Detail, WIP, AR Aging, Write-offs, Realization → Export CSV (opens in Excel).
-6. Sign in as **avery** for the audit log (`GET /api/audit-log`).
+3. Submit the entry, sign in as **billie** → approve via API/queue (nav hidden) or continue billing.
+4. Billing → Generate pre-bill → Write-down → To review → Approve → Send.
+5. Record a payment (partial payments and oldest-first application supported; overpayment stays unapplied).
+6. Reports → Lodestar Summary/Detail, WIP, AR Aging, Write-offs, Realization → Export CSV/Excel.
+7. Settings → Time & Billing, Timekeepers & Rates; admin audit log.
 
 ## Environment variables
 

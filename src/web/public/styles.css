@@ -441,6 +441,12 @@ a.btn {
   max-width: 10rem;
 }
 
+tr.click-row { cursor: pointer; }
+tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
+
+.pill[data-status="open"] { background: var(--ok-soft); color: var(--ok); }
+.pill[data-status="closed"] { background: #eef2f5; color: #4b5c6b; }
+
 .report-row {
   display: flex;
   align-items: center;

@@ -7,6 +7,7 @@ const { resetDb, setSetting, allocateNumber, DEFAULT_DB } = require('../src/db')
 const timeSvc = require('../src/services/time');
 const invoiceSvc = require('../src/services/invoices');
 const paymentSvc = require('../src/services/payments');
+const customFields = require('../src/services/customFields');
 
 const dbFile = process.env.DB_FILE || DEFAULT_DB;
 const db = resetDb(dbFile);
@@ -181,6 +182,41 @@ paymentSvc.recordPayment(db, billie, {
   receivedOn: `${year}-03-15`,
   method: 'check',
   reference: '1001',
+});
+
+// Record-type and record-based custom fields / layouts
+customFields.ensureRecordTypes(db);
+customFields.ensureTypeLayout(db, 'litigation');
+customFields.ensureTypeLayout(db, 'sw_admin');
+customFields.ensureTypeLayout(db, 'other');
+
+const caseStage = customFields.createCustomField(db, avery, {
+  label: 'Case stage',
+  apiName: 'case_stage',
+  fieldType: 'select',
+  recordTypeKey: 'litigation',
+  options: ['Investigation', 'Discovery', 'Motion practice', 'Trial', 'Appeal'],
+});
+const leadPlaintiff = customFields.createCustomField(db, avery, {
+  label: 'Lead plaintiff',
+  apiName: 'lead_plaintiff',
+  fieldType: 'text',
+  recordTypeKey: 'litigation',
+});
+customFields.setCustomValues(db, avery, m1.id, {
+  [caseStage.id]: 'Discovery',
+  [leadPlaintiff.id]: 'Northwind Holdings LLC',
+});
+
+// Record-based field only on matter 1
+const special = customFields.createCustomField(db, avery, {
+  label: 'Special billing note',
+  apiName: 'special_billing_note',
+  fieldType: 'textarea',
+  matterId: m1.id,
+});
+customFields.setCustomValues(db, avery, m1.id, {
+  [special.id]: 'Lodestar detail required for fee petition.',
 });
 
 console.log(`Seeded ${dbFile}`);
