@@ -3,24 +3,37 @@ const customFields = require('./customFields');
 const matterIndex = require('./matterIndex');
 
 function createMatter(db, actor, input) {
-  const year = Number(String(input.openedOn || new Date().toISOString()).slice(0, 4));
+  const name = String(input.name || '').trim();
+  if (!name) throw new Error('name required');
+
+  const openedOn = input.openedOn || new Date().toISOString().slice(0, 10);
+  const year = Number(String(openedOn).slice(0, 4));
   const number = allocateNumber(db, 'matter', year, '');
   customFields.ensureRecordTypes(db);
-  customFields.ensureTypeLayout(db, input.matterType);
+
+  const matterType = input.matterType || 'other';
+  customFields.ensureTypeLayout(db, matterType);
+
+  let clientId = input.clientId != null ? Number(input.clientId) : null;
+  if (!clientId) {
+    const firstClient = db.prepare('SELECT id FROM clients ORDER BY id LIMIT 1').get();
+    if (!firstClient) throw new Error('add a client before creating matters');
+    clientId = firstClient.id;
+  }
 
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
       responsible_attorney_id, opened_on)
     VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)
   `).run(
-    input.clientId,
+    clientId,
     number,
-    input.name,
-    input.matterType,
+    name,
+    matterType,
     input.jurisdiction || null,
     input.court || null,
     input.responsibleAttorneyId || null,
-    input.openedOn
+    openedOn
   );
   const id = Number(info.lastInsertRowid);
 
@@ -44,19 +57,29 @@ function updateMatter(db, actor, id, patch) {
   const current = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
   if (!current) throw new Error('matter not found');
 
+  if (patch.matterType) {
+    customFields.ensureTypeLayout(db, patch.matterType);
+  }
+
   const map = {
     name: 'name',
+    clientId: 'client_id',
     matterType: 'matter_type',
     jurisdiction: 'jurisdiction',
     court: 'court',
     status: 'status',
     responsibleAttorneyId: 'responsible_attorney_id',
+    openedOn: 'opened_on',
   };
 
   for (const [key, col] of Object.entries(map)) {
     if (patch[key] === undefined) continue;
     const oldVal = current[col];
-    const newVal = patch[key];
+    let newVal = patch[key];
+    if (key === 'clientId' || key === 'responsibleAttorneyId') {
+      newVal = newVal === '' || newVal == null ? null : Number(newVal);
+      if (key === 'clientId' && !newVal) throw new Error('client required');
+    }
     if (String(oldVal ?? '') === String(newVal ?? '')) continue;
     db.prepare(`UPDATE matters SET ${col} = ? WHERE id = ?`).run(newVal, id);
     db.prepare(`

@@ -4,13 +4,14 @@ const matterIndex = require('./matterIndex');
 const STANDARD_FIELDS = [
   { key: 'std:number', label: 'Matter number', type: 'text', readonly: true, width: 'half' },
   { key: 'std:name', label: 'Matter name', type: 'text', width: 'full' },
-  { key: 'std:client', label: 'Client', type: 'text', readonly: true, width: 'half' },
-  { key: 'std:matter_type', label: 'Record type', type: 'text', readonly: true, width: 'half' },
+  { key: 'std:client', label: 'Client', type: 'select', width: 'half' },
+  { key: 'std:matter_type', label: 'Record type', type: 'select',
+    options: ['litigation', 'sw_admin', 'other'], width: 'half' },
   { key: 'std:status', label: 'Status', type: 'select', options: ['open', 'closed'], width: 'half' },
   { key: 'std:jurisdiction', label: 'Jurisdiction', type: 'text', width: 'half' },
   { key: 'std:court', label: 'Court', type: 'text', width: 'half' },
-  { key: 'std:responsible_attorney', label: 'Responsible attorney', type: 'text', readonly: true, width: 'half' },
-  { key: 'std:opened_on', label: 'Opened on', type: 'date', readonly: true, width: 'half' },
+  { key: 'std:responsible_attorney', label: 'Responsible attorney', type: 'select', width: 'half' },
+  { key: 'std:opened_on', label: 'Opened on', type: 'date', width: 'half' },
 ];
 
 const DEFAULT_LAYOUT_KEYS = STANDARD_FIELDS.map((f) => f.key);
@@ -279,12 +280,12 @@ function getMatterPage(db, matterId) {
       const map = {
         'std:number': matter.number,
         'std:name': matter.name,
-        'std:client': matter.client_name,
+        'std:client': matter.client_id,
         'std:matter_type': matter.matter_type,
         'std:status': matter.status,
         'std:jurisdiction': matter.jurisdiction,
         'std:court': matter.court,
-        'std:responsible_attorney': matter.attorney_name,
+        'std:responsible_attorney': matter.responsible_attorney_id,
         'std:opened_on': matter.opened_on,
       };
       value = map[def.key] ?? null;

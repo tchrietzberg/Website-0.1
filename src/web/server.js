@@ -252,7 +252,7 @@ function createServer(db = openDb()) {
         return json(res, 201, matterSvc.createMatter(db, user, body));
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/matters\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const id = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, matterSvc.updateMatter(db, user, id, body));

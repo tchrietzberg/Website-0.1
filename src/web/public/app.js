@@ -207,7 +207,6 @@
     const hasQuery = !!state.matterSearch.q;
     const canEdit = canCreateMatter(state.user);
     const canConfigure = ['admin', 'billing_clerk'].includes(state.user.role);
-    const today = new Date().toISOString().slice(0, 10);
 
     const [hits, recordTypes, clients, allMatters] = await Promise.all([
       api(`/api/matters?${params}`),
@@ -237,32 +236,12 @@
 
         ${showCreate ? `
         <div id="createMatterSection" class="page-section create-matter-panel">
-          <p class="hint">New matters are added to the search index immediately.</p>
-          <form id="newMatterForm" class="grid two">
-            <label class="span-all">Name
+          <p class="hint">Enter a name to create the matter. Add client, type, court, and other details on the matter page.</p>
+          <form id="newMatterForm" class="stack">
+            <label>Name
               <input name="name" required placeholder="Securities Class Action — WidgetCo" />
             </label>
-            <label>Client
-              <select name="clientId" required>
-                ${clients.map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}
-              </select>
-            </label>
-            <label>Record type
-              <select name="matterType" required>
-                ${recordTypes.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
-              </select>
-            </label>
-            <label>Jurisdiction <input name="jurisdiction" placeholder="N.D. Cal." /></label>
-            <label>Court <input name="court" placeholder="N.D. Cal." /></label>
-            <label>Responsible attorney
-              <select name="responsibleAttorneyId">
-                <option value="">—</option>
-                ${state.users.filter((u) => u.role === 'attorney' || u.role === 'admin').map((u) =>
-                  `<option value="${u.id}">${u.name}</option>`).join('')}
-              </select>
-            </label>
-            <label>Opened on <input name="openedOn" type="date" value="${today}" required /></label>
-            <div class="row-actions span-all">
+            <div class="row-actions">
               <button class="primary" type="submit">Save matter</button>
               <button type="button" id="cancelCreateMatter">Cancel</button>
             </div>
@@ -374,16 +353,7 @@
         try {
           const page = await api('/api/matters', {
             method: 'POST',
-            body: JSON.stringify({
-              name: fd.get('name'),
-              clientId: Number(fd.get('clientId')),
-              matterType: fd.get('matterType'),
-              jurisdiction: fd.get('jurisdiction') || null,
-              court: fd.get('court') || null,
-              responsibleAttorneyId: fd.get('responsibleAttorneyId')
-                ? Number(fd.get('responsibleAttorneyId')) : null,
-              openedOn: fd.get('openedOn'),
-            }),
+            body: JSON.stringify({ name: fd.get('name') }),
           });
           $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${page.matter.number}.</div>`;
           await refreshRefs();
@@ -425,11 +395,34 @@
     }
   }
 
-  function renderFieldInput(field) {
+  function renderFieldInput(field, ctx = {}) {
     const name = field.kind === 'custom' ? `cf_${field.fieldId}` : field.key;
     const val = field.value ?? '';
-    const disabled = field.readonly ? 'disabled' : '';
+    const disabled = field.readonly || !ctx.canEdit ? 'disabled' : '';
     const req = field.required ? 'required' : '';
+
+    if (field.key === 'std:client') {
+      const opts = (ctx.clients || []).map((c) =>
+        `<option value="${c.id}" ${String(val) === String(c.id) ? 'selected' : ''}>${c.name}</option>`
+      ).join('');
+      return `<select name="${name}" ${disabled} required>${opts}</select>`;
+    }
+    if (field.key === 'std:matter_type') {
+      const opts = (ctx.recordTypes || []).map((t) =>
+        `<option value="${t.key}" ${String(val) === String(t.key) ? 'selected' : ''}>${t.label}</option>`
+      ).join('');
+      return `<select name="${name}" ${disabled} required>${opts}</select>`;
+    }
+    if (field.key === 'std:responsible_attorney') {
+      const attorneys = (ctx.users || []).filter((u) => u.role === 'attorney' || u.role === 'admin');
+      const opts = attorneys.map((u) =>
+        `<option value="${u.id}" ${String(val) === String(u.id) ? 'selected' : ''}>${u.name}</option>`
+      ).join('');
+      return `<select name="${name}" ${disabled}>
+        <option value="">—</option>${opts}
+      </select>`;
+    }
+
     if (field.type === 'textarea') {
       return `<textarea name="${name}" ${disabled} ${req} rows="3">${val}</textarea>`;
     }
@@ -439,7 +432,7 @@
       ).join('');
       return `<select name="${name}" ${disabled} ${req}>
         <option value=""></option>${opts}
-        ${val && !(field.options || []).includes(val) ? `<option value="${val}" selected>${val}</option>` : ''}
+        ${val && !(field.options || []).includes(String(val)) ? `<option value="${val}" selected>${val}</option>` : ''}
       </select>`;
     }
     if (field.type === 'checkbox') {
@@ -454,10 +447,15 @@
       state.view = 'matters';
       return renderMatters();
     }
-    const page = await api(`/api/matters/${state.matterId}`);
+    const [page, recordTypes, clients] = await Promise.all([
+      api(`/api/matters/${state.matterId}`),
+      api('/api/record-types'),
+      api('/api/clients'),
+    ]);
     const m = page.matter;
-    const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
+    const canEdit = canCreateMatter(state.user);
     const sections = Object.entries(page.sections || {});
+    const fieldCtx = { canEdit, clients, recordTypes, users: state.users };
 
     main.innerHTML = `
       <div class="card stack">
@@ -466,7 +464,7 @@
           <span class="pill">${page.layout.source === 'record' ? 'Record layout' : 'Record-type layout'}</span>
         </div>
         <h1>${m.number}</h1>
-        <p class="lead">${m.name} · ${m.client_name}</p>
+        <p class="lead">${m.name} · ${m.client_name || 'No client set'}</p>
       </div>
 
       <form id="matterForm" class="card stack">
@@ -477,7 +475,7 @@
               <label class="${f.width === 'full' ? 'span-all' : ''}">
                 ${f.label}${f.scope === 'record' ? ' <span class="muted">(record field)</span>' : ''}
                 ${f.scope === 'record_type' ? ' <span class="muted">(type field)</span>' : ''}
-                ${renderFieldInput(f)}
+                ${renderFieldInput(f, fieldCtx)}
               </label>`).join('')}
           </div>
         `).join('') || '<p class="muted">No layout fields</p>'}
@@ -530,9 +528,14 @@
           if (key.startsWith('cf_')) {
             customValues[key.slice(3)] = value;
           } else if (key === 'std:name') patch.name = value;
+          else if (key === 'std:client') patch.clientId = Number(value);
+          else if (key === 'std:matter_type') patch.matterType = value;
           else if (key === 'std:status') patch.status = value;
           else if (key === 'std:jurisdiction') patch.jurisdiction = value;
           else if (key === 'std:court') patch.court = value;
+          else if (key === 'std:responsible_attorney') {
+            patch.responsibleAttorneyId = value ? Number(value) : null;
+          } else if (key === 'std:opened_on') patch.openedOn = value;
         }
         // checkboxes unchecked are omitted
         form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
