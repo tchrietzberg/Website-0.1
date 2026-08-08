@@ -354,7 +354,7 @@
           });
           $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${page.matter.number}.</div>`;
           await refreshRefs();
-          state.matterSearch = { q: page.matter.number, status: '', type: '' };
+          state.matterSearch = { q: page.matter.number };
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
