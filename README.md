@@ -44,7 +44,7 @@ Then open http://localhost:3000.
 3. Submit the entry, sign in as **billie** → approve via API/queue (nav hidden) or continue billing.
 4. Billing → Generate pre-bill → Write-down → To review → Approve → Send.
 5. Record a payment (partial payments and oldest-first application supported; overpayment stays unapplied).
-6. Reports → Lodestar Summary/Detail, WIP, AR Aging, Write-offs, Realization → Export CSV/Excel.
+6. Reports → Lodestar Summary/Detail → Export CSV/Excel.
 7. Settings → Time & Billing, Timekeepers & Rates; admin audit log.
 
 ## Environment variables
