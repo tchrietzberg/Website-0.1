@@ -136,14 +136,6 @@
     };
   }
 
-  function openCreateMatter() {
-    state.showCreateMatter = true;
-    state.view = 'matters';
-    state.matterId = null;
-    renderShell();
-    renderView();
-  }
-
   function renderShell() {
     nav.hidden = false;
     const items = [
@@ -157,22 +149,18 @@
     if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
     if (state.view === 'approvals') state.view = 'time';
     const activeView = state.view === 'matter' ? 'matters' : state.view;
-    const createMatterNav = canCreateMatter(state.user)
-      ? `<button type="button" class="primary nav-create-matter" id="navCreateMatter">Create matter</button>`
-      : '';
     nav.innerHTML = items.map(([id, label]) =>
       `<button data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
-    ).join('') + createMatterNav;
+    ).join('');
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.onclick = () => {
         state.view = b.dataset.view;
         if (state.view !== 'matter') state.matterId = null;
+        if (state.view !== 'matters') state.showCreateMatter = false;
         renderShell();
         renderView();
       };
     });
-    const navCreate = $('#navCreateMatter');
-    if (navCreate) navCreate.onclick = () => openCreateMatter();
     userbar.innerHTML = `
       <div class="who"><strong>${state.user.name}</strong><span>${state.user.role.replace('_', ' ')}</span></div>
       <button id="logout">Sign out</button>`;
@@ -244,8 +232,8 @@
             </button>` : ''}
         </div>
 
-        ${canEdit ? `
-        <div id="createMatterSection" class="page-section create-matter-panel" ${showCreate ? '' : 'hidden'}>
+        ${showCreate ? `
+        <div id="createMatterSection" class="page-section create-matter-panel">
           <p class="hint">New matters are added to the search index immediately.</p>
           <form id="newMatterForm" class="grid two">
             <label class="span-all">Name
@@ -358,16 +346,6 @@
       state.matterSearch = { q: '' };
       await renderMatters();
     };
-    function revealCreateForm() {
-      const section = $('#createMatterSection');
-      const nameInput = section && section.querySelector('input[name="name"]');
-      if (section) section.hidden = false;
-      if (section && section.scrollIntoView) {
-        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-      if (nameInput) nameInput.focus();
-    }
-
     const createMatterBtn = $('#createMatterBtn');
     if (createMatterBtn) {
       createMatterBtn.onclick = async () => {
@@ -382,7 +360,18 @@
         await renderMatters();
       };
     }
-    if (showCreate) setTimeout(revealCreateForm, 0);
+    if (showCreate) {
+      const nameInput = $('#createMatterSection input[name="name"]');
+      if (nameInput) {
+        setTimeout(() => {
+          nameInput.focus();
+          const section = $('#createMatterSection');
+          if (section && section.scrollIntoView) {
+            section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }, 0);
+      }
+    }
 
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => openMatter(Number(row.dataset.matter));

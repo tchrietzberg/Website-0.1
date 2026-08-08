@@ -129,28 +129,8 @@ body {
   font-weight: 600;
 }
 
-.nav .nav-create-matter,
-.nav button.nav-create-matter.primary {
-  margin-left: 0.35rem;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
-}
-
-.nav .nav-create-matter:hover,
-.nav button.nav-create-matter.primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  color: var(--accent-ink);
-}
-
 .create-matter-btn {
   min-width: 8.5rem;
-}
-
-.create-matter-panel[hidden] {
-  display: none !important;
 }
 
 .btn, button {
