@@ -2,7 +2,7 @@
   const state = {
     token: localStorage.getItem('billing_token') || null,
     user: null,
-    view: 'time',
+    view: 'matters',
     matters: [],
     users: [],
     clients: [],
@@ -213,45 +213,17 @@
     state.clients = clients;
 
     main.innerHTML = `
-      <div class="card stack">
-        <h1 style="margin-bottom:.35rem">Matters</h1>
-        <p class="lead" style="margin:0">Search the index or create a new matter on this page.</p>
-
-        <h2>Matter Search</h2>
-        <form id="matterSearch" class="stack">
-          <label>Search index
-            <input name="q" value="${state.matterSearch.q || ''}"
-              placeholder="e.g. Widget, Northwind, N.D. Cal" autofocus />
-          </label>
-          <div class="row-actions">
-            <button class="primary" type="submit">Search</button>
-            <button type="button" id="clearSearch">Clear</button>
+      <div class="card stack page-card">
+        <div class="page-head">
+          <div class="page-head-copy">
+            <h1>Matters</h1>
+            <p class="lead">Search the index or add a new matter on this page.</p>
           </div>
-        </form>
-
-        <div>
-          <h2>Results</h2>
-          ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
-          <div class="table-wrap"><table>
-            <thead>
-              <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
-            </thead>
-            <tbody>
-              ${hits.map((m) => `
-                <tr class="click-row" data-matter="${m.id}">
-                  <td><strong>${m.number}</strong></td>
-                  <td>${m.name}</td>
-                  <td>${m.client_name}</td>
-                  <td><span class="pill">${m.matter_type}</span></td>
-                  <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
-                  <td>${m.attorney_name || '—'}</td>
-                </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
-            </tbody>
-          </table></div>`}
+          ${canEdit ? `<button type="button" class="primary" id="addMatterBtn">Add matter</button>` : ''}
         </div>
 
         ${canEdit ? `
-        <div id="createMatterSection">
+        <div id="createMatterSection" class="page-section">
           <h2>Create matter</h2>
           <p class="hint">New matters are added to the search index immediately.</p>
           <form id="newMatterForm" class="grid two">
@@ -284,6 +256,41 @@
           </form>
           <div id="newMatterMsg"></div>
         </div>` : ''}
+
+        <div class="page-section">
+          <h2>Matter Search</h2>
+          <form id="matterSearch" class="stack">
+            <label>Search index
+              <input name="q" value="${state.matterSearch.q || ''}"
+                placeholder="e.g. Widget, Northwind, N.D. Cal" />
+            </label>
+            <div class="row-actions">
+              <button class="primary" type="submit">Search</button>
+              <button type="button" id="clearSearch">Clear</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="page-section">
+          <h2>Results</h2>
+          ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
+          <div class="table-wrap"><table>
+            <thead>
+              <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
+            </thead>
+            <tbody>
+              ${hits.map((m) => `
+                <tr class="click-row" data-matter="${m.id}">
+                  <td><strong>${m.number}</strong></td>
+                  <td>${m.name}</td>
+                  <td>${m.client_name}</td>
+                  <td><span class="pill">${m.matter_type}</span></td>
+                  <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
+                  <td>${m.attorney_name || '—'}</td>
+                </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
+            </tbody>
+          </table></div>`}
+        </div>
       </div>
 
       ${canConfigure ? `
@@ -329,6 +336,17 @@
       state.matterSearch = { q: '' };
       await renderMatters();
     };
+    const addMatterBtn = $('#addMatterBtn');
+    if (addMatterBtn) {
+      addMatterBtn.onclick = () => {
+        const section = $('#createMatterSection');
+        const nameInput = section && section.querySelector('input[name="name"]');
+        if (section && section.scrollIntoView) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        if (nameInput) nameInput.focus();
+      };
+    }
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => openMatter(Number(row.dataset.matter));
     });
