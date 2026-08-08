@@ -8,7 +8,7 @@
     clients: [],
     settings: null,
     matterId: null,
-    matterSearch: { q: '', status: '', type: '', showCreate: true },
+    matterSearch: { q: '', status: '', type: '' },
   };
 
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -214,17 +214,12 @@
     state.matters = allMatters;
     state.clients = clients;
 
-    const showCreate = canEdit && state.matterSearch.showCreate !== false;
-
     main.innerHTML = `
       <div class="card stack">
-        <div class="row-actions" style="justify-content:space-between;align-items:flex-start">
-          <div>
-            <h1 style="margin-bottom:.35rem">Matter Search</h1>
-            <p class="lead" style="margin:0">Search the matter index, or create a new matter.</p>
-          </div>
-          ${canEdit ? `<button type="button" class="primary" id="toggleCreateMatter">${showCreate ? 'Hide create form' : 'Create matter'}</button>` : ''}
-        </div>
+        <h1 style="margin-bottom:.35rem">Matters</h1>
+        <p class="lead" style="margin:0">Search the index or create a new matter on this page.</p>
+
+        <h2>Matter Search</h2>
         <form id="matterSearch" class="grid two">
           <label class="span-all">Search index
             <input name="q" value="${state.matterSearch.q || ''}"
@@ -251,62 +246,62 @@
             <button type="button" id="clearSearch">Clear</button>
           </div>
         </form>
-      </div>
 
-      ${canEdit ? `
-      <div class="card stack" id="createMatterCard" ${showCreate ? '' : 'hidden'}>
-        <h2>Create matter</h2>
-        <p class="hint">Saved matters are added to the search index immediately.</p>
-        <form id="newMatterForm" class="grid two">
-          <label class="span-all">Name
-            <input name="name" required placeholder="Securities Class Action — WidgetCo" />
-          </label>
-          <label>Client
-            <select name="clientId" required>
-              ${clients.map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}
-            </select>
-          </label>
-          <label>Record type
-            <select name="matterType" required>
-              ${recordTypes.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
-            </select>
-          </label>
-          <label>Jurisdiction <input name="jurisdiction" placeholder="N.D. Cal." /></label>
-          <label>Court <input name="court" placeholder="N.D. Cal." /></label>
-          <label>Responsible attorney
-            <select name="responsibleAttorneyId">
-              <option value="">—</option>
-              ${state.users.filter((u) => u.role === 'attorney' || u.role === 'admin').map((u) =>
-                `<option value="${u.id}">${u.name}</option>`).join('')}
-            </select>
-          </label>
-          <label>Opened on <input name="openedOn" type="date" value="${today}" required /></label>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Create matter</button>
-          </div>
-        </form>
-        <div id="newMatterMsg"></div>
-      </div>` : ''}
+        <div>
+          <h2>Results</h2>
+          ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
+          <div class="table-wrap"><table>
+            <thead>
+              <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
+            </thead>
+            <tbody>
+              ${hits.map((m) => `
+                <tr class="click-row" data-matter="${m.id}">
+                  <td><strong>${m.number}</strong></td>
+                  <td>${m.name}</td>
+                  <td>${m.client_name}</td>
+                  <td><span class="pill">${m.matter_type}</span></td>
+                  <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
+                  <td>${m.attorney_name || '—'}</td>
+                </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
+            </tbody>
+          </table></div>`}
+        </div>
 
-      <div class="card">
-        <h2>Results</h2>
-        ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
-        <div class="table-wrap"><table>
-          <thead>
-            <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
-          </thead>
-          <tbody>
-            ${hits.map((m) => `
-              <tr class="click-row" data-matter="${m.id}">
-                <td><strong>${m.number}</strong></td>
-                <td>${m.name}</td>
-                <td>${m.client_name}</td>
-                <td><span class="pill">${m.matter_type}</span></td>
-                <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
-                <td>${m.attorney_name || '—'}</td>
-              </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
-          </tbody>
-        </table></div>`}
+        ${canEdit ? `
+        <div id="createMatterSection">
+          <h2>Create matter</h2>
+          <p class="hint">New matters are added to the search index immediately.</p>
+          <form id="newMatterForm" class="grid two">
+            <label class="span-all">Name
+              <input name="name" required placeholder="Securities Class Action — WidgetCo" />
+            </label>
+            <label>Client
+              <select name="clientId" required>
+                ${clients.map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}
+              </select>
+            </label>
+            <label>Record type
+              <select name="matterType" required>
+                ${recordTypes.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
+              </select>
+            </label>
+            <label>Jurisdiction <input name="jurisdiction" placeholder="N.D. Cal." /></label>
+            <label>Court <input name="court" placeholder="N.D. Cal." /></label>
+            <label>Responsible attorney
+              <select name="responsibleAttorneyId">
+                <option value="">—</option>
+                ${state.users.filter((u) => u.role === 'attorney' || u.role === 'admin').map((u) =>
+                  `<option value="${u.id}">${u.name}</option>`).join('')}
+              </select>
+            </label>
+            <label>Opened on <input name="openedOn" type="date" value="${today}" required /></label>
+            <div class="row-actions span-all">
+              <button class="primary" type="submit">Create matter</button>
+            </div>
+          </form>
+          <div id="newMatterMsg"></div>
+        </div>` : ''}
       </div>
 
       ${canConfigure ? `
@@ -346,7 +341,6 @@
       ev.preventDefault();
       const fd = new FormData(ev.target);
       state.matterSearch = {
-        ...state.matterSearch,
         q: String(fd.get('q') || '').trim(),
         status: String(fd.get('status') || ''),
         type: String(fd.get('type') || ''),
@@ -354,16 +348,9 @@
       await renderMatters();
     };
     $('#clearSearch').onclick = async () => {
-      state.matterSearch = { ...state.matterSearch, q: '', status: '', type: '' };
+      state.matterSearch = { q: '', status: '', type: '' };
       await renderMatters();
     };
-    const toggleCreate = $('#toggleCreateMatter');
-    if (toggleCreate) {
-      toggleCreate.onclick = async () => {
-        state.matterSearch.showCreate = !showCreate;
-        await renderMatters();
-      };
-    }
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => openMatter(Number(row.dataset.matter));
     });
@@ -389,13 +376,7 @@
           });
           $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${page.matter.number}.</div>`;
           await refreshRefs();
-          state.matterSearch = {
-            ...state.matterSearch,
-            q: page.matter.number,
-            status: '',
-            type: '',
-            showCreate: false,
-          };
+          state.matterSearch = { q: page.matter.number, status: '', type: '' };
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
