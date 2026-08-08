@@ -250,6 +250,10 @@
     }
     if (!state.user) return renderLogin();
     await refreshRefs();
+    const params = new URLSearchParams(window.location.search);
+    if (window.location.hash === '#settings' || params.get('onedrive')) {
+      state.view = 'settings';
+    }
     renderShell();
     renderView();
   }
@@ -799,11 +803,9 @@
         if (!onedriveMeta.graphConfigured) {
           $('#onedriveMsg').innerHTML = `
             <div class="error">
-              Live OneDrive sync needs a Microsoft Graph token.
+              Connect Microsoft once in <strong>Settings → OneDrive / SharePoint</strong> (no Graph Explorer token).
               <div class="hint" style="margin-top:.5rem">
-                Go to <strong>Settings → OneDrive / SharePoint</strong> (admin), paste a token from
-                <a href="https://developer.microsoft.com/graph/graph-explorer" target="_blank" rel="noopener noreferrer">Graph Explorer</a>
-                (sign in → Access token), then click Refresh again.
+                Admin saves the Application (client) ID, then click <strong>Connect Microsoft account</strong> and approve in the browser.
                 Or use <strong>Load demo files</strong> / the <strong>OneDrive view</strong> tab for now.
               </div>
             </div>`;
@@ -917,7 +919,7 @@
               <p class="muted">Loading folder…</p>
             </div>
             ${!page.onedrive.graphConfigured ? `
-              <p class="hint">Live sync is off until an admin adds a Graph token under <strong>Settings → OneDrive / SharePoint</strong>. Demo files load automatically when you link a folder; use <strong>OneDrive view</strong> for the real Microsoft library.</p>
+              <p class="hint">Live sync is off until someone connects Microsoft under <strong>Settings → OneDrive / SharePoint</strong> (sign in — no token copy/paste). Demo files load when you link a folder; use <strong>OneDrive view</strong> for the real Microsoft library.</p>
             ` : ''}
           </div>
 
@@ -1793,28 +1795,74 @@
         <div id="settingsMsg"></div>
       </form>
 
-      ${isAdmin ? `
-      <form id="onedriveSettingsForm" class="card stack">
+      ${(isAdmin || state.user.role === 'billing_clerk') ? `
+      <div class="card stack" id="onedriveSettingsCard">
         <h2>OneDrive / SharePoint</h2>
-        <p class="lead">Status: <strong>${settings.msGraphConfigured ? 'Graph token configured' : 'Graph token not configured'}</strong></p>
-        <p class="hint">Needed only for <strong>Refresh from OneDrive</strong> (live file list). Without it, matters still use the embedded OneDrive view and demo/local file browser.</p>
-        <ol class="hint" style="padding-left:1.2rem;margin:.35rem 0 0.75rem">
-          <li>Open <a href="https://developer.microsoft.com/graph/graph-explorer" target="_blank" rel="noopener noreferrer">Graph Explorer</a> and sign in with Microsoft.</li>
-          <li>Consent to Files.Read.All / Sites.Read.All if prompted.</li>
-          <li>Open the <strong>Access token</strong> tab → copy the token.</li>
-          <li>Paste it below and save. Then open a matter → OneDrive → Refresh from OneDrive.</li>
-        </ol>
-        <p class="hint">Or set env <code>MS_GRAPH_ACCESS_TOKEN</code> before starting the server.</p>
-        <label>Graph access token
-          <input name="msGraphAccessToken" type="password" autocomplete="off"
-            placeholder="${settings.msGraphConfigured ? '•••• configured — paste to replace' : 'Paste access token from Graph Explorer'}" />
-        </label>
-        <div class="row-actions">
-          <button class="primary" type="submit">Save Graph token</button>
-          ${settings.msGraphConfigured ? '<button type="button" id="clearGraphToken">Clear token</button>' : ''}
+        <p class="lead">
+          ${settings.microsoft?.connected
+            ? `Connected${settings.microsoft.accountLabel ? ` as <strong>${escapeHtml(settings.microsoft.accountLabel)}</strong>` : ' to Microsoft'}`
+            : 'Not connected to Microsoft'}
+        </p>
+        <p class="hint">Sign in with Microsoft once — no Graph Explorer tokens. After connecting, matter folders can <strong>Refresh from OneDrive</strong> automatically.</p>
+
+        ${isAdmin ? `
+        <form id="msAppConfigForm" class="grid two">
+          <label class="span-all">Application (client) ID <span class="muted">(one-time firm setup)</span>
+            <input name="msClientId" required
+              value="${escapeHtml(settings.microsoft?.clientId || '')}"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+          </label>
+          <label>Tenant
+            <input name="msTenantId" value="${escapeHtml(settings.microsoft?.tenantId || 'common')}"
+              placeholder="common" />
+          </label>
+          <label>Client secret <span class="muted">(optional)</span>
+            <input name="msClientSecret" type="password" autocomplete="off"
+              placeholder="${settings.microsoft?.clientConfigured ? '•••• leave blank to keep' : 'Optional for public/device login'}" />
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Save Microsoft app</button>
+          </div>
+        </form>
+        <details class="onedrive-setup-help">
+          <summary>How to create the Application (client) ID (about 2 minutes)</summary>
+          <ol>
+            <li>Open <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">Azure App registrations</a> → <strong>New registration</strong>.</li>
+            <li>Name it (e.g. Firm Billing), supported accounts: single tenant or multitenant + personal.</li>
+            <li>Authentication → <strong>Add a platform</strong> → Mobile and desktop → enable <strong>Allow public client flows</strong>.</li>
+            <li>Optional for browser login: add redirect URI <code>${escapeHtml(window.location.origin)}/api/onedrive/oauth/callback</code> (Web or Mobile).</li>
+            <li>API permissions → Microsoft Graph → Delegated: <code>User.Read</code>, <code>Files.Read.All</code>, <code>Sites.Read.All</code>, <code>offline_access</code> → Grant admin consent.</li>
+            <li>Copy <strong>Application (client) ID</strong> into the field above and Save.</li>
+          </ol>
+        </details>` : `
+        <p class="hint">${settings.microsoft?.clientConfigured
+          ? 'App is configured. Connect with your Microsoft work or school account.'
+          : 'Ask an admin to save the Microsoft Application (client) ID first.'}</p>
+        `}
+
+        <div class="onedrive-connect-box">
+          ${settings.microsoft?.connected ? `
+            <div class="ok-banner">Microsoft account linked. Matter OneDrive refresh is ready.</div>
+            <div class="row-actions">
+              ${isAdmin ? '<button type="button" id="msDisconnect">Disconnect Microsoft</button>' : ''}
+              <a class="btn primary" href="/api/onedrive/connect/login">Reconnect / switch account</a>
+            </div>
+          ` : `
+            <div class="row-actions">
+              <button type="button" class="primary" id="msConnectDevice" ${settings.microsoft?.clientConfigured ? '' : 'disabled'}>
+                Connect Microsoft account
+              </button>
+              <a class="btn ${settings.microsoft?.clientConfigured ? 'primary' : ''}"
+                 href="${settings.microsoft?.clientConfigured ? '/api/onedrive/connect/login' : '#'}"
+                 ${settings.microsoft?.clientConfigured ? '' : 'aria-disabled="true" tabindex="-1" style="pointer-events:none;opacity:.55"'}>
+                Sign in with Microsoft (browser)
+              </a>
+            </div>
+            <div id="msDevicePanel" class="onedrive-device-panel" hidden></div>
+          `}
         </div>
         <div id="onedriveSettingsMsg"></div>
-      </form>` : ''}
+      </div>` : ''}
 
       ${canEditBilling ? `
       <div class="card stack">
@@ -1913,40 +1961,110 @@
       };
     }
 
-    const odSettingsForm = $('#onedriveSettingsForm');
-    if (odSettingsForm) {
-      odSettingsForm.onsubmit = async (ev) => {
+    const msAppForm = $('#msAppConfigForm');
+    if (msAppForm) {
+      msAppForm.onsubmit = async (ev) => {
         ev.preventDefault();
-        const token = new FormData(odSettingsForm).get('msGraphAccessToken');
-        if (!String(token || '').trim()) {
-          $('#onedriveSettingsMsg').innerHTML = '<div class="error">Paste a token, or use Clear token.</div>';
-          return;
-        }
+        const fd = new FormData(msAppForm);
+        const payload = {
+          msClientId: fd.get('msClientId'),
+          msTenantId: fd.get('msTenantId') || 'common',
+        };
+        const secret = String(fd.get('msClientSecret') || '').trim();
+        if (secret) payload.msClientSecret = secret;
         try {
-          await api('/api/settings', {
-            method: 'PATCH',
-            body: JSON.stringify({ msGraphAccessToken: token }),
-          });
-          $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Graph token saved.</div>';
+          await api('/api/settings', { method: 'PATCH', body: JSON.stringify(payload) });
+          $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Microsoft app saved. You can connect an account next.</div>';
           await renderSettings();
         } catch (e) {
-          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
-      const clearBtn = $('#clearGraphToken');
-      if (clearBtn) {
-        clearBtn.onclick = async () => {
-          try {
-            await api('/api/settings', {
-              method: 'PATCH',
-              body: JSON.stringify({ msGraphAccessToken: '' }),
-            });
-            await renderSettings();
-          } catch (e) {
-            $('#onedriveSettingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
-          }
-        };
+    }
+
+    const connectBtn = $('#msConnectDevice');
+    const devicePanel = $('#msDevicePanel');
+    let pollTimer = null;
+    const stopPoll = () => {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
       }
+    };
+
+    if (connectBtn && devicePanel) {
+      connectBtn.onclick = async () => {
+        stopPoll();
+        try {
+          connectBtn.disabled = true;
+          const started = await api('/api/onedrive/connect/start', { method: 'POST', body: '{}' });
+          devicePanel.hidden = false;
+          devicePanel.innerHTML = `
+            <div class="onedrive-device-card">
+              <p><strong>Sign in to Microsoft</strong></p>
+              <p class="hint">1. Open <a href="${escapeHtml(started.verificationUriComplete || started.verificationUri)}" target="_blank" rel="noopener noreferrer">${escapeHtml(started.verificationUri)}</a></p>
+              <p class="hint">2. Enter this code:</p>
+              <div class="onedrive-user-code">${escapeHtml(started.userCode)}</div>
+              <p class="muted" id="msDeviceStatus">Waiting for approval…</p>
+            </div>`;
+          const deviceCode = started.deviceCode;
+          let intervalMs = Math.max(3, Number(started.interval || 5)) * 1000;
+
+          const tick = async () => {
+            try {
+              const result = await api('/api/onedrive/connect/poll', {
+                method: 'POST',
+                body: JSON.stringify({ deviceCode }),
+              });
+              if (result.status === 'connected') {
+                stopPoll();
+                $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Microsoft account connected.</div>';
+                await renderSettings();
+                return;
+              }
+              if (result.slowDown) intervalMs += 2000;
+              const st = $('#msDeviceStatus');
+              if (st) st.textContent = 'Waiting for approval…';
+              pollTimer = setTimeout(tick, intervalMs);
+            } catch (e) {
+              stopPoll();
+              const st = $('#msDeviceStatus');
+              if (st) st.textContent = e.message;
+              $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+              connectBtn.disabled = false;
+            }
+          };
+          pollTimer = setTimeout(tick, intervalMs);
+        } catch (e) {
+          connectBtn.disabled = false;
+          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    const disconnectBtn = $('#msDisconnect');
+    if (disconnectBtn) {
+      disconnectBtn.onclick = async () => {
+        try {
+          await api('/api/onedrive/disconnect', { method: 'POST', body: '{}' });
+          await renderSettings();
+        } catch (e) {
+          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('onedrive') === 'connected') {
+      $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Microsoft account connected.</div>';
+      params.delete('onedrive');
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash || '#settings'}`;
+      window.history.replaceState({}, '', next);
+    } else if (params.get('onedrive') === 'error') {
+      $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(params.get('msg') || 'Microsoft sign-in failed')}</div>`;
+      params.delete('onedrive');
+      params.delete('msg');
+      window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}#settings`);
     }
 
     const tkForm = $('#tkForm');

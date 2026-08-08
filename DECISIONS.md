@@ -6,8 +6,8 @@ Filled-in profile for the master build brief (Section 2):
 - **Roles:** admin, attorney, paralegal, billing_clerk (no client portal)
 - **Stack:** Node ≥22.13 built-ins only (`node:sqlite`, `node:http`, `node:test`); zero npm deps
 - **Deploy:** local prototype / Docker; not production
-- **Integrations deferred:** QuickBooks API, LEDES 1998B, LawPay/Stripe, full Microsoft OAuth login UI
-- **OneDrive (v1 prototype):** matter-level folder link + in-app browser (cached items, breadcrumbs) + embedded OneDrive/SharePoint view; live refresh via Graph access token (env or Settings), not a full OAuth consent flow yet
+- **Integrations deferred:** QuickBooks API, LEDES 1998B, LawPay/Stripe
+- **OneDrive:** matter folder link + in-app browser + embed view; Microsoft connection via device-code / auth-code+PKCE (Settings). One-time Azure App (client) ID required; refresh tokens stored in firm_settings.
 - **Trust/IOLTA:** explicitly out of scope for v1 (see D2) — VERIFY WITH BAR RULES before any production use if trust funds are ever held
 
 | # | Decision | Rationale / Notes |

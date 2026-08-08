@@ -86,14 +86,52 @@ describe('matter OneDrive integration', () => {
     assert.ok(nested.items.some((i) => i.name === 'Complaint.pdf'));
   });
 
-  it('requires Graph token for live sync', async () => {
+  it('requires Microsoft connect for live sync', async () => {
     const page = matterSvc.createMatter(db, admin, { name: 'Live Sync' });
     onedrive.linkMatterOneDrive(db, admin, page.matter.id, {
       folderUrl: 'https://contoso.sharepoint.com/sites/Lit/Shared%20Documents/X',
     });
     await assert.rejects(
       () => onedrive.syncMatterOneDriveFromShare(db, admin, page.matter.id),
-      /Graph token not configured/
+      /Connect Microsoft/
     );
+  });
+});
+
+describe('Microsoft connect (app config)', () => {
+  const msAuth = require('../src/services/msAuth');
+  let db;
+  let admin;
+
+  beforeEach(() => {
+    db = resetDb(path.join(os.tmpdir(), `billing-msauth-${process.pid}-${Date.now()}.db`));
+    db.prepare("INSERT INTO users(email,name,role) VALUES ('admin@x.com','Admin','admin')").run();
+    admin = db.prepare('SELECT * FROM users WHERE id=1').get();
+  });
+
+  it('saves client id and reports connection status', () => {
+    assert.equal(msAuth.connectionStatus(db).clientConfigured, false);
+    msAuth.saveAppConfig(db, admin, {
+      clientId: '11111111-2222-3333-4444-555555555555',
+      tenantId: 'common',
+    });
+    const st = msAuth.connectionStatus(db);
+    assert.equal(st.clientConfigured, true);
+    assert.equal(st.connected, false);
+    assert.equal(st.clientId, '11111111-2222-3333-4444-555555555555');
+  });
+
+  it('marks connected when refresh token is stored', () => {
+    msAuth.saveAppConfig(db, admin, { clientId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' });
+    setSetting(db, 'ms_refresh_token', 'refresh-demo');
+    setSetting(db, 'ms_access_token', 'access-demo');
+    setSetting(db, 'ms_access_token_expires_at', String(Date.now() + 60000));
+    setSetting(db, 'ms_account_label', 'avery@contoso.com');
+    const st = msAuth.connectionStatus(db);
+    assert.equal(st.connected, true);
+    assert.equal(st.connectionMethod, 'microsoft_login');
+    assert.equal(st.accountLabel, 'avery@contoso.com');
+    msAuth.disconnect(db, admin);
+    assert.equal(msAuth.connectionStatus(db).connected, false);
   });
 });

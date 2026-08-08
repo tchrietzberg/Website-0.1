@@ -73,13 +73,21 @@ function suggestFolderName(matter) {
 }
 
 function getGraphToken(db) {
+  // Sync snapshot only — prefer ensureGraphToken() for live calls.
   return process.env.MS_GRAPH_ACCESS_TOKEN
+    || getSetting(db, 'ms_access_token', '')
     || getSetting(db, 'ms_graph_access_token', '')
     || '';
 }
 
 function graphConfigured(db) {
-  return !!String(getGraphToken(db) || '').trim();
+  const msAuth = require('./msAuth');
+  return msAuth.isConnected(db);
+}
+
+async function ensureGraphToken(db) {
+  const msAuth = require('./msAuth');
+  return msAuth.ensureAccessToken(db);
 }
 
 function setGraphToken(db, actor, token) {
@@ -92,7 +100,7 @@ function setGraphToken(db, actor, token) {
     entityId: null,
     detail: { configured: !!value },
   });
-  return { configured: !!value };
+  return { configured: graphConfigured(db) };
 }
 
 function mapRow(row) {
@@ -224,8 +232,10 @@ function disconnectMatterOneDrive(db, actor, matterId) {
 }
 
 async function graphFetch(db, pathOrUrl, { method = 'GET' } = {}) {
-  const token = String(getGraphToken(db) || '').trim();
-  if (!token) throw new Error('Microsoft Graph token not configured');
+  const token = String(await ensureGraphToken(db) || '').trim();
+  if (!token) {
+    throw new Error('Connect Microsoft in Settings → OneDrive (no Graph Explorer token needed)');
+  }
   const url = pathOrUrl.startsWith('http')
     ? pathOrUrl
     : `https://graph.microsoft.com/v1.0${pathOrUrl}`;
@@ -284,7 +294,9 @@ function upsertGraphItem(db, matterId, parentItemId, item) {
 async function syncMatterOneDriveFromShare(db, actor, matterId, { parentItemId = null } = {}) {
   const link = db.prepare('SELECT * FROM matter_onedrive WHERE matter_id = ?').get(matterId);
   if (!link) throw new Error('OneDrive folder not linked');
-  if (!graphConfigured(db)) throw new Error('Microsoft Graph token not configured (Settings → OneDrive)');
+  if (!graphConfigured(db)) {
+    throw new Error('Connect Microsoft in Settings → OneDrive first (sign in — no Graph Explorer token)');
+  }
 
   try {
     const shareId = encodeSharingUrl(link.folder_url);
@@ -467,6 +479,7 @@ module.exports = {
   toEmbedUrl,
   suggestFolderName,
   getGraphToken,
+  ensureGraphToken,
   graphConfigured,
   setGraphToken,
   getMatterOneDrive,

@@ -105,6 +105,7 @@ function serveStatic(req, res) {
 
 function readSettings(db) {
   const onedrive = require('../services/onedrive');
+  const msAuth = require('../services/msAuth');
   return {
     roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
     roundMode: getSetting(db, 'round_mode', 'up'),
@@ -113,6 +114,7 @@ function readSettings(db) {
     durationFormats: DURATION_FORMATS,
     roundingModes: ROUNDING_MODES,
     msGraphConfigured: onedrive.graphConfigured(db),
+    microsoft: msAuth.connectionStatus(db),
   };
 }
 
@@ -160,6 +162,27 @@ function createServer(db = openDb()) {
       if (req.method === 'GET' && pathname === '/api/me') {
         const user = currentUser(db, req);
         return json(res, 200, { user });
+      }
+
+      // Microsoft OAuth redirect must work even if session cookie is delayed
+      if (req.method === 'GET' && pathname === '/api/onedrive/oauth/callback') {
+        const msAuth = require('../services/msAuth');
+        try {
+          const code = url.searchParams.get('code');
+          const state = url.searchParams.get('state');
+          const err = url.searchParams.get('error_description') || url.searchParams.get('error');
+          if (err) throw new Error(err);
+          await msAuth.finishAuthCode(db, { code, state });
+          res.writeHead(302, { Location: '/?onedrive=connected#settings' });
+          res.end();
+          return;
+        } catch (e) {
+          res.writeHead(302, {
+            Location: `/?onedrive=error&msg=${encodeURIComponent(e.message)}#settings`,
+          });
+          res.end();
+          return;
+        }
       }
 
       const user = requireUser(db, req, res);
@@ -415,7 +438,54 @@ function createServer(db = openDb()) {
           const onedrive = require('../services/onedrive');
           onedrive.setGraphToken(db, user, body.msGraphAccessToken);
         }
+        if (body.msClientId !== undefined || body.msTenantId !== undefined || body.msClientSecret !== undefined) {
+          if (!requireRoles(user, res, ['admin'])) return;
+          const msAuth = require('../services/msAuth');
+          msAuth.saveAppConfig(db, user, {
+            clientId: body.msClientId,
+            tenantId: body.msTenantId,
+            clientSecret: body.msClientSecret,
+          });
+        }
         return json(res, 200, readSettings(db));
+      }
+
+      if (req.method === 'POST' && pathname === '/api/onedrive/connect/start') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const msAuth = require('../services/msAuth');
+        try {
+          return json(res, 200, await msAuth.startDeviceCode(db, user));
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/onedrive/connect/poll') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const msAuth = require('../services/msAuth');
+        const body = await parseBody(req);
+        try {
+          return json(res, 200, await msAuth.pollDeviceCode(db, user, body.deviceCode));
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'GET' && pathname === '/api/onedrive/connect/login') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const msAuth = require('../services/msAuth');
+        try {
+          const redirectUri = `${url.protocol}//${url.host}/api/onedrive/oauth/callback`;
+          const started = msAuth.startAuthCode(db, user, { redirectUri });
+          res.writeHead(302, { Location: started.authUrl });
+          res.end();
+          return;
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/onedrive/disconnect') {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const msAuth = require('../services/msAuth');
+        return json(res, 200, { microsoft: msAuth.disconnect(db, user), ...readSettings(db) });
       }
 
       if (req.method === 'POST' && pathname === '/api/time-entries') {

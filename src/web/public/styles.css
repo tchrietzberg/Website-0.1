@@ -695,6 +695,54 @@ a.btn {
   text-align: center;
 }
 
+.onedrive-setup-help {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  background: #f7f9fc;
+}
+
+.onedrive-setup-help summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.onedrive-setup-help ol {
+  margin: 0.65rem 0 0.25rem;
+  padding-left: 1.2rem;
+}
+
+.onedrive-connect-box {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.onedrive-device-panel:not([hidden]) {
+  display: block;
+}
+
+.onedrive-device-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f3f6fa 100%);
+}
+
+.onedrive-user-code {
+  font-family: var(--sans);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  display: inline-block;
+  margin: 0.25rem 0 0.5rem;
+}
+
 h3 {
   font-family: var(--font);
   font-size: 1.05rem;
