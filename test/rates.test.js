@@ -13,7 +13,7 @@ describe('rate resolution', () => {
     db.prepare("INSERT INTO clients(name) VALUES ('C')").run();
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, opened_on, responsible_attorney_id)
-      VALUES (1, '2026-0001', 'M', 'litigation', '2026-01-01', 1)
+      VALUES (1, '2026-0001', 'M', 'default', '2026-01-01', 1)
     `).run();
   });
 

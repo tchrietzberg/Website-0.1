@@ -24,11 +24,11 @@ describe('matter search and record-based fields', () => {
 
   it('indexes matters and searches via FTS (empty query returns no hits)', () => {
     matterSvc.createMatter(db, admin, {
-      clientId: 1, name: 'Widget Litigation', matterType: 'litigation',
+      clientId: 1, name: 'Widget Litigation',
       openedOn: '2026-01-01', responsibleAttorneyId: 2, court: 'N.D. Cal.',
     });
     matterSvc.createMatter(db, admin, {
-      clientId: 1, name: 'Admin File', matterType: 'sw_admin',
+      clientId: 1, name: 'Admin File',
       openedOn: '2026-01-02', responsibleAttorneyId: 2,
     });
 
@@ -49,17 +49,25 @@ describe('matter search and record-based fields', () => {
     assert.equal(matterSvc.listMatters(db).length, 2);
   });
 
+  it('only seeds the Default record type', () => {
+    const types = customFields.listRecordTypes(db);
+    assert.equal(types.length, 1);
+    assert.equal(types[0].key, customFields.DEFAULT_RECORD_TYPE_KEY);
+    assert.equal(types[0].label, customFields.DEFAULT_RECORD_TYPE_LABEL);
+  });
+
   it('supports type-based and record-based custom fields; values are searchable', () => {
     const page0 = matterSvc.createMatter(db, admin, {
-      clientId: 1, name: 'Class Action', matterType: 'litigation',
+      clientId: 1, name: 'Class Action',
       openedOn: '2026-01-01', responsibleAttorneyId: 2,
     });
     const matterId = page0.matter.id;
+    assert.equal(page0.matter.matter_type, customFields.DEFAULT_RECORD_TYPE_KEY);
 
     const typeField = customFields.createCustomField(db, admin, {
       label: 'Case stage',
       fieldType: 'select',
-      recordTypeKey: 'litigation',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
       options: ['Discovery', 'Trial'],
     });
     const recordField = customFields.createCustomField(db, admin, {
@@ -95,6 +103,7 @@ describe('matter search and record-based fields', () => {
     assert.deepEqual(keys.sort(), ['std:name', 'std:number']);
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:client'));
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:court'));
+    assert.ok(!page0.availableStandardFields.some((f) => f.key === 'std:matter_type'));
 
     const page1 = customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:client');
     const keys1 = Object.values(page1.sections).flat().map((f) => f.key);
@@ -104,12 +113,16 @@ describe('matter search and record-based fields', () => {
   });
 
   it('can add and delete fields on default type and matter layouts', () => {
-    const type0 = customFields.getTypeLayout(db, 'other');
+    const type0 = customFields.getTypeLayout(db, customFields.DEFAULT_RECORD_TYPE_KEY);
     assert.deepEqual(type0.fields.map((f) => f.fieldKey).sort(), ['std:name', 'std:number']);
 
-    const type1 = customFields.addStandardFieldToType(db, admin, 'other', 'std:court');
+    const type1 = customFields.addStandardFieldToType(
+      db, admin, customFields.DEFAULT_RECORD_TYPE_KEY, 'std:court'
+    );
     assert.ok(type1.fields.some((f) => f.fieldKey === 'std:court'));
-    const type2 = customFields.removeFieldFromType(db, admin, 'other', 'std:court');
+    const type2 = customFields.removeFieldFromType(
+      db, admin, customFields.DEFAULT_RECORD_TYPE_KEY, 'std:court'
+    );
     assert.ok(!type2.fields.some((f) => f.fieldKey === 'std:court'));
 
     const page = matterSvc.createMatter(db, admin, { name: 'Field Mgmt' });

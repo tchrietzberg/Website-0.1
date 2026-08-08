@@ -18,11 +18,11 @@ function setup() {
   db.prepare("INSERT INTO clients(name) VALUES ('Client A')").run();
   db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, court, responsible_attorney_id, opened_on)
-    VALUES (1, '2026-0001', 'NDCal Case', 'litigation', 'N.D. Cal.', 2, '2026-01-01')
+    VALUES (1, '2026-0001', 'NDCal Case', 'default', 'N.D. Cal.', 2, '2026-01-01')
   `).run();
   db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, court, responsible_attorney_id, opened_on)
-    VALUES (1, '2026-0002', 'Other Case', 'litigation', 'S.D.N.Y.', 2, '2026-01-01')
+    VALUES (1, '2026-0002', 'Other Case', 'default', 'S.D.N.Y.', 2, '2026-01-01')
   `).run();
   db.prepare(`
     INSERT INTO billing_rules(name, condition_json, message, active)

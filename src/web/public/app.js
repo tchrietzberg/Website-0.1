@@ -261,6 +261,8 @@
     state.matters = allMatters;
     state.clients = clients;
     const showCreate = canEdit && state.showCreateMatter;
+    const defaultTypeKey = (recordTypes[0] && recordTypes[0].key) || 'default';
+    const defaultTypeLabel = (recordTypes[0] && recordTypes[0].label) || 'Default';
 
     main.innerHTML = `
       <div class="card stack page-card">
@@ -289,7 +291,7 @@
           ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
           <div class="table-wrap"><table>
             <thead>
-              <tr><th>Number</th><th>Name</th><th>Client</th><th>Type</th><th>Status</th><th>Attorney</th></tr>
+              <tr><th>Number</th><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
             </thead>
             <tbody>
               ${hits.map((m) => `
@@ -297,10 +299,9 @@
                   <td><strong>${m.number}</strong></td>
                   <td>${m.name}</td>
                   <td>${m.client_name}</td>
-                  <td><span class="pill">${m.matter_type}</span></td>
                   <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
                   <td>${m.attorney_name || '—'}</td>
-                </tr>`).join('') || '<tr><td colspan="6" class="muted">No indexed matters match</td></tr>'}
+                </tr>`).join('') || '<tr><td colspan="5" class="muted">No indexed matters match</td></tr>'}
             </tbody>
           </table></div>`}
         </div>
@@ -308,13 +309,8 @@
 
       ${canConfigure ? `
       <div class="card stack" id="defaultFieldsCard">
-        <h2>Default fields (record type)</h2>
-        <p class="hint">Manage fields on the default layout for a record type. These apply to matters that use the type layout.</p>
-        <label>Record type
-          <select id="defaultTypeKey">
-            ${recordTypes.map((t) => `<option value="${t.key}">${t.label}</option>`).join('')}
-          </select>
-        </label>
+        <h2>Default fields</h2>
+        <p class="hint">Manage fields on the <strong>${defaultTypeLabel}</strong> record type layout. These apply to matters that use the type layout.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
       </div>` : ''}`;
@@ -374,10 +370,9 @@
       };
     }
 
-    const defaultTypeKey = $('#defaultTypeKey');
-    if (defaultTypeKey) {
+    if (canConfigure) {
+      const key = defaultTypeKey;
       const renderDefaultFields = async () => {
-        const key = defaultTypeKey.value;
         const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
         const body = $('#defaultFieldsBody');
         body.innerHTML = `
@@ -471,7 +466,6 @@
           };
         }
       };
-      defaultTypeKey.onchange = () => renderDefaultFields();
       await renderDefaultFields();
     }
   }
@@ -489,10 +483,8 @@
       return `<select name="${name}" ${disabled} required>${opts}</select>`;
     }
     if (field.key === 'std:matter_type') {
-      const opts = (ctx.recordTypes || []).map((t) =>
-        `<option value="${t.key}" ${String(val) === String(t.key) ? 'selected' : ''}>${t.label}</option>`
-      ).join('');
-      return `<select name="${name}" ${disabled} required>${opts}</select>`;
+      const label = (ctx.recordTypes || []).find((t) => t.key === val)?.label || val || 'Default';
+      return `<input name="${name}" value="${label}" disabled />`;
     }
     if (field.key === 'std:responsible_attorney') {
       const attorneys = (ctx.users || []).filter((u) => u.role === 'attorney' || u.role === 'admin');
@@ -670,7 +662,7 @@
             customValues[key.slice(3)] = value;
           } else if (key === 'std:name') patch.name = value;
           else if (key === 'std:client') patch.clientId = Number(value);
-          else if (key === 'std:matter_type') patch.matterType = value;
+          else if (key === 'std:matter_type') { /* record type is fixed */ }
           else if (key === 'std:status') patch.status = value;
           else if (key === 'std:jurisdiction') patch.jurisdiction = value;
           else if (key === 'std:court') patch.court = value;

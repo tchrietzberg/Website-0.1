@@ -17,6 +17,9 @@ function migrate(db) {
   const schema = fs.readFileSync(path.join(ROOT, 'db', 'schema.sql'), 'utf8');
   db.exec(schema);
   migrateTimeEntryRoundingCheck(db);
+  migrateMatterTypeCheck(db);
+  const customFields = require('./services/customFields');
+  customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
   matterIndex.ensureMatterIndex(db);
   // Rebuild index only when matters exist but search index is empty (first boot / upgrade)
@@ -25,6 +28,47 @@ function migrate(db) {
   if (matterCount > 0 && idxCount === 0) {
     matterIndex.reindexAllMatters(db);
   }
+}
+
+/** SQLite cannot ALTER CHECK; drop matters.matter_type enum so Default (and remaps) work. */
+function migrateMatterTypeCheck(db) {
+  const row = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='matters'"
+  ).get();
+  if (!row?.sql || !row.sql.includes("matter_type IN ('litigation'")) return;
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec(`
+    CREATE TABLE matters_mig (
+      id INTEGER PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id),
+      number TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      matter_type TEXT NOT NULL DEFAULT 'default',
+      jurisdiction TEXT,
+      court TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      responsible_attorney_id INTEGER REFERENCES users(id),
+      opened_on TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO matters_mig(
+      id, client_id, number, name, matter_type, jurisdiction, court, status,
+      responsible_attorney_id, opened_on, created_at
+    )
+    SELECT
+      id, client_id, number, name,
+      CASE
+        WHEN matter_type IN ('litigation','sw_admin','other') THEN 'default'
+        ELSE matter_type
+      END,
+      jurisdiction, court, status,
+      responsible_attorney_id, opened_on, created_at
+    FROM matters;
+    DROP TABLE matters;
+    ALTER TABLE matters_mig RENAME TO matters;
+  `);
+  db.exec('PRAGMA foreign_keys = ON;');
 }
 
 /** SQLite cannot ALTER CHECK; rebuild time_entries if still on rounded_minutes > 0. */

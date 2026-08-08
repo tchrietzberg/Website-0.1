@@ -12,7 +12,7 @@ function createMatter(db, actor, input = {}) {
   const number = allocateNumber(db, 'matter', year, '');
   customFields.ensureRecordTypes(db);
 
-  const matterType = String(input.matterType || 'other');
+  const matterType = customFields.DEFAULT_RECORD_TYPE_KEY;
   customFields.ensureTypeLayout(db, matterType);
 
   let clientId = input.clientId != null && input.clientId !== ''
@@ -64,14 +64,12 @@ function updateMatter(db, actor, id, patch) {
   const current = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
   if (!current) throw new Error('matter not found');
 
-  if (patch.matterType) {
-    customFields.ensureTypeLayout(db, patch.matterType);
-  }
+  // Record type is fixed to Default; ignore client attempts to change it.
+  if (patch.matterType != null) delete patch.matterType;
 
   const map = {
     name: 'name',
     clientId: 'client_id',
-    matterType: 'matter_type',
     jurisdiction: 'jurisdiction',
     court: 'court',
     status: 'status',

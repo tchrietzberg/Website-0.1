@@ -44,7 +44,7 @@ function createEntry(db, actor, input) {
 
   let billable = input.billable;
   if (billable == null) {
-    billable = matter.matter_type === 'sw_admin' ? 0 : 1;
+    billable = 1;
   }
 
   const candidate = {

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS matters (
   client_id INTEGER NOT NULL REFERENCES clients(id),
   number TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
-  matter_type TEXT NOT NULL CHECK (matter_type IN ('litigation','sw_admin','other')),
+  matter_type TEXT NOT NULL DEFAULT 'default',
   jurisdiction TEXT,
   court TEXT,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),

@@ -59,22 +59,20 @@ db.prepare(`
 `).run();
 
 customFields.ensureRecordTypes(db);
-customFields.ensureTypeLayout(db, 'litigation');
-customFields.ensureTypeLayout(db, 'sw_admin');
-customFields.ensureTypeLayout(db, 'other');
+customFields.ensureTypeLayout(db, customFields.DEFAULT_RECORD_TYPE_KEY);
 
 customFields.createCustomField(db, avery, {
   label: 'Case stage',
   apiName: 'case_stage',
   fieldType: 'select',
-  recordTypeKey: 'litigation',
+  recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
   options: ['Investigation', 'Discovery', 'Motion practice', 'Trial', 'Appeal'],
 });
 customFields.createCustomField(db, avery, {
   label: 'Lead plaintiff',
   apiName: 'lead_plaintiff',
   fieldType: 'text',
-  recordTypeKey: 'litigation',
+  recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
 });
 
 console.log(`Seeded ${dbFile}`);

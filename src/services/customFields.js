@@ -1,12 +1,16 @@
 const { audit } = require('../db');
 const matterIndex = require('./matterIndex');
 
+/** Single built-in record type; layouts and type fields attach here. */
+const DEFAULT_RECORD_TYPE_KEY = 'default';
+const DEFAULT_RECORD_TYPE_LABEL = 'Default';
+
 const STANDARD_FIELDS = [
   { key: 'std:number', label: 'Matter number', type: 'text', readonly: true, width: 'half' },
   { key: 'std:name', label: 'Matter name', type: 'text', width: 'full' },
   { key: 'std:client', label: 'Client', type: 'select', width: 'half' },
   { key: 'std:matter_type', label: 'Record type', type: 'select',
-    options: ['litigation', 'sw_admin', 'other'], width: 'half' },
+    options: [DEFAULT_RECORD_TYPE_KEY], width: 'half', readonly: true },
   { key: 'std:status', label: 'Status', type: 'select', options: ['open', 'closed'], width: 'half' },
   { key: 'std:jurisdiction', label: 'Jurisdiction', type: 'text', width: 'half' },
   { key: 'std:court', label: 'Court', type: 'text', width: 'half' },
@@ -17,10 +21,13 @@ const STANDARD_FIELDS = [
 /** Shown on every new matter / type layout. */
 const CORE_LAYOUT_KEYS = ['std:number', 'std:name'];
 
+/** Not offered as an addable field — every matter uses the default record type. */
+const HIDDEN_STANDARD_KEYS = ['std:matter_type'];
+
 /** Optional standard fields — add later on a matter record page. */
 const OPTIONAL_STANDARD_KEYS = STANDARD_FIELDS
   .map((f) => f.key)
-  .filter((key) => !CORE_LAYOUT_KEYS.includes(key));
+  .filter((key) => !CORE_LAYOUT_KEYS.includes(key) && !HIDDEN_STANDARD_KEYS.includes(key));
 
 function fieldLabelForKey(db, fieldKey) {
   const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
@@ -44,22 +51,14 @@ function describeLayoutFields(db, layoutId) {
   }));
 }
 
-function ensureRecordTypes(db) {
-  const defaults = [
-    ['litigation', 'Litigation'],
-    ['sw_admin', 'SW Admin'],
-    ['other', 'Other'],
-  ];
-  for (const [key, label] of defaults) {
-    db.prepare(`
-      INSERT INTO record_types(key, label) VALUES (?, ?)
-      ON CONFLICT(key) DO NOTHING
-    `).run(key, label);
-  }
+function ensureDefaultRecordTypeRow(db) {
+  db.prepare(`
+    INSERT INTO record_types(key, label, active) VALUES (?, ?, 1)
+    ON CONFLICT(key) DO UPDATE SET label = excluded.label, active = 1
+  `).run(DEFAULT_RECORD_TYPE_KEY, DEFAULT_RECORD_TYPE_LABEL);
 }
 
-function ensureTypeLayout(db, recordTypeKey) {
-  ensureRecordTypes(db);
+function createTypeLayoutRow(db, recordTypeKey) {
   let layout = db.prepare(
     'SELECT * FROM page_layouts WHERE record_type_key = ? AND matter_id IS NULL'
   ).get(recordTypeKey);
@@ -80,7 +79,44 @@ function ensureTypeLayout(db, recordTypeKey) {
   return db.prepare('SELECT * FROM page_layouts WHERE id = ?').get(layoutId);
 }
 
-function getTypeLayout(db, recordTypeKey) {
+function ensureRecordTypes(db) {
+  ensureDefaultRecordTypeRow(db);
+
+  // Collapse legacy seeded types (litigation / sw_admin / other) onto Default.
+  const legacy = db.prepare(`
+    SELECT key FROM record_types WHERE key != ?
+  `).all(DEFAULT_RECORD_TYPE_KEY);
+  if (!legacy.length) return;
+
+  createTypeLayoutRow(db, DEFAULT_RECORD_TYPE_KEY);
+  db.prepare(`
+    UPDATE matters SET matter_type = ? WHERE matter_type != ?
+  `).run(DEFAULT_RECORD_TYPE_KEY, DEFAULT_RECORD_TYPE_KEY);
+  db.prepare(`
+    UPDATE custom_fields SET record_type_key = ?
+    WHERE record_type_key IS NOT NULL AND record_type_key != ?
+  `).run(DEFAULT_RECORD_TYPE_KEY, DEFAULT_RECORD_TYPE_KEY);
+
+  for (const row of legacy) {
+    const oldLayout = db.prepare(`
+      SELECT id FROM page_layouts WHERE record_type_key = ? AND matter_id IS NULL
+    `).get(row.key);
+    if (oldLayout) {
+      db.prepare('DELETE FROM page_layout_items WHERE layout_id = ?').run(oldLayout.id);
+      db.prepare('DELETE FROM page_layouts WHERE id = ?').run(oldLayout.id);
+    }
+    db.prepare('DELETE FROM record_types WHERE key = ?').run(row.key);
+  }
+}
+
+function ensureTypeLayout(db, _recordTypeKey) {
+  ensureRecordTypes(db);
+  // Product uses a single default record type; ignore other keys.
+  return createTypeLayoutRow(db, DEFAULT_RECORD_TYPE_KEY);
+}
+
+function getTypeLayout(db, _recordTypeKey) {
+  const recordTypeKey = DEFAULT_RECORD_TYPE_KEY;
   const layout = ensureTypeLayout(db, recordTypeKey);
   const fields = describeLayoutFields(db, layout.id);
   const present = new Set(fields.map((f) => f.fieldKey));
@@ -113,7 +149,8 @@ function addFieldToLayout(db, layoutId, fieldKey, width = 'half') {
   return true;
 }
 
-function addStandardFieldToType(db, actor, recordTypeKey, fieldKey) {
+function addStandardFieldToType(db, actor, _recordTypeKey, fieldKey) {
+  const recordTypeKey = DEFAULT_RECORD_TYPE_KEY;
   if (!OPTIONAL_STANDARD_KEYS.includes(fieldKey)) throw new Error('field cannot be added');
   const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
   if (!std) throw new Error('unknown field');
@@ -129,7 +166,8 @@ function addStandardFieldToType(db, actor, recordTypeKey, fieldKey) {
   return getTypeLayout(db, recordTypeKey);
 }
 
-function removeFieldFromType(db, actor, recordTypeKey, fieldKey) {
+function removeFieldFromType(db, actor, _recordTypeKey, fieldKey) {
+  const recordTypeKey = DEFAULT_RECORD_TYPE_KEY;
   if (CORE_LAYOUT_KEYS.includes(fieldKey)) throw new Error('core fields cannot be removed');
   const layout = ensureTypeLayout(db, recordTypeKey);
   db.prepare(
@@ -184,8 +222,7 @@ function createCustomField(db, actor, input) {
     recordTypeKey = null; // record-based
   } else if (recordTypeKey) {
     ensureRecordTypes(db);
-    const rt = db.prepare('SELECT key FROM record_types WHERE key = ?').get(recordTypeKey);
-    if (!rt) throw new Error('record type not found');
+    recordTypeKey = DEFAULT_RECORD_TYPE_KEY;
   }
 
   let apiName = String(input.apiName || slugify(label));
@@ -523,6 +560,8 @@ function saveLayoutItems(db, actor, layoutId, items) {
 }
 
 module.exports = {
+  DEFAULT_RECORD_TYPE_KEY,
+  DEFAULT_RECORD_TYPE_LABEL,
   STANDARD_FIELDS,
   CORE_LAYOUT_KEYS,
   OPTIONAL_STANDARD_KEYS,

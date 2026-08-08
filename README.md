@@ -71,7 +71,7 @@ Then open http://localhost:3000.
 - Time & Billing settings: duration format (hh:mm:ss, hh:mm, Hour Decimal) and rounding (up / nearest / down / none) with intervals 6 / 10 / 12 / 15 / 30 min — configure under Settings.
 - Zero-duration entries blocked (service layer **and** DB CHECK constraint).
 - Category/subcategory required for N.D. Cal matters (data-driven rule in `billing_rules`).
-- Default billable status by matter type: litigation billable, SW Admin non-billable.
+- Default billable status for new time entries is billable (override per entry).
 - Matter field history: every matter-level change logged with user and timestamp.
 - Lodestar summary and detail reports; all reports export to native Excel (.xlsx) and CSV.
   Dollar amounts export as real numbers with currency formatting, so Excel formulas work on them.
