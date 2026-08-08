@@ -719,6 +719,42 @@ a.btn {
   margin-top: 0.35rem;
 }
 
+.ms-connect-main {
+  justify-self: start;
+  min-width: 14rem;
+  font-size: 1.05rem;
+  padding: 0.8rem 1.25rem;
+}
+
+.onedrive-client-gate {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(26, 58, 107, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f3f6fa 100%);
+}
+
+.onedrive-client-gate[hidden] {
+  display: none;
+}
+
+button.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+button.linkish:hover {
+  color: var(--ink);
+}
+
 .onedrive-device-panel:not([hidden]) {
   display: block;
 }

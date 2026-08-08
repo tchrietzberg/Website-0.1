@@ -134,4 +134,18 @@ describe('Microsoft connect (app config)', () => {
     msAuth.disconnect(db, admin);
     assert.equal(msAuth.connectionStatus(db).connected, false);
   });
+
+  it('starts browser sign-in URL after client id is configured', () => {
+    assert.throws(
+      () => msAuth.startAuthCode(db, admin, { redirectUri: 'http://localhost/api/onedrive/oauth/callback' }),
+      (err) => err && err.code === 'missing_client_id'
+    );
+    msAuth.saveAppConfig(db, admin, { clientId: '11111111-2222-3333-4444-555555555555' });
+    const started = msAuth.startAuthCode(db, admin, {
+      redirectUri: 'http://localhost/api/onedrive/oauth/callback',
+    });
+    assert.match(started.authUrl, /login\.microsoftonline\.com/);
+    assert.match(started.authUrl, /client_id=11111111-2222-3333-4444-555555555555/);
+    assert.match(started.authUrl, /code_challenge/);
+  });
 });

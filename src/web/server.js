@@ -461,7 +461,44 @@ function createServer(db = openDb()) {
         try {
           return json(res, 200, await msAuth.startDeviceCode(db, user));
         } catch (e) {
-          return json(res, 400, { error: e.message });
+          return json(res, 400, {
+            error: e.code || e.message,
+            message: e.message,
+          });
+        }
+      }
+      // One-click: optional first-time clientId save, then return browser login URL
+      if (req.method === 'POST' && pathname === '/api/onedrive/connect/quick') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const msAuth = require('../services/msAuth');
+        const body = await parseBody(req);
+        try {
+          if (body.clientId && String(body.clientId).trim()) {
+            if (user.role !== 'admin') {
+              return json(res, 403, {
+                error: 'admin_required',
+                message: 'An admin must save the Application (client) ID once for the firm.',
+              });
+            }
+            msAuth.saveAppConfig(db, user, {
+              clientId: body.clientId,
+              tenantId: body.tenantId || 'common',
+            });
+          }
+          if (!msAuth.connectionStatus(db).clientConfigured) {
+            return json(res, 400, {
+              error: 'missing_client_id',
+              message: 'Add MS_CLIENT_ID to the server environment, or enter the Application ID once below.',
+            });
+          }
+          const redirectUri = `${url.protocol}//${url.host}/api/onedrive/oauth/callback`;
+          const started = msAuth.startAuthCode(db, user, { redirectUri });
+          return json(res, 200, { authUrl: started.authUrl, microsoft: msAuth.connectionStatus(db) });
+        } catch (e) {
+          return json(res, 400, {
+            error: e.code || e.message,
+            message: e.message,
+          });
         }
       }
       if (req.method === 'POST' && pathname === '/api/onedrive/connect/poll') {

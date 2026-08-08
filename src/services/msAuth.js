@@ -108,7 +108,9 @@ async function fetchAccountLabel(accessToken) {
 async function startDeviceCode(db, actor) {
   const cid = clientId(db);
   if (!cid) {
-    throw new Error('Set Microsoft Application (client) ID in Settings first (one-time).');
+    const err = new Error('Set Microsoft Application (client) ID once, or MS_CLIENT_ID on the server.');
+    err.code = 'missing_client_id';
+    throw err;
   }
   const res = await fetch(`${authority(db)}/oauth2/v2.0/devicecode`, {
     method: 'POST',
@@ -204,7 +206,9 @@ function base64url(buf) {
 function startAuthCode(db, actor, { redirectUri } = {}) {
   const cid = clientId(db);
   if (!cid) {
-    throw new Error('Set Microsoft Application (client) ID in Settings first (one-time).');
+    const err = new Error('Set Microsoft Application (client) ID once, or MS_CLIENT_ID on the server.');
+    err.code = 'missing_client_id';
+    throw err;
   }
   if (!redirectUri) throw new Error('redirectUri required');
 
