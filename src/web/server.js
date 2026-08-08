@@ -247,7 +247,7 @@ function createServer(db = openDb()) {
         return json(res, 200, page);
       }
       if (req.method === 'POST' && pathname === '/api/matters') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const body = await parseBody(req);
         return json(res, 201, matterSvc.createMatter(db, user, body));
       }

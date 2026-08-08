@@ -9,7 +9,12 @@
     settings: null,
     matterId: null,
     matterSearch: { q: '' },
+    focusCreateMatter: false,
   };
+
+  function canCreateMatter(user) {
+    return !!user && ['admin', 'billing_clerk', 'attorney', 'paralegal'].includes(user.role);
+  }
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const main = $('#main');
@@ -99,7 +104,7 @@
           <h1>Sign in</h1>
           <p class="lead">Prototype auth: enter a demo email.</p>
           <label>Email
-            <input id="email" list="emails" placeholder="sam@firm.example" value="sam@firm.example" />
+            <input id="email" list="emails" placeholder="avery@firm.example" value="avery@firm.example" />
           </label>
           <datalist id="emails">
             <option value="avery@firm.example">
@@ -131,6 +136,14 @@
     };
   }
 
+  function goToCreateMatter() {
+    state.focusCreateMatter = true;
+    state.view = 'matters';
+    state.matterId = null;
+    renderShell();
+    renderView();
+  }
+
   function renderShell() {
     nav.hidden = false;
     const items = [
@@ -144,10 +157,13 @@
     if (state.user.role === 'admin') items.push(['audit', 'Audit Log']);
     if (state.view === 'approvals') state.view = 'time';
     const activeView = state.view === 'matter' ? 'matters' : state.view;
+    const addMatterNav = canCreateMatter(state.user)
+      ? `<button type="button" class="primary nav-add-matter" id="navAddMatter">Add matter</button>`
+      : '';
     nav.innerHTML = items.map(([id, label]) =>
       `<button data-view="${id}" class="${activeView === id ? 'active' : ''}">${label}</button>`
-    ).join('');
-    nav.querySelectorAll('button').forEach((b) => {
+    ).join('') + addMatterNav;
+    nav.querySelectorAll('[data-view]').forEach((b) => {
       b.onclick = () => {
         state.view = b.dataset.view;
         if (state.view !== 'matter') state.matterId = null;
@@ -155,6 +171,8 @@
         renderView();
       };
     });
+    const navAdd = $('#navAddMatter');
+    if (navAdd) navAdd.onclick = () => goToCreateMatter();
     userbar.innerHTML = `
       <div class="who"><strong>${state.user.name}</strong><span>${state.user.role.replace('_', ' ')}</span></div>
       <button id="logout">Sign out</button>`;
@@ -199,7 +217,7 @@
     if (state.matterSearch.q) params.set('q', state.matterSearch.q);
 
     const hasQuery = !!state.matterSearch.q;
-    const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
+    const canEdit = canCreateMatter(state.user);
     const canConfigure = ['admin', 'billing_clerk'].includes(state.user.role);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -219,12 +237,12 @@
             <h1>Matters</h1>
             <p class="lead">Search the index or add a new matter on this page.</p>
           </div>
-          ${canEdit ? `<button type="button" class="primary" id="addMatterBtn">Add matter</button>` : ''}
+          ${canEdit ? `<button type="button" class="primary add-matter-btn" id="addMatterBtn">Add matter</button>` : ''}
         </div>
 
         ${canEdit ? `
         <div id="createMatterSection" class="page-section">
-          <h2>Create matter</h2>
+          <h2 id="createMatterHeading">Create matter</h2>
           <p class="hint">New matters are added to the search index immediately.</p>
           <form id="newMatterForm" class="grid two">
             <label class="span-all">Name
@@ -336,16 +354,19 @@
       state.matterSearch = { q: '' };
       await renderMatters();
     };
+    function focusCreateForm() {
+      const section = $('#createMatterSection');
+      const nameInput = section && section.querySelector('input[name="name"]');
+      if (section && section.scrollIntoView) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      if (nameInput) nameInput.focus();
+    }
     const addMatterBtn = $('#addMatterBtn');
-    if (addMatterBtn) {
-      addMatterBtn.onclick = () => {
-        const section = $('#createMatterSection');
-        const nameInput = section && section.querySelector('input[name="name"]');
-        if (section && section.scrollIntoView) {
-          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        if (nameInput) nameInput.focus();
-      };
+    if (addMatterBtn) addMatterBtn.onclick = () => focusCreateForm();
+    if (state.focusCreateMatter) {
+      state.focusCreateMatter = false;
+      setTimeout(focusCreateForm, 0);
     }
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => openMatter(Number(row.dataset.matter));
