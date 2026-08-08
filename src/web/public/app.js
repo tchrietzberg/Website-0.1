@@ -46,6 +46,174 @@
     return `${sign}$${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function matterSearchText(m) {
+    return [m.number, m.name, m.client_name, m.status, m.attorney_name]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+  }
+
+  function renderMatterPicker({ name = 'matterId', selectedId = null, matters = [] } = {}) {
+    const selected = matters.find((m) => Number(m.id) === Number(selectedId)) || null;
+    return `
+      <div class="matter-picker" data-matter-picker>
+        <input type="hidden" name="${name}" value="${selected ? selected.id : ''}" data-matter-id />
+        <button type="button" class="matter-picker-trigger" data-matter-trigger
+          aria-haspopup="listbox" aria-expanded="false">
+          <span class="matter-picker-value" data-matter-label>
+            ${selected ? `
+              <strong>${escapeHtml(selected.number)}</strong>
+              <span>${escapeHtml(selected.name)}</span>
+              ${selected.client_name ? `<small>${escapeHtml(selected.client_name)}</small>` : ''}
+            ` : `
+              <span class="matter-picker-placeholder">Search matters by number, name, or client…</span>
+            `}
+          </span>
+          <span class="matter-picker-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="matter-picker-panel" data-matter-panel hidden>
+          <input type="search" class="matter-picker-search" data-matter-search
+            placeholder="Type to filter matters…" autocomplete="off" aria-label="Search matters" />
+          <ul class="matter-picker-list" data-matter-list role="listbox"></ul>
+          <p class="matter-picker-empty muted" data-matter-empty hidden>No matters match your search</p>
+        </div>
+      </div>`;
+  }
+
+  let matterPickerDocBound = false;
+  function ensureMatterPickerDocClose() {
+    if (matterPickerDocBound) return;
+    matterPickerDocBound = true;
+    document.addEventListener('click', (ev) => {
+      document.querySelectorAll('[data-matter-picker].is-open').forEach((openPicker) => {
+        if (!openPicker.contains(ev.target)) {
+          const openPanel = openPicker.querySelector('[data-matter-panel]');
+          const openTrigger = openPicker.querySelector('[data-matter-trigger]');
+          if (openPanel) openPanel.hidden = true;
+          if (openTrigger) openTrigger.setAttribute('aria-expanded', 'false');
+          openPicker.classList.remove('is-open');
+        }
+      });
+    });
+  }
+
+  function wireMatterPicker(scopeEl, { matters = [] } = {}) {
+    const picker = scopeEl.querySelector('[data-matter-picker]');
+    if (!picker) return null;
+    ensureMatterPickerDocClose();
+    const trigger = picker.querySelector('[data-matter-trigger]');
+    const panel = picker.querySelector('[data-matter-panel]');
+    const search = picker.querySelector('[data-matter-search]');
+    const list = picker.querySelector('[data-matter-list]');
+    const empty = picker.querySelector('[data-matter-empty]');
+    const hidden = picker.querySelector('[data-matter-id]');
+    const label = picker.querySelector('[data-matter-label]');
+    let activeIndex = -1;
+    let filtered = matters.slice();
+
+    function setSelected(m) {
+      hidden.value = m ? String(m.id) : '';
+      if (!m) {
+        label.innerHTML = '<span class="matter-picker-placeholder">Search matters by number, name, or client…</span>';
+      } else {
+        label.innerHTML = `
+          <strong>${escapeHtml(m.number)}</strong>
+          <span>${escapeHtml(m.name)}</span>
+          ${m.client_name ? `<small>${escapeHtml(m.client_name)}</small>` : ''}`;
+      }
+      picker.classList.toggle('has-value', !!m);
+      trigger.classList.remove('is-invalid');
+    }
+
+    function close() {
+      panel.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      picker.classList.remove('is-open');
+      activeIndex = -1;
+    }
+
+    function open() {
+      panel.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+      picker.classList.add('is-open');
+      search.value = '';
+      renderList('');
+      setTimeout(() => search.focus(), 0);
+    }
+
+    function renderList(q) {
+      const needle = String(q || '').trim().toLowerCase();
+      filtered = !needle
+        ? matters.slice(0, 80)
+        : matters.filter((m) => matterSearchText(m).includes(needle)).slice(0, 80);
+      activeIndex = filtered.length ? 0 : -1;
+      empty.hidden = filtered.length > 0;
+      list.innerHTML = filtered.map((m, i) => `
+        <li role="option" class="matter-picker-option ${i === activeIndex ? 'is-active' : ''}"
+          data-id="${m.id}" aria-selected="${i === activeIndex ? 'true' : 'false'}">
+          <strong>${escapeHtml(m.number)}</strong>
+          <span>${escapeHtml(m.name)}</span>
+          <small>${escapeHtml(m.client_name || '—')}${m.status ? ` · ${escapeHtml(m.status)}` : ''}</small>
+        </li>`).join('');
+      list.querySelectorAll('[data-id]').forEach((el) => {
+        el.onmousedown = (ev) => {
+          ev.preventDefault();
+          const m = matters.find((x) => Number(x.id) === Number(el.dataset.id));
+          if (m) {
+            setSelected(m);
+            close();
+          }
+        };
+      });
+    }
+
+    function moveActive(delta) {
+      if (!filtered.length) return;
+      activeIndex = (activeIndex + delta + filtered.length) % filtered.length;
+      list.querySelectorAll('.matter-picker-option').forEach((el, i) => {
+        el.classList.toggle('is-active', i === activeIndex);
+        el.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false');
+        if (i === activeIndex) el.scrollIntoView({ block: 'nearest' });
+      });
+    }
+
+    trigger.onclick = (ev) => {
+      ev.stopPropagation();
+      if (panel.hidden) open();
+      else close();
+    };
+    search.oninput = () => renderList(search.value);
+    search.onkeydown = (ev) => {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); moveActive(1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); moveActive(-1); }
+      else if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (activeIndex >= 0 && filtered[activeIndex]) {
+          setSelected(filtered[activeIndex]);
+          close();
+        }
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        close();
+        trigger.focus();
+      }
+    };
+
+    return {
+      getValue: () => (hidden.value ? Number(hidden.value) : null),
+      setInvalid: (on) => trigger.classList.toggle('is-invalid', !!on),
+      focus: () => open(),
+    };
+  }
+
   function formatDuration(mins, format) {
     const n = Number(mins) || 0;
     const fmt = format || state.settings?.durationFormat || 'decimal';
@@ -936,20 +1104,23 @@
   }
 
   async function renderTime() {
-    const [entries, settings] = await Promise.all([
+    const [entries, settings, matters] = await Promise.all([
       api('/api/time-entries'),
       api('/api/settings'),
+      api('/api/matters'),
     ]);
     state.settings = settings;
+    state.matters = matters;
     const today = new Date().toISOString().slice(0, 10);
+    const preferredMatterId = state.matterId
+      || (matters.length === 1 ? matters[0].id : null);
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
         <form id="timeForm" class="grid two">
           <label class="span-all">Matter
-            <select name="matterId" required>
-              ${state.matters.map((m) => `<option value="${m.id}">${m.number} — ${m.name}</option>`).join('')}
-            </select>
+            ${renderMatterPicker({ name: 'matterId', selectedId: preferredMatterId, matters })}
+            <span class="hint">Type a matter number, name, or client to find it quickly.</span>
           </label>
           <label>Service date
             <input name="serviceDate" type="date" value="${today}" required />
@@ -1000,6 +1171,7 @@
         </table></div>
       </div>`;
 
+    const matterPicker = wireMatterPicker($('#timeForm'), { matters });
     $('#timeForm').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
@@ -1007,6 +1179,12 @@
       body.matterId = Number(body.matterId);
       body.timekeeperId = Number(body.timekeeperId);
       body.rawMinutes = Number(body.rawMinutes);
+      if (!body.matterId) {
+        matterPicker?.setInvalid(true);
+        $('#timeMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
+        matterPicker?.focus();
+        return;
+      }
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
         let msg = `Saved #${entry.id}: ${entry.rawMinutes}m → ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min).`;
@@ -1029,10 +1207,13 @@
     if (state.focusTimeEntry) {
       state.focusTimeEntry = false;
       const form = $('#timeForm');
-      const minutes = form && form.querySelector('input[name="rawMinutes"]');
       setTimeout(() => {
         if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        if (minutes) minutes.focus();
+        if (!preferredMatterId) matterPicker?.focus();
+        else {
+          const minutes = form && form.querySelector('input[name="rawMinutes"]');
+          if (minutes) minutes.focus();
+        }
       }, 0);
     }
   }
@@ -1084,16 +1265,19 @@
   }
 
   async function renderBilling() {
-    const invoices = await api('/api/invoices');
+    const [invoices, matters] = await Promise.all([
+      api('/api/invoices'),
+      api('/api/matters'),
+    ]);
+    state.matters = matters;
     main.innerHTML = `
       <div class="card">
         <h1>Billing</h1>
         <p class="lead">Generate pre-bill from approved WIP → write-down → review → approve → send.</p>
         <form id="prebillForm" class="grid two">
           <label class="span-all">Matter
-            <select name="matterId">
-              ${state.matters.map((m) => `<option value="${m.id}">${m.number} — ${m.name}</option>`).join('')}
-            </select>
+            ${renderMatterPicker({ name: 'matterId', selectedId: null, matters })}
+            <span class="hint">Search by matter number, name, or client.</span>
           </label>
           <div class="row-actions span-all">
             <button class="primary" type="submit">Generate pre-bill</button>
@@ -1119,9 +1303,16 @@
       </div>
       <div id="invoiceDetail"></div>`;
 
+    const billMatterPicker = wireMatterPicker($('#prebillForm'), { matters });
     $('#prebillForm').onsubmit = async (ev) => {
       ev.preventDefault();
       const matterId = Number(new FormData(ev.target).get('matterId'));
+      if (!matterId) {
+        billMatterPicker?.setInvalid(true);
+        $('#billMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
+        billMatterPicker?.focus();
+        return;
+      }
       try {
         const inv = await api('/api/invoices/prebill', {
           method: 'POST', body: JSON.stringify({ matterId }),
