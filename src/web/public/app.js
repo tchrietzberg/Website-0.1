@@ -583,11 +583,6 @@
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
-        <p class="lead">
-          ${roundModeLabel(settings.roundMode)}${settings.roundMode === 'none' ? '' : ` ${inc?.label || (settings.roundIncrementMinutes + ' min')}`}.
-          Display: ${settings.durationFormats.find((f) => f.id === settings.durationFormat)?.label || settings.durationFormat}.
-          Change these in Settings. Zero raw minutes blocked. N.D. Cal matters need category/subcategory.
-        </p>
         <form id="timeForm" class="grid two">
           <label class="span-all">Matter
             <select name="matterId" required>
