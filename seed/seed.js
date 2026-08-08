@@ -79,4 +79,4 @@ customFields.createCustomField(db, avery, {
 
 console.log(`Seeded ${dbFile}`);
 console.log('Demo logins: avery / jordan / riley / sam / billie @firm.example');
-console.log('No sample matters — create matters under Matters; search uses the FTS index.');
+console.log('No sample matters — create matters under Matters; Matter Search uses the search index.');
