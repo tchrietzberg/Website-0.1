@@ -796,6 +796,19 @@
     const syncBtn = $('#onedriveSync');
     if (syncBtn) {
       syncBtn.onclick = async () => {
+        if (!onedriveMeta.graphConfigured) {
+          $('#onedriveMsg').innerHTML = `
+            <div class="error">
+              Live OneDrive sync needs a Microsoft Graph token.
+              <div class="hint" style="margin-top:.5rem">
+                Go to <strong>Settings → OneDrive / SharePoint</strong> (admin), paste a token from
+                <a href="https://developer.microsoft.com/graph/graph-explorer" target="_blank" rel="noopener noreferrer">Graph Explorer</a>
+                (sign in → Access token), then click Refresh again.
+                Or use <strong>Load demo files</strong> / the <strong>OneDrive view</strong> tab for now.
+              </div>
+            </div>`;
+          return;
+        }
         try {
           syncBtn.disabled = true;
           const data = await api(`/api/matters/${matterId}/onedrive/sync`, {
@@ -894,9 +907,8 @@
             <div class="onedrive-toolbar">
               <nav class="onedrive-crumbs" id="onedriveCrumbs" aria-label="Folder path"></nav>
               <div class="row-actions">
-                ${canEdit ? `<button type="button" class="primary" id="onedriveSync">Refresh from OneDrive</button>` : ''}
-                ${canEdit && ['admin', 'billing_clerk'].includes(state.user.role)
-                  ? `<button type="button" id="onedriveDemoSeed">Load demo files</button>` : ''}
+                ${canEdit ? `<button type="button" class="primary" id="onedriveSync">${page.onedrive.graphConfigured ? 'Refresh from OneDrive' : 'Set up live sync'}</button>` : ''}
+                ${canEdit ? `<button type="button" id="onedriveDemoSeed">Load demo files</button>` : ''}
                 <a class="btn" id="onedriveOpenExternal"
                   href="${escapeHtml(page.onedrive.folderUrl)}" target="_blank" rel="noopener noreferrer">Open in Microsoft</a>
               </div>
@@ -905,7 +917,7 @@
               <p class="muted">Loading folder…</p>
             </div>
             ${!page.onedrive.graphConfigured ? `
-              <p class="hint">Tip: add a Microsoft Graph access token under Settings → OneDrive to refresh live SharePoint/OneDrive contents. Until then you can use the embedded view or load demo files.</p>
+              <p class="hint">Live sync is off until an admin adds a Graph token under <strong>Settings → OneDrive / SharePoint</strong>. Demo files load automatically when you link a folder; use <strong>OneDrive view</strong> for the real Microsoft library.</p>
             ` : ''}
           </div>
 
@@ -1784,10 +1796,18 @@
       ${isAdmin ? `
       <form id="onedriveSettingsForm" class="card stack">
         <h2>OneDrive / SharePoint</h2>
-        <p class="hint">Paste a Microsoft Graph access token so matter folders can refresh live files and folders inside the legal system. You can also set <code>MS_GRAPH_ACCESS_TOKEN</code> in the environment. Status: <strong>${settings.msGraphConfigured ? 'configured' : 'not configured'}</strong>.</p>
+        <p class="lead">Status: <strong>${settings.msGraphConfigured ? 'Graph token configured' : 'Graph token not configured'}</strong></p>
+        <p class="hint">Needed only for <strong>Refresh from OneDrive</strong> (live file list). Without it, matters still use the embedded OneDrive view and demo/local file browser.</p>
+        <ol class="hint" style="padding-left:1.2rem;margin:.35rem 0 0.75rem">
+          <li>Open <a href="https://developer.microsoft.com/graph/graph-explorer" target="_blank" rel="noopener noreferrer">Graph Explorer</a> and sign in with Microsoft.</li>
+          <li>Consent to Files.Read.All / Sites.Read.All if prompted.</li>
+          <li>Open the <strong>Access token</strong> tab → copy the token.</li>
+          <li>Paste it below and save. Then open a matter → OneDrive → Refresh from OneDrive.</li>
+        </ol>
+        <p class="hint">Or set env <code>MS_GRAPH_ACCESS_TOKEN</code> before starting the server.</p>
         <label>Graph access token
           <input name="msGraphAccessToken" type="password" autocomplete="off"
-            placeholder="${settings.msGraphConfigured ? '•••• configured — paste to replace' : 'eyJ0eXAiOiJKV1QiLCJhbGci…'}" />
+            placeholder="${settings.msGraphConfigured ? '•••• configured — paste to replace' : 'Paste access token from Graph Explorer'}" />
         </label>
         <div class="row-actions">
           <button class="primary" type="submit">Save Graph token</button>

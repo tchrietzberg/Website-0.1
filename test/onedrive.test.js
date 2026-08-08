@@ -69,14 +69,14 @@ describe('matter OneDrive integration', () => {
     assert.match(b.folderUrl, /1drv\.ms/);
   });
 
-  it('browses cached OneDrive folders and files after demo seed', () => {
+  it('auto-seeds browsable demo files when Graph is not configured', () => {
     const page = matterSvc.createMatter(db, admin, { name: 'Docs Matter' });
     onedrive.linkMatterOneDrive(db, admin, page.matter.id, {
       folderUrl: 'https://contoso.sharepoint.com/sites/Lit/Shared%20Documents/Docs',
       folderName: 'Docs Matter',
     });
 
-    const root = onedrive.seedDemoBrowser(db, page.matter.id);
+    const root = onedrive.browseFolder(db, page.matter.id, {});
     assert.ok(root.items.some((i) => i.itemType === 'folder' && i.name === 'Pleadings'));
     assert.ok(root.items.some((i) => i.itemType === 'file' && /Engagement/.test(i.name)));
 

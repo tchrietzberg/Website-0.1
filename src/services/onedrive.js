@@ -194,6 +194,14 @@ function linkMatterOneDrive(db, actor, matterId, input = {}) {
     detail: { folderUrl, folderName },
   });
 
+  // Without Graph, seed a browsable matter folder tree so Files works immediately.
+  if (!graphConfigured(db) && input.seedDemo !== false) {
+    const count = db.prepare(
+      'SELECT COUNT(*) AS n FROM matter_onedrive_items WHERE matter_id = ?'
+    ).get(matterId).n;
+    if (!count) seedDemoBrowser(db, matterId);
+  }
+
   return getMatterOneDrive(db, matterId);
 }
 
