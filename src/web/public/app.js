@@ -1861,42 +1861,48 @@
               ${isAdmin ? '<button type="button" id="msDisconnect">Disconnect</button>' : ''}
             </div>
           ` : `
-            <button type="button" class="primary ms-connect-main" id="msConnectQuick">
+            <button type="button" class="primary ms-connect-main" id="msConnectQuick"
+              ${settings.microsoft?.clientConfigured ? '' : 'disabled'}>
               Sign in with Microsoft
             </button>
-            <p class="hint">Opens Microsoft login — approve access, then you're done. No tokens to copy.</p>
-            <div id="msClientIdGate" class="onedrive-client-gate" hidden>
-              <p class="hint"><strong>First-time firm setup</strong> (once): your Microsoft 365 admin adds an app ID, or set <code>MS_CLIENT_ID</code> on the server.</p>
-              <label>Application (client) ID
-                <input id="msQuickClientId" value="${escapeHtml(settings.microsoft?.clientId || '')}"
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
-              </label>
-              <div class="row-actions">
-                <button type="button" class="primary" id="msSaveAndConnect">Continue to Microsoft</button>
-                <button type="button" id="msCancelGate">Cancel</button>
-              </div>
-              <details class="onedrive-setup-help">
-                <summary>Need an Application ID?</summary>
-                <ol>
-                  <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">Azure App registrations</a> → New registration.</li>
-                  <li>Accounts: multitenant (or single tenant). Authentication → allow public client flows; add redirect <code>${escapeHtml(window.location.origin)}/api/onedrive/oauth/callback</code>.</li>
-                  <li>API permissions (delegated): User.Read, Files.Read.All, Sites.Read.All, offline_access → Grant admin consent.</li>
-                  <li>Paste the Application (client) ID above and Continue.</li>
-                </ol>
-              </details>
-            </div>
+            <p class="hint">Opens Microsoft login — approve access, then you're done.</p>
+            ${settings.microsoft?.clientConfigured ? '' : `
+              <div class="error" id="msNotConfigured">
+                Microsoft sign-in isn’t configured on this server yet.
+                ${isAdmin
+                  ? 'An admin sets <code>MS_CLIENT_ID</code> once in the server environment (one Azure app for the product). Users never enter an app ID.'
+                  : 'Ask a firm admin to finish server setup, then try again.'}
+              </div>`}
             <div id="msDevicePanel" class="onedrive-device-panel" hidden></div>
-            <p class="hint"><button type="button" class="linkish" id="msConnectDevice">Use a device code instead</button></p>
+            ${settings.microsoft?.clientConfigured
+              ? '<p class="hint"><button type="button" class="linkish" id="msConnectDevice">Use a device code instead</button></p>'
+              : ''}
           `}
         </div>
 
         ${isAdmin ? `
         <details class="onedrive-setup-help">
-          <summary>Advanced: app settings</summary>
+          <summary>Server setup (admins)</summary>
+          <p class="hint" style="margin-top:.65rem">
+            Prefer <code>MS_CLIENT_ID</code> in the environment / <code>.env</code> so everyone only clicks
+            <strong>Sign in with Microsoft</strong>. Optional fallback fields below if you cannot set env vars.
+            ${settings.microsoft?.clientIdSource === 'env'
+              ? ` Currently using env (<code>${escapeHtml(settings.microsoft.clientIdMasked || '')}</code>).`
+              : settings.microsoft?.clientConfigured
+                ? ` Currently using saved settings (<code>${escapeHtml(settings.microsoft.clientIdMasked || '')}</code>).`
+                : ''}
+          </p>
+          <ol>
+            <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">Azure App registrations</a> → New registration (once for the product).</li>
+            <li>Supported accounts: multitenant (or single-tenant). Authentication → allow public client flows; redirect URI <code>${escapeHtml(window.location.origin)}/api/onedrive/oauth/callback</code>.</li>
+            <li>API permissions (delegated): User.Read, Files.Read.All, Sites.Read.All, offline_access → Grant admin consent.</li>
+            <li>Set <code>MS_CLIENT_ID=&lt;Application (client) ID&gt;</code> and restart the server.</li>
+          </ol>
           <form id="msAppConfigForm" class="grid two" style="margin-top:.75rem">
-            <label class="span-all">Application (client) ID
+            <label class="span-all">Application (client) ID <span class="muted">(fallback if env not set)</span>
               <input name="msClientId" value="${escapeHtml(settings.microsoft?.clientId || '')}"
-                placeholder="Or set MS_CLIENT_ID in the server environment" />
+                placeholder="${settings.microsoft?.clientIdSource === 'env' ? 'Using MS_CLIENT_ID from environment' : 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'}"
+                ${settings.microsoft?.clientIdSource === 'env' ? 'disabled' : ''} />
             </label>
             <label>Tenant
               <input name="msTenantId" value="${escapeHtml(settings.microsoft?.tenantId || 'common')}" placeholder="common" />
@@ -1905,7 +1911,7 @@
               <input name="msClientSecret" type="password" autocomplete="off" placeholder="Optional" />
             </label>
             <div class="row-actions span-all">
-              <button type="submit">Save app settings</button>
+              <button type="submit" ${settings.microsoft?.clientIdSource === 'env' ? 'disabled' : ''}>Save app settings</button>
             </div>
           </form>
         </details>` : ''}
@@ -2031,9 +2037,6 @@
     }
 
     const quickBtn = $('#msConnectQuick');
-    const clientGate = $('#msClientIdGate');
-    const saveAndConnectBtn = $('#msSaveAndConnect');
-    const cancelGateBtn = $('#msCancelGate');
     const connectBtn = $('#msConnectDevice');
     const devicePanel = $('#msDevicePanel');
     let pollTimer = null;
@@ -2044,22 +2047,10 @@
       }
     };
 
-    const showClientIdGate = (message) => {
-      if (!clientGate) {
-        $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(message || 'Microsoft app ID is not configured yet.')}</div>`;
-        return;
-      }
-      clientGate.hidden = false;
-      if (message) {
-        $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
-      }
-      $('#msQuickClientId')?.focus();
-    };
-
-    const startMicrosoftLogin = async (payload = {}) => {
+    const startMicrosoftLogin = async () => {
       const started = await api('/api/onedrive/connect/quick', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: '{}',
       });
       if (!started.authUrl) throw new Error('Microsoft did not return a sign-in URL');
       window.location.href = started.authUrl;
@@ -2071,41 +2062,11 @@
         try {
           quickBtn.disabled = true;
           $('#onedriveSettingsMsg').innerHTML = '';
-          await startMicrosoftLogin({});
+          await startMicrosoftLogin();
         } catch (e) {
           quickBtn.disabled = false;
-          if (e.code === 'missing_client_id') {
-            showClientIdGate(isAdmin
-              ? 'One-time firm setup: paste the Application (client) ID, then continue to Microsoft.'
-              : 'Ask a firm admin to finish one-time Microsoft app setup (Application ID), then try again.');
-            return;
-          }
           $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
-      };
-    }
-
-    if (saveAndConnectBtn) {
-      saveAndConnectBtn.onclick = async () => {
-        const clientId = String($('#msQuickClientId')?.value || '').trim();
-        if (!clientId) {
-          showClientIdGate('Paste the Application (client) ID from Azure, then continue.');
-          return;
-        }
-        try {
-          saveAndConnectBtn.disabled = true;
-          await startMicrosoftLogin({ clientId, tenantId: 'common' });
-        } catch (e) {
-          saveAndConnectBtn.disabled = false;
-          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    if (cancelGateBtn && clientGate) {
-      cancelGateBtn.onclick = () => {
-        clientGate.hidden = true;
-        $('#onedriveSettingsMsg').innerHTML = '';
       };
     }
 
@@ -2154,10 +2115,6 @@
           pollTimer = setTimeout(tick, intervalMs);
         } catch (e) {
           connectBtn.disabled = false;
-          if (e.code === 'missing_client_id' || /client\)? ID/i.test(e.message)) {
-            showClientIdGate(e.message);
-            return;
-          }
           $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };

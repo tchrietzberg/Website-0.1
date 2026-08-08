@@ -1,6 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+require('../loadEnv').loadEnvFile();
 const { openDb, migrate, DEFAULT_DB, getSetting, setSetting } = require('../db');
 const {
   ROUNDING_INCREMENTS,
@@ -488,7 +489,7 @@ function createServer(db = openDb()) {
           if (!msAuth.connectionStatus(db).clientConfigured) {
             return json(res, 400, {
               error: 'missing_client_id',
-              message: 'Add MS_CLIENT_ID to the server environment, or enter the Application ID once below.',
+              message: 'Microsoft sign-in is not configured on this server. Set MS_CLIENT_ID in the environment (one Azure app for the product), then restart.',
             });
           }
           const redirectUri = `${url.protocol}//${url.host}/api/onedrive/oauth/callback`;

@@ -73,7 +73,8 @@ Then open http://localhost:3000.
 - Category/subcategory required for N.D. Cal matters (data-driven rule in `billing_rules`).
 - Default billable status for new time entries is billable (override per entry).
 - Matter field history: every matter-level change logged with user and timestamp.
-- Matter-level OneDrive: link a folder, browse files in-app, embed the live library, and **Connect Microsoft** in Settings (device code or browser sign-in — no Graph Explorer tokens). Optional env: `MS_CLIENT_ID`, `MS_TENANT_ID`, `MS_CLIENT_SECRET`.
+- Matter-level OneDrive: link a folder, browse files in-app, embed the live library, and **Sign in with Microsoft** in Settings (browser OAuth or device code — no Graph Explorer tokens).
+  Microsoft always requires an Application (client) ID at the protocol level; put it on the **server once** as `MS_CLIENT_ID` (see `.env.example`) so end users never type it. Optional: `MS_TENANT_ID`, `MS_CLIENT_SECRET`.
 - Lodestar summary and detail reports; all reports export to native Excel (.xlsx) and CSV.
   Dollar amounts export as real numbers with currency formatting, so Excel formulas work on them.
 

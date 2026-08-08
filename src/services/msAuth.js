@@ -44,9 +44,12 @@ function connectionStatus(db) {
   const account = getSetting(db, 'ms_account_label', '') || null;
   const cid = clientId(db);
   const fullClientId = String(cid).trim();
+  const fromEnv = !!(process.env.MS_CLIENT_ID && String(process.env.MS_CLIENT_ID).trim());
   return {
     clientConfigured: !!fullClientId,
-    clientId: fullClientId || null,
+    clientIdSource: fromEnv ? 'env' : (fullClientId ? 'settings' : null),
+    // Public client IDs are not secrets; still prefer masked display in UI.
+    clientId: fromEnv ? null : (fullClientId || null),
     clientIdMasked: fullClientId ? `${fullClientId.slice(0, 8)}…` : null,
     tenantId: tenantId(db),
     connected: !!(refresh || access || manual || process.env.MS_GRAPH_ACCESS_TOKEN),

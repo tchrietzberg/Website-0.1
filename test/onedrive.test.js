@@ -110,15 +110,38 @@ describe('Microsoft connect (app config)', () => {
   });
 
   it('saves client id and reports connection status', () => {
-    assert.equal(msAuth.connectionStatus(db).clientConfigured, false);
-    msAuth.saveAppConfig(db, admin, {
-      clientId: '11111111-2222-3333-4444-555555555555',
-      tenantId: 'common',
-    });
-    const st = msAuth.connectionStatus(db);
-    assert.equal(st.clientConfigured, true);
-    assert.equal(st.connected, false);
-    assert.equal(st.clientId, '11111111-2222-3333-4444-555555555555');
+    const prev = process.env.MS_CLIENT_ID;
+    delete process.env.MS_CLIENT_ID;
+    try {
+      assert.equal(msAuth.connectionStatus(db).clientConfigured, false);
+      msAuth.saveAppConfig(db, admin, {
+        clientId: '11111111-2222-3333-4444-555555555555',
+        tenantId: 'common',
+      });
+      const st = msAuth.connectionStatus(db);
+      assert.equal(st.clientConfigured, true);
+      assert.equal(st.connected, false);
+      assert.equal(st.clientIdSource, 'settings');
+      assert.equal(st.clientId, '11111111-2222-3333-4444-555555555555');
+    } finally {
+      if (prev === undefined) delete process.env.MS_CLIENT_ID;
+      else process.env.MS_CLIENT_ID = prev;
+    }
+  });
+
+  it('treats MS_CLIENT_ID env as server-owned config', () => {
+    const prev = process.env.MS_CLIENT_ID;
+    process.env.MS_CLIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    try {
+      const st = msAuth.connectionStatus(db);
+      assert.equal(st.clientConfigured, true);
+      assert.equal(st.clientIdSource, 'env');
+      assert.equal(st.clientId, null);
+      assert.match(st.clientIdMasked, /^aaaaaaaa/);
+    } finally {
+      if (prev === undefined) delete process.env.MS_CLIENT_ID;
+      else process.env.MS_CLIENT_ID = prev;
+    }
   });
 
   it('marks connected when refresh token is stored', () => {
@@ -136,16 +159,23 @@ describe('Microsoft connect (app config)', () => {
   });
 
   it('starts browser sign-in URL after client id is configured', () => {
-    assert.throws(
-      () => msAuth.startAuthCode(db, admin, { redirectUri: 'http://localhost/api/onedrive/oauth/callback' }),
-      (err) => err && err.code === 'missing_client_id'
-    );
-    msAuth.saveAppConfig(db, admin, { clientId: '11111111-2222-3333-4444-555555555555' });
-    const started = msAuth.startAuthCode(db, admin, {
-      redirectUri: 'http://localhost/api/onedrive/oauth/callback',
-    });
-    assert.match(started.authUrl, /login\.microsoftonline\.com/);
-    assert.match(started.authUrl, /client_id=11111111-2222-3333-4444-555555555555/);
-    assert.match(started.authUrl, /code_challenge/);
+    const prev = process.env.MS_CLIENT_ID;
+    delete process.env.MS_CLIENT_ID;
+    try {
+      assert.throws(
+        () => msAuth.startAuthCode(db, admin, { redirectUri: 'http://localhost/api/onedrive/oauth/callback' }),
+        (err) => err && err.code === 'missing_client_id'
+      );
+      msAuth.saveAppConfig(db, admin, { clientId: '11111111-2222-3333-4444-555555555555' });
+      const started = msAuth.startAuthCode(db, admin, {
+        redirectUri: 'http://localhost/api/onedrive/oauth/callback',
+      });
+      assert.match(started.authUrl, /login\.microsoftonline\.com/);
+      assert.match(started.authUrl, /client_id=11111111-2222-3333-4444-555555555555/);
+      assert.match(started.authUrl, /code_challenge/);
+    } finally {
+      if (prev === undefined) delete process.env.MS_CLIENT_ID;
+      else process.env.MS_CLIENT_ID = prev;
+    }
   });
 });
