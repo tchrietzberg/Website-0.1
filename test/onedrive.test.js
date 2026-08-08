@@ -33,6 +33,8 @@ describe('matter OneDrive integration', () => {
     assert.equal(linked.linked, true);
     assert.equal(linked.folderName, 'Widget Case Docs');
     assert.match(linked.folderUrl, /sharepoint\.com/);
+    assert.match(linked.embedUrl, /sharepoint\.com/);
+    assert.ok(linked.embedUrl.includes('web=1'));
 
     const again = matterSvc.getMatter(db, matterId);
     assert.equal(again.onedrive.linked, true);
@@ -59,10 +61,39 @@ describe('matter OneDrive integration', () => {
       folderUrl: 'onedrive.live.com/?id=ABC',
     });
     assert.match(a.folderUrl, /^https:\/\/onedrive\.live\.com/);
+    assert.match(a.embedUrl, /embed|onedrive\.live\.com/);
 
     const b = onedrive.linkMatterOneDrive(db, admin, page.matter.id, {
       folderUrl: 'https://1drv.ms/f/s!abc',
     });
     assert.match(b.folderUrl, /1drv\.ms/);
+  });
+
+  it('browses cached OneDrive folders and files after demo seed', () => {
+    const page = matterSvc.createMatter(db, admin, { name: 'Docs Matter' });
+    onedrive.linkMatterOneDrive(db, admin, page.matter.id, {
+      folderUrl: 'https://contoso.sharepoint.com/sites/Lit/Shared%20Documents/Docs',
+      folderName: 'Docs Matter',
+    });
+
+    const root = onedrive.seedDemoBrowser(db, page.matter.id);
+    assert.ok(root.items.some((i) => i.itemType === 'folder' && i.name === 'Pleadings'));
+    assert.ok(root.items.some((i) => i.itemType === 'file' && /Engagement/.test(i.name)));
+
+    const pleadings = root.items.find((i) => i.name === 'Pleadings');
+    const nested = onedrive.browseFolder(db, page.matter.id, { parentItemId: pleadings.itemId });
+    assert.equal(nested.breadcrumbs.at(-1).name, 'Pleadings');
+    assert.ok(nested.items.some((i) => i.name === 'Complaint.pdf'));
+  });
+
+  it('requires Graph token for live sync', async () => {
+    const page = matterSvc.createMatter(db, admin, { name: 'Live Sync' });
+    onedrive.linkMatterOneDrive(db, admin, page.matter.id, {
+      folderUrl: 'https://contoso.sharepoint.com/sites/Lit/Shared%20Documents/X',
+    });
+    await assert.rejects(
+      () => onedrive.syncMatterOneDriveFromShare(db, admin, page.matter.id),
+      /Graph token not configured/
+    );
   });
 });

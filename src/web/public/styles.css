@@ -542,6 +542,159 @@ body {
   margin-top: 0;
 }
 
+.onedrive-tabs {
+  display: -webkit-flex;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.onedrive-tab {
+  border: 1px solid var(--line);
+  background: #f4f7fb;
+  color: var(--ink);
+  font-weight: 650;
+  padding: 0.45rem 0.85rem;
+  border-radius: 10px;
+}
+
+.onedrive-tab.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.onedrive-toolbar {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.onedrive-crumbs {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+  font-size: 0.9rem;
+}
+
+.onedrive-crumb {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 650;
+  padding: 0.15rem 0.25rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.onedrive-crumb.is-current {
+  color: var(--ink);
+  cursor: default;
+}
+
+.onedrive-crumb-sep {
+  color: var(--soft);
+}
+
+.onedrive-browser {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, #fbfcfe 0%, #f3f6fa 100%);
+  min-height: 12rem;
+  padding: 0.55rem;
+}
+
+.onedrive-file-list {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.onedrive-file-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: #fff;
+  box-shadow: 0 1px 0 rgba(20, 32, 51, 0.04);
+}
+
+.onedrive-file-row[data-od-type="folder"] {
+  cursor: pointer;
+}
+
+.onedrive-file-row:hover {
+  border-color: rgba(26, 58, 107, 0.16);
+  background: var(--accent-soft);
+}
+
+.onedrive-file-icon {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  min-width: 2.4rem;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.35rem 0.4rem;
+  border-radius: 8px;
+  background: #e8eef7;
+  color: var(--accent);
+}
+
+.onedrive-file-icon-file {
+  background: #eef2f4;
+  color: var(--muted);
+}
+
+.onedrive-file-meta {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.onedrive-file-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onedrive-empty {
+  padding: 1.25rem 0.75rem;
+}
+
+.onedrive-embed-wrap {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  min-height: 28rem;
+}
+
+.onedrive-embed {
+  display: block;
+  width: 100%;
+  min-height: 28rem;
+  height: 60vh;
+  border: 0;
+}
+
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+
 h3 {
   font-family: var(--font);
   font-size: 1.05rem;

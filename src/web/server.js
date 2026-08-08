@@ -104,6 +104,7 @@ function serveStatic(req, res) {
 }
 
 function readSettings(db) {
+  const onedrive = require('../services/onedrive');
   return {
     roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
     roundMode: getSetting(db, 'round_mode', 'up'),
@@ -111,6 +112,7 @@ function readSettings(db) {
     roundingIncrements: ROUNDING_INCREMENTS,
     durationFormats: DURATION_FORMATS,
     roundingModes: ROUNDING_MODES,
+    msGraphConfigured: onedrive.graphConfigured(db),
   };
 }
 
@@ -313,6 +315,40 @@ function createServer(db = openDb()) {
         matterIndex.indexMatter(db, matterId);
         return json(res, 200, { onedrive: link, page: matterSvc.getMatter(db, matterId) });
       }
+      if (req.method === 'GET' && pathname.match(/^\/api\/matters\/\d+\/onedrive\/browser$/)) {
+        const onedrive = require('../services/onedrive');
+        const matterId = Number(pathname.split('/')[3]);
+        const parentItemId = url.searchParams.get('parent') || null;
+        try {
+          return json(res, 200, onedrive.browseFolder(db, matterId, { parentItemId }));
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/onedrive\/sync$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        const onedrive = require('../services/onedrive');
+        const matterId = Number(pathname.split('/')[3]);
+        const body = await parseBody(req);
+        try {
+          const browser = await onedrive.syncMatterOneDriveFromShare(db, user, matterId, {
+            parentItemId: body.parentItemId || null,
+          });
+          return json(res, 200, browser);
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/onedrive\/demo-seed$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const onedrive = require('../services/onedrive');
+        const matterId = Number(pathname.split('/')[3]);
+        try {
+          return json(res, 200, onedrive.seedDemoBrowser(db, matterId));
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname.match(/^\/api\/record-types\/[^/]+\/layout$/)) {
         const key = decodeURIComponent(pathname.split('/')[3]);
         return json(res, 200, customFields.getTypeLayout(db, key));
@@ -373,6 +409,11 @@ function createServer(db = openDb()) {
         }
         if (body.durationFormat != null) {
           setSetting(db, 'duration_format', assertDurationFormat(body.durationFormat));
+        }
+        if (body.msGraphAccessToken !== undefined) {
+          if (!requireRoles(user, res, ['admin'])) return;
+          const onedrive = require('../services/onedrive');
+          onedrive.setGraphToken(db, user, body.msGraphAccessToken);
         }
         return json(res, 200, readSettings(db));
       }

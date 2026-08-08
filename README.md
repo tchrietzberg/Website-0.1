@@ -73,7 +73,7 @@ Then open http://localhost:3000.
 - Category/subcategory required for N.D. Cal matters (data-driven rule in `billing_rules`).
 - Default billable status for new time entries is billable (override per entry).
 - Matter field history: every matter-level change logged with user and timestamp.
-- Matter-level OneDrive: link a OneDrive/SharePoint folder URL on each matter page (Graph file sync deferred).
+- Matter-level OneDrive: link a folder, browse files/folders in-app, embed the live OneDrive/SharePoint view, and refresh via Microsoft Graph when a token is configured (Settings → OneDrive or `MS_GRAPH_ACCESS_TOKEN`).
 - Lodestar summary and detail reports; all reports export to native Excel (.xlsx) and CSV.
   Dollar amounts export as real numbers with currency formatting, so Excel formulas work on them.
 

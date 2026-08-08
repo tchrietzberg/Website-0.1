@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS page_layout_items (
 CREATE INDEX IF NOT EXISTS idx_page_layout_items_layout
   ON page_layout_items(layout_id, sort_order);
 
--- Matter-level OneDrive / SharePoint folder link (prototype; Graph OAuth deferred)
+-- Matter-level OneDrive / SharePoint folder link
 CREATE TABLE IF NOT EXISTS matter_onedrive (
   matter_id INTEGER PRIMARY KEY REFERENCES matters(id) ON DELETE CASCADE,
   folder_url TEXT NOT NULL,
@@ -127,10 +127,32 @@ CREATE TABLE IF NOT EXISTS matter_onedrive (
   status TEXT NOT NULL DEFAULT 'linked'
     CHECK (status IN ('linked','error')),
   notes TEXT,
+  last_synced_at TEXT,
+  last_sync_error TEXT,
   linked_by INTEGER REFERENCES users(id),
   linked_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+-- Cached OneDrive/SharePoint children for in-app browsing
+CREATE TABLE IF NOT EXISTS matter_onedrive_items (
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL,
+  parent_item_id TEXT,
+  name TEXT NOT NULL,
+  item_type TEXT NOT NULL CHECK (item_type IN ('folder','file')),
+  web_url TEXT,
+  size_bytes INTEGER,
+  mime_type TEXT,
+  child_count INTEGER,
+  last_modified TEXT,
+  synced_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE(matter_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_matter_onedrive_items_parent
+  ON matter_onedrive_items(matter_id, parent_item_id, item_type, name);
 
 CREATE TABLE IF NOT EXISTS rates (
   id INTEGER PRIMARY KEY,

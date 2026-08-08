@@ -708,6 +708,130 @@
     return `<input type="${inputType}" name="${name}" value="${String(val).replace(/"/g, '&quot;')}" ${disabled} ${req} />`;
   }
 
+  function wireOneDriveBrowser(matterId, onedriveMeta, canEdit) {
+    const browserEl = $('#onedriveBrowser');
+    const crumbsEl = $('#onedriveCrumbs');
+    if (!browserEl) return;
+    let parentItemId = null;
+
+    main.querySelectorAll('[data-od-tab]').forEach((tab) => {
+      tab.onclick = () => {
+        const id = tab.dataset.odTab;
+        main.querySelectorAll('[data-od-tab]').forEach((t) => t.classList.toggle('is-active', t === tab));
+        main.querySelectorAll('[data-od-pane]').forEach((pane) => {
+          const on = pane.dataset.odPane === id;
+          pane.hidden = !on;
+          pane.classList.toggle('is-active', on);
+        });
+      };
+    });
+
+    async function loadBrowser(parent = null) {
+      parentItemId = parent;
+      browserEl.innerHTML = '<p class="muted">Loading folder…</p>';
+      try {
+        const q = parent ? `?parent=${encodeURIComponent(parent)}` : '';
+        const data = await api(`/api/matters/${matterId}/onedrive/browser${q}`);
+        renderBrowser(data);
+      } catch (e) {
+        browserEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    function renderBrowser(data) {
+      if (crumbsEl) {
+        crumbsEl.innerHTML = (data.breadcrumbs || []).map((c, i, arr) => {
+          const last = i === arr.length - 1;
+          if (last) return `<span class="onedrive-crumb is-current">${escapeHtml(c.name)}</span>`;
+          return `<button type="button" class="onedrive-crumb" data-od-parent="${c.itemId == null ? '' : escapeHtml(c.itemId)}">${escapeHtml(c.name)}</button>`;
+        }).join('<span class="onedrive-crumb-sep">/</span>');
+        crumbsEl.querySelectorAll('[data-od-parent]').forEach((btn) => {
+          btn.onclick = () => loadBrowser(btn.dataset.odParent || null);
+        });
+      }
+
+      const items = data.items || [];
+      if (!items.length) {
+        browserEl.innerHTML = `
+          <div class="onedrive-empty">
+            <p class="muted">This folder is empty in the legal system cache.</p>
+            <p class="hint">${onedriveMeta.graphConfigured
+              ? 'Click <strong>Refresh from OneDrive</strong> to pull the latest files and folders.'
+              : 'Use <strong>OneDrive view</strong>, configure Graph in Settings, or <strong>Load demo files</strong> to try the browser.'}</p>
+          </div>`;
+        return;
+      }
+
+      browserEl.innerHTML = `
+        <div class="onedrive-file-list">
+          ${items.map((item) => `
+            <div class="onedrive-file-row" data-od-item="${escapeHtml(item.itemId)}" data-od-type="${item.itemType}">
+              <span class="onedrive-file-icon onedrive-file-icon-${item.itemType}" aria-hidden="true">${item.itemType === 'folder' ? 'DIR' : 'FILE'}</span>
+              <div class="onedrive-file-meta">
+                <strong>${escapeHtml(item.name)}</strong>
+                <small class="muted">
+                  ${item.itemType === 'folder'
+                    ? `Folder${item.childCount != null ? ` · ${item.childCount} items` : ''}`
+                    : `${item.sizeLabel || 'File'}${item.lastModified ? ` · ${escapeHtml(String(item.lastModified).slice(0, 10))}` : ''}`}
+                </small>
+              </div>
+              <div class="row-actions">
+                ${item.itemType === 'folder'
+                  ? `<button type="button" data-od-open-folder="${escapeHtml(item.itemId)}">Open</button>`
+                  : (item.webUrl
+                    ? `<a class="btn" href="${escapeHtml(item.webUrl)}" target="_blank" rel="noopener noreferrer">Open</a>`
+                    : '')}
+              </div>
+            </div>`).join('')}
+        </div>`;
+
+      browserEl.querySelectorAll('[data-od-open-folder]').forEach((btn) => {
+        btn.onclick = () => loadBrowser(btn.dataset.odOpenFolder);
+      });
+      browserEl.querySelectorAll('.onedrive-file-row[data-od-type="folder"]').forEach((row) => {
+        row.ondblclick = () => loadBrowser(row.dataset.odItem);
+      });
+    }
+
+    const syncBtn = $('#onedriveSync');
+    if (syncBtn) {
+      syncBtn.onclick = async () => {
+        try {
+          syncBtn.disabled = true;
+          const data = await api(`/api/matters/${matterId}/onedrive/sync`, {
+            method: 'POST',
+            body: JSON.stringify({ parentItemId }),
+          });
+          $('#onedriveMsg').innerHTML = '<div class="ok-banner">Folder refreshed from OneDrive.</div>';
+          renderBrowser(data);
+        } catch (e) {
+          $('#onedriveMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        } finally {
+          syncBtn.disabled = false;
+        }
+      };
+    }
+
+    const demoBtn = $('#onedriveDemoSeed');
+    if (demoBtn) {
+      demoBtn.onclick = async () => {
+        try {
+          const data = await api(`/api/matters/${matterId}/onedrive/demo-seed`, {
+            method: 'POST',
+            body: '{}',
+          });
+          $('#onedriveMsg').innerHTML = '<div class="ok-banner">Demo matter files loaded for browsing.</div>';
+          parentItemId = null;
+          renderBrowser(data);
+        } catch (e) {
+          $('#onedriveMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    loadBrowser(null);
+  }
+
   async function renderMatterDetail() {
     if (!state.matterId) {
       state.view = 'matters';
@@ -751,19 +875,52 @@
 
       <div class="card stack" id="onedriveCard">
         <h2>OneDrive</h2>
-        <p class="hint">Link a OneDrive or SharePoint folder to this matter. Microsoft Graph sync is deferred — this stores the folder link at matter level.</p>
+        <p class="hint">Link a matter folder, then browse files here like OneDrive/SharePoint — open folders, preview the live library, and sync from Microsoft Graph when a token is configured.</p>
         ${(page.onedrive && page.onedrive.linked) ? `
           <div class="onedrive-status">
-            <span class="pill" data-status="open">Linked</span>
-            <strong>${(page.onedrive.folderName || 'Matter folder').replace(/</g, '&lt;')}</strong>
+            <span class="pill" data-status="${page.onedrive.status === 'error' ? 'rejected' : 'open'}">${page.onedrive.status === 'error' ? 'Sync error' : 'Linked'}</span>
+            <strong>${escapeHtml(page.onedrive.folderName || 'Matter folder')}</strong>
           </div>
-          <p class="onedrive-url">
-            <a href="${String(page.onedrive.folderUrl || '').replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">
-              Open folder in OneDrive
-            </a>
-          </p>
-          ${page.onedrive.notes ? `<p class="muted">${String(page.onedrive.notes).replace(/</g, '&lt;')}</p>` : ''}
-          <p class="muted">Linked${page.onedrive.linkedByName ? ` by ${page.onedrive.linkedByName}` : ''}${page.onedrive.linkedAt ? ` · ${String(page.onedrive.linkedAt).slice(0, 10)}` : ''}</p>
+          ${page.onedrive.notes ? `<p class="muted">${escapeHtml(page.onedrive.notes)}</p>` : ''}
+          <p class="muted">Linked${page.onedrive.linkedByName ? ` by ${escapeHtml(page.onedrive.linkedByName)}` : ''}${page.onedrive.linkedAt ? ` · ${String(page.onedrive.linkedAt).slice(0, 10)}` : ''}${page.onedrive.lastSyncedAt ? ` · Synced ${String(page.onedrive.lastSyncedAt).slice(0, 16).replace('T', ' ')}` : ''}</p>
+          ${page.onedrive.lastSyncError ? `<div class="error">${escapeHtml(page.onedrive.lastSyncError)}</div>` : ''}
+
+          <div class="onedrive-tabs" role="tablist">
+            <button type="button" class="onedrive-tab is-active" data-od-tab="files">Files</button>
+            <button type="button" class="onedrive-tab" data-od-tab="embed">OneDrive view</button>
+          </div>
+
+          <div class="onedrive-pane is-active" data-od-pane="files">
+            <div class="onedrive-toolbar">
+              <nav class="onedrive-crumbs" id="onedriveCrumbs" aria-label="Folder path"></nav>
+              <div class="row-actions">
+                ${canEdit ? `<button type="button" class="primary" id="onedriveSync">Refresh from OneDrive</button>` : ''}
+                ${canEdit && ['admin', 'billing_clerk'].includes(state.user.role)
+                  ? `<button type="button" id="onedriveDemoSeed">Load demo files</button>` : ''}
+                <a class="btn" id="onedriveOpenExternal"
+                  href="${escapeHtml(page.onedrive.folderUrl)}" target="_blank" rel="noopener noreferrer">Open in Microsoft</a>
+              </div>
+            </div>
+            <div id="onedriveBrowser" class="onedrive-browser">
+              <p class="muted">Loading folder…</p>
+            </div>
+            ${!page.onedrive.graphConfigured ? `
+              <p class="hint">Tip: add a Microsoft Graph access token under Settings → OneDrive to refresh live SharePoint/OneDrive contents. Until then you can use the embedded view or load demo files.</p>
+            ` : ''}
+          </div>
+
+          <div class="onedrive-pane" data-od-pane="embed" hidden>
+            <div class="onedrive-embed-wrap">
+              <iframe class="onedrive-embed"
+                title="OneDrive folder"
+                src="${escapeHtml(page.onedrive.embedUrl || page.onedrive.folderUrl)}"
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+                allow="fullscreen"></iframe>
+            </div>
+            <p class="hint">If the embed asks you to sign in, use your Microsoft account. Some tenants block embedding — use <strong>Open in Microsoft</strong> or the Files tab after sync.</p>
+          </div>
+
           ${canEdit ? `
           <div class="row-actions">
             <button type="button" id="onedriveEdit">Update link</button>
@@ -772,16 +929,16 @@
           <form id="onedriveForm" class="grid two" hidden>
             <label class="span-all">Folder URL
               <input name="folderUrl" required
-                value="${String(page.onedrive.folderUrl || '').replace(/"/g, '&quot;')}"
+                value="${escapeHtml(page.onedrive.folderUrl || '')}"
                 placeholder="https://…sharepoint.com/… or onedrive.live.com/…" />
             </label>
             <label>Folder name
               <input name="folderName"
-                value="${String(page.onedrive.folderName || '').replace(/"/g, '&quot;')}"
-                placeholder="${String(page.onedriveSuggestedName || '').replace(/"/g, '&quot;')}" />
+                value="${escapeHtml(page.onedrive.folderName || '')}"
+                placeholder="${escapeHtml(page.onedriveSuggestedName || '')}" />
             </label>
             <label>Notes
-              <input name="notes" value="${String(page.onedrive.notes || '').replace(/"/g, '&quot;')}"
+              <input name="notes" value="${escapeHtml(page.onedrive.notes || '')}"
                 placeholder="Optional" />
             </label>
             <div class="row-actions span-all">
@@ -790,7 +947,7 @@
             </div>
           </form>` : ''}
         ` : `
-          <p class="muted">No OneDrive folder linked yet.</p>
+          <p class="muted">No OneDrive folder linked yet. After linking, files and folders appear here for browsing.</p>
           ${canEdit ? `
           <form id="onedriveForm" class="grid two">
             <label class="span-all">Folder URL
@@ -799,8 +956,8 @@
             </label>
             <label>Folder name
               <input name="folderName"
-                value="${String(page.onedriveSuggestedName || '').replace(/"/g, '&quot;')}"
-                placeholder="${String(page.onedriveSuggestedName || '').replace(/"/g, '&quot;')}" />
+                value="${escapeHtml(page.onedriveSuggestedName || '')}"
+                placeholder="${escapeHtml(page.onedriveSuggestedName || '')}" />
             </label>
             <label>Notes
               <input name="notes" placeholder="Optional" />
@@ -987,6 +1144,10 @@
           $('#onedriveMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
+    }
+
+    if (page.onedrive && page.onedrive.linked) {
+      wireOneDriveBrowser(m.id, page.onedrive, canEdit);
     }
 
     main.querySelectorAll('[data-del-matter-field]').forEach((btn) => {
@@ -1620,6 +1781,21 @@
         <div id="settingsMsg"></div>
       </form>
 
+      ${isAdmin ? `
+      <form id="onedriveSettingsForm" class="card stack">
+        <h2>OneDrive / SharePoint</h2>
+        <p class="hint">Paste a Microsoft Graph access token so matter folders can refresh live files and folders inside the legal system. You can also set <code>MS_GRAPH_ACCESS_TOKEN</code> in the environment. Status: <strong>${settings.msGraphConfigured ? 'configured' : 'not configured'}</strong>.</p>
+        <label>Graph access token
+          <input name="msGraphAccessToken" type="password" autocomplete="off"
+            placeholder="${settings.msGraphConfigured ? '•••• configured — paste to replace' : 'eyJ0eXAiOiJKV1QiLCJhbGci…'}" />
+        </label>
+        <div class="row-actions">
+          <button class="primary" type="submit">Save Graph token</button>
+          ${settings.msGraphConfigured ? '<button type="button" id="clearGraphToken">Clear token</button>' : ''}
+        </div>
+        <div id="onedriveSettingsMsg"></div>
+      </form>` : ''}
+
       ${canEditBilling ? `
       <div class="card stack">
         <h2>Timekeepers &amp; Rates</h2>
@@ -1715,6 +1891,42 @@
           $('#settingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
+    }
+
+    const odSettingsForm = $('#onedriveSettingsForm');
+    if (odSettingsForm) {
+      odSettingsForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const token = new FormData(odSettingsForm).get('msGraphAccessToken');
+        if (!String(token || '').trim()) {
+          $('#onedriveSettingsMsg').innerHTML = '<div class="error">Paste a token, or use Clear token.</div>';
+          return;
+        }
+        try {
+          await api('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ msGraphAccessToken: token }),
+          });
+          $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Graph token saved.</div>';
+          await renderSettings();
+        } catch (e) {
+          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+      const clearBtn = $('#clearGraphToken');
+      if (clearBtn) {
+        clearBtn.onclick = async () => {
+          try {
+            await api('/api/settings', {
+              method: 'PATCH',
+              body: JSON.stringify({ msGraphAccessToken: '' }),
+            });
+            await renderSettings();
+          } catch (e) {
+            $('#onedriveSettingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          }
+        };
+      }
     }
 
     const tkForm = $('#tkForm');

@@ -18,6 +18,7 @@ function migrate(db) {
   db.exec(schema);
   migrateTimeEntryRoundingCheck(db);
   migrateMatterTypeCheck(db);
+  migrateOneDriveColumns(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -27,6 +28,24 @@ function migrate(db) {
   const idxCount = db.prepare('SELECT COUNT(*) AS n FROM matter_search_index').get().n;
   if (matterCount > 0 && idxCount === 0) {
     matterIndex.reindexAllMatters(db);
+  }
+}
+
+function tableColumns(db, table) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+}
+
+function migrateOneDriveColumns(db) {
+  const tables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='matter_onedrive'"
+  ).get();
+  if (!tables) return;
+  const cols = new Set(tableColumns(db, 'matter_onedrive'));
+  if (!cols.has('last_synced_at')) {
+    db.exec('ALTER TABLE matter_onedrive ADD COLUMN last_synced_at TEXT');
+  }
+  if (!cols.has('last_sync_error')) {
+    db.exec('ALTER TABLE matter_onedrive ADD COLUMN last_sync_error TEXT');
   }
 }
 
