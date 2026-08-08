@@ -8,7 +8,7 @@
     clients: [],
     settings: null,
     matterId: null,
-    matterSearch: { q: '', status: '', type: '' },
+    matterSearch: { q: '' },
   };
 
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -197,8 +197,6 @@
     const params = new URLSearchParams();
     params.set('search', '1'); // indexed Matter Search mode
     if (state.matterSearch.q) params.set('q', state.matterSearch.q);
-    if (state.matterSearch.status) params.set('status', state.matterSearch.status);
-    if (state.matterSearch.type) params.set('type', state.matterSearch.type);
 
     const hasQuery = !!state.matterSearch.q;
     const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
@@ -220,28 +218,12 @@
         <p class="lead" style="margin:0">Search the index or create a new matter on this page.</p>
 
         <h2>Matter Search</h2>
-        <form id="matterSearch" class="grid two">
-          <label class="span-all">Search index
+        <form id="matterSearch" class="stack">
+          <label>Search index
             <input name="q" value="${state.matterSearch.q || ''}"
               placeholder="e.g. Widget, Northwind, N.D. Cal" autofocus />
           </label>
-          <label>Status
-            <select name="status">
-              <option value="">All</option>
-              <option value="open" ${state.matterSearch.status === 'open' ? 'selected' : ''}>Open</option>
-              <option value="closed" ${state.matterSearch.status === 'closed' ? 'selected' : ''}>Closed</option>
-            </select>
-          </label>
-          <label>Record type
-            <select name="type">
-              <option value="">All types</option>
-              ${recordTypes.map((t) => `
-                <option value="${t.key}" ${state.matterSearch.type === t.key ? 'selected' : ''}>
-                  ${t.label}
-                </option>`).join('')}
-            </select>
-          </label>
-          <div class="row-actions span-all">
+          <div class="row-actions">
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearSearch">Clear</button>
           </div>
@@ -340,15 +322,11 @@
     $('#matterSearch').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
-      state.matterSearch = {
-        q: String(fd.get('q') || '').trim(),
-        status: String(fd.get('status') || ''),
-        type: String(fd.get('type') || ''),
-      };
+      state.matterSearch = { q: String(fd.get('q') || '').trim() };
       await renderMatters();
     };
     $('#clearSearch').onclick = async () => {
-      state.matterSearch = { q: '', status: '', type: '' };
+      state.matterSearch = { q: '' };
       await renderMatters();
     };
     main.querySelectorAll('[data-matter]').forEach((row) => {
