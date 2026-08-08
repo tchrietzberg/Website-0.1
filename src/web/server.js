@@ -1,7 +1,8 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { openDb, migrate, DEFAULT_DB } = require('../db');
+const { openDb, migrate, DEFAULT_DB, getSetting, setSetting } = require('../db');
+const { ROUNDING_INCREMENTS, assertAllowedIncrement } = require('../money');
 const timeSvc = require('../services/time');
 const matterSvc = require('../services/matters');
 const invoiceSvc = require('../services/invoices');
@@ -166,6 +167,34 @@ function createServer(db = openDb()) {
           status,
         }));
       }
+      if (req.method === 'GET' && pathname === '/api/settings') {
+        const minutes = Number(getSetting(db, 'round_increment_minutes', '15'));
+        return json(res, 200, {
+          roundIncrementMinutes: minutes,
+          roundMode: getSetting(db, 'round_mode', 'up'),
+          roundingIncrements: ROUNDING_INCREMENTS,
+        });
+      }
+      if (req.method === 'PATCH' && pathname === '/api/settings') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const body = await parseBody(req);
+        if (body.roundIncrementMinutes != null) {
+          const minutes = assertAllowedIncrement(Number(body.roundIncrementMinutes));
+          setSetting(db, 'round_increment_minutes', String(minutes));
+        }
+        if (body.roundMode != null) {
+          if (!['up', 'nearest', 'down'].includes(body.roundMode)) {
+            return json(res, 400, { error: 'roundMode must be up, nearest, or down' });
+          }
+          setSetting(db, 'round_mode', body.roundMode);
+        }
+        return json(res, 200, {
+          roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
+          roundMode: getSetting(db, 'round_mode', 'up'),
+          roundingIncrements: ROUNDING_INCREMENTS,
+        });
+      }
+
       if (req.method === 'POST' && pathname === '/api/time-entries') {
         const body = await parseBody(req);
         const entry = timeSvc.createEntry(db, user, {
@@ -179,6 +208,8 @@ function createServer(db = openDb()) {
           subcategory: body.subcategory,
           utbmsTask: body.utbmsTask,
           utbmsActivity: body.utbmsActivity,
+          roundIncrementMinutes: body.roundIncrementMinutes != null
+            ? Number(body.roundIncrementMinutes) : undefined,
         });
         return json(res, 201, entry);
       }

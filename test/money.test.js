@@ -17,6 +17,18 @@ describe('money rounding', () => {
     assert.equal(roundMinutes(62, 15, 'up'), 75);
   });
 
+  it('supports primary increments: 6, 10, 12, 15, 30 minutes', () => {
+    assert.equal(roundMinutes(1, 6, 'up'), 6);     // 0.1h
+    assert.equal(roundMinutes(7, 6, 'up'), 12);
+    assert.equal(roundMinutes(1, 10, 'up'), 10);   // 0.167h
+    assert.equal(roundMinutes(11, 10, 'up'), 20);
+    assert.equal(roundMinutes(1, 12, 'up'), 12);   // 0.2h
+    assert.equal(roundMinutes(13, 12, 'up'), 24);
+    assert.equal(roundMinutes(1, 30, 'up'), 30);   // 0.5h
+    assert.equal(roundMinutes(31, 30, 'up'), 60);
+    assert.throws(() => roundMinutes(5, 5, 'up'), /one of/);
+  });
+
   it('nearest and down modes work; never rounds positive to zero', () => {
     assert.equal(roundMinutes(7, 15, 'nearest'), 15);
     assert.equal(roundMinutes(7, 15, 'down'), 15); // floor would be 0 → bumped to increment

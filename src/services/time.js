@@ -1,5 +1,5 @@
-const { roundMinutes } = require('../money');
-const { getSetting, audit } = require('../db');
+const { roundMinutes, assertAllowedIncrement } = require('../money');
+const { getSetting, setSetting, audit } = require('../db');
 
 function evaluateRules(db, entry) {
   const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
@@ -30,9 +30,21 @@ function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinu
 }
 
 function createEntry(db, actor, input) {
-  const increment = Number(getSetting(db, 'round_increment_minutes', '15'));
+  const defaultInc = Number(getSetting(db, 'round_increment_minutes', '15'));
+  const increment = assertAllowedIncrement(
+    input.roundIncrementMinutes != null ? Number(input.roundIncrementMinutes) : defaultInc
+  );
   const mode = getSetting(db, 'round_mode', 'up');
   const rounded = roundMinutes(input.rawMinutes, increment, mode);
+
+  // Persist firm default when a permitted user picks an increment.
+  if (
+    input.roundIncrementMinutes != null
+    && (actor.role === 'admin' || actor.role === 'billing_clerk')
+    && increment !== defaultInc
+  ) {
+    setSetting(db, 'round_increment_minutes', String(increment));
+  }
 
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(input.matterId);
   if (!matter) throw new Error('matter not found');
@@ -85,7 +97,13 @@ function createEntry(db, actor, input) {
     detail: { rawMinutes: candidate.rawMinutes, roundedMinutes: candidate.roundedMinutes },
   });
 
-  return { id: Number(info.lastInsertRowid), ...candidate, status: 'draft', duplicateWarnings: dupes };
+  return {
+    id: Number(info.lastInsertRowid),
+    ...candidate,
+    roundIncrementMinutes: increment,
+    status: 'draft',
+    duplicateWarnings: dupes,
+  };
 }
 
 function submitEntry(db, actor, id) {

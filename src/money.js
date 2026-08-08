@@ -3,8 +3,29 @@
  * Division rounds half-up on the residual.
  */
 
+/** Primary legal-billing increments (minutes → hour fraction). */
+const ROUNDING_INCREMENTS = [
+  { minutes: 6, hours: 0.1, label: '6-minute (0.1 hour)' },
+  { minutes: 10, hours: 0.167, label: '10-minute (0.167 hour)' },
+  { minutes: 12, hours: 0.2, label: '12-minute (0.2 hour)' },
+  { minutes: 15, hours: 0.25, label: '15-minute (0.25 hour)' },
+  { minutes: 30, hours: 0.5, label: '30-minute (0.5 hour)' },
+];
+
+const ALLOWED_INCREMENTS = new Set(ROUNDING_INCREMENTS.map((r) => r.minutes));
+
 function assertInt(n, label = 'value') {
   if (!Number.isInteger(n)) throw new Error(`${label} must be an integer, got ${n}`);
+}
+
+function assertAllowedIncrement(increment) {
+  assertInt(increment, 'increment');
+  if (!ALLOWED_INCREMENTS.has(increment)) {
+    throw new Error(
+      `increment must be one of ${[...ALLOWED_INCREMENTS].join(', ')} minutes`
+    );
+  }
+  return increment;
 }
 
 /** Half-up division for non-negative integers: round(n / d). */
@@ -22,9 +43,8 @@ function divideHalfUp(n, d) {
  */
 function roundMinutes(rawMinutes, increment = 15, mode = 'up') {
   assertInt(rawMinutes, 'rawMinutes');
-  assertInt(increment, 'increment');
+  assertAllowedIncrement(increment);
   if (rawMinutes <= 0) throw new Error('rawMinutes must be > 0');
-  if (increment <= 0) throw new Error('increment must be > 0');
 
   let rounded;
   if (mode === 'up') {
@@ -69,6 +89,9 @@ function centsFromDollarsString(s) {
 }
 
 module.exports = {
+  ROUNDING_INCREMENTS,
+  ALLOWED_INCREMENTS,
+  assertAllowedIncrement,
   divideHalfUp,
   roundMinutes,
   amountFromMinutes,

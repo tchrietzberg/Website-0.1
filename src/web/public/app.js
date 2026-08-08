@@ -148,16 +148,27 @@
   }
 
   async function renderTime() {
-    const entries = await api('/api/time-entries');
+    const [entries, settings] = await Promise.all([
+      api('/api/time-entries'),
+      api('/api/settings'),
+    ]);
     const today = new Date().toISOString().slice(0, 10);
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
-        <p class="lead">15-minute round-up. Zero minutes blocked. N.D. Cal matters need category/subcategory.</p>
+        <p class="lead">Round up to the selected increment (6 / 10 / 12 / 15 / 30 min). Zero minutes blocked. N.D. Cal matters need category/subcategory.</p>
         <form id="timeForm" class="grid two">
           <label class="span-all">Matter
             <select name="matterId" required>
               ${state.matters.map((m) => `<option value="${m.id}">${m.number} — ${m.name}</option>`).join('')}
+            </select>
+          </label>
+          <label class="span-all">Billing increment
+            <select name="roundIncrementMinutes">
+              ${settings.roundingIncrements.map((r) => `
+                <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
+                  ${r.label}
+                </option>`).join('')}
             </select>
           </label>
           <label>Service date
@@ -215,6 +226,9 @@
       body.matterId = Number(body.matterId);
       body.timekeeperId = Number(body.timekeeperId);
       body.rawMinutes = Number(body.rawMinutes);
+      body.roundIncrementMinutes = Number(
+        body.roundIncrementMinutes || settings.roundIncrementMinutes
+      );
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
         let msg = `Saved #${entry.id}: ${entry.rawMinutes} → ${entry.roundedMinutes} minutes.`;

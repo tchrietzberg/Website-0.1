@@ -67,7 +67,7 @@ Then open http://localhost:3000.
 
 ## Firm-specific rules implemented
 
-- 0.25-hour (15-min) increments, round up — configurable in `firm_settings`.
+- Billing increments: 6-min (0.1h), 10-min (0.167h), 12-min (0.2h), 15-min (0.25h), 30-min (0.5h); default 15-min round-up — selectable on time entry / `firm_settings`.
 - Zero-duration entries blocked (service layer **and** DB CHECK constraint).
 - Category/subcategory required for N.D. Cal matters (data-driven rule in `billing_rules`).
 - Default billable status by matter type: litigation billable, SW Admin non-billable.
