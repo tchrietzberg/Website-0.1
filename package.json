@@ -1,0 +1,14 @@
+{
+  "name": "firm-billing-system",
+  "version": "0.1.0",
+  "description": "Legal billing prototype: time capture, approval workflow, lodestar reporting, invoicing, payments/AR. Zero runtime dependencies (Node built-ins only).",
+  "main": "src/web/server.js",
+  "scripts": {
+    "start": "node src/web/server.js",
+    "seed": "node seed/seed.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": { "node": ">=22.13" },
+  "license": "UNLICENSED",
+  "private": true
+}

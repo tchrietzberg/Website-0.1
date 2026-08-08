@@ -1,0 +1,13 @@
+services:
+  billing:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - billing-data:/data
+    environment:
+      - DB_FILE=/data/billing.db
+    restart: unless-stopped
+
+volumes:
+  billing-data:

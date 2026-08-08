@@ -1,0 +1,185 @@
+const { roundMinutes } = require('../money');
+const { getSetting, audit } = require('../db');
+
+function evaluateRules(db, entry) {
+  const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
+  const errors = [];
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(entry.matterId);
+  for (const rule of rules) {
+    const cond = JSON.parse(rule.condition_json);
+    if (cond.require_category_for_court) {
+      const court = (matter?.court || '').toLowerCase();
+      if (court.includes(cond.require_category_for_court.toLowerCase())) {
+        if (!entry.category || !entry.subcategory) {
+          errors.push(rule.message);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
+function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinutes, excludeId = null }) {
+  const rows = db.prepare(`
+    SELECT id FROM time_entries
+    WHERE timekeeper_id = ? AND matter_id = ? AND service_date = ?
+      AND rounded_minutes = ? AND status != 'rejected'
+      AND (? IS NULL OR id != ?)
+  `).all(timekeeperId, matterId, serviceDate, roundedMinutes, excludeId, excludeId);
+  return rows.map((r) => r.id);
+}
+
+function createEntry(db, actor, input) {
+  const increment = Number(getSetting(db, 'round_increment_minutes', '15'));
+  const mode = getSetting(db, 'round_mode', 'up');
+  const rounded = roundMinutes(input.rawMinutes, increment, mode);
+
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(input.matterId);
+  if (!matter) throw new Error('matter not found');
+
+  let billable = input.billable;
+  if (billable == null) {
+    billable = matter.matter_type === 'sw_admin' ? 0 : 1;
+  }
+
+  const candidate = {
+    matterId: input.matterId,
+    timekeeperId: input.timekeeperId,
+    serviceDate: input.serviceDate,
+    rawMinutes: input.rawMinutes,
+    roundedMinutes: rounded,
+    description: input.description,
+    billable,
+    category: input.category || null,
+    subcategory: input.subcategory || null,
+    utbmsTask: input.utbmsTask || null,
+    utbmsActivity: input.utbmsActivity || null,
+  };
+
+  const ruleErrors = evaluateRules(db, candidate);
+  if (ruleErrors.length) {
+    const err = new Error(ruleErrors.join('; '));
+    err.code = 'BILLING_RULE';
+    err.errors = ruleErrors;
+    throw err;
+  }
+
+  const dupes = detectDuplicates(db, candidate);
+  const info = db.prepare(`
+    INSERT INTO time_entries(
+      matter_id, timekeeper_id, service_date, raw_minutes, rounded_minutes,
+      description, billable, category, subcategory, utbms_task, utbms_activity, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+  `).run(
+    candidate.matterId, candidate.timekeeperId, candidate.serviceDate,
+    candidate.rawMinutes, candidate.roundedMinutes, candidate.description,
+    candidate.billable, candidate.category, candidate.subcategory,
+    candidate.utbmsTask, candidate.utbmsActivity
+  );
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'time_entry.create',
+    entityType: 'time_entry',
+    entityId: info.lastInsertRowid,
+    detail: { rawMinutes: candidate.rawMinutes, roundedMinutes: candidate.roundedMinutes },
+  });
+
+  return { id: Number(info.lastInsertRowid), ...candidate, status: 'draft', duplicateWarnings: dupes };
+}
+
+function submitEntry(db, actor, id) {
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+  if (!entry) throw new Error('entry not found');
+  if (entry.status !== 'draft' && entry.status !== 'rejected') {
+    throw new Error(`cannot submit from status ${entry.status}`);
+  }
+  db.prepare(`UPDATE time_entries SET status = 'submitted', rejection_reason = NULL WHERE id = ?`).run(id);
+  audit(db, { actorId: actor.id, action: 'time_entry.submit', entityType: 'time_entry', entityId: id });
+  return db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+}
+
+function canApprove(actor, entry, matter) {
+  if (actor.role === 'admin' || actor.role === 'billing_clerk') return true;
+  if (actor.role === 'attorney' && matter.responsible_attorney_id === actor.id) return true;
+  return false;
+}
+
+function approveEntry(db, actor, id) {
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+  if (!entry) throw new Error('entry not found');
+  if (entry.status !== 'submitted') throw new Error('only submitted entries can be approved');
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(entry.matter_id);
+  if (!canApprove(actor, entry, matter)) {
+    const err = new Error('not permitted to approve this entry');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  db.prepare(`
+    UPDATE time_entries SET status = 'approved', approved_by = ?, approved_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE id = ?
+  `).run(actor.id, id);
+  audit(db, { actorId: actor.id, action: 'time_entry.approve', entityType: 'time_entry', entityId: id });
+  return db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+}
+
+function rejectEntry(db, actor, id, reason) {
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+  if (!entry) throw new Error('entry not found');
+  if (entry.status !== 'submitted') throw new Error('only submitted entries can be rejected');
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(entry.matter_id);
+  if (!canApprove(actor, entry, matter)) {
+    const err = new Error('not permitted to reject this entry');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  if (!reason || !String(reason).trim()) throw new Error('rejection reason required');
+  db.prepare(`
+    UPDATE time_entries SET status = 'rejected', rejection_reason = ?, approved_by = NULL, approved_at = NULL
+    WHERE id = ?
+  `).run(reason, id);
+  audit(db, {
+    actorId: actor.id,
+    action: 'time_entry.reject',
+    entityType: 'time_entry',
+    entityId: id,
+    detail: { reason },
+  });
+  return db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+}
+
+function listQueue(db) {
+  return db.prepare(`
+    SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.name AS matter_name
+    FROM time_entries te
+    JOIN users u ON u.id = te.timekeeper_id
+    JOIN matters m ON m.id = te.matter_id
+    WHERE te.status = 'submitted'
+    ORDER BY te.service_date, te.id
+  `).all();
+}
+
+function listEntries(db, { matterId = null, timekeeperId = null, status = null } = {}) {
+  return db.prepare(`
+    SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number
+    FROM time_entries te
+    JOIN users u ON u.id = te.timekeeper_id
+    JOIN matters m ON m.id = te.matter_id
+    WHERE (? IS NULL OR te.matter_id = ?)
+      AND (? IS NULL OR te.timekeeper_id = ?)
+      AND (? IS NULL OR te.status = ?)
+    ORDER BY te.service_date DESC, te.id DESC
+  `).all(matterId, matterId, timekeeperId, timekeeperId, status, status);
+}
+
+module.exports = {
+  createEntry,
+  submitEntry,
+  approveEntry,
+  rejectEntry,
+  listQueue,
+  listEntries,
+  evaluateRules,
+  detectDuplicates,
+  canApprove,
+};
