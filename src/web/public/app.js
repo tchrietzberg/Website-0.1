@@ -357,7 +357,7 @@
       };
     }
     if (showCreate) {
-      const nameInput = $('#createMatterSection input[name="name"]');
+      const nameInput = $('#createMatterName') || $('#createMatterSection input[name="name"]');
       if (nameInput) {
         setTimeout(() => {
           nameInput.focus();
