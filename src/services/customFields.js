@@ -832,8 +832,9 @@ function getMatterPage(db, matterId, actor = null) {
   ).all(matterId);
   const valueMap = Object.fromEntries(values.map((v) => [v.field_id, v.value_text]));
   const role = actor?.role || null;
-  const pageAccess = role ? permissions.getProfileAccess(db, role) : 'read_write';
-  const readOnly = pageAccess === 'read_only';
+  const canEdit = role ? permissions.canModifyAll(db, role, 'matter') : true;
+  const canDelete = role ? permissions.canDelete(db, role, 'matter') : false;
+  const pageAccess = canEdit ? 'read_write' : 'read_only';
 
   const sections = {};
   for (const item of items) {
@@ -861,11 +862,13 @@ function getMatterPage(db, matterId, actor = null) {
     } else {
       value = valueMap[def.fieldId] ?? null;
     }
+    const fieldWritable = !role
+      || permissions.isFieldWritableForRole(db, 'matter', role, item.field_key);
     sections[section].push({
       ...def,
       width: item.width || def.width || 'half',
       value,
-      readonly: !!(def.readonly || readOnly),
+      readonly: !!(def.readonly || !fieldWritable),
     });
   }
 
@@ -886,7 +889,8 @@ function getMatterPage(db, matterId, actor = null) {
     onedrive: onedrive.getMatterOneDrive(db, matterId),
     onedriveSuggestedName: onedrive.suggestFolderName(matter),
     pageAccess,
-    canEdit: !readOnly,
+    canEdit,
+    canDelete,
   };
 }
 

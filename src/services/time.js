@@ -6,6 +6,7 @@ const {
 } = require('../money');
 const { getSetting, setSetting, audit } = require('../db');
 const customFields = require('./customFields');
+const permissions = require('./permissions');
 
 function evaluateRules(db, entry) {
   const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
@@ -55,6 +56,7 @@ function resolveMinutes(input) {
 }
 
 function createEntry(db, actor, input) {
+  permissions.assertCanModifyRecords(db, actor, 'time');
   const mode = assertRoundMode(getSetting(db, 'round_mode', 'up'));
   const defaultInc = Number(getSetting(db, 'round_increment_minutes', '15'));
   const increment = mode === 'none'
@@ -236,7 +238,9 @@ function listQueue(db) {
   `).all();
 }
 
-function listEntries(db, { matterId = null, timekeeperId = null, status = null } = {}) {
+function listEntries(db, filters = {}, actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'time');
+  const { matterId = null, timekeeperId = null, status = null } = filters || {};
   return db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number
     FROM time_entries te
@@ -249,11 +253,35 @@ function listEntries(db, { matterId = null, timekeeperId = null, status = null }
   `).all(matterId, matterId, timekeeperId, timekeeperId, status, status);
 }
 
+function deleteEntry(db, actor, id) {
+  permissions.assertCanDeleteRecords(db, actor, 'time');
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+  if (!entry) throw new Error('entry not found');
+  if (entry.status === 'invoiced' || entry.invoice_id) {
+    throw new Error('Cannot delete a time entry that has already been billed');
+  }
+  db.prepare('DELETE FROM time_entry_custom_field_values WHERE time_entry_id = ?').run(id);
+  db.prepare('DELETE FROM time_entries WHERE id = ?').run(id);
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'time_entry.delete',
+    entityType: 'time_entry',
+    entityId: id,
+    detail: {
+      matterId: entry.matter_id,
+      serviceDate: entry.service_date,
+      roundedMinutes: entry.rounded_minutes,
+    },
+  });
+  return { ok: true, id: Number(id) };
+}
+
 module.exports = {
   createEntry,
   submitEntry,
   approveEntry,
   rejectEntry,
+  deleteEntry,
   listQueue,
   listEntries,
   evaluateRules,

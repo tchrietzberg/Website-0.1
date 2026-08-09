@@ -7,8 +7,9 @@ const permissions = require('../src/services/permissions');
 const customFields = require('../src/services/customFields');
 const matterSvc = require('../src/services/matters');
 const clientsSvc = require('../src/services/clients');
+const timeSvc = require('../src/services/time');
 
-describe('profile permissions and record page layout', () => {
+describe('role permissions and field permissions', () => {
   let db;
   let admin;
   let paralegal;
@@ -23,22 +24,50 @@ describe('profile permissions and record page layout', () => {
     customFields.ensureRecordTypes(db);
   });
 
-  it('defaults profiles to read/write and lets admin set read only', () => {
-    const defaults = permissions.getProfilePermissions(db);
-    assert.equal(defaults.paralegal, 'read_write');
-    assert.equal(defaults.admin, 'read_write');
+  it('defaults roles to full access and keeps admin locked on', () => {
+    const defaults = permissions.getRolePermissions(db);
+    assert.equal(defaults.paralegal.objects.matter.modifyAll, true);
+    assert.equal(defaults.paralegal.objects.contact.delete, true);
+    assert.equal(defaults.admin.objects.time.viewAll, true);
 
-    const next = permissions.setProfilePermissions(db, admin, {
-      paralegal: 'read_only',
-      admin: 'read_only', // ignored — admin stays writable
+    const next = permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: false, delete: false },
+          contact: { viewAll: true, modifyAll: false, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: false },
+        },
+      },
+      admin: {
+        objects: {
+          matter: { viewAll: false, modifyAll: false, delete: false },
+        },
+      },
     });
-    assert.equal(next.paralegal, 'read_only');
-    assert.equal(next.admin, 'read_write');
-    assert.equal(permissions.getProfileAccess(db, 'paralegal'), 'read_only');
+    assert.equal(next.paralegal.objects.matter.modifyAll, false);
+    assert.equal(next.paralegal.objects.contact.delete, true);
+    assert.equal(next.admin.objects.matter.modifyAll, true);
+    assert.equal(permissions.canModifyAll(db, 'paralegal', 'matter'), false);
+    assert.equal(permissions.canDelete(db, 'paralegal', 'contact'), true);
   });
 
-  it('blocks matter updates for read-only profiles', () => {
+  it('migrates legacy read_only profile permissions', () => {
     permissions.setProfilePermissions(db, admin, { paralegal: 'read_only' });
+    assert.equal(permissions.canViewAll(db, 'paralegal', 'matter'), true);
+    assert.equal(permissions.canModifyAll(db, 'paralegal', 'matter'), false);
+    assert.equal(permissions.canDelete(db, 'paralegal', 'time'), false);
+  });
+
+  it('blocks matter updates when Modify All is off', () => {
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: false, delete: false },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+        },
+      },
+    });
     const page = matterSvc.createMatter(db, admin, {
       clientId: 1,
       name: 'Locked Matter',
@@ -54,7 +83,31 @@ describe('profile permissions and record page layout', () => {
     }), /read only/i);
   });
 
-  it('hides matter fields based on record page layout per profile', () => {
+  it('blocks delete without Delete permission and allows with it', () => {
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: false },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+        },
+      },
+    });
+    const matter = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Keep',
+      openedOn: '2026-02-01',
+    });
+    assert.throws(
+      () => matterSvc.deleteMatter(db, paralegal, matter.matter.id),
+      /permission to delete/
+    );
+    const contact = clientsSvc.createClient(db, admin, { name: 'Temp Contact' });
+    const deleted = clientsSvc.deleteClient(db, paralegal, contact.client.id);
+    assert.equal(deleted.ok, true);
+  });
+
+  it('supports Hidden / Read / Read-Write field permissions', () => {
     customFields.addStandardFieldToType(db, admin, 'billable', 'std:court');
     const field = customFields.createCustomField(db, admin, {
       label: 'Secret code',
@@ -71,8 +124,12 @@ describe('profile permissions and record page layout', () => {
 
     permissions.setRecordPageLayout(db, admin, {
       matter: {
-        'std:court': { admin: true, paralegal: false, attorney: true, billing_clerk: true },
-        [`cf:${field.id}`]: { admin: true, paralegal: false, attorney: true, billing_clerk: true },
+        'std:court': {
+          admin: 'write', paralegal: 'hidden', attorney: 'read', billing_clerk: 'write',
+        },
+        [`cf:${field.id}`]: {
+          admin: 'write', paralegal: 'read', attorney: 'write', billing_clerk: 'write',
+        },
       },
     });
 
@@ -82,15 +139,32 @@ describe('profile permissions and record page layout', () => {
     assert.ok(adminKeys.includes(`cf:${field.id}`));
 
     const asPara = matterSvc.getMatter(db, created.matter.id, paralegal);
-    const paraKeys = Object.values(asPara.sections).flat().map((f) => f.key);
+    const paraFields = Object.values(asPara.sections).flat();
+    const paraKeys = paraFields.map((f) => f.key);
     assert.ok(!paraKeys.includes('std:court'));
-    assert.ok(!paraKeys.includes(`cf:${field.id}`));
+    assert.ok(paraKeys.includes(`cf:${field.id}`));
+    assert.ok(paraFields.find((f) => f.key === `cf:${field.id}`).readonly);
     assert.ok(paraKeys.includes('std:name'));
-    assert.equal(asPara.canEdit, true); // still read_write until profile flipped
+    assert.equal(asPara.canEdit, true);
+
+    assert.throws(() => matterSvc.updateMatter(db, paralegal, created.matter.id, {
+      court: 'N.D. Cal.',
+    }), /read only/i);
+    assert.throws(() => matterSvc.updateMatter(db, paralegal, created.matter.id, {
+      customValues: { [field.id]: 'Y' },
+    }), /read only/i);
   });
 
-  it('marks pages read-only when profile is read only', () => {
-    permissions.setProfilePermissions(db, admin, { paralegal: 'read_only' });
+  it('marks pages read-only when Modify All is off', () => {
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: false, delete: false },
+          contact: { viewAll: true, modifyAll: false, delete: false },
+          time: { viewAll: true, modifyAll: false, delete: false },
+        },
+      },
+    });
     const created = matterSvc.createMatter(db, admin, {
       clientId: 1,
       name: 'RO Matter',
@@ -99,6 +173,7 @@ describe('profile permissions and record page layout', () => {
     const page = matterSvc.getMatter(db, created.matter.id, paralegal);
     assert.equal(page.pageAccess, 'read_only');
     assert.equal(page.canEdit, false);
+    assert.equal(page.canDelete, false);
     assert.ok(Object.values(page.sections).flat().every((f) => f.readonly || f.key === 'std:number'));
   });
 
@@ -113,7 +188,7 @@ describe('profile permissions and record page layout', () => {
     assert.equal(customFields.listCustomFields(db, { recordTypeKey: 'billable' }).length, 0);
   });
 
-  it('hides contact custom fields per profile layout', () => {
+  it('hides contact custom fields per role field permissions', () => {
     const field = customFields.createCustomField(db, admin, {
       label: 'Internal note',
       fieldType: 'text',
@@ -125,12 +200,49 @@ describe('profile permissions and record page layout', () => {
     });
     permissions.setRecordPageLayout(db, admin, {
       contact: {
-        [`cf:${field.id}`]: { admin: true, paralegal: false, attorney: true, billing_clerk: true },
+        [`cf:${field.id}`]: {
+          admin: 'write', paralegal: 'hidden', attorney: 'read', billing_clerk: 'write',
+        },
       },
     });
     const asPara = clientsSvc.getClient(db, page.client.id, paralegal);
     assert.ok(!asPara.fields.some((f) => f.fieldId === field.id));
     const asAdmin = clientsSvc.getClient(db, page.client.id, admin);
     assert.ok(asAdmin.fields.some((f) => f.fieldId === field.id));
+  });
+
+  it('enforces View All and time delete permission', () => {
+    const matter = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Billable work',
+      openedOn: '2026-05-01',
+    });
+    const entry = timeSvc.createEntry(db, admin, {
+      matterId: matter.matter.id,
+      timekeeperId: admin.id,
+      serviceDate: '2026-05-02',
+      hours: 1,
+      description: 'Research',
+    });
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: false, modifyAll: false, delete: false },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: false },
+        },
+      },
+    });
+    assert.throws(
+      () => matterSvc.getMatter(db, matter.matter.id, paralegal),
+      /not viewable/i
+    );
+    assert.throws(
+      () => timeSvc.deleteEntry(db, paralegal, entry.id),
+      /permission to delete/
+    );
+    const removed = timeSvc.deleteEntry(db, admin, entry.id);
+    assert.equal(removed.ok, true);
   });
 });

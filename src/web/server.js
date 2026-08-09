@@ -433,10 +433,16 @@ function createServer(db = openDb()) {
         return json(res, 200, clientsSvc.getContactFieldConfig(db));
       }
       if (req.method === 'GET' && pathname === '/api/clients') {
-        const clientsSvc = require('../services/clients');
-        return json(res, 200, clientsSvc.listClients(db, {
-          q: url.searchParams.get('q') || '',
-        }));
+        try {
+          const permissions = require('../services/permissions');
+          permissions.assertCanViewRecords(db, user, 'contact');
+          const clientsSvc = require('../services/clients');
+          return json(res, 200, clientsSvc.listClients(db, {
+            q: url.searchParams.get('q') || '',
+          }));
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname === '/api/clients') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
@@ -449,11 +455,15 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/clients\/\d+$/)) {
-        const clientsSvc = require('../services/clients');
-        const id = Number(pathname.split('/')[3]);
-        const page = clientsSvc.getClient(db, id, user);
-        if (!page) return json(res, 404, { error: 'not found' });
-        return json(res, 200, page);
+        try {
+          const clientsSvc = require('../services/clients');
+          const id = Number(pathname.split('/')[3]);
+          const page = clientsSvc.getClient(db, id, user);
+          if (!page) return json(res, 404, { error: 'not found' });
+          return json(res, 200, page);
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/clients\/\d+$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
@@ -480,21 +490,27 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.listRecordTypes(db));
       }
       if (req.method === 'GET' && pathname === '/api/matters') {
-        const q = url.searchParams.get('q');
-        const filters = {
-          q,
-          status: url.searchParams.get('status'),
-          matterType: url.searchParams.get('type'),
-          clientId: url.searchParams.get('clientId'),
-        };
-        // Matter Search (indexed) when q is present; otherwise full list for dropdowns
-        if (q != null && String(q).trim() !== '') {
-          return json(res, 200, matterSvc.searchMatters(db, filters));
+        try {
+          const permissions = require('../services/permissions');
+          permissions.assertCanViewRecords(db, user, 'matter');
+          const q = url.searchParams.get('q');
+          const filters = {
+            q,
+            status: url.searchParams.get('status'),
+            matterType: url.searchParams.get('type'),
+            clientId: url.searchParams.get('clientId'),
+          };
+          // Matter Search (indexed) when q is present; otherwise full list for dropdowns
+          if (q != null && String(q).trim() !== '') {
+            return json(res, 200, matterSvc.searchMatters(db, filters));
+          }
+          if (url.searchParams.get('search') === '1') {
+            return json(res, 200, []); // indexed search with empty query → no hits
+          }
+          return json(res, 200, matterSvc.listMatters(db, filters));
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
         }
-        if (url.searchParams.get('search') === '1') {
-          return json(res, 200, []); // indexed search with empty query → no hits
-        }
-        return json(res, 200, matterSvc.listMatters(db, filters));
       }
       if (req.method === 'POST' && pathname === '/api/matters/reindex') {
         if (!requireRoles(user, res, ['admin'])) return;
@@ -504,10 +520,14 @@ function createServer(db = openDb()) {
         return json(res, 200, { ok: true, indexed: count });
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/matters\/\d+$/)) {
-        const id = Number(pathname.split('/')[3]);
-        const page = matterSvc.getMatter(db, id, user);
-        if (!page) return json(res, 404, { error: 'not found' });
-        return json(res, 200, page);
+        try {
+          const id = Number(pathname.split('/')[3]);
+          const page = matterSvc.getMatter(db, id, user);
+          if (!page) return json(res, 404, { error: 'not found' });
+          return json(res, 200, page);
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname === '/api/matters') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
@@ -524,6 +544,15 @@ function createServer(db = openDb()) {
           const id = Number(pathname.split('/')[3]);
           const body = await parseBody(req);
           return json(res, 200, matterSvc.updateMatter(db, user, id, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/matters\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const id = Number(pathname.split('/')[3]);
+          return json(res, 200, matterSvc.deleteMatter(db, user, id));
         } catch (e) {
           return json(res, 400, { error: e.message, message: e.message });
         }
@@ -761,12 +790,16 @@ function createServer(db = openDb()) {
 
       // Time
       if (req.method === 'GET' && pathname === '/api/time-entries') {
-        const matterId = url.searchParams.get('matterId');
-        const status = url.searchParams.get('status');
-        return json(res, 200, timeSvc.listEntries(db, {
-          matterId: matterId ? Number(matterId) : null,
-          status,
-        }));
+        try {
+          const matterId = url.searchParams.get('matterId');
+          const status = url.searchParams.get('status');
+          return json(res, 200, timeSvc.listEntries(db, {
+            matterId: matterId ? Number(matterId) : null,
+            status,
+          }, user));
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'GET' && pathname === '/api/settings') {
         return json(res, 200, readSettings(db));
@@ -807,13 +840,22 @@ function createServer(db = openDb()) {
           const clientsSvc = require('../services/clients');
           clientsSvc.setEnabledContactStandardKeys(db, user, body.contactStandardFields);
         }
-        if (body.profilePermissions !== undefined || body.recordPageLayout !== undefined) {
+        if (
+          body.rolePermissions !== undefined
+          || body.profilePermissions !== undefined
+          || body.recordPageLayout !== undefined
+          || body.fieldPermissions !== undefined
+        ) {
           if (!requireRoles(user, res, ['admin'])) return;
           const permissions = require('../services/permissions');
-          if (body.profilePermissions !== undefined) {
-            permissions.setProfilePermissions(db, user, body.profilePermissions);
+          if (body.rolePermissions !== undefined) {
+            permissions.setRolePermissions(db, user, body.rolePermissions);
+          } else if (body.profilePermissions !== undefined) {
+            permissions.setRolePermissions(db, user, body.profilePermissions);
           }
-          if (body.recordPageLayout !== undefined) {
+          if (body.fieldPermissions !== undefined) {
+            permissions.setRecordPageLayout(db, user, body.fieldPermissions);
+          } else if (body.recordPageLayout !== undefined) {
             permissions.setRecordPageLayout(db, user, body.recordPageLayout);
           }
         }
@@ -916,37 +958,51 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'POST' && pathname === '/api/time-entries') {
-        const body = await parseBody(req);
-        const customValues = {};
-        if (body.customValues && typeof body.customValues === 'object') {
-          Object.assign(customValues, body.customValues);
-        }
-        for (const [key, value] of Object.entries(body)) {
-          if (key.startsWith('cf_')) {
-            customValues[key.slice(3)] = value;
+        try {
+          const body = await parseBody(req);
+          const customValues = {};
+          if (body.customValues && typeof body.customValues === 'object') {
+            Object.assign(customValues, body.customValues);
           }
+          for (const [key, value] of Object.entries(body)) {
+            if (key.startsWith('cf_')) {
+              customValues[key.slice(3)] = value;
+            }
+          }
+          const hoursNum = body.hours != null && body.hours !== '' ? Number(body.hours) : NaN;
+          const minutesNum = body.rawMinutes != null && body.rawMinutes !== ''
+            ? Number(body.rawMinutes)
+            : NaN;
+          const entry = timeSvc.createEntry(db, user, {
+            matterId: Number(body.matterId),
+            timekeeperId: Number(body.timekeeperId || user.id),
+            serviceDate: body.serviceDate,
+            hours: Number.isFinite(hoursNum) ? hoursNum : undefined,
+            rawMinutes: Number.isFinite(minutesNum) ? minutesNum : undefined,
+            description: body.description,
+            billable: body.billable == null ? null : (body.billable ? 1 : 0),
+            category: body.category,
+            subcategory: body.subcategory,
+            utbmsTask: body.utbmsTask,
+            utbmsActivity: body.utbmsActivity,
+            roundIncrementMinutes: body.roundIncrementMinutes != null
+              ? Number(body.roundIncrementMinutes) : undefined,
+            customValues,
+          });
+          return json(res, 201, entry);
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
         }
-        const hoursNum = body.hours != null && body.hours !== '' ? Number(body.hours) : NaN;
-        const minutesNum = body.rawMinutes != null && body.rawMinutes !== ''
-          ? Number(body.rawMinutes)
-          : NaN;
-        const entry = timeSvc.createEntry(db, user, {
-          matterId: Number(body.matterId),
-          timekeeperId: Number(body.timekeeperId || user.id),
-          serviceDate: body.serviceDate,
-          hours: Number.isFinite(hoursNum) ? hoursNum : undefined,
-          rawMinutes: Number.isFinite(minutesNum) ? minutesNum : undefined,
-          description: body.description,
-          billable: body.billable == null ? null : (body.billable ? 1 : 0),
-          category: body.category,
-          subcategory: body.subcategory,
-          utbmsTask: body.utbmsTask,
-          utbmsActivity: body.utbmsActivity,
-          roundIncrementMinutes: body.roundIncrementMinutes != null
-            ? Number(body.roundIncrementMinutes) : undefined,
-          customValues,
-        });
-        return json(res, 201, entry);
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/time-entries\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const id = Number(pathname.split('/')[3]);
+          return json(res, 200, timeSvc.deleteEntry(db, user, id));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/time-entries\/\d+\/submit$/)) {
         const id = Number(pathname.split('/')[3]);

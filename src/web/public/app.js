@@ -59,12 +59,43 @@
     });
   }
 
-  function profileCanWrite(settings = state.settings) {
+  function roleObjectPerms(objectKey, settings = state.settings) {
     const role = state.user?.role;
-    if (!role) return false;
-    if (role === 'admin') return true;
-    const mode = settings?.permissions?.profilePermissions?.[role];
-    return mode !== 'read_only';
+    if (!role) return { viewAll: false, modifyAll: false, delete: false };
+    if (role === 'admin') return { viewAll: true, modifyAll: true, delete: true };
+    const entry = settings?.permissions?.rolePermissions?.[role]
+      || settings?.permissions?.profilePermissions?.[role];
+    if (!entry || typeof entry !== 'object') {
+      // Legacy string mode
+      const mode = entry;
+      const full = mode !== 'read_only';
+      return { viewAll: true, modifyAll: full, delete: full };
+    }
+    const obj = entry.objects?.[objectKey] || entry[objectKey] || {};
+    return {
+      viewAll: obj.viewAll !== false,
+      modifyAll: obj.modifyAll !== false,
+      delete: !!obj.delete,
+    };
+  }
+
+  function roleCanView(objectKey, settings = state.settings) {
+    return !!roleObjectPerms(objectKey, settings).viewAll;
+  }
+
+  function roleCanModify(objectKey, settings = state.settings) {
+    return !!roleObjectPerms(objectKey, settings).modifyAll;
+  }
+
+  function roleCanDelete(objectKey, settings = state.settings) {
+    return !!roleObjectPerms(objectKey, settings).delete;
+  }
+
+  /** @deprecated prefer roleCanModify(objectKey) */
+  function profileCanWrite(settings = state.settings) {
+    return roleCanModify('matter', settings)
+      || roleCanModify('contact', settings)
+      || roleCanModify('time', settings);
   }
 
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -801,70 +832,117 @@
     await render();
   }
 
-  async function bindProfilePermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
+  function normalizeRolePermEntry(entry) {
+    const objects = { matter: {}, contact: {}, time: {} };
+    const src = entry && typeof entry === 'object' ? entry : {};
+    const objectsSrc = src.objects && typeof src.objects === 'object' ? src.objects : src;
+    if (typeof entry === 'string') {
+      const full = entry !== 'read_only';
+      for (const key of Object.keys(objects)) {
+        objects[key] = { viewAll: true, modifyAll: full, delete: full };
+      }
+      return { objects };
+    }
+    for (const key of Object.keys(objects)) {
+      const o = objectsSrc[key] || {};
+      objects[key] = {
+        viewAll: o.viewAll !== false,
+        modifyAll: o.modifyAll !== false,
+        delete: !!o.delete,
+      };
+    }
+    return { objects };
+  }
+
+  async function bindRolePermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
     if (!bodyEl || !permissions) return;
-    const profiles = permissions.profiles || [];
-    const current = { ...(permissions.profilePermissions || {}) };
+    const roles = permissions.roles || permissions.profiles || [];
+    const objects = permissions.objects || [
+      { key: 'matter', label: 'Matters' },
+      { key: 'contact', label: 'Contacts' },
+      { key: 'time', label: 'Time entries' },
+    ];
+    const current = {};
+    for (const role of roles) {
+      current[role.key] = normalizeRolePermEntry(
+        (permissions.rolePermissions || {})[role.key]
+          ?? (permissions.profilePermissions || {})[role.key]
+      );
+    }
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
     };
     const render = () => {
       bodyEl.innerHTML = `
-        <div class="table-wrap"><table class="perms-table">
-          <thead>
-            <tr><th>Profile</th><th>Read Only</th><th>Read/Write</th></tr>
-          </thead>
-          <tbody>
-            ${profiles.map((p) => {
-              const mode = current[p.key] || 'read_write';
-              const locked = p.key === 'admin';
-              return `
-              <tr>
-                <td><strong>${escapeHtml(p.label)}</strong></td>
-                <td>
-                  <label class="check-inline">
-                    <input type="checkbox" data-profile-mode="${escapeHtml(p.key)}" data-mode="read_only"
-                      ${mode === 'read_only' ? 'checked' : ''} ${locked ? 'disabled' : ''} />
-                  </label>
-                </td>
-                <td>
-                  <label class="check-inline">
-                    <input type="checkbox" data-profile-mode="${escapeHtml(p.key)}" data-mode="read_write"
-                      ${mode === 'read_write' ? 'checked' : ''} ${locked ? 'disabled' : ''} />
-                  </label>
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table></div>
+        <div class="role-perms-list stack">
+          ${roles.map((role) => {
+            const locked = role.key === 'admin';
+            const objs = current[role.key].objects;
+            return `
+            <div class="role-perm-card" data-role="${escapeHtml(role.key)}">
+              <h3>${escapeHtml(role.label)}${locked ? ' <span class="muted">(full access)</span>' : ''}</h3>
+              <div class="table-wrap"><table class="perms-table role-object-perms">
+                <thead>
+                  <tr>
+                    <th>Record</th>
+                    <th>View All</th>
+                    <th>Modify All</th>
+                    <th>Delete</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${objects.map((obj) => {
+                    const p = objs[obj.key] || { viewAll: true, modifyAll: true, delete: true };
+                    return `
+                    <tr>
+                      <td><strong>${escapeHtml(obj.label)}</strong></td>
+                      <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="viewAll" ${p.viewAll ? 'checked' : ''} ${locked ? 'disabled' : ''} /></label></td>
+                      <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="modifyAll" ${p.modifyAll ? 'checked' : ''} ${locked ? 'disabled' : ''} /></label></td>
+                      <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="delete" ${p.delete ? 'checked' : ''} ${locked ? 'disabled' : ''} /></label></td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+              </table></div>
+            </div>`;
+          }).join('')}
+        </div>
         <div class="row-actions">
-          <button class="primary" type="button" id="saveProfilePermissions">Save profile permissions</button>
+          <button class="primary" type="button" id="saveRolePermissions">Save role permissions</button>
         </div>`;
-      bodyEl.querySelectorAll('[data-profile-mode]').forEach((box) => {
+      bodyEl.querySelectorAll('[data-role-perm]').forEach((box) => {
         box.onchange = () => {
-          if (!box.checked) {
-            box.checked = true;
-            return;
+          const roleKey = box.dataset.rolePerm;
+          const objectKey = box.dataset.object;
+          const flag = box.dataset.flag;
+          if (!current[roleKey]) current[roleKey] = normalizeRolePermEntry({});
+          if (!current[roleKey].objects[objectKey]) {
+            current[roleKey].objects[objectKey] = { viewAll: true, modifyAll: true, delete: false };
           }
-          const profile = box.dataset.profileMode;
-          const mode = box.dataset.mode;
-          current[profile] = mode;
-          bodyEl.querySelectorAll(`[data-profile-mode="${profile}"]`).forEach((other) => {
-            other.checked = other.dataset.mode === mode;
-          });
+          current[roleKey].objects[objectKey][flag] = !!box.checked;
+          // Modify/Delete imply View All for usable access.
+          if ((flag === 'modifyAll' || flag === 'delete') && box.checked) {
+            current[roleKey].objects[objectKey].viewAll = true;
+            const viewBox = bodyEl.querySelector(
+              `[data-role-perm="${roleKey}"][data-object="${objectKey}"][data-flag="viewAll"]`
+            );
+            if (viewBox) viewBox.checked = true;
+          }
         };
       });
-      const saveBtn = $('#saveProfilePermissions', bodyEl);
+      const saveBtn = $('#saveRolePermissions', bodyEl);
       if (saveBtn) {
         saveBtn.onclick = async () => {
           try {
             const updated = await api('/api/settings', {
               method: 'PATCH',
-              body: JSON.stringify({ profilePermissions: current }),
+              body: JSON.stringify({ rolePermissions: current }),
             });
             state.settings = updated;
-            Object.assign(current, updated.permissions?.profilePermissions || current);
-            setMsg('<div class="ok-banner">Profile permissions saved.</div>');
+            const next = updated.permissions?.rolePermissions || current;
+            for (const role of roles) {
+              current[role.key] = normalizeRolePermEntry(next[role.key]);
+            }
+            setMsg('<div class="ok-banner">Role permissions saved.</div>');
             render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -875,13 +953,14 @@
     render();
   }
 
-  async function bindRecordPageLayoutEditor({ bodyEl, msgEl, permissions } = {}) {
+  async function bindFieldPermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
     if (!bodyEl || !permissions) return;
-    const profiles = permissions.profiles || [];
+    const roles = permissions.roles || permissions.profiles || [];
     let page = state.settingsLayoutPage || 'matter';
+    const source = permissions.fieldPermissions || permissions.recordPageLayout || {};
     const layout = {
-      matter: { ...(permissions.recordPageLayout?.matter || {}) },
-      contact: { ...(permissions.recordPageLayout?.contact || {}) },
+      matter: { ...(source.matter || {}) },
+      contact: { ...(source.contact || {}) },
     };
     const catalogs = {
       matter: permissions.matterFields || [],
@@ -890,11 +969,16 @@
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
     };
-    const isVisible = (pageKey, fieldKey, profileKey) => {
-      if (fieldKey === 'name' || fieldKey === 'std:name') return true;
+    const fieldMode = (pageKey, fieldKey, roleKey) => {
+      if (fieldKey === 'name' || fieldKey === 'std:name') return 'write';
       const row = layout[pageKey]?.[fieldKey];
-      if (!row || row[profileKey] === undefined) return true;
-      return !!row[profileKey];
+      if (!row || row[roleKey] === undefined) return 'write';
+      const raw = row[roleKey];
+      if (raw === true || raw === 1) return 'write';
+      if (raw === false || raw === 0) return 'hidden';
+      const mode = String(raw).toLowerCase();
+      if (mode === 'hidden' || mode === 'read' || mode === 'write') return mode;
+      return 'write';
     };
     const render = () => {
       const fields = catalogs[page] || [];
@@ -903,11 +987,11 @@
           <button type="button" data-layout-page="matter" class="${page === 'matter' ? 'primary' : ''}">Matter</button>
           <button type="button" data-layout-page="contact" class="${page === 'contact' ? 'primary' : ''}">Contact</button>
         </div>
-        <div class="table-wrap"><table class="perms-table layout-vis-table">
+        <div class="table-wrap"><table class="perms-table layout-vis-table field-perms-table">
           <thead>
             <tr>
               <th>Field</th>
-              ${profiles.map((p) => `<th>${escapeHtml(p.label)} visible</th>`).join('')}
+              ${roles.map((p) => `<th>${escapeHtml(p.label)}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -919,19 +1003,21 @@
                   <strong>${escapeHtml(f.label)}</strong>
                   <div class="muted">${escapeHtml(f.group || f.kind || '')}</div>
                 </td>
-                ${profiles.map((p) => `
+                ${roles.map((p) => `
                   <td>
-                    <label class="check-inline">
-                      <input type="checkbox" data-vis-field="${escapeHtml(f.key)}" data-vis-profile="${escapeHtml(p.key)}"
-                        ${isVisible(page, f.key, p.key) ? 'checked' : ''} ${locked ? 'disabled' : ''} />
-                    </label>
+                    <select data-field-mode="${escapeHtml(f.key)}" data-field-role="${escapeHtml(p.key)}"
+                      ${locked ? 'disabled' : ''} aria-label="${escapeHtml(f.label)} for ${escapeHtml(p.label)}">
+                      <option value="hidden" ${fieldMode(page, f.key, p.key) === 'hidden' ? 'selected' : ''}>Hidden</option>
+                      <option value="read" ${fieldMode(page, f.key, p.key) === 'read' ? 'selected' : ''}>Read</option>
+                      <option value="write" ${fieldMode(page, f.key, p.key) === 'write' ? 'selected' : ''}>Read/Write</option>
+                    </select>
                   </td>`).join('')}
               </tr>`;
             }).join('') || '<tr><td class="muted" colspan="5">No fields yet</td></tr>'}
           </tbody>
         </table></div>
         <div class="row-actions">
-          <button class="primary" type="button" id="saveRecordPageLayout">Save record page layout</button>
+          <button class="primary" type="button" id="saveFieldPermissions">Save field permissions</button>
         </div>`;
       bodyEl.querySelectorAll('[data-layout-page]').forEach((btn) => {
         btn.onclick = () => {
@@ -941,36 +1027,37 @@
           render();
         };
       });
-      bodyEl.querySelectorAll('[data-vis-field]').forEach((box) => {
-        box.onchange = () => {
-          const fieldKey = box.dataset.visField;
-          const profileKey = box.dataset.visProfile;
+      bodyEl.querySelectorAll('[data-field-mode]').forEach((sel) => {
+        sel.onchange = () => {
+          const fieldKey = sel.dataset.fieldMode;
+          const roleKey = sel.dataset.fieldRole;
           if (!layout[page][fieldKey]) layout[page][fieldKey] = {};
-          layout[page][fieldKey][profileKey] = !!box.checked;
+          layout[page][fieldKey][roleKey] = sel.value;
         };
       });
-      const saveBtn = $('#saveRecordPageLayout', bodyEl);
+      const saveBtn = $('#saveFieldPermissions', bodyEl);
       if (saveBtn) {
         saveBtn.onclick = async () => {
           try {
-            // Ensure every catalog field has an explicit row for current toggles
             for (const f of catalogs[page] || []) {
               if (!layout[page][f.key]) layout[page][f.key] = {};
-              for (const p of profiles) {
+              for (const p of roles) {
                 if (layout[page][f.key][p.key] === undefined) {
-                  layout[page][f.key][p.key] = isVisible(page, f.key, p.key);
+                  layout[page][f.key][p.key] = fieldMode(page, f.key, p.key);
                 }
               }
             }
             const updated = await api('/api/settings', {
               method: 'PATCH',
-              body: JSON.stringify({ recordPageLayout: layout }),
+              body: JSON.stringify({ fieldPermissions: layout }),
             });
             state.settings = updated;
-            const next = updated.permissions?.recordPageLayout || layout;
+            const next = updated.permissions?.fieldPermissions
+              || updated.permissions?.recordPageLayout
+              || layout;
             layout.matter = { ...(next.matter || {}) };
             layout.contact = { ...(next.contact || {}) };
-            setMsg('<div class="ok-banner">Record page layout saved.</div>');
+            setMsg('<div class="ok-banner">Field permissions saved.</div>');
             render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -979,6 +1066,16 @@
       }
     };
     render();
+  }
+
+  /** @deprecated */
+  async function bindProfilePermissionsEditor(opts) {
+    return bindRolePermissionsEditor(opts);
+  }
+
+  /** @deprecated */
+  async function bindRecordPageLayoutEditor(opts) {
+    return bindFieldPermissionsEditor(opts);
   }
 
   function matterSearchText(m) {
@@ -1589,17 +1686,26 @@
       appEl.classList.add('app-shell');
     }
     const items = [
-      ['matters', 'Matters', 'matters', 'Matters & search'],
-      ['contacts', 'Contacts', 'contacts', 'People & companies'],
-      ['time', 'Time Entry', 'time', 'Log & review time'],
+      roleCanView('matter') ? ['matters', 'Matters', 'matters', 'Matters & search'] : null,
+      roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
+      roleCanView('time') ? ['time', 'Time Entry', 'time', 'Log & review time'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       ['reports', 'Reports', 'reports', 'Lodestar & custom'],
       ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'],
       ['settings', 'Settings', 'settings', 'Firm preferences'],
-    ];
+    ].filter(Boolean);
     // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
     if (['approvals', 'payments', 'audit', 'wip'].includes(state.view)) {
-      state.view = 'matters';
+      state.view = roleCanView('matter') ? 'matters' : (items[0]?.[0] || 'settings');
+    }
+    if (state.view === 'matters' || state.view === 'matter') {
+      if (!roleCanView('matter')) state.view = items[0]?.[0] || 'settings';
+    }
+    if (state.view === 'contacts' || state.view === 'contact') {
+      if (!roleCanView('contact')) state.view = items[0]?.[0] || 'settings';
+    }
+    if (state.view === 'time' && !roleCanView('time')) {
+      state.view = items[0]?.[0] || 'settings';
     }
     const activeView = state.view === 'matter'
       ? 'matters'
@@ -1610,7 +1716,7 @@
     if (sidebarActions) {
       sidebarActions.innerHTML = `
         <p class="sidebar-label">Quick actions</p>
-        ${canCreateMatter(state.user)
+        ${canCreateMatter(state.user) && roleCanModify('matter')
           ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">
               <span class="sidebar-action-mark" aria-hidden="true">${navIcon('plus')}</span>
               <span class="sidebar-action-text">
@@ -1619,13 +1725,14 @@
               </span>
             </button>`
           : ''}
+        ${roleCanModify('time') ? `
         <button type="button" class="sidebar-action secondary" id="sideAddTime">
           <span class="sidebar-action-mark" aria-hidden="true">${navIcon('time')}</span>
           <span class="sidebar-action-text">
             <strong>Add Time Entry</strong>
             <small>Log time on a matter</small>
           </span>
-        </button>`;
+        </button>` : ''}`;
       const sideAddMatter = $('#sideAddMatter');
       if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
       const sideAddTime = $('#sideAddTime');
@@ -1702,19 +1809,19 @@
     if (state.matterSearch.q) params.set('q', state.matterSearch.q);
 
     const hasQuery = !!state.matterSearch.q;
-    const canEdit = canCreateMatter(state.user) && profileCanWrite();
+    const canEdit = canCreateMatter(state.user) && roleCanModify('matter');
 
     const showCreate = canEdit && state.showCreateMatter;
     const [hits, clients, allMatters, recordTypes] = await Promise.all([
       api(`/api/matters?${params}`),
-      api('/api/clients'),
+      api('/api/clients').catch(() => state.clients || []),
       api('/api/matters'), // full list for dropdowns elsewhere; not shown here
       showCreate
         ? api('/api/record-types').catch(() => [])
         : Promise.resolve([]),
     ]);
     state.matters = allMatters;
-    state.clients = clients;
+    state.clients = clients || [];
     const draftName = state.createMatterDraftName || '';
     const createFieldMsg = state.createMatterFieldMsg;
     state.createMatterFieldMsg = null;
@@ -1973,7 +2080,7 @@
   }
 
   async function renderContacts() {
-    const canEdit = canCreateMatter(state.user) && profileCanWrite();
+    const canEdit = canCreateMatter(state.user) && roleCanModify('contact');
     const showCreate = canEdit && state.showCreateContact;
     const q = state.contactSearch.q || '';
     const [contacts, createFields, fieldConfig] = await Promise.all([
@@ -2143,7 +2250,8 @@
       return renderContacts();
     }
     const page = await api(`/api/clients/${state.contactId}`);
-    const canEdit = canCreateMatter(state.user) && page.canEdit !== false && profileCanWrite();
+    const canEdit = canCreateMatter(state.user) && page.canEdit !== false && roleCanModify('contact');
+    const canDelete = canCreateMatter(state.user) && page.canDelete !== false && roleCanDelete('contact');
     const c = page.client;
     const fields = page.fields || [];
     const enabledStd = (page.fieldConfig && page.fieldConfig.enabledStandard) || [];
@@ -2156,7 +2264,7 @@
       <div class="card">
         <div class="row-actions" style="margin-bottom:.75rem">
           <button type="button" id="backContacts">← Contacts</button>
-          ${canEdit ? '<button type="button" id="deleteContact">Delete contact</button>' : ''}
+          ${canDelete ? '<button type="button" id="deleteContact">Delete contact</button>' : ''}
         </div>
         <h1>${escapeHtml(c.name || 'Contact')}</h1>
         ${createFlash ? successNoticeHtml(createFlash) : ''}
@@ -2173,7 +2281,10 @@
           ${enabledStd.map((field) => `
             <label class="${field.width === 'full' ? 'span-all' : ''}">
               ${escapeHtml(field.label)}
-              ${contactStandardInputHtml(field, { value: c[field.key] || '', canEdit })}
+              ${contactStandardInputHtml(field, {
+                value: c[field.key] || '',
+                canEdit: canEdit && !field.readonly,
+              })}
             </label>`).join('')}
           ${fields.map((f) => `
             <label class="${f.width === 'full' ? 'span-all' : ''}">
@@ -2196,7 +2307,7 @@
     };
 
     const deleteBtn = $('#deleteContact');
-    if (deleteBtn && canEdit) {
+    if (deleteBtn && canDelete) {
       deleteBtn.onclick = async () => {
         const sure = await confirmAction({
           title: 'Delete this contact?',
@@ -2607,7 +2718,9 @@
     const matterTypeLabel = ((recordTypes || []).find((t) => t.key === m.matter_type) || {}).label
       || m.matter_type
       || 'Billable';
-    const canEdit = canCreateMatter(state.user) && page.canEdit !== false && profileCanWrite();
+    const canEdit = canCreateMatter(state.user) && page.canEdit !== false && roleCanModify('matter');
+    const canDelete = canCreateMatter(state.user) && page.canDelete !== false && roleCanDelete('matter');
+    const canLogTime = roleCanModify('time');
     const matterReports = [
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
       ['lodestar-matter-summary', 'Lodestar Summary', 'Hours and amounts by timekeeper'],
@@ -2688,6 +2801,7 @@
       <div class="card">
         <div class="row-actions" style="margin-bottom:.75rem">
           <button type="button" id="backMatters">← Matters</button>
+          ${canDelete ? '<button type="button" id="deleteMatter">Delete matter</button>' : ''}
         </div>
         <h1>${escapeHtml(m.name || 'Matter')}</h1>
         <p class="muted" style="margin:.25rem 0 0">Record type · ${escapeHtml(matterTypeLabel)}</p>
@@ -2720,7 +2834,7 @@
         msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
       }) : ''}
 
-      <div class="card">
+      ${canLogTime ? `<div class="card">
         <h2>Add time</h2>
         <p class="hint">Log time on this matter. Time-entry custom fields appear here when added in Settings.</p>
         <form id="matterTimeForm" class="grid two">
@@ -2753,7 +2867,7 @@
             }).join('') || '<tr><td colspan="4" class="muted">No time on this matter yet</td></tr>'}
           </tbody>
         </table></div>
-      </div>
+      </div>` : ''}
 
       <div class="card stack">
         <h2>Time reports</h2>
@@ -2890,6 +3004,31 @@
       renderView();
     };
 
+    const deleteMatterBtn = $('#deleteMatter');
+    if (deleteMatterBtn && canDelete) {
+      deleteMatterBtn.onclick = async () => {
+        const sure = await confirmAction({
+          title: 'Delete this matter?',
+          message: `Are you sure you want to delete “${m.name || 'this matter'}”? This cannot be undone.`,
+          confirmLabel: 'Yes, delete matter',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
+        try {
+          await api(`/api/matters/${m.id}`, { method: 'DELETE' });
+          state.matterId = null;
+          state.view = 'matters';
+          state.showPostCreateFields = false;
+          state.editingMatterFieldId = null;
+          await refreshRefs();
+          renderShell();
+          await renderMatters();
+        } catch (e) {
+          $('#matterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
     const dismissPostCreate = $('#dismissPostCreateFields');
     if (dismissPostCreate) {
       dismissPostCreate.onclick = async () => {
@@ -2945,26 +3084,29 @@
       };
     }
 
-    wireTimeEntrySubmit($('#matterTimeForm'), {
-      msgEl: $('#matterTimeMsg'),
-      timeFieldDefs,
-      fixedMatterId: m.id,
-      onSaved: async (entry, body) => {
-        const savedDesc = String(body.description || entry.description || '').trim() || 'Time entry';
-        state.matterTimeFlash = {
-          title: 'Time saved',
-          detail: `${savedDesc} · ${formatHoursLabel(entry.roundedMinutes)}`,
-        };
-        state.matterTimeRetain = {
-          addAnother: true,
-          serviceDate: body.serviceDate,
-          timekeeperId: body.timekeeperId,
-        };
-        await renderMatterDetail();
-        const descInput = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
-        if (descInput) setTimeout(() => descInput.focus(), 0);
-      },
-    });
+    const matterTimeForm = $('#matterTimeForm');
+    if (matterTimeForm) {
+      wireTimeEntrySubmit(matterTimeForm, {
+        msgEl: $('#matterTimeMsg'),
+        timeFieldDefs,
+        fixedMatterId: m.id,
+        onSaved: async (entry, body) => {
+          const savedDesc = String(body.description || entry.description || '').trim() || 'Time entry';
+          state.matterTimeFlash = {
+            title: 'Time saved',
+            detail: `${savedDesc} · ${formatHoursLabel(entry.roundedMinutes)}`,
+          };
+          state.matterTimeRetain = {
+            addAnother: true,
+            serviceDate: body.serviceDate,
+            timekeeperId: body.timekeeperId,
+          };
+          await renderMatterDetail();
+          const descInput = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
+          if (descInput) setTimeout(() => descInput.focus(), 0);
+        },
+      });
+    }
 
     const downloadMatterTimeReport = async (reportId, format) => {
       try {
@@ -3197,10 +3339,12 @@
   }
 
   async function renderTime() {
+    const canEdit = roleCanModify('time');
+    const canDelete = roleCanDelete('time');
     const [entries, settings, matters, timeFields] = await Promise.all([
       api('/api/time-entries'),
       api('/api/settings'),
-      api('/api/matters'),
+      api('/api/matters').catch(() => []),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
     ]);
     state.settings = settings;
@@ -3220,7 +3364,7 @@
     state.timeEntryRetain = null;
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
     main.innerHTML = `
-      <div class="card">
+      ${canEdit ? `<div class="card">
         <h1>Time Entry</h1>
         <form id="timeForm" class="grid two">
           <div class="field span-all">
@@ -3241,12 +3385,12 @@
           })}
         </form>
         <div id="timeMsg" style="margin-top:.75rem">${flash ? successNoticeHtml(flash) : ''}</div>
-      </div>
+      </div>` : `<div class="card"><h1>Time Entry</h1>${flash ? successNoticeHtml(flash) : ''}<p class="muted">Your role can view time entries but not create them.</p></div>`}
       <div class="card">
         <h2>Recent entries</h2>
         <p class="hint">Saved time is ready for Billing automatically — no approval step.</p>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Matter</th><th>Hours</th><th>Status</th></tr></thead>
+          <thead><tr><th>Date</th><th>Matter</th><th>Hours</th><th>Status</th>${canDelete ? '<th></th>' : ''}</tr></thead>
           <tbody>
             ${entries.slice(0, 30).map((e) => {
               const matterName = (matters.find((m) => Number(m.id) === Number(e.matter_id)) || {}).name
@@ -3255,6 +3399,7 @@
               const statusLabel = e.status === 'approved' ? 'Ready to bill'
                 : e.status === 'invoiced' ? 'Billed'
                   : e.status;
+              const deletable = canDelete && e.status !== 'invoiced' && !e.invoice_id;
               return `
               <tr>
                 <td>${escapeHtml(e.service_date)}</td>
@@ -3262,34 +3407,61 @@
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
+                ${canDelete ? `<td>${deletable
+                  ? `<button type="button" data-del-time="${e.id}">Delete</button>`
+                  : '<span class="muted">—</span>'}</td>` : ''}
               </tr>`;
-            }).join('') || '<tr><td colspan="4" class="muted">No entries yet</td></tr>'}
+            }).join('') || `<tr><td colspan="${canDelete ? 5 : 4}" class="muted">No entries yet</td></tr>`}
           </tbody>
         </table></div>
       </div>`;
 
-    const matterPicker = wireMatterPicker($('#timeForm'), { matters });
-    wireTimeEntrySubmit($('#timeForm'), {
-      msgEl: $('#timeMsg'),
-      timeFieldDefs,
-      matterPicker,
-      onSaved: async (entry, body) => {
-        const desc = String(body.description || entry.description || '').trim() || 'Time entry';
-        state.matterId = body.matterId;
-        state.timeEntryRetain = {
-          addAnother: true,
-          matterId: body.matterId,
-          serviceDate: body.serviceDate,
-          timekeeperId: body.timekeeperId,
-        };
-        state.focusTimeEntry = true;
-        state.timeFlash = {
-          title: 'Time saved',
-          detail: `${desc} · ${formatHoursLabel(entry.roundedMinutes)}`,
-        };
-        await renderTime();
-      },
+    main.querySelectorAll('[data-del-time]').forEach((btn) => {
+      btn.onclick = async () => {
+        const sure = await confirmAction({
+          title: 'Delete this time entry?',
+          message: 'Are you sure you want to delete this time entry? This cannot be undone.',
+          confirmLabel: 'Yes, delete entry',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
+        try {
+          await api(`/api/time-entries/${btn.dataset.delTime}`, { method: 'DELETE' });
+          state.timeFlash = { title: 'Time entry deleted' };
+          await renderTime();
+        } catch (e) {
+          const msg = $('#timeMsg');
+          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          else alert(e.message);
+        }
+      };
     });
+
+    const timeForm = $('#timeForm');
+    if (timeForm) {
+      const matterPicker = wireMatterPicker(timeForm, { matters });
+      wireTimeEntrySubmit(timeForm, {
+        msgEl: $('#timeMsg'),
+        timeFieldDefs,
+        matterPicker,
+        onSaved: async (entry, body) => {
+          const desc = String(body.description || entry.description || '').trim() || 'Time entry';
+          state.matterId = body.matterId;
+          state.timeEntryRetain = {
+            addAnother: true,
+            matterId: body.matterId,
+            serviceDate: body.serviceDate,
+            timekeeperId: body.timekeeperId,
+          };
+          state.focusTimeEntry = true;
+          state.timeFlash = {
+            title: 'Time saved',
+            detail: `${desc} · ${formatHoursLabel(entry.roundedMinutes)}`,
+          };
+          await renderTime();
+        },
+      });
+    }
 
     if (state.focusTimeEntry) {
       state.focusTimeEntry = false;
@@ -3324,10 +3496,10 @@
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
     const [invoices, matters, ready] = await Promise.all([
       api('/api/invoices'),
-      api('/api/matters'),
+      api('/api/matters').catch(() => []),
       canBill ? api('/api/billing/ready').catch(() => []) : Promise.resolve([]),
     ]);
-    state.matters = matters;
+    state.matters = matters || [];
     const readyIds = new Set((ready || []).map((r) => Number(r.id)));
     main.innerHTML = `
       <div class="card stack">
@@ -4136,17 +4308,17 @@
       </div>` : ''}
 
       ${isAdmin ? `
-      <div class="card stack" id="profilePermissionsCard">
-        <h2>Profile permissions</h2>
-        <p class="hint">Choose whether each profile can edit records (Read/Write) or only view them (Read Only). Admin stays Read/Write.</p>
-        <div id="profilePermissionsBody" class="stack"></div>
-        <div id="profilePermissionsMsg"></div>
+      <div class="card stack" id="rolePermissionsCard">
+        <h2>Role permissions</h2>
+        <p class="hint">Set View All, Modify All, and Delete for Matters, Contacts, and Time entries on each role. Admin always has full access.</p>
+        <div id="rolePermissionsBody" class="stack"></div>
+        <div id="rolePermissionsMsg"></div>
       </div>
-      <div class="card stack" id="recordPageLayoutCard">
-        <h2>Record page layout</h2>
-        <p class="hint">Control which fields are visible on matter and contact pages for each profile. Name is always visible.</p>
-        <div id="recordPageLayoutBody" class="stack"></div>
-        <div id="recordPageLayoutMsg"></div>
+      <div class="card stack" id="fieldPermissionsCard">
+        <h2>Field permissions</h2>
+        <p class="hint">Choose Hidden, Read, or Read/Write for each matter and contact field per role. Name stays Read/Write.</p>
+        <div id="fieldPermissionsBody" class="stack"></div>
+        <div id="fieldPermissionsMsg"></div>
       </div>` : ''}
 
       <form id="settingsForm" class="card stack">
@@ -4440,14 +4612,14 @@
     }
 
     if (isAdmin && settings.permissions) {
-      await bindProfilePermissionsEditor({
-        bodyEl: $('#profilePermissionsBody'),
-        msgEl: $('#profilePermissionsMsg'),
+      await bindRolePermissionsEditor({
+        bodyEl: $('#rolePermissionsBody'),
+        msgEl: $('#rolePermissionsMsg'),
         permissions: settings.permissions,
       });
-      await bindRecordPageLayoutEditor({
-        bodyEl: $('#recordPageLayoutBody'),
-        msgEl: $('#recordPageLayoutMsg'),
+      await bindFieldPermissionsEditor({
+        bodyEl: $('#fieldPermissionsBody'),
+        msgEl: $('#fieldPermissionsMsg'),
         permissions: settings.permissions,
       });
     }

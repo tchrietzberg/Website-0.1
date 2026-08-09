@@ -118,7 +118,7 @@ function writeMatterName(db, actor, id, oldName, nextName) {
 }
 
 function createMatter(db, actor, input = {}) {
-  permissions.assertCanWriteRecords(db, actor, 'Matters');
+  permissions.assertCanModifyRecords(db, actor, 'matter');
   const name = String(input.name || '').trim();
   if (!name) throw new Error('name required');
 
@@ -197,9 +197,10 @@ function createMatter(db, actor, input = {}) {
 }
 
 function updateMatter(db, actor, id, patch) {
-  permissions.assertCanWriteRecords(db, actor, 'Matters');
+  permissions.assertCanModifyRecords(db, actor, 'matter');
   const current = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
   if (!current) throw new Error('matter not found');
+  permissions.assertCanWriteMatterFields(db, actor, patch);
 
   // Record type is chosen at create and stays fixed afterward.
   if (patch.matterType != null) delete patch.matterType;
@@ -306,7 +307,59 @@ function searchMatters(db, filters = {}) {
 }
 
 function getMatter(db, id, actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'matter');
   return customFields.getMatterPage(db, id, actor);
+}
+
+function deleteMatter(db, actor, id) {
+  permissions.assertCanDeleteRecords(db, actor, 'matter');
+  const current = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
+  if (!current) throw new Error('matter not found');
+
+  const timeCount = db.prepare(
+    'SELECT COUNT(*) AS n FROM time_entries WHERE matter_id = ?'
+  ).get(id)?.n || 0;
+  if (timeCount > 0) {
+    throw new Error(
+      `Cannot delete “${current.name}” while ${timeCount} time entr${timeCount === 1 ? 'y' : 'ies'} still reference this matter`
+    );
+  }
+
+  const invoiceCount = db.prepare(
+    'SELECT COUNT(*) AS n FROM invoices WHERE matter_id = ?'
+  ).get(id)?.n || 0;
+  if (invoiceCount > 0) {
+    throw new Error(
+      `Cannot delete “${current.name}” while ${invoiceCount} invoice${invoiceCount === 1 ? '' : 's'} still reference this matter`
+    );
+  }
+
+  db.prepare('DELETE FROM matter_field_history WHERE matter_id = ?').run(id);
+  db.prepare('DELETE FROM custom_field_values WHERE matter_id = ?').run(id);
+  db.prepare('DELETE FROM matter_onedrive_items WHERE matter_id = ?').run(id);
+  db.prepare('DELETE FROM matter_onedrive WHERE matter_id = ?').run(id);
+  db.prepare('DELETE FROM rates WHERE scope = ? AND scope_id = ?').run('matter', id);
+
+  const matterLayouts = db.prepare(
+    'SELECT id FROM page_layouts WHERE matter_id = ?'
+  ).all(id);
+  for (const layout of matterLayouts) {
+    db.prepare('DELETE FROM page_layout_items WHERE layout_id = ?').run(layout.id);
+  }
+  db.prepare('DELETE FROM page_layouts WHERE matter_id = ?').run(id);
+  db.prepare('UPDATE custom_fields SET matter_id = NULL, active = 0 WHERE matter_id = ?').run(id);
+
+  matterIndex.removeMatterFromIndex(db, id);
+  db.prepare('DELETE FROM matters WHERE id = ?').run(id);
+
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'matter.delete',
+    entityType: 'matter',
+    entityId: id,
+    detail: { name: current.name, number: current.number },
+  });
+  return { ok: true, id: Number(id), name: current.name, number: current.number };
 }
 
 function listClients(db) {
@@ -316,6 +369,7 @@ function listClients(db) {
 module.exports = {
   createMatter,
   updateMatter,
+  deleteMatter,
   listMatters,
   searchMatters,
   listClients,

@@ -102,14 +102,19 @@ function getClient(db, id, actor = null) {
   const client = getClientRow(db, id);
   if (!client) return null;
   const role = actor?.role || null;
-  const pageAccess = role ? permissions.getProfileAccess(db, role) : 'read_write';
-  const readOnly = pageAccess === 'read_only';
+  if (role) permissions.assertCanViewRecords(db, actor, 'contact');
+  const canEdit = role ? permissions.canModifyAll(db, role, 'contact') : true;
+  const canDelete = role ? permissions.canDelete(db, role, 'contact') : false;
+  const pageAccess = canEdit ? 'read_write' : 'read_only';
   const fieldConfig = getContactFieldConfig(db);
   if (role) {
     const visibleStd = (fieldConfig.enabledStandard || []).filter((f) =>
       permissions.isFieldVisibleForProfile(db, 'contact', role, f.key)
     );
-    fieldConfig.enabledStandard = visibleStd;
+    fieldConfig.enabledStandard = visibleStd.map((f) => ({
+      ...f,
+      readonly: !permissions.isFieldWritableForRole(db, 'contact', role, f.key),
+    }));
     fieldConfig.enabledKeys = visibleStd.map((f) => f.key);
   }
   const fieldDefs = customFields.listClientFieldDefs(db)
@@ -119,7 +124,8 @@ function getClient(db, id, actor = null) {
         SELECT value_text FROM client_custom_field_values
         WHERE client_id = ? AND field_id = ?
       `).get(id, f.fieldId);
-      return { ...f, value: stored?.value_text ?? null, readonly: readOnly };
+      const writable = !role || permissions.isFieldWritableForRole(db, 'contact', role, `cf:${f.fieldId}`);
+      return { ...f, value: stored?.value_text ?? null, readonly: !writable };
     });
   const customValues = Object.fromEntries(
     fieldDefs.filter((f) => f.value != null).map((f) => [f.fieldId, f.value])
@@ -130,12 +136,13 @@ function getClient(db, id, actor = null) {
     customValues,
     fieldConfig,
     pageAccess,
-    canEdit: !readOnly,
+    canEdit,
+    canDelete,
   };
 }
 
 function createClient(db, actor, input = {}) {
-  permissions.assertCanWriteRecords(db, actor, 'Contacts');
+  permissions.assertCanModifyRecords(db, actor, 'contact');
   const name = String(input.name || '').trim();
   if (!name) throw new Error('name required');
   const email = input.email != null ? String(input.email).trim() || null : null;
@@ -172,9 +179,10 @@ function createClient(db, actor, input = {}) {
 }
 
 function updateClient(db, actor, id, patch = {}) {
-  permissions.assertCanWriteRecords(db, actor, 'Contacts');
+  permissions.assertCanModifyRecords(db, actor, 'contact');
   const current = getClientRow(db, id);
   if (!current) throw new Error('contact not found');
+  permissions.assertCanWriteContactFields(db, actor, patch);
 
   const map = {
     name: 'name',
@@ -224,7 +232,7 @@ function updateClient(db, actor, id, patch = {}) {
 }
 
 function deleteClient(db, actor, id) {
-  permissions.assertCanWriteRecords(db, actor, 'Contacts');
+  permissions.assertCanDeleteRecords(db, actor, 'contact');
   const current = getClientRow(db, id);
   if (!current) throw new Error('contact not found');
 
