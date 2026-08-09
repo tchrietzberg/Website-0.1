@@ -26,6 +26,8 @@
     matterFieldPanelFlash: null,
     createMatterFieldMsg: null,
     createContactFieldMsg: null,
+    createMatterFieldsOpen: false,
+    createContactFieldsOpen: false,
     createContactRecordTypeKey: 'person',
     timeEntryRetain: null,
     matterTimeRetain: null,
@@ -507,6 +509,61 @@
           placeholder="One option per line, or comma-separated&#10;e.g. Discovery&#10;Trial&#10;Appeal">${escapeHtml(optionsText)}</textarea>
         <span class="hint">Enter choices for the dropdown — one per line, or separated by commas</span>
       </label>`;
+  }
+
+  function createRecordTypeFieldsPanelHtml({
+    panelId,
+    formId,
+    msgId,
+    typeLabel,
+    fields = [],
+    open = false,
+    hint = '',
+    msgHtml = '',
+    entityNoun = 'record',
+  } = {}) {
+    const count = (fields || []).length;
+    const meta = count
+      ? `${count} field${count === 1 ? '' : 's'} on ${typeLabel}`
+      : `None on ${typeLabel} yet`;
+    const list = count
+      ? fields.map((f) => `
+          <div class="field-mgmt-row">
+            <div>
+              <strong>${escapeHtml(f.label)}</strong>
+              <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type || f.fieldType))} · record type${
+                f.required ? ' · required' : ''
+              }</span>
+            </div>
+          </div>`).join('')
+      : `<p class="muted">No custom fields for ${escapeHtml(typeLabel)} yet</p>`;
+    return `
+      <details class="onedrive-collapse settings-collapse create-matter-fields-panel page-section"
+        id="${escapeHtml(panelId)}"${open ? ' open' : ''}>
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">Add record type fields</span>
+          <span class="onedrive-collapse-meta muted">${escapeHtml(meta)}</span>
+        </summary>
+        <div class="onedrive-collapse-body stack create-rt-fields-body">
+          <p class="hint">${hint || `Fields added here apply to every <strong>${escapeHtml(typeLabel)}</strong> ${escapeHtml(entityNoun)}.`}</p>
+          <div class="field-mgmt-list create-rt-fields-list">${list}</div>
+          ${customFieldFormHtml({
+            formId,
+            submitLabel: 'Add field',
+            defaultLabel: 'Default on this record type',
+            requiredLabel: 'Required on create',
+          })}
+          <div id="${escapeHtml(msgId)}">${msgHtml || ''}</div>
+        </div>
+      </details>`;
+  }
+
+  function wireCreateRecordTypeFieldsPanel(panelId, stateKey) {
+    const panel = typeof panelId === 'string' ? document.getElementById(panelId) : panelId;
+    if (!panel || !stateKey) return;
+    panel.addEventListener('toggle', () => {
+      state[stateKey] = !!panel.open;
+    });
   }
 
   function customFieldFormHtml({
@@ -2241,27 +2298,17 @@
           <div id="newMatterMsg"></div>
         </div>
 
-        <div id="createMatterFieldsPanel" class="card stack page-section create-matter-fields-panel">
-          <h2>Add record type fields</h2>
-          <p class="hint">Fields added here go on the <strong>${escapeHtml(createTypeLabel)}</strong> record type — every matter of that type gets them. To add a field for one matter only, create the matter first, then use Manage fields on that matter.</p>
-          <div class="field-mgmt-list">
-            ${createCustomRows.map((f) => `
-              <div class="field-mgmt-row">
-                <div>
-                  <strong>${escapeHtml(f.label)}</strong>
-                  <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))} · record type${f.required ? ' · required' : ''}</span>
-                </div>
-              </div>`).join('') || `<p class="muted">No custom fields for ${escapeHtml(createTypeLabel)} yet</p>`}
-          </div>
-          ${customFieldFormHtml({
-            formId: 'createMatterFieldForm',
-            submitLabel: 'Add to this record type',
-            defaultLabel: 'Record type default field',
-            requiredLabel: 'Record type required field',
-            formHint: `Adds the field to the <strong>${escapeHtml(createTypeLabel)}</strong> record type layout.`,
-          })}
-          <div id="createMatterFieldMsg">${createFieldMsg ? successNoticeHtml(createFieldMsg) : ''}</div>
-        </div>` : ''}
+        ${createRecordTypeFieldsPanelHtml({
+          panelId: 'createMatterFieldsPanel',
+          formId: 'createMatterFieldForm',
+          msgId: 'createMatterFieldMsg',
+          typeLabel: createTypeLabel,
+          fields: createCustomRows,
+          open: !!(state.createMatterFieldsOpen || createFieldMsg),
+          entityNoun: 'matter',
+          hint: `Adds fields to the <strong>${escapeHtml(createTypeLabel)}</strong> record type. For one matter only, create it first, then use Manage fields.`,
+          msgHtml: createFieldMsg ? successNoticeHtml(createFieldMsg) : '',
+        })}` : ''}
 
         <div class="page-section">
           <h2>Search matters</h2>
@@ -2314,6 +2361,7 @@
         state.createMatterDraftName = '';
         state.createMatterRecordTypeKey = 'billable';
         state.createMatterFieldMsg = null;
+        state.createMatterFieldsOpen = false;
         await renderMatters();
       };
     }
@@ -2382,6 +2430,7 @@
           await renderMatters();
         };
       }
+      wireCreateRecordTypeFieldsPanel('createMatterFieldsPanel', 'createMatterFieldsOpen');
       const createFieldForm = $('#createMatterFieldForm');
       wireDropdownOptionsToggle(createFieldForm);
       if (createFieldForm) {
@@ -2393,6 +2442,7 @@
           const fd = new FormData(createFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
           if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+            state.createMatterFieldsOpen = true;
             $('#createMatterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
             return;
           }
@@ -2401,6 +2451,7 @@
               method: 'POST',
               body: JSON.stringify({ ...body, recordTypeKey: typeKey, appliesTo: 'matter' }),
             });
+            state.createMatterFieldsOpen = true;
             state.createMatterFieldMsg = {
               title: 'Record type field added',
               detail: `${body.label || 'Field'} added to the ${createTypeLabel} record type.`,
@@ -2409,6 +2460,7 @@
             const panel = $('#createMatterFieldsPanel');
             if (panel?.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           } catch (e) {
+            state.createMatterFieldsOpen = true;
             $('#createMatterFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
           }
         };
@@ -2493,6 +2545,7 @@
           state.createMatterDraftName = '';
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterFieldMsg = null;
+          state.createMatterFieldsOpen = false;
           state.matterSearch = { q: page.matter.name };
           state.matterCreateFlash = {
             title: 'Matter created',
@@ -2597,27 +2650,17 @@
           <div id="newContactMsg"></div>
         </div>
 
-        <div id="createContactFieldsPanel" class="card stack page-section create-matter-fields-panel">
-          <h2>Add record type fields</h2>
-          <p class="hint">Fields added here go on the <strong>${escapeHtml(createTypeLabel)}</strong> record type — every contact of that type gets them.</p>
-          <div class="field-mgmt-list">
-            ${createCustomRows.map((f) => `
-              <div class="field-mgmt-row">
-                <div>
-                  <strong>${escapeHtml(f.label)}</strong>
-                  <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))} · record type${f.required ? ' · required' : ''}</span>
-                </div>
-              </div>`).join('') || `<p class="muted">No custom fields for ${escapeHtml(createTypeLabel)} yet</p>`}
-          </div>
-          ${customFieldFormHtml({
-            formId: 'createContactFieldForm',
-            submitLabel: 'Add to this record type',
-            defaultLabel: 'Record type default field',
-            requiredLabel: 'Record type required field',
-            formHint: `Adds the field to the <strong>${escapeHtml(createTypeLabel)}</strong> record type layout.`,
-          })}
-          <div id="createContactFieldMsg">${createFieldMsg ? successNoticeHtml(createFieldMsg) : ''}</div>
-        </div>` : ''}
+        ${createRecordTypeFieldsPanelHtml({
+          panelId: 'createContactFieldsPanel',
+          formId: 'createContactFieldForm',
+          msgId: 'createContactFieldMsg',
+          typeLabel: createTypeLabel,
+          fields: createCustomRows,
+          open: !!(state.createContactFieldsOpen || createFieldMsg),
+          entityNoun: 'contact',
+          hint: `Adds fields to the <strong>${escapeHtml(createTypeLabel)}</strong> record type for every contact of that type.`,
+          msgHtml: createFieldMsg ? successNoticeHtml(createFieldMsg) : '',
+        })}` : ''}
 
         <div class="page-section">
           <h2>Search contacts</h2>
@@ -2659,6 +2702,7 @@
         state.showCreateContact = false;
         state.createContactRecordTypeKey = 'person';
         state.createContactFieldMsg = null;
+        state.createContactFieldsOpen = false;
         await renderContacts();
       };
     }
@@ -2670,6 +2714,7 @@
           await renderContacts();
         };
       }
+      wireCreateRecordTypeFieldsPanel('createContactFieldsPanel', 'createContactFieldsOpen');
       const createFieldForm = $('#createContactFieldForm');
       wireDropdownOptionsToggle(createFieldForm);
       if (createFieldForm) {
@@ -2679,6 +2724,7 @@
           const fd = new FormData(createFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
           if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+            state.createContactFieldsOpen = true;
             $('#createContactFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
             return;
           }
@@ -2691,6 +2737,7 @@
                 appliesTo: 'client',
               }),
             });
+            state.createContactFieldsOpen = true;
             state.createContactFieldMsg = {
               title: 'Record type field added',
               detail: `${body.label || 'Field'} added to the ${createTypeLabel} record type.`,
@@ -2699,6 +2746,7 @@
             const panel = $('#createContactFieldsPanel');
             if (panel?.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           } catch (e) {
+            state.createContactFieldsOpen = true;
             $('#createContactFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
           }
         };
@@ -2759,6 +2807,7 @@
           state.showCreateContact = false;
           state.createContactRecordTypeKey = 'person';
           state.createContactFieldMsg = null;
+          state.createContactFieldsOpen = false;
           state.contactCreateFlash = {
             title: 'Contact created',
             detail: page.client.name,

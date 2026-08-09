@@ -564,6 +564,74 @@ body {
 .post-create-fields-panel h2 {
   font-family: var(--font);
 }
+details.create-matter-fields-panel {
+  margin-top: 0.35rem;
+  margin-bottom: 0.75rem;
+  border-radius: 10px;
+}
+details.create-matter-fields-panel > .onedrive-collapse-summary {
+  padding: 0.55rem 0.85rem;
+}
+details.create-matter-fields-panel .onedrive-collapse-title {
+  font-size: 0.9rem;
+}
+details.create-matter-fields-panel .onedrive-collapse-meta {
+  font-size: 0.78rem;
+}
+.create-rt-fields-body {
+  gap: 0.5rem;
+  padding: 0 0.85rem 0.75rem;
+  padding-top: 0.65rem;
+}
+.create-rt-fields-body > .hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.create-rt-fields-list {
+  padding: 0.3rem 0.55rem;
+  gap: 0;
+  max-height: 6.5rem;
+  overflow: auto;
+}
+.create-rt-fields-list .field-mgmt-row {
+  padding: 0.18rem 0;
+}
+.create-rt-fields-list .field-mgmt-row strong {
+  font-size: 0.86rem;
+}
+.create-rt-fields-list .muted,
+.create-rt-fields-list .field-mgmt-row .muted {
+  font-size: 0.78rem;
+}
+.create-rt-fields-body form.grid {
+  gap: 0.5rem 0.7rem;
+}
+.create-rt-fields-body form label {
+  font-size: 0.84rem;
+  gap: 0.25rem;
+}
+.create-rt-fields-body form input,
+.create-rt-fields-body form select,
+.create-rt-fields-body form textarea {
+  padding: 0.38rem 0.5rem;
+  font-size: 0.86rem;
+}
+.create-rt-fields-body form textarea {
+  min-height: 2.6rem;
+}
+.create-rt-fields-body .row-actions {
+  margin-top: 0.1rem;
+}
+.create-rt-fields-body .row-actions button {
+  padding: 0.42rem 0.8rem;
+  font-size: 0.86rem;
+}
+.create-rt-fields-body .success-notice,
+.create-rt-fields-body .error,
+.create-rt-fields-body .ok-banner {
+  margin-top: 0.15rem;
+}
 .create-matter-panel #newMatterMsg:not(:empty) {
   margin-top: 0.65rem;
 }
