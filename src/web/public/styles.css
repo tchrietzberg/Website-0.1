@@ -1078,6 +1078,12 @@ label,
   min-width: 0;
 }
 
+/* Author `display:grid` on labels otherwise overrides the hidden attribute. */
+label[data-dropdown-options][hidden],
+[data-dropdown-options][hidden] {
+  display: none !important;
+}
+
 .field-label {
   display: block;
 }

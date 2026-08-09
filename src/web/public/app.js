@@ -265,11 +265,11 @@
     }).join('');
   }
 
-  function requiredFieldCheckboxHtml(checked = false) {
+  function requiredFieldCheckboxHtml(checked = false, label = 'Required on create') {
     return `
       <label class="check-inline span-all">
         <input type="checkbox" name="required" ${checked ? 'checked' : ''} />
-        Required on create
+        ${escapeHtml(label)}
       </label>`;
   }
 
@@ -297,7 +297,7 @@
 
   function parseOptionsInput(raw) {
     return String(raw || '')
-      .split(',')
+      .split(/[\n,]+/)
       .map((o) => o.trim())
       .filter(Boolean);
   }
@@ -326,9 +326,9 @@
     return `
       <label class="span-all" data-dropdown-options ${show ? '' : 'hidden'}>
         Dropdown options
-        <input name="optionsText" value="${escapeHtml(optionsText)}"
-          placeholder="e.g. Discovery, Trial, Appeal" />
-        <span class="hint">Comma-separated list of choices</span>
+        <textarea name="optionsText" rows="3"
+          placeholder="One option per line, or comma-separated&#10;e.g. Discovery&#10;Trial&#10;Appeal">${escapeHtml(optionsText)}</textarea>
+        <span class="hint">Enter choices for the dropdown — one per line, or separated by commas</span>
       </label>`;
   }
 
@@ -337,12 +337,15 @@
     submitLabel = 'Add field',
     field = null,
     showCancel = false,
+    requiredLabel = 'Required on create',
   } = {}) {
     const type = field
       ? (field.field_type || field.fieldType || field.type || 'text')
       : 'text';
     const uiType = type === 'select' ? 'dropdown' : type;
-    const options = Array.isArray(field?.options) ? field.options.join(', ') : '';
+    const options = Array.isArray(field?.options)
+      ? field.options.join('\n')
+      : (field?.optionsText || '');
     const required = !!(field && field.required);
     const label = field?.label || '';
     return `
@@ -357,7 +360,7 @@
           </select>
         </label>
         ${dropdownOptionsFieldHtml(options, { show: uiType === 'dropdown' })}
-        ${requiredFieldCheckboxHtml(required)}
+        ${requiredFieldCheckboxHtml(required, requiredLabel)}
         <div class="row-actions span-all">
           <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
           ${showCancel ? '<button type="button" data-cancel-field-edit>Cancel</button>' : ''}
@@ -369,13 +372,15 @@
     if (!form) return;
     const typeSelect = form.querySelector('select[name="fieldType"]');
     const optionsRow = form.querySelector('[data-dropdown-options]');
-    const optionsInput = form.querySelector('input[name="optionsText"]');
+    const optionsInput = form.querySelector('[name="optionsText"]');
     if (!typeSelect || !optionsRow) return;
     const sync = () => {
       const isDropdown = typeSelect.value === 'dropdown' || typeSelect.value === 'select';
       optionsRow.hidden = !isDropdown;
-      if (optionsInput) optionsInput.required = isDropdown;
-      if (!isDropdown && optionsInput) optionsInput.value = '';
+      if (optionsInput) {
+        optionsInput.required = isDropdown;
+        if (!isDropdown) optionsInput.value = '';
+      }
     };
     typeSelect.addEventListener('change', sync);
     sync();
@@ -617,10 +622,12 @@
             submitLabel: 'Save changes',
             field: editing,
             showCancel: true,
+            requiredLabel: 'Required field',
           })}`
           : customFieldFormHtml({
             formId: 'typeFieldForm',
             submitLabel: 'Add field',
+            requiredLabel: 'Required field',
           })}`;
 
       bodyEl.querySelectorAll('[data-edit-type-field]').forEach((btn) => {
@@ -1461,6 +1468,7 @@
           ${customFieldFormHtml({
             formId: 'createMatterFieldForm',
             submitLabel: 'Add field',
+            requiredLabel: 'Required field',
           })}
           <div id="createMatterFieldMsg">${createFieldMsg ? successNoticeHtml(createFieldMsg) : ''}</div>
         </div>` : ''}
@@ -2272,10 +2280,12 @@
             submitLabel: 'Save changes',
             field: editingField,
             showCancel: true,
+            requiredLabel: 'Required field',
           })}`
           : `${customFieldFormHtml({
             formId,
             submitLabel: 'Add field',
+            requiredLabel: 'Required field',
           })}${page.layout.source !== 'record'
             ? '<div class="row-actions"><button type="button" id="useRecordLayout">Use default layout</button></div>'
             : ''}`}
@@ -4394,7 +4404,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'In Settings, use Matter fields, Contact fields, or Time entry fields. Add a label and type (text, dropdown, etc.). Check Required on create when the field must be filled. Use Edit to change type or required later.',
+      answer: 'In Settings, use Matter fields, Contact fields, or Time entry fields. Add a label and type (text, dropdown, etc.). For dropdowns, enter options in the options box that appears. Matter fields use Required field when they must be filled; contact and time fields use Required on create. Use Edit to change type or required later.',
     },
     {
       id: 'reports',
