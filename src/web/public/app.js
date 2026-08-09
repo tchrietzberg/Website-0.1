@@ -2159,19 +2159,12 @@
 
   let matterLiveSearchTimer = null;
   let matterLiveSearchSeq = 0;
-  /** Latest live-search runner for Create Matter name → Search matters sync. */
-  let runMatterLiveSearch = null;
-  let scheduleMatterLiveSearch = null;
 
   function wireMatterLiveSearch() {
     const form = $('#matterSearch');
     const input = form?.querySelector('input[name="q"]');
     const resultsEl = $('#matterSearchResults');
-    if (!form || !input || !resultsEl) {
-      runMatterLiveSearch = null;
-      scheduleMatterLiveSearch = null;
-      return;
-    }
+    if (!form || !input || !resultsEl) return;
 
     const paintRows = () => {
       resultsEl.querySelectorAll('[data-matter]').forEach((row) => {
@@ -2182,10 +2175,9 @@
       });
     };
 
-    const runSearch = async (raw, { syncInput = false } = {}) => {
+    const runSearch = async (raw) => {
       const q = String(raw || '').trim();
       state.matterSearch = { q };
-      if (syncInput) input.value = q;
       const seq = ++matterLiveSearchSeq;
       if (!q) {
         resultsEl.innerHTML = matterSearchResultsHtml([], '');
@@ -2207,16 +2199,13 @@
       }
     };
 
-    const schedule = (value, opts) => {
+    const schedule = (value) => {
       if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
       matterLiveSearchTimer = setTimeout(() => {
         matterLiveSearchTimer = null;
-        void runSearch(value, opts);
+        void runSearch(value);
       }, 180);
     };
-
-    runMatterLiveSearch = runSearch;
-    scheduleMatterLiveSearch = schedule;
 
     input.addEventListener('input', () => {
       schedule(input.value);
@@ -2267,16 +2256,6 @@
       list.hidden = true;
       nameInput.setAttribute('aria-expanded', 'false');
       wrap.classList.remove('is-open');
-    };
-
-    const syncSearchBox = (q) => {
-      if (typeof scheduleMatterLiveSearch === 'function') {
-        scheduleMatterLiveSearch(q, { syncInput: true });
-      } else {
-        const searchInput = $('#matterSearch input[name="q"]');
-        if (searchInput) searchInput.value = q;
-        state.matterSearch = { q };
-      }
     };
 
     const renderList = (q) => {
@@ -2331,7 +2310,7 @@
     nameInput.addEventListener('input', () => {
       const q = String(nameInput.value || '');
       state.createMatterDraftName = q;
-      syncSearchBox(q.trim());
+      // Keep Create Matter name separate from Search matters — only show local duplicate suggestions.
       renderList(q);
     });
     nameInput.addEventListener('focus', () => {
@@ -3440,7 +3419,7 @@
               <button class="primary" type="submit">Create</button>
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
-            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions fill Search matters as you type. Matching names cannot be created twice.</p>' : ''}
+            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type. Matching names cannot be created twice.</p>' : ''}
             <div class="grid two create-matter-custom">
               <label class="create-matter-client-field">Client
                 ${renderClientTypeahead({
