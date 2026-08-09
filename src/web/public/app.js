@@ -895,23 +895,40 @@
     const formulaRow = form.querySelector('[data-formula-config]');
     const formulaInput = form.querySelector('[name="expression"]');
     const autoRow = form.querySelector('[data-autonumber-config]');
+    const autoPrefix = form.querySelector('[name="autoNumberPrefix"]');
+    const autoPad = form.querySelector('[name="autoNumberPad"]');
     const requiredWrap = form.querySelector('[data-required-field-wrap]');
     if (!typeSelect) return;
+    const setPanel = (el, on) => {
+      if (!el) return;
+      el.hidden = !on;
+      el.setAttribute('aria-hidden', on ? 'false' : 'true');
+      el.querySelectorAll('input, textarea, select').forEach((input) => {
+        input.disabled = !on;
+      });
+    };
     const sync = () => {
       const t = typeSelect.value;
       const needsOptions = OPTION_FIELD_TYPES.has(t);
-      if (optionsRow) optionsRow.hidden = !needsOptions;
+      const needsFormula = t === 'formula';
+      const needsAuto = t === 'auto_number';
+      setPanel(optionsRow, needsOptions);
       if (optionsInput) {
         optionsInput.required = needsOptions;
-        if (!needsOptions) optionsInput.value = '';
+        optionsInput.disabled = !needsOptions;
       }
-      if (formulaRow) formulaRow.hidden = t !== 'formula';
+      setPanel(formulaRow, needsFormula);
       if (formulaInput) {
-        formulaInput.required = t === 'formula';
-        if (t !== 'formula') formulaInput.value = formulaInput.value; // keep when editing
+        formulaInput.required = needsFormula;
+        formulaInput.disabled = !needsFormula;
       }
-      if (autoRow) autoRow.hidden = t !== 'auto_number';
-      if (requiredWrap) requiredWrap.hidden = SYSTEM_FIELD_TYPES.has(t);
+      setPanel(autoRow, needsAuto);
+      if (autoPrefix) autoPrefix.disabled = !needsAuto;
+      if (autoPad) autoPad.disabled = !needsAuto;
+      if (requiredWrap) {
+        requiredWrap.hidden = SYSTEM_FIELD_TYPES.has(t);
+        requiredWrap.setAttribute('aria-hidden', SYSTEM_FIELD_TYPES.has(t) ? 'true' : 'false');
+      }
     };
     typeSelect.addEventListener('change', sync);
     sync();

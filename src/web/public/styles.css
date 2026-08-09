@@ -1606,9 +1606,14 @@ label,
   min-width: 0;
 }
 
-/* Author `display:grid` on labels otherwise overrides the hidden attribute. */
+/* Author `display:grid` on labels/grids otherwise overrides the hidden attribute. */
 label[data-dropdown-options][hidden],
-[data-dropdown-options][hidden] {
+[data-dropdown-options][hidden],
+label[data-formula-config][hidden],
+[data-formula-config][hidden],
+[data-autonumber-config][hidden],
+[data-default-field-wrap][hidden],
+[data-required-field-wrap][hidden] {
   display: none !important;
 }
 
