@@ -3021,7 +3021,9 @@
     const today = new Date().toISOString().slice(0, 10);
     const retain = state.matterTimeRetain || {};
     const formDate = retain.serviceDate || today;
-    const formTimekeeperId = retain.timekeeperId || state.user.id;
+    const formTimekeeperId = roleCanSelectTimekeeper()
+      ? (retain.timekeeperId || state.user.id)
+      : state.user.id;
     const formHours = '';
     const formDescription = '';
     const flash = state.matterTimeFlash;
@@ -3636,7 +3638,9 @@
       || state.matterId
       || (matters.length === 1 ? matters[0].id : null);
     const formDate = retain.serviceDate || today;
-    const formTimekeeperId = retain.timekeeperId || state.user.id;
+    const formTimekeeperId = roleCanSelectTimekeeper()
+      ? (retain.timekeeperId || state.user.id)
+      : state.user.id;
     const formHours = addAnother ? '' : '1.00';
     const formDescription = addAnother ? '' : 'Reviewed production set';
     const flash = state.timeFlash;
