@@ -1787,7 +1787,6 @@
     const items = [
       roleCanView('matter') ? ['matters', 'Matters', 'matters', 'Matters & search'] : null,
       roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
-      roleCanView('time') ? ['time', 'Time Entry', 'time', 'Log & review time'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       ['reports', 'Reports', 'reports', 'Lodestar & custom'],
       ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'],
