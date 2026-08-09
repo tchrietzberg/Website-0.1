@@ -7980,7 +7980,7 @@
       id: 'time',
       label: 'Log time',
       keywords: ['time', 'hours', 'log time', 'time entry', 'timesheet', 'billable'],
-      answer: 'Open [[Time Entry|time]] (or a matter’s Add time form). Pick the matter, date, hours (0.25 steps), and description, then Save. Recent unbilled entries can be deleted from the list on Time Entry or the matter page. Saved time is ready for [[Billing|billing]]—no approval step.',
+      answer: 'Open [[Time Entry|time]], or open a matter — each matter includes the same Time Entry form and Recent entries list. Pick date, hours (0.25 steps), and description, then Save. Recent entries can be edited or deleted there. Saved time is ready for [[Billing|billing]]—no approval step.',
       links: [
         { label: 'Go to Time Entry', target: 'time' },
         { label: 'Open Billing', target: 'billing' },
