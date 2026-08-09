@@ -998,7 +998,8 @@ p.lead {
 }
 .span-all { grid-column: 1 / -1; min-width: 0; }
 
-label {
+label,
+.field {
   display: grid;
   gap: 0.35rem;
   font-size: 0.8rem;
@@ -1006,6 +1007,10 @@ label {
   color: var(--muted);
   letter-spacing: 0.01em;
   min-width: 0;
+}
+
+.field-label {
+  display: block;
 }
 
 input, select, textarea {
@@ -1041,6 +1046,11 @@ input:focus, select:focus, textarea:focus {
   position: relative;
   width: 100%;
   min-width: 0;
+}
+
+/* Keep the filter list in document flow so it does not cover the time-entry fields below */
+.matter-picker.is-open {
+  z-index: 5;
 }
 
 .matter-picker-trigger {
@@ -1118,18 +1128,24 @@ input:focus, select:focus, textarea:focus {
 }
 
 .matter-picker-panel {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 0.35rem);
-  z-index: 40;
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  z-index: 1;
+  width: 100%;
+  margin-top: 0.45rem;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: 0 14px 28px rgba(20, 32, 51, 0.14);
+  box-shadow: 0 8px 18px rgba(20, 32, 51, 0.1);
   padding: 0.55rem;
   display: grid;
   gap: 0.4rem;
+}
+
+.matter-picker-panel[hidden] {
+  display: none !important;
 }
 
 .matter-picker-search {

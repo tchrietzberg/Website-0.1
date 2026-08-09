@@ -234,16 +234,19 @@
     }
 
     trigger.onclick = (ev) => {
+      ev.preventDefault();
       ev.stopPropagation();
       if (panel.hidden) open();
       else close();
     };
+    panel.addEventListener('click', (ev) => ev.stopPropagation());
     search.oninput = () => renderList(search.value);
     search.onkeydown = (ev) => {
       if (ev.key === 'ArrowDown') { ev.preventDefault(); moveActive(1); }
       else if (ev.key === 'ArrowUp') { ev.preventDefault(); moveActive(-1); }
       else if (ev.key === 'Enter') {
         ev.preventDefault();
+        ev.stopPropagation();
         if (activeIndex >= 0 && filtered[activeIndex]) {
           setSelected(filtered[activeIndex]);
           close();
@@ -254,6 +257,10 @@
         trigger.focus();
       }
     };
+    // Prevent Enter in the filter box from submitting the parent time/billing form
+    search.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') ev.preventDefault();
+    });
 
     return {
       getValue: () => (hidden.value ? Number(hidden.value) : null),
@@ -1407,10 +1414,11 @@
       <div class="card">
         <h1>Time Entry</h1>
         <form id="timeForm" class="grid two">
-          <label class="span-all">Matter
+          <div class="field span-all">
+            <span class="field-label">Matter</span>
             ${renderMatterPicker({ name: 'matterId', selectedId: preferredMatterId, matters })}
-            <span class="hint">Type a matter number, name, or client to find it quickly.</span>
-          </label>
+            <span class="hint">Type to filter matters — the time entry fields stay visible below.</span>
+          </div>
           <label>Service date
             <input name="serviceDate" type="date" value="${today}" required />
           </label>
@@ -1564,10 +1572,11 @@
         <h1>Billing</h1>
         <p class="lead">Generate pre-bill from approved WIP → write-down → review → approve → send.</p>
         <form id="prebillForm" class="grid two">
-          <label class="span-all">Matter
+          <div class="field span-all">
+            <span class="field-label">Matter</span>
             ${renderMatterPicker({ name: 'matterId', selectedId: null, matters })}
-            <span class="hint">Search by matter number, name, or client.</span>
-          </label>
+            <span class="hint">Type to filter matters — billing actions stay visible below.</span>
+          </div>
           <div class="row-actions span-all">
             <button class="primary" type="submit">Generate pre-bill</button>
           </div>
