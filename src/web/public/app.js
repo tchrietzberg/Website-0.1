@@ -789,11 +789,11 @@
     const items = [
       ['matters', 'Matters', 'M', 'Matters & search'],
       ['time', 'Time Entry', 'T', 'Log & review time'],
-      ['billing', 'Billing', 'B', 'Invoices & payments'],
-      ['reports', 'Reports', 'R', 'Lodestar & exports'],
+      ['reports', 'Reports', 'R', 'Matters & lodestar'],
       ['settings', 'Settings', 'S', 'Firm preferences'],
     ];
-    if (state.view === 'approvals' || state.view === 'payments' || state.view === 'audit') {
+    // WIP / pre-bill / approvals / payments UI paused for now
+    if (['approvals', 'payments', 'audit', 'billing'].includes(state.view)) {
       state.view = 'matters';
     }
     const activeView = state.view === 'matter' ? 'matters' : state.view;
@@ -861,8 +861,6 @@
       if (state.view === 'matters') await renderMatters();
       else if (state.view === 'matter') await renderMatterDetail();
       else if (state.view === 'time') await renderTime();
-      else if (state.view === 'approvals') await renderApprovals();
-      else if (state.view === 'billing') await renderBilling();
       else if (state.view === 'reports') await renderReports();
       else if (state.view === 'settings') await renderSettings();
       else if (state.view === 'audit') await renderAudit();
@@ -1689,251 +1687,16 @@
     }
   }
 
-  async function renderApprovals() {
-    const queue = await api('/api/approval-queue');
-    main.innerHTML = `
-      <div class="card">
-        <h1>Approval Queue</h1>
-        <p class="lead">Billing clerks/admins approve anything; lead attorneys approve their matters.</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Matter</th><th>Timekeeper</th><th>Time</th><th></th></tr></thead>
-          <tbody>
-            ${queue.map((e) => `
-              <tr>
-                <td>${e.service_date}</td>
-                <td>${e.matter_number}<div class="muted">${e.description}</div></td>
-                <td>${e.timekeeper_name}</td>
-                <td>${formatDuration(e.rounded_minutes)}</td>
-                <td class="row-actions">
-                  <button class="primary" data-approve="${e.id}">Approve</button>
-                  <button data-reject="${e.id}">Reject</button>
-                </td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">Queue empty</td></tr>'}
-          </tbody>
-        </table></div>
-        <div id="apprMsg"></div>
-      </div>`;
-    main.querySelectorAll('[data-approve]').forEach((b) => {
-      b.onclick = async () => {
-        try {
-          await api(`/api/time-entries/${b.dataset.approve}/approve`, { method: 'POST', body: '{}' });
-          await renderApprovals();
-        } catch (e) { $('#apprMsg').innerHTML = `<div class="error">${e.message}</div>`; }
-      };
-    });
-    main.querySelectorAll('[data-reject]').forEach((b) => {
-      b.onclick = async () => {
-        const reason = prompt('Rejection reason?');
-        if (!reason) return;
-        try {
-          await api(`/api/time-entries/${b.dataset.reject}/reject`, {
-            method: 'POST', body: JSON.stringify({ reason }),
-          });
-          await renderApprovals();
-        } catch (e) { $('#apprMsg').innerHTML = `<div class="error">${e.message}</div>`; }
-      };
-    });
-  }
-
-  async function renderBilling() {
-    const [invoices, matters] = await Promise.all([
-      api('/api/invoices'),
-      api('/api/matters'),
-    ]);
-    state.matters = matters;
-    main.innerHTML = `
-      <div class="card">
-        <h1>Billing</h1>
-        <p class="lead">Generate pre-bill from approved WIP → write-down → review → approve → send.</p>
-        <form id="prebillForm" class="grid two">
-          <div class="field span-all">
-            <span class="field-label">Matter</span>
-            ${renderMatterPicker({ name: 'matterId', selectedId: null, matters })}
-            <span class="hint">Type to filter matters — billing actions stay visible below.</span>
-          </div>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Generate pre-bill</button>
-          </div>
-        </form>
-        <div id="billMsg"></div>
-      </div>
-      <div class="card">
-        <h2>Invoices</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Number</th><th>Matter</th><th>Status</th><th>Total</th><th></th></tr></thead>
-          <tbody>
-            ${invoices.map((i) => `
-              <tr>
-                <td>${i.number}</td>
-                <td>${i.matter_number}<div class="muted">${i.client_name}</div></td>
-                <td><span class="pill" data-status="${i.status}">${i.status}</span></td>
-                <td>${money(i.total_cents)}</td>
-                <td><button data-open="${i.id}">Open</button></td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No invoices</td></tr>'}
-          </tbody>
-        </table></div>
-      </div>
-      <div id="invoiceDetail"></div>`;
-
-    const billMatterPicker = wireMatterPicker($('#prebillForm'), { matters });
-    $('#prebillForm').onsubmit = async (ev) => {
-      ev.preventDefault();
-      const matterId = Number(new FormData(ev.target).get('matterId'));
-      if (!matterId) {
-        billMatterPicker?.setInvalid(true);
-        $('#billMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
-        billMatterPicker?.focus();
-        return;
-      }
-      try {
-        const inv = await api('/api/invoices/prebill', {
-          method: 'POST', body: JSON.stringify({ matterId }),
-        });
-        $('#billMsg').innerHTML = `<div class="ok-banner">Created ${inv.number}</div>`;
-        await renderBilling();
-        await showInvoice(inv.id);
-      } catch (e) {
-        $('#billMsg').innerHTML = `<div class="error">${e.message}</div>`;
-      }
-    };
-    main.querySelectorAll('[data-open]').forEach((b) => {
-      b.onclick = () => showInvoice(Number(b.dataset.open));
-    });
-  }
-
-  async function showInvoice(id) {
-    const inv = await api(`/api/invoices/${id}`);
-    const el = $('#invoiceDetail');
-    el.innerHTML = `
-      <div class="card stack">
-        <h2>${inv.number} <span class="pill" data-status="${inv.status}">${inv.status}</span></h2>
-        <p class="muted">${inv.client_name} · ${inv.matter_number} · Subtotal ${money(inv.subtotal_cents)}
-          · Write-down ${money(inv.write_down_cents)} · Total ${money(inv.total_cents)}</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Rate</th><th>Amount</th><th>WD</th><th></th></tr></thead>
-          <tbody>
-            ${inv.lines.map((l) => `
-              <tr>
-                <td>${l.service_date}<div class="muted">${l.description}</div></td>
-                <td>${l.timekeeper_name}</td>
-                <td>${formatDuration(l.minutes)}</td>
-                <td>${money(l.rate_cents)}</td>
-                <td>${money(l.amount_cents)}</td>
-                <td>${money(l.write_down_cents)}</td>
-                <td>${['prebill','in_review'].includes(inv.status)
-                  ? `<button data-wd="${l.id}">Write-down</button>` : ''}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table></div>
-        <div class="row-actions" id="invActions"></div>
-        <div id="invMsg"></div>
-      </div>`;
-
-    const actions = $('#invActions');
-    const btn = (label, status, primary) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      if (primary) b.className = 'primary';
-      b.onclick = async () => {
-        try {
-          await api(`/api/invoices/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
-          await renderBilling();
-          await showInvoice(id);
-        } catch (e) { $('#invMsg').innerHTML = `<div class="error">${e.message}</div>`; }
-      };
-      actions.appendChild(b);
-    };
-    if (inv.status === 'prebill') { btn('To review', 'in_review', true); btn('Void', 'void'); }
-    if (inv.status === 'in_review') { btn('Approve', 'approved', true); btn('Back to pre-bill', 'prebill'); btn('Void', 'void'); }
-    if (inv.status === 'approved') { btn('Send', 'sent', true); btn('Void', 'void'); }
-
-    el.querySelectorAll('[data-wd]').forEach((b) => {
-      b.onclick = async () => {
-        const dollars = prompt('Write-down amount in dollars (e.g. 25.00)?');
-        if (!dollars) return;
-        const reason = prompt('Reason?') || 'adjustment';
-        const parts = dollars.replace('$', '').split('.');
-        const deltaCents = Number(parts[0]) * 100 + Number((parts[1] || '0').padEnd(2, '0').slice(0, 2));
-        try {
-          await api(`/api/invoice-lines/${b.dataset.wd}/write-down`, {
-            method: 'POST', body: JSON.stringify({ deltaCents, reason }),
-          });
-          await showInvoice(id);
-        } catch (e) { $('#invMsg').innerHTML = `<div class="error">${e.message}</div>`; }
-      };
-    });
-  }
-
-  async function renderPayments() {
-    const payments = await api('/api/payments');
-    const today = new Date().toISOString().slice(0, 10);
-    main.innerHTML = `
-      <div class="card">
-        <h1>Payments / AR</h1>
-        <p class="lead">Default application is oldest-first. Overpayment stays unapplied.</p>
-        <form id="payForm" class="grid two">
-          <label>Client
-            <select name="clientId">
-              ${state.clients.map((c) => `<option value="${c.id}">${c.name}</option>`).join('')}
-            </select>
-          </label>
-          <label>Amount (cents)
-            <input name="amountCents" type="number" min="1" value="50000" required />
-          </label>
-          <label>Received on
-            <input name="receivedOn" type="date" value="${today}" required />
-          </label>
-          <label>Method
-            <input name="method" value="check" />
-          </label>
-          <div class="row-actions"><button class="primary" type="submit">Record payment</button></div>
-        </form>
-        <div id="payMsg"></div>
-      </div>
-      <div class="card">
-        <h2>Payments</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Client</th><th>Amount</th><th>Applied</th><th>Unapplied</th></tr></thead>
-          <tbody>
-            ${payments.map((p) => `
-              <tr>
-                <td>${p.received_on}</td>
-                <td>${p.client_name}</td>
-                <td>${money(p.amount_cents)}</td>
-                <td>${money(p.applied_cents)}</td>
-                <td class="${p.unapplied_cents ? 'warn' : ''}">${money(p.unapplied_cents)}</td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">None</td></tr>'}
-          </tbody>
-        </table></div>
-      </div>`;
-    $('#payForm').onsubmit = async (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(ev.target);
-      const body = {
-        clientId: Number(fd.get('clientId')),
-        amountCents: Number(fd.get('amountCents')),
-        receivedOn: fd.get('receivedOn'),
-        method: fd.get('method'),
-      };
-      try {
-        const p = await api('/api/payments', { method: 'POST', body: JSON.stringify(body) });
-        $('#payMsg').innerHTML = `<div class="ok-banner">Payment #${p.id} recorded. Unapplied: ${money(p.unappliedCents)}</div>`;
-        await renderPayments();
-      } catch (e) {
-        $('#payMsg').innerHTML = `<div class="error">${e.message}</div>`;
-      }
-    };
-  }
-
   async function renderReports() {
     const names = [
+      ['matters', 'Matters'],
       ['lodestar-summary', 'Lodestar Summary'],
       ['lodestar-detail', 'Lodestar Detail'],
     ];
     main.innerHTML = `
       <div class="card">
         <h1>Reports</h1>
-        <p class="lead">Export CSV or Excel (.xlsx with numeric currency cells).</p>
+        <p class="lead">Matters list and lodestar exports (CSV / Excel).</p>
         <div>
           ${names.map(([id, label]) => `
             <div class="report-row">

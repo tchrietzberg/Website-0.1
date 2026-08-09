@@ -41,13 +41,11 @@ Password for all seeded users (override with `DEMO_PASSWORD` when seeding): **`d
 ## Demo flow (Definition of Done walkthrough)
 
 1. Sign in as **avery** / `demo-change-me` → **Matters** → create a matter → Matter Search → open record → add fields.
-2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked;
-   try a N.D. Cal matter without category → blocked).
-3. Submit the entry, sign in as **billie** → approve via API/queue (nav hidden) or continue billing.
-4. Billing → Generate pre-bill → Write-down → To review → Approve → Send.
-5. Record a payment (partial payments and oldest-first application supported; overpayment stays unapplied).
-6. Reports → Lodestar Summary/Detail → Export CSV/Excel.
-7. Settings → Time & Billing, Timekeepers & Rates; admin audit log.
+2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked).
+3. Reports → **Matters** (list/export) or Lodestar Summary/Detail → CSV/Excel.
+4. Settings → Time & Billing, Default fields, invite timekeepers by email.
+
+WIP / pre-bill / invoice approval UI is paused for now (APIs remain for later).
 
 ## Environment variables
 
@@ -71,7 +69,7 @@ See `.env.example` for a full public-deploy checklist. Important:
 - `src/money.js` — ALL currency/rounding math (integer cents, integer minutes; no floats anywhere).
 - `src/rates.js` — effective-dated rate resolution: matter → client → timekeeper default.
 - `src/services/` — time (rules engine + approvals), matters (field history, custom fields),
-  invoices (pre-bill → review → approve → send; write-downs; credit notes), payments (oldest-first), reports.
+  invoices / payments (APIs; WIP–pre-bill UI paused), reports (Matters + lodestar).
 - `src/web/` — dependency-free HTTP server + single-page UI.
 - `test/` — 32 tests covering rounding edges, rate precedence and effective dating, billing rules,
   approval gates, invoice immutability, payment application, and report totals.

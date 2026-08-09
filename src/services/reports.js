@@ -59,6 +59,7 @@ function lodestarSummary(db, { matterId = null } = {}) {
 }
 
 function wipReport(db) {
+  // Kept for backend/tests; WIP / pre-bill UI is paused.
   const rows = db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.client_id, m.id AS mid
     FROM time_entries te
@@ -86,6 +87,54 @@ function wipReport(db) {
       description: e.description,
     };
   });
+}
+
+/** Firm matters listing with time totals for export / Reports. */
+function mattersReport(db) {
+  const rows = db.prepare(`
+    SELECT
+      m.number AS matter_number,
+      m.name AS matter_name,
+      c.name AS client_name,
+      m.status,
+      u.name AS attorney_name,
+      m.opened_on,
+      m.jurisdiction,
+      m.court,
+      COALESCE(te.entry_count, 0) AS time_entry_count,
+      COALESCE(te.billable_minutes, 0) AS billable_minutes,
+      COALESCE(te.approved_minutes, 0) AS approved_minutes
+    FROM matters m
+    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN users u ON u.id = m.responsible_attorney_id
+    LEFT JOIN (
+      SELECT
+        matter_id,
+        COUNT(*) AS entry_count,
+        SUM(CASE WHEN billable = 1 THEN rounded_minutes ELSE 0 END) AS billable_minutes,
+        SUM(CASE WHEN billable = 1 AND status IN ('approved', 'invoiced')
+          THEN rounded_minutes ELSE 0 END) AS approved_minutes
+      FROM time_entries
+      GROUP BY matter_id
+    ) te ON te.matter_id = m.id
+    ORDER BY m.number DESC
+  `).all();
+
+  return rows.map((r) => ({
+    matter_number: r.matter_number,
+    matter_name: r.matter_name,
+    client_name: r.client_name,
+    status: r.status,
+    attorney_name: r.attorney_name || '',
+    opened_on: r.opened_on,
+    jurisdiction: r.jurisdiction || '',
+    court: r.court || '',
+    time_entry_count: r.time_entry_count,
+    billable_minutes: r.billable_minutes,
+    billable_hours: r.billable_minutes / 60,
+    approved_minutes: r.approved_minutes,
+    approved_hours: r.approved_minutes / 60,
+  }));
 }
 
 function arAging(db, asOf = new Date().toISOString().slice(0, 10)) {
@@ -187,6 +236,7 @@ function toXlsx(rows, currencyKeys = []) {
 module.exports = {
   lodestarDetail,
   lodestarSummary,
+  mattersReport,
   wipReport,
   arAging,
   writeOffs,

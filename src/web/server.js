@@ -789,7 +789,7 @@ function createServer(db = openDb()) {
           'billed_cents', 'write_down_cents', 'net_billed_cents', 'collected_cents', 'delta_cents'];
         if (name === 'lodestar-summary') rows = reports.lodestarSummary(db, { matterId: matterId && Number(matterId) });
         else if (name === 'lodestar-detail') rows = reports.lodestarDetail(db, { matterId: matterId && Number(matterId) });
-        else if (name === 'wip') rows = reports.wipReport(db);
+        else if (name === 'matters') rows = reports.mattersReport(db);
         else if (name === 'ar-aging') rows = reports.arAging(db);
         else if (name === 'write-offs') rows = reports.writeOffs(db);
         else if (name === 'realization') rows = reports.realization(db);
