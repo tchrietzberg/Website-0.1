@@ -11,6 +11,7 @@
     settings: null,
     matterId: null,
     matterSearch: { q: '' },
+    tkSearch: { q: '' },
     showCreateMatter: false,
     focusTimeEntry: false,
   };
@@ -2468,7 +2469,7 @@
       </details>` : ''}
 
       ${canEditBilling ? `
-      <details class="onedrive-collapse settings-collapse">
+      <details class="onedrive-collapse settings-collapse" id="tkRatesSection" ${state.tkSearch.q ? 'open' : ''}>
         <summary class="onedrive-collapse-summary">
           <span class="onedrive-collapse-title">Timekeepers &amp; Rates</span>
           <span class="onedrive-collapse-meta muted">${timekeepers.length} timekeeper${timekeepers.length === 1 ? '' : 's'}</span>
@@ -2502,17 +2503,27 @@
         <div id="tkMsg"></div>
         ` : '<p class="hint">Only admins can invite timekeepers. Billing clerks can add/change rates.</p>'}
 
+        <form id="tkSearch" class="matter-search-bar" role="search">
+          <input name="q" value="${escapeHtml(state.tkSearch.q || '')}"
+            placeholder="Search by timekeeper…" aria-label="Search by timekeeper"
+            autocomplete="off" />
+          <button type="button" id="clearTkSearch">Clear</button>
+        </form>
+
         <div class="table-wrap"><table>
           <thead>
             <tr><th>Timekeeper</th><th>Role</th><th>Current rate</th><th>Effective</th><th>Add rate change</th>${isAdmin ? '<th></th>' : ''}</tr>
           </thead>
-          <tbody>
-            ${timekeepers.map((t) => `
-              <tr data-tk="${t.id}">
-                <td>${t.name}<div class="muted">${t.email}</div></td>
-                <td>${t.role.replace('_', ' ')}</td>
-                <td>${t.current_rate_cents == null ? '—' : money(t.current_rate_cents) + '/hr'}</td>
-                <td>${t.current_effective_date || '—'}</td>
+          <tbody id="tkRatesBody">
+            ${timekeepers.map((t) => {
+              const roleLabel = String(t.role || '').replace(/_/g, ' ');
+              const searchText = [t.name, t.email, roleLabel, t.role].filter(Boolean).join(' ').toLowerCase();
+              return `
+              <tr data-tk="${t.id}" data-tk-text="${escapeHtml(searchText)}">
+                <td>${escapeHtml(t.name)}<div class="muted">${escapeHtml(t.email)}</div></td>
+                <td>${escapeHtml(roleLabel)}</td>
+                <td>${t.current_rate_cents == null ? '—' : `${money(t.current_rate_cents)}/hr`}</td>
+                <td>${escapeHtml(t.current_effective_date || '—')}</td>
                 <td>
                   <form class="rate-form row-actions" data-scope-id="${t.id}">
                     <input name="amount" class="rate-dollars" type="text" inputmode="decimal" placeholder="375.00" required style="width:6.5rem" />
@@ -2522,7 +2533,7 @@
                   <details class="hint" style="margin-top:.4rem">
                     <summary>Rate history (${t.rates.length})</summary>
                     <ul>
-                      ${t.rates.map((r) => `<li>${r.effective_date}: ${money(r.amount_cents)}/hr</li>`).join('') || '<li>None</li>'}
+                      ${t.rates.map((r) => `<li>${escapeHtml(r.effective_date)}: ${money(r.amount_cents)}/hr</li>`).join('') || '<li>None</li>'}
                     </ul>
                   </details>
                 </td>
@@ -2530,7 +2541,9 @@
                 <td>
                   <button type="button" data-send-reset="${t.id}">Email reset</button>
                 </td>` : ''}
-              </tr>`).join('') || `<tr><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers</td></tr>`}
+              </tr>`;
+            }).join('') || `<tr data-tk-empty="1"><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers</td></tr>`}
+            <tr data-tk-none hidden><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers match your search</td></tr>
           </tbody>
         </table></div>
         <div id="rateMsg"></div>
@@ -2766,6 +2779,49 @@
       };
     }
 
+    const tkSearchForm = $('#tkSearch');
+    if (tkSearchForm) {
+      const tkSearchInput = tkSearchForm.querySelector('input[name="q"]');
+      const applyTkSearch = (raw) => {
+        const needle = String(raw || '').trim().toLowerCase();
+        state.tkSearch = { q: String(raw || '') };
+        const rows = main.querySelectorAll('#tkRatesBody tr[data-tk]');
+        let shown = 0;
+        rows.forEach((row) => {
+          const hay = (row.dataset.tkText || '').toLowerCase();
+          const match = !needle || hay.includes(needle);
+          row.hidden = !match;
+          if (match) shown += 1;
+        });
+        const none = $('#tkRatesBody [data-tk-none]');
+        if (none) none.hidden = !(needle && shown === 0 && rows.length > 0);
+        const section = $('#tkRatesSection');
+        if (section && needle) section.open = true;
+        const meta = section?.querySelector('.onedrive-collapse-meta');
+        if (meta) {
+          meta.textContent = needle
+            ? `${shown} of ${rows.length} timekeeper${rows.length === 1 ? '' : 's'}`
+            : `${rows.length} timekeeper${rows.length === 1 ? '' : 's'}`;
+        }
+      };
+      tkSearchForm.onsubmit = (ev) => {
+        ev.preventDefault();
+        applyTkSearch(tkSearchInput?.value || '');
+      };
+      if (tkSearchInput) {
+        tkSearchInput.oninput = () => applyTkSearch(tkSearchInput.value);
+      }
+      const clearTk = $('#clearTkSearch');
+      if (clearTk) {
+        clearTk.onclick = () => {
+          if (tkSearchInput) tkSearchInput.value = '';
+          applyTkSearch('');
+          tkSearchInput?.focus();
+        };
+      }
+      applyTkSearch(state.tkSearch.q || '');
+    }
+
     const tkForm = $('#tkForm');
     if (tkForm) {
       tkForm.onsubmit = async (ev) => {
@@ -2789,7 +2845,10 @@
             ? 'Invite email sent.'
             : (invited.warning || 'Invite created, but email was not delivered. Configure Email in Settings, or use the link below.');
           await refreshRefs();
+          state.tkSearch = { q: '' };
           await renderSettings();
+          const section = $('#tkRatesSection');
+          if (section) section.open = true;
           const msg = $('#tkMsg');
           if (msg) {
             // Always prefer the current browser origin — email/server links may use a dead pod host.
@@ -2843,8 +2902,11 @@
               effectiveDate: fd.get('effectiveDate'),
             }),
           });
-          $('#rateMsg').innerHTML = '<div class="ok-banner">Rate change saved.</div>';
           await renderSettings();
+          const section = $('#tkRatesSection');
+          if (section) section.open = true;
+          const rateMsg = $('#rateMsg');
+          if (rateMsg) rateMsg.innerHTML = '<div class="ok-banner">Rate change saved.</div>';
         } catch (e) {
           $('#rateMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
