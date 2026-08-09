@@ -206,6 +206,12 @@ function slugify(label) {
     .slice(0, 40) || `field_${Date.now()}`;
 }
 
+function normalizeAppliesTo(value) {
+  const v = String(value || 'matter').trim();
+  if (v === 'time' || v === 'time_entry' || v === 'time-entry') return 'time_entry';
+  return 'matter';
+}
+
 function createCustomField(db, actor, input) {
   const label = String(input.label || '').trim();
   if (!label) throw new Error('label required');
@@ -214,15 +220,28 @@ function createCustomField(db, actor, input) {
     throw new Error('invalid fieldType');
   }
 
+  let appliesTo = normalizeAppliesTo(input.appliesTo || input.applies_to || 'matter');
   let recordTypeKey = input.recordTypeKey || null;
   let matterId = input.matterId != null ? Number(input.matterId) : null;
-  if (matterId) {
+
+  if (appliesTo === 'time_entry') {
+    // Firm-wide time-entry fields — not tied to a matter layout.
+    recordTypeKey = null;
+    matterId = null;
+  } else if (matterId) {
     const m = db.prepare('SELECT id FROM matters WHERE id = ?').get(matterId);
     if (!m) throw new Error('matter not found');
     recordTypeKey = null; // record-based
+    appliesTo = 'matter';
   } else if (recordTypeKey) {
     ensureRecordTypes(db);
     recordTypeKey = DEFAULT_RECORD_TYPE_KEY;
+    appliesTo = 'matter';
+  } else {
+    // Default matter type field when scope omitted
+    ensureRecordTypes(db);
+    recordTypeKey = DEFAULT_RECORD_TYPE_KEY;
+    appliesTo = 'matter';
   }
 
   let apiName = String(input.apiName || slugify(label));
@@ -234,9 +253,10 @@ function createCustomField(db, actor, input) {
   const clash = db.prepare(`
     SELECT id FROM custom_fields
     WHERE api_name = ?
+      AND IFNULL(applies_to, 'matter') = ?
       AND IFNULL(record_type_key,'') = IFNULL(?, '')
       AND IFNULL(matter_id,0) = IFNULL(?, 0)
-  `).get(apiName, recordTypeKey, matterId);
+  `).get(apiName, appliesTo, recordTypeKey, matterId);
   if (clash) apiName = `${apiName}_${Date.now().toString(36)}`;
 
   const options = fieldType === 'select'
@@ -245,14 +265,15 @@ function createCustomField(db, actor, input) {
 
   const info = db.prepare(`
     INSERT INTO custom_fields(
-      api_name, label, field_type, options_json, record_type_key, matter_id,
+      api_name, label, field_type, options_json, applies_to, record_type_key, matter_id,
       required, active, created_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
   `).run(
     apiName,
     label,
     fieldType,
     options,
+    appliesTo,
     recordTypeKey,
     matterId,
     input.required ? 1 : 0,
@@ -260,26 +281,28 @@ function createCustomField(db, actor, input) {
   );
   const id = Number(info.lastInsertRowid);
 
-  // Auto-add to the relevant layout
-  if (matterId) {
-    ensureMatterLayout(db, matterId);
-    const layout = db.prepare('SELECT id FROM page_layouts WHERE matter_id = ?').get(matterId);
-    const max = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
-    ).get(layout.id).m;
-    db.prepare(`
-      INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
-      VALUES (?, ?, 'details', ?, ?)
-    `).run(layout.id, `cf:${id}`, max + 1, fieldType === 'textarea' ? 'full' : 'half');
-  } else if (recordTypeKey) {
-    const layout = ensureTypeLayout(db, recordTypeKey);
-    const max = db.prepare(
-      'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
-    ).get(layout.id).m;
-    db.prepare(`
-      INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
-      VALUES (?, ?, 'details', ?, ?)
-    `).run(layout.id, `cf:${id}`, max + 1, fieldType === 'textarea' ? 'full' : 'half');
+  // Auto-add matter fields to the relevant layout
+  if (appliesTo === 'matter') {
+    if (matterId) {
+      ensureMatterLayout(db, matterId);
+      const layout = db.prepare('SELECT id FROM page_layouts WHERE matter_id = ?').get(matterId);
+      const max = db.prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
+      ).get(layout.id).m;
+      db.prepare(`
+        INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
+        VALUES (?, ?, 'details', ?, ?)
+      `).run(layout.id, `cf:${id}`, max + 1, fieldType === 'textarea' ? 'full' : 'half');
+    } else if (recordTypeKey) {
+      const layout = ensureTypeLayout(db, recordTypeKey);
+      const max = db.prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
+      ).get(layout.id).m;
+      db.prepare(`
+        INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
+        VALUES (?, ?, 'details', ?, ?)
+      `).run(layout.id, `cf:${id}`, max + 1, fieldType === 'textarea' ? 'full' : 'half');
+    }
   }
 
   audit(db, {
@@ -287,7 +310,7 @@ function createCustomField(db, actor, input) {
     action: 'custom_field.create',
     entityType: 'custom_field',
     entityId: id,
-    detail: { apiName, label, recordTypeKey, matterId },
+    detail: { apiName, label, recordTypeKey, matterId, appliesTo },
   });
 
   return getCustomField(db, id);
@@ -296,28 +319,108 @@ function createCustomField(db, actor, input) {
 function getCustomField(db, id) {
   const f = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
   if (!f) return null;
+  const appliesTo = f.applies_to || 'matter';
   return {
     ...f,
+    applies_to: appliesTo,
+    appliesTo,
     options: f.options_json ? JSON.parse(f.options_json) : null,
-    scope: f.matter_id ? 'record' : (f.record_type_key ? 'record_type' : 'global'),
+    scope: appliesTo === 'time_entry'
+      ? 'time_entry'
+      : (f.matter_id ? 'record' : (f.record_type_key ? 'record_type' : 'global')),
   };
 }
 
-function listCustomFields(db, { recordTypeKey = null, matterId = null } = {}) {
+function listCustomFields(db, {
+  recordTypeKey = null,
+  matterId = null,
+  appliesTo = 'matter',
+} = {}) {
+  const target = normalizeAppliesTo(appliesTo);
+  if (target === 'time_entry') {
+    return db.prepare(`
+      SELECT * FROM custom_fields
+      WHERE active = 1
+        AND IFNULL(applies_to, 'matter') = 'time_entry'
+      ORDER BY label, id
+    `).all().map((f) => getCustomField(db, f.id));
+  }
   return db.prepare(`
     SELECT * FROM custom_fields
     WHERE active = 1
+      AND IFNULL(applies_to, 'matter') = 'matter'
       AND (
         (matter_id IS NULL AND record_type_key IS NULL)
         OR (? IS NOT NULL AND record_type_key = ? AND matter_id IS NULL)
         OR (? IS NOT NULL AND matter_id = ?)
       )
     ORDER BY label
-  `).all(recordTypeKey, recordTypeKey, matterId, matterId).map((f) => ({
-    ...f,
-    options: f.options_json ? JSON.parse(f.options_json) : null,
-    scope: f.matter_id ? 'record' : (f.record_type_key ? 'record_type' : 'global'),
+  `).all(recordTypeKey, recordTypeKey, matterId, matterId).map((f) => getCustomField(db, f.id));
+}
+
+function deactivateCustomField(db, actor, fieldId) {
+  const field = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(fieldId);
+  if (!field) throw new Error('field not found');
+  db.prepare('UPDATE custom_fields SET active = 0 WHERE id = ?').run(fieldId);
+  if ((field.applies_to || 'matter') === 'matter') {
+    // Drop from layouts when this definition is retired
+    db.prepare(`
+      DELETE FROM page_layout_items WHERE field_key = ?
+    `).run(`cf:${fieldId}`);
+  }
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'custom_field.deactivate',
+    entityType: 'custom_field',
+    entityId: fieldId,
+    detail: { appliesTo: field.applies_to || 'matter' },
+  });
+  return { ok: true, id: fieldId };
+}
+
+function listTimeEntryFieldDefs(db) {
+  return listCustomFields(db, { appliesTo: 'time_entry' }).map((f) => ({
+    key: `cf:${f.id}`,
+    label: f.label,
+    type: f.field_type,
+    options: f.options,
+    required: !!f.required,
+    scope: 'time_entry',
+    fieldId: f.id,
+    kind: 'custom',
+    width: f.field_type === 'textarea' ? 'full' : 'half',
+    value: null,
   }));
+}
+
+function setTimeCustomValues(db, actor, timeEntryId, customValues) {
+  const entry = db.prepare('SELECT id FROM time_entries WHERE id = ?').get(timeEntryId);
+  if (!entry) throw new Error('time entry not found');
+  const upsert = db.prepare(`
+    INSERT INTO time_entry_custom_field_values(time_entry_id, field_id, value_text, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(time_entry_id, field_id) DO UPDATE SET
+      value_text = excluded.value_text,
+      updated_by = excluded.updated_by,
+      updated_at = excluded.updated_at
+  `);
+  for (const [fieldId, value] of Object.entries(customValues || {})) {
+    const id = Number(fieldId);
+    const field = db.prepare(`
+      SELECT * FROM custom_fields
+      WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'time_entry'
+    `).get(id);
+    if (!field) continue;
+    const text = value == null ? null : String(value);
+    upsert.run(timeEntryId, id, text, actor?.id || null);
+  }
+}
+
+function getTimeCustomValues(db, timeEntryId) {
+  return db.prepare(`
+    SELECT field_id, value_text FROM time_entry_custom_field_values
+    WHERE time_entry_id = ?
+  `).all(timeEntryId);
 }
 
 function ensureMatterLayout(db, matterId) {
@@ -515,7 +618,8 @@ function setCustomValues(db, actor, matterId, customValues) {
   for (const [fieldId, value] of Object.entries(customValues || {})) {
     const id = Number(fieldId);
     const field = db.prepare(
-      'SELECT * FROM custom_fields WHERE id = ? AND active = 1'
+      `SELECT * FROM custom_fields
+       WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'matter'`
     ).get(id);
     if (!field) continue;
     // Must be in scope for this matter
@@ -575,6 +679,10 @@ module.exports = {
   createCustomField,
   getCustomField,
   listCustomFields,
+  deactivateCustomField,
+  listTimeEntryFieldDefs,
+  setTimeCustomValues,
+  getTimeCustomValues,
   getMatterPage,
   getTypeLayout,
   setCustomValues,

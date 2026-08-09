@@ -76,6 +76,11 @@ describe('secure email auth flows', () => {
 
   beforeEach(async () => {
     mail.clearOutbox();
+    delete process.env.RESEND_API_KEY;
+    delete process.env.SMTP_HOST;
+    delete process.env.SMTP_FROM;
+    delete process.env.SMTP_FROM_NAME;
+    delete process.env.MAIL_FROM;
     db = resetDb(path.join(os.tmpdir(), `billing-auth-email-${process.pid}-${Date.now()}.db`));
     setSetting(db, 'round_increment_minutes', '15');
     setSetting(db, 'round_mode', 'up');

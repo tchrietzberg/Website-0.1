@@ -540,7 +540,8 @@ body {
   margin-top: 0;
 }
 
-.onedrive-collapse {
+.onedrive-collapse,
+.settings-collapse {
   margin-bottom: 1rem;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -548,7 +549,17 @@ body {
   overflow: hidden;
 }
 
-.onedrive-collapse-summary {
+#app .settings-collapse {
+  margin-bottom: 1rem;
+}
+
+.card > .settings-collapse,
+.card > .onedrive-collapse {
+  margin-top: 0.35rem;
+}
+
+.onedrive-collapse-summary,
+.settings-collapse > .onedrive-collapse-summary {
   list-style: none;
   cursor: pointer;
   display: -webkit-flex;

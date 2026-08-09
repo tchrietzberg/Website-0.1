@@ -134,4 +134,51 @@ describe('matter search and record-based fields', () => {
       /core fields/
     );
   });
+
+  it('supports time-entry custom fields separate from matter fields', () => {
+    const timeSvc = require('../src/services/time');
+    const matter = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Billable work',
+      openedOn: '2026-01-01', responsibleAttorneyId: 2,
+    }).matter;
+
+    const matterField = customFields.createCustomField(db, admin, {
+      label: 'Case stage',
+      fieldType: 'text',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+    });
+    const timeField = customFields.createCustomField(db, admin, {
+      label: 'Activity code',
+      fieldType: 'text',
+      appliesTo: 'time_entry',
+    });
+
+    assert.equal(matterField.appliesTo, 'matter');
+    assert.equal(timeField.appliesTo, 'time_entry');
+
+    const matterOnly = customFields.listCustomFields(db, {
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+    });
+    assert.ok(matterOnly.some((f) => f.id === matterField.id));
+    assert.ok(!matterOnly.some((f) => f.id === timeField.id));
+
+    const timeOnly = customFields.listCustomFields(db, { appliesTo: 'time_entry' });
+    assert.equal(timeOnly.length, 1);
+    assert.equal(timeOnly[0].id, timeField.id);
+
+    const entry = timeSvc.createEntry(db, admin, {
+      matterId: matter.id,
+      timekeeperId: admin.id,
+      serviceDate: '2026-02-01',
+      rawMinutes: 15,
+      description: 'Research',
+      customValues: { [timeField.id]: 'A101' },
+    });
+    assert.equal(entry.customValues[timeField.id], 'A101');
+    const stored = customFields.getTimeCustomValues(db, entry.id);
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].value_text, 'A101');
+  });
 });

@@ -20,6 +20,7 @@ function migrate(db) {
   migrateMatterTypeCheck(db);
   migrateOneDriveColumns(db);
   migrateAuthColumns(db);
+  migrateCustomFieldAppliesTo(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -37,6 +38,38 @@ function migrateAuthColumns(db) {
   security.ensureSessionTables(db);
   const authEmail = require('./services/authEmail');
   authEmail.ensureAuthTokenTables(db);
+}
+
+/** Matter vs time-entry custom fields + time value storage. */
+function migrateCustomFieldAppliesTo(db) {
+  const tables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='custom_fields'"
+  ).get();
+  if (!tables) return;
+  const cols = new Set(tableColumns(db, 'custom_fields'));
+  if (!cols.has('applies_to')) {
+    db.exec(`ALTER TABLE custom_fields ADD COLUMN applies_to TEXT NOT NULL DEFAULT 'matter'`);
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_entry_custom_field_values (
+      time_entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+      field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+      value_text TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by INTEGER REFERENCES users(id),
+      PRIMARY KEY (time_entry_id, field_id)
+    )
+  `);
+  db.exec('DROP INDEX IF EXISTS idx_custom_fields_scope_name');
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
+      ON custom_fields(
+        api_name,
+        IFNULL(applies_to, 'matter'),
+        IFNULL(record_type_key, ''),
+        IFNULL(matter_id, 0)
+      )
+  `);
 }
 
 function tableColumns(db, table) {

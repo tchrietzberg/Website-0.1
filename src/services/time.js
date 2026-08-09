@@ -1,5 +1,6 @@
 const { roundMinutes, assertAllowedIncrement, assertRoundMode } = require('../money');
 const { getSetting, setSetting, audit } = require('../db');
+const customFields = require('./customFields');
 
 function evaluateRules(db, entry) {
   const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
@@ -91,20 +92,28 @@ function createEntry(db, actor, input) {
     candidate.utbmsTask, candidate.utbmsActivity
   );
 
+  const entryId = Number(info.lastInsertRowid);
+  if (input.customValues && typeof input.customValues === 'object') {
+    customFields.setTimeCustomValues(db, actor, entryId, input.customValues);
+  }
+
   audit(db, {
     actorId: actor.id,
     action: 'time_entry.create',
     entityType: 'time_entry',
-    entityId: info.lastInsertRowid,
+    entityId: entryId,
     detail: { rawMinutes: candidate.rawMinutes, roundedMinutes: candidate.roundedMinutes },
   });
 
   return {
-    id: Number(info.lastInsertRowid),
+    id: entryId,
     ...candidate,
     roundIncrementMinutes: increment,
     status: 'draft',
     duplicateWarnings: dupes,
+    customValues: Object.fromEntries(
+      customFields.getTimeCustomValues(db, entryId).map((v) => [v.field_id, v.value_text])
+    ),
   };
 }
 

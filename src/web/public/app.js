@@ -159,15 +159,81 @@
     ).join('');
   }
 
-  /** Manage the single Default record-type layout (used on Settings). */
-  async function bindDefaultFieldsEditor({ bodyEl, msgEl, recordTypeKey = 'default' } = {}) {
+  /** Manage matter (default layout) or time-entry custom fields on Settings. */
+  async function bindDefaultFieldsEditor({
+    bodyEl,
+    msgEl,
+    recordTypeKey = 'default',
+    appliesTo = 'matter',
+  } = {}) {
     if (!bodyEl) return;
     const key = recordTypeKey || 'default';
+    const isTime = appliesTo === 'time_entry';
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
     };
 
     const render = async () => {
+      if (isTime) {
+        const fields = await api('/api/custom-fields?appliesTo=time_entry');
+        const rows = (fields || []).map((f) => `
+          <div class="field-mgmt-row">
+            <div>
+              <strong>${escapeHtml(f.label)}</strong>
+              <div class="muted">${escapeHtml(f.field_type)} · time entry</div>
+            </div>
+            <button type="button" data-del-time-field="${f.id}">Remove</button>
+          </div>`).join('') || '<p class="muted">No time-entry fields yet.</p>';
+        bodyEl.innerHTML = `
+          <div class="field-mgmt-list">${rows}</div>
+          <form id="timeFieldForm" class="grid two">
+            <label>Custom field label
+              <input name="label" required placeholder="Activity code" />
+            </label>
+            <label>Formatter
+              <select name="fieldType">
+                ${fieldFormatterOptions('text')}
+              </select>
+            </label>
+            <div class="row-actions span-all">
+              <button class="primary" type="submit">Add time field</button>
+            </div>
+          </form>`;
+        bodyEl.querySelectorAll('[data-del-time-field]').forEach((btn) => {
+          btn.onclick = async () => {
+            try {
+              await api(`/api/custom-fields/${btn.dataset.delTimeField}`, { method: 'DELETE' });
+              setMsg('<div class="ok-banner">Time field removed.</div>');
+              await render();
+            } catch (e) {
+              setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+            }
+          };
+        });
+        const timeFieldForm = bodyEl.querySelector('#timeFieldForm');
+        if (timeFieldForm) {
+          timeFieldForm.onsubmit = async (ev) => {
+            ev.preventDefault();
+            const fd = new FormData(timeFieldForm);
+            try {
+              await api('/api/custom-fields', {
+                method: 'POST',
+                body: JSON.stringify({
+                  label: fd.get('label'),
+                  fieldType: fd.get('fieldType'),
+                  appliesTo: 'time_entry',
+                }),
+              });
+              setMsg('<div class="ok-banner">Time field added.</div>');
+              await render();
+            } catch (e) {
+              setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+            }
+          };
+        }
+        return;
+      }
+
       const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
       bodyEl.innerHTML = `
         <div class="field-mgmt-list">
@@ -175,14 +241,14 @@
         </div>
         ${(typeLayout.availableStandardFields || []).length ? `
         <form id="addTypeStandardForm" class="field-mgmt-add">
-          <label>Add default field
+          <label>Add built-in matter field
             <select name="fieldKey" required>
               ${typeLayout.availableStandardFields.map((f) =>
                 `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
             </select>
           </label>
           <button class="primary" type="submit">Add field</button>
-        </form>` : '<p class="muted">All optional default fields are on this layout.</p>'}
+        </form>` : '<p class="muted">All optional built-in matter fields are on this layout.</p>'}
         <form id="typeFieldForm" class="grid two">
           <label>Custom field label
             <input name="label" required placeholder="Case stage" />
@@ -193,7 +259,7 @@
             </select>
           </label>
           <div class="row-actions span-all">
-            <button class="primary" type="submit">Add default field formatter</button>
+            <button class="primary" type="submit">Add matter field</button>
           </div>
         </form>`;
 
@@ -221,7 +287,7 @@
               method: 'POST',
               body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
             });
-            setMsg('<div class="ok-banner">Default field added.</div>');
+            setMsg('<div class="ok-banner">Matter field added.</div>');
             await render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -240,9 +306,10 @@
                 label: fd.get('label'),
                 fieldType: fd.get('fieldType'),
                 recordTypeKey: key,
+                appliesTo: 'matter',
               }),
             });
-            setMsg('<div class="ok-banner">Default field formatter added.</div>');
+            setMsg('<div class="ok-banner">Matter field added.</div>');
             await render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -1600,16 +1667,28 @@
   }
 
   async function renderTime() {
-    const [entries, settings, matters] = await Promise.all([
+    const [entries, settings, matters, timeFields] = await Promise.all([
       api('/api/time-entries'),
       api('/api/settings'),
       api('/api/matters'),
+      api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
     ]);
     state.settings = settings;
     state.matters = matters;
     const today = new Date().toISOString().slice(0, 10);
     const preferredMatterId = state.matterId
       || (matters.length === 1 ? matters[0].id : null);
+    const timeFieldDefs = (timeFields || []).map((f) => ({
+      key: `cf:${f.id}`,
+      label: f.label,
+      type: f.field_type,
+      options: f.options,
+      required: !!f.required,
+      fieldId: f.id,
+      kind: 'custom',
+      width: f.field_type === 'textarea' ? 'full' : 'half',
+      value: null,
+    }));
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
@@ -1640,6 +1719,10 @@
           <label class="span-all">Description
             <textarea name="description" rows="2" required>Reviewed production set</textarea>
           </label>
+          ${timeFieldDefs.map((field) => `
+            <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}
+              ${renderFieldInput(field, { canEdit: true })}
+            </label>`).join('')}
           <div class="row-actions span-all">
             <button class="primary" type="submit">Save draft</button>
           </div>
@@ -1682,6 +1765,20 @@
       body.rawMinutes = Number(body.rawMinutes);
       delete body.category;
       delete body.subcategory;
+      const customValues = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (key.startsWith('cf_')) {
+          customValues[key.slice(3)] = value;
+          delete body[key];
+        }
+      }
+      // Checkboxes only appear in FormData when checked
+      timeFieldDefs.forEach((f) => {
+        if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
+          customValues[f.fieldId] = '0';
+        }
+      });
+      body.customValues = customValues;
       if (!body.matterId) {
         matterPicker?.setInvalid(true);
         $('#timeMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
@@ -1836,72 +1933,91 @@
     main.innerHTML = `
       <div class="card stack">
         <h1>Settings</h1>
-        <p class="lead">Time and billing preferences${canConfigureFields ? ', default matter fields' : ''}${isAdmin ? ', timekeepers, and rates' : ''}.</p>
+        <p class="lead">Matter and time fields, plus billing preferences${isAdmin ? ', email, and integrations' : ''}.</p>
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
       </div>
 
       ${canConfigureFields ? `
       <div class="card stack" id="defaultFieldsCard">
-        <h2>Default fields</h2>
-        <p class="hint">One <strong>Default</strong> record layout for all matters. Add built-in fields or custom fields with a formatter.</p>
+        <h2>Matter fields</h2>
+        <p class="hint">Shown on every matter. Add built-in fields or custom matter fields.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
+      </div>
+      <div class="card stack" id="timeFieldsCard">
+        <h2>Time entry fields</h2>
+        <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
+        <div id="timeFieldsBody" class="stack"></div>
+        <div id="timeFieldMsg"></div>
       </div>` : ''}
 
       <form id="settingsForm" class="card stack">
         <h2>Time and Billing</h2>
+        <p class="hint">Duration display and rounding for new time entries.</p>
 
-        <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
-          <h3 style="margin:0 0 .35rem;font-family:var(--font)">Duration Format</h3>
-          <p class="hint">How timers and time entries are shown.</p>
-          ${settings.durationFormats.map((f) => `
-            <div class="choice ${settings.durationFormat === f.id ? 'is-selected' : ''}"
-                 data-name="durationFormat" data-disabled="${canEditBilling ? '0' : '1'}">
-              <input type="radio" name="durationFormat" value="${f.id}"
-                ${settings.durationFormat === f.id ? 'checked' : ''}
-                ${canEditBilling ? '' : 'disabled'} />
-              <span>
-                <strong>${f.label}</strong>
-                <span class="muted">${f.description}</span>
-              </span>
-            </div>`).join('')}
-        </div>
+        <details class="onedrive-collapse settings-collapse">
+          <summary class="onedrive-collapse-summary">
+            <span class="onedrive-collapse-title">Duration &amp; rounding</span>
+            <span class="onedrive-collapse-meta muted">${escapeHtml(settings.durationFormat || '')} · ${escapeHtml(settings.roundMode || '')}${settings.roundMode !== 'none' ? ` / ${settings.roundIncrementMinutes}m` : ''}</span>
+          </summary>
+          <div class="onedrive-collapse-body">
+            <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Duration Format</h3>
+              <p class="hint">How timers and time entries are shown.</p>
+              ${settings.durationFormats.map((f) => `
+                <div class="choice ${settings.durationFormat === f.id ? 'is-selected' : ''}"
+                     data-name="durationFormat" data-disabled="${canEditBilling ? '0' : '1'}">
+                  <input type="radio" name="durationFormat" value="${f.id}"
+                    ${settings.durationFormat === f.id ? 'checked' : ''}
+                    ${canEditBilling ? '' : 'disabled'} />
+                  <span>
+                    <strong>${f.label}</strong>
+                    <span class="muted">${f.description}</span>
+                  </span>
+                </div>`).join('')}
+            </div>
 
-        <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
-          <h3 style="margin:0 0 .35rem;font-family:var(--font)">Time Rounding</h3>
-          <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
-            Nearest rounds up if the duration is exactly in the middle of the interval.</p>
-          ${settings.roundingModes.map((m) => `
-            <div class="choice ${settings.roundMode === m.id ? 'is-selected' : ''}"
-                 data-name="roundMode" data-disabled="${canEditBilling ? '0' : '1'}">
-              <input type="radio" name="roundMode" value="${m.id}"
-                ${settings.roundMode === m.id ? 'checked' : ''}
-                ${canEditBilling ? '' : 'disabled'} />
-              <span>
-                <strong>${m.label}</strong>
-                <span class="muted">${m.description}</span>
-              </span>
-            </div>`).join('')}
+            <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Time Rounding</h3>
+              <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
+                Nearest rounds up if the duration is exactly in the middle of the interval.</p>
+              ${settings.roundingModes.map((m) => `
+                <div class="choice ${settings.roundMode === m.id ? 'is-selected' : ''}"
+                     data-name="roundMode" data-disabled="${canEditBilling ? '0' : '1'}">
+                  <input type="radio" name="roundMode" value="${m.id}"
+                    ${settings.roundMode === m.id ? 'checked' : ''}
+                    ${canEditBilling ? '' : 'disabled'} />
+                  <span>
+                    <strong>${m.label}</strong>
+                    <span class="muted">${m.description}</span>
+                  </span>
+                </div>`).join('')}
 
-          <label class="interval-label">Interval (X minutes)
-            <select name="roundIncrementMinutes" id="roundIncrementMinutes" ${canEditBilling ? '' : 'disabled'}>
-              ${settings.roundingIncrements.map((r) => `
-                <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
-                  ${r.label}
-                </option>`).join('')}
-            </select>
-          </label>
-          <input type="hidden" name="roundIncrementMinutesFallback" value="${settings.roundIncrementMinutes}" />
-          <p class="hint">Interval applies to Round up / Nearest / Down. Ignored when Do Not Round is selected.</p>
-        </div>
+              <label class="interval-label">Interval (X minutes)
+                <select name="roundIncrementMinutes" id="roundIncrementMinutes" ${canEditBilling ? '' : 'disabled'}>
+                  ${settings.roundingIncrements.map((r) => `
+                    <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
+                      ${r.label}
+                    </option>`).join('')}
+                </select>
+              </label>
+              <input type="hidden" name="roundIncrementMinutesFallback" value="${settings.roundIncrementMinutes}" />
+              <p class="hint">Interval applies to Round up / Nearest / Down. Ignored when Do Not Round is selected.</p>
+            </div>
 
-        ${canEditBilling ? '<div class="row-actions"><button class="primary" type="submit">Save time &amp; billing settings</button></div>' : ''}
+            ${canEditBilling ? '<div class="row-actions"><button class="primary" type="submit">Save time &amp; billing settings</button></div>' : ''}
+          </div>
+        </details>
         <div id="settingsMsg"></div>
       </form>
 
       ${isAdmin ? `
-      <div class="card stack" id="emailSettingsCard">
-        <h2>Email</h2>
+      <details class="onedrive-collapse settings-collapse" id="emailSettingsCard">
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">Email</span>
+          <span class="onedrive-collapse-meta muted">${settings.email?.configured ? 'Ready' : 'Not configured'}</span>
+        </summary>
+        <div class="onedrive-collapse-body stack">
         <p class="lead">Deliver invite, reset, and sign-in messages to Gmail, Outlook, and other inboxes.</p>
         ${settings.email?.configured
           ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email is ready.')}</div>`
@@ -1932,11 +2048,18 @@
           </div>
         </form>
         <div id="emailSettingsMsg"></div>
-      </div>` : ''}
+        </div>
+      </details>` : ''}
 
       ${(isAdmin || state.user.role === 'billing_clerk') ? `
-      <div class="card stack" id="onedriveSettingsCard">
-        <h2>OneDrive / SharePoint</h2>
+      <details class="onedrive-collapse settings-collapse" id="onedriveSettingsCard">
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">OneDrive / SharePoint</span>
+          <span class="onedrive-collapse-meta muted">${settings.microsoft?.connected
+            ? (settings.microsoft.accountLabel ? escapeHtml(settings.microsoft.accountLabel) : 'Connected')
+            : 'Not connected'}</span>
+        </summary>
+        <div class="onedrive-collapse-body stack">
         <p class="lead">
           ${settings.microsoft?.connected
             ? `Connected${settings.microsoft.accountLabel ? ` as <strong>${escapeHtml(settings.microsoft.accountLabel)}</strong>` : ' to Microsoft'} — also used to send invite and sign-in emails`
@@ -2006,11 +2129,16 @@
           </form>
         </details>` : ''}
         <div id="onedriveSettingsMsg"></div>
-      </div>` : ''}
+        </div>
+      </details>` : ''}
 
       ${canEditBilling ? `
-      <div class="card stack">
-        <h2>Timekeepers &amp; Rates</h2>
+      <details class="onedrive-collapse settings-collapse">
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">Timekeepers &amp; Rates</span>
+          <span class="onedrive-collapse-meta muted">${timekeepers.length} timekeeper${timekeepers.length === 1 ? '' : 's'}</span>
+        </summary>
+        <div class="onedrive-collapse-body stack">
         <p class="lead">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates.</p>
 
         ${isAdmin ? `
@@ -2071,7 +2199,8 @@
           </tbody>
         </table></div>
         <div id="rateMsg"></div>
-      </div>` : ''}`;
+        </div>
+      </details>` : ''}`;
 
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
@@ -2081,6 +2210,12 @@
         bodyEl: $('#defaultFieldsBody'),
         msgEl: $('#typeFieldMsg'),
         recordTypeKey: 'default',
+        appliesTo: 'matter',
+      });
+      await bindDefaultFieldsEditor({
+        bodyEl: $('#timeFieldsBody'),
+        msgEl: $('#timeFieldMsg'),
+        appliesTo: 'time_entry',
       });
     }
 

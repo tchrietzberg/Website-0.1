@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS record_types (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
--- Custom fields: global, record-type-based, or record-based (single matter)
+-- Custom fields: matter (type/record scoped) or time-entry (firm-wide)
 CREATE TABLE IF NOT EXISTS custom_fields (
   id INTEGER PRIMARY KEY,
   api_name TEXT NOT NULL,
@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS custom_fields (
   field_type TEXT NOT NULL
     CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
   options_json TEXT,
+  applies_to TEXT NOT NULL DEFAULT 'matter'
+    CHECK (applies_to IN ('matter','time_entry')),
   record_type_key TEXT REFERENCES record_types(key),
   matter_id INTEGER REFERENCES matters(id),
   required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
@@ -96,14 +98,18 @@ CREATE TABLE IF NOT EXISTS custom_fields (
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (
-    (matter_id IS NOT NULL AND record_type_key IS NULL)
-    OR (matter_id IS NULL)
+    (applies_to = 'time_entry' AND matter_id IS NULL AND record_type_key IS NULL)
+    OR (applies_to = 'matter' AND (
+      (matter_id IS NOT NULL AND record_type_key IS NULL)
+      OR (matter_id IS NULL)
+    ))
   )
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
   ON custom_fields(
     api_name,
+    IFNULL(applies_to, 'matter'),
     IFNULL(record_type_key, ''),
     IFNULL(matter_id, 0)
   );
@@ -230,6 +236,15 @@ CREATE TABLE IF NOT EXISTS time_entries (
 
 CREATE INDEX IF NOT EXISTS idx_time_entries_matter_date
   ON time_entries(matter_id, service_date, timekeeper_id);
+
+CREATE TABLE IF NOT EXISTS time_entry_custom_field_values (
+  time_entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+  field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+  value_text TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by INTEGER REFERENCES users(id),
+  PRIMARY KEY (time_entry_id, field_id)
+);
 
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY,

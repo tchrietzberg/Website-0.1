@@ -582,12 +582,18 @@ function createServer(db = openDb()) {
           recordTypeKey: url.searchParams.get('type'),
           matterId: url.searchParams.get('matterId')
             ? Number(url.searchParams.get('matterId')) : null,
+          appliesTo: url.searchParams.get('appliesTo') || 'matter',
         }));
       }
       if (req.method === 'POST' && pathname === '/api/custom-fields') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
         return json(res, 201, customFields.createCustomField(db, user, body));
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const fieldId = Number(pathname.split('/')[3]);
+        return json(res, 200, customFields.deactivateCustomField(db, user, fieldId));
       }
       if (req.method === 'PUT' && pathname.match(/^\/api\/layouts\/\d+\/items$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
@@ -740,6 +746,15 @@ function createServer(db = openDb()) {
 
       if (req.method === 'POST' && pathname === '/api/time-entries') {
         const body = await parseBody(req);
+        const customValues = {};
+        if (body.customValues && typeof body.customValues === 'object') {
+          Object.assign(customValues, body.customValues);
+        }
+        for (const [key, value] of Object.entries(body)) {
+          if (key.startsWith('cf_')) {
+            customValues[key.slice(3)] = value;
+          }
+        }
         const entry = timeSvc.createEntry(db, user, {
           matterId: Number(body.matterId),
           timekeeperId: Number(body.timekeeperId || user.id),
@@ -753,6 +768,7 @@ function createServer(db = openDb()) {
           utbmsActivity: body.utbmsActivity,
           roundIncrementMinutes: body.roundIncrementMinutes != null
             ? Number(body.roundIncrementMinutes) : undefined,
+          customValues,
         });
         return json(res, 201, entry);
       }
