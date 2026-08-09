@@ -612,7 +612,7 @@
     if (sidebarActions) sidebarActions.innerHTML = '';
   }
 
-  function renderLogin(mode = 'email') {
+  function renderLogin(mode = 'password') {
     enterLoginChrome();
     const panel = mode === 'forgot'
       ? `
@@ -624,10 +624,24 @@
           <button class="primary login-submit" id="resetBtn" type="button">Email reset link</button>
           <p class="login-hint"><button type="button" class="linkish" id="backToLogin">Back to sign in</button></p>
           <div id="loginErr"></div>`
-      : mode === 'password'
+      : mode === 'email'
         ? `
           <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Sign in with email and password</p>
+          <p class="login-lead">Enter your work email — we’ll send a sign-in link</p>
+          <label class="login-field">Work email
+            <input id="email" type="email" autocomplete="username"
+              placeholder="you@firm.example" value="avery@firm.example" />
+          </label>
+          <button class="primary login-submit" id="magicBtn" type="button">Email me a sign-in link</button>
+          <div class="login-alt-links">
+            <button type="button" class="linkish" id="passwordLink">Use password instead</button>
+            <button type="button" class="linkish" id="forgotLink">Forgot password</button>
+          </div>
+          <div id="loginErr"></div>
+          <p class="login-hint">Check your inbox for a one-time link.</p>`
+        : `
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Sign in with your work email and password</p>
           <label class="login-field">Work email
             <input id="email" type="email" autocomplete="username"
               placeholder="avery@firm.example" value="avery@firm.example" />
@@ -642,21 +656,7 @@
             <button type="button" class="linkish" id="forgotLink">Forgot password</button>
           </div>
           <div id="loginErr"></div>
-          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`
-        : `
-          <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Enter your work email — we’ll send a sign-in link</p>
-          <label class="login-field">Work email
-            <input id="email" type="email" autocomplete="username"
-              placeholder="you@firm.example" value="avery@firm.example" />
-          </label>
-          <button class="primary login-submit" id="magicBtn" type="button">Email me a sign-in link</button>
-          <div class="login-alt-links">
-            <button type="button" class="linkish" id="passwordLink">Use password instead</button>
-            <button type="button" class="linkish" id="forgotLink">Forgot password</button>
-          </div>
-          <div id="loginErr"></div>
-          <p class="login-hint">Check your inbox for a one-time link. No setup needed on your side.</p>`;
+          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
 
     main.innerHTML = `<div class="login-stage"><div class="login-panel">${panel}</div></div>`;
 
@@ -670,7 +670,7 @@
     };
 
     const back = $('#backToLogin');
-    if (back) back.onclick = () => renderLogin('email');
+    if (back) back.onclick = () => renderLogin('password');
     const forgot = $('#forgotLink');
     if (forgot) forgot.onclick = () => renderLogin('forgot');
     const magic = $('#magicLink');
