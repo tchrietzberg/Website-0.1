@@ -1,5 +1,6 @@
 const { audit, getSetting, setSetting } = require('../db');
 const customFields = require('./customFields');
+const permissions = require('./permissions');
 
 /** Always shown on contacts. */
 const CONTACT_CORE_FIELD = {
@@ -97,16 +98,29 @@ function getClientRow(db, id) {
   `).get(id);
 }
 
-function getClient(db, id) {
+function getClient(db, id, actor = null) {
   const client = getClientRow(db, id);
   if (!client) return null;
-  const fieldDefs = customFields.listClientFieldDefs(db).map((f) => {
-    const stored = db.prepare(`
-      SELECT value_text FROM client_custom_field_values
-      WHERE client_id = ? AND field_id = ?
-    `).get(id, f.fieldId);
-    return { ...f, value: stored?.value_text ?? null };
-  });
+  const role = actor?.role || null;
+  const pageAccess = role ? permissions.getProfileAccess(db, role) : 'read_write';
+  const readOnly = pageAccess === 'read_only';
+  const fieldConfig = getContactFieldConfig(db);
+  if (role) {
+    const visibleStd = (fieldConfig.enabledStandard || []).filter((f) =>
+      permissions.isFieldVisibleForProfile(db, 'contact', role, f.key)
+    );
+    fieldConfig.enabledStandard = visibleStd;
+    fieldConfig.enabledKeys = visibleStd.map((f) => f.key);
+  }
+  const fieldDefs = customFields.listClientFieldDefs(db)
+    .filter((f) => !role || permissions.isFieldVisibleForProfile(db, 'contact', role, `cf:${f.fieldId}`))
+    .map((f) => {
+      const stored = db.prepare(`
+        SELECT value_text FROM client_custom_field_values
+        WHERE client_id = ? AND field_id = ?
+      `).get(id, f.fieldId);
+      return { ...f, value: stored?.value_text ?? null, readonly: readOnly };
+    });
   const customValues = Object.fromEntries(
     fieldDefs.filter((f) => f.value != null).map((f) => [f.fieldId, f.value])
   );
@@ -114,11 +128,14 @@ function getClient(db, id) {
     client,
     fields: fieldDefs,
     customValues,
-    fieldConfig: getContactFieldConfig(db),
+    fieldConfig,
+    pageAccess,
+    canEdit: !readOnly,
   };
 }
 
 function createClient(db, actor, input = {}) {
+  permissions.assertCanWriteRecords(db, actor, 'Contacts');
   const name = String(input.name || '').trim();
   if (!name) throw new Error('name required');
   const email = input.email != null ? String(input.email).trim() || null : null;
@@ -151,10 +168,11 @@ function createClient(db, actor, input = {}) {
     entityId: id,
     detail: { name },
   });
-  return getClient(db, id);
+  return getClient(db, id, actor);
 }
 
 function updateClient(db, actor, id, patch = {}) {
+  permissions.assertCanWriteRecords(db, actor, 'Contacts');
   const current = getClientRow(db, id);
   if (!current) throw new Error('contact not found');
 
@@ -202,7 +220,7 @@ function updateClient(db, actor, id, patch = {}) {
     entityType: 'client',
     entityId: id,
   });
-  return getClient(db, id);
+  return getClient(db, id, actor);
 }
 
 module.exports = {

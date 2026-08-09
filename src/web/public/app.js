@@ -39,6 +39,18 @@
     return !!user && ['admin', 'billing_clerk', 'attorney', 'paralegal'].includes(user.role);
   }
 
+  function isAdminUser(user = state.user) {
+    return !!user && user.role === 'admin';
+  }
+
+  function profileCanWrite(settings = state.settings) {
+    const role = state.user?.role;
+    if (!role) return false;
+    if (role === 'admin') return true;
+    const mode = settings?.permissions?.profilePermissions?.[role];
+    return mode !== 'read_only';
+  }
+
   const $ = (sel, el = document) => el.querySelector(sel);
   const main = $('#main');
   const nav = $('#nav');
@@ -220,31 +232,9 @@
     return null;
   }
 
-  function fieldMgmtRows(fields, { editAttr = 'data-edit-matter-field' } = {}) {
-    const rows = (fields || []).filter((f) => !isBuiltInField(f));
-    if (!rows.length) return '<p class="muted">No custom fields yet</p>';
-    return rows.map((f) => {
-      const id = fieldIdFromMgmt(f);
-      const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
-      return `
-      <div class="field-mgmt-row">
-        <div>
-          <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}</span>
-        </div>
-        <div class="row-actions">
-          ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
-          ${f.removable
-            ? `<button type="button" data-del-matter-field="${escapeHtml(f.fieldKey)}">Delete</button>`
-            : ''}
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  function typeFieldMgmtRows(fields, {
-    delAttr = 'data-del-type-field',
-    editAttr = 'data-edit-type-field',
+  function fieldMgmtRows(fields, {
+    editAttr = 'data-edit-matter-field',
+    canDelete = isAdminUser(),
   } = {}) {
     const rows = (fields || []).filter((f) => !isBuiltInField(f));
     if (!rows.length) return '<p class="muted">No custom fields yet</p>';
@@ -259,9 +249,39 @@
         </div>
         <div class="row-actions">
           ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
-          ${f.removable
-            ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
-            : ''}
+          ${canDelete && id
+            ? `<button type="button" data-del-custom-field="${id}">Delete</button>`
+            : (canDelete && f.removable
+              ? `<button type="button" data-del-matter-field="${escapeHtml(f.fieldKey)}">Delete</button>`
+              : '')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function typeFieldMgmtRows(fields, {
+    delAttr = 'data-del-type-field',
+    editAttr = 'data-edit-type-field',
+    canDelete = isAdminUser(),
+  } = {}) {
+    const rows = (fields || []).filter((f) => !isBuiltInField(f));
+    if (!rows.length) return '<p class="muted">No custom fields yet</p>';
+    return rows.map((f) => {
+      const id = fieldIdFromMgmt(f);
+      const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
+      return `
+      <div class="field-mgmt-row">
+        <div>
+          <strong>${escapeHtml(f.label)}</strong>
+          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}</span>
+        </div>
+        <div class="row-actions">
+          ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
+          ${canDelete && id
+            ? `<button type="button" data-del-custom-field="${id}">Delete</button>`
+            : (canDelete && f.removable
+              ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
+              : '')}
         </div>
       </div>`;
     }).join('');
@@ -474,6 +494,7 @@
           ? (fields || []).find((f) => Number(f.id) === Number(editingId))
           : null;
         const formId = appliesTo === 'client' ? 'contactFieldForm' : 'timeFieldForm';
+        const canDeleteFields = isAdminUser();
         const rows = (fields || []).map((f) => `
           <div class="field-mgmt-row">
             <div>
@@ -482,7 +503,9 @@
             </div>
             <div class="row-actions">
               <button type="button" data-edit-firm-field="${f.id}">Edit</button>
-              <button type="button" data-del-firm-field="${f.id}">Remove</button>
+              ${canDeleteFields
+                ? `<button type="button" data-del-firm-field="${f.id}">Delete</button>`
+                : ''}
             </div>
           </div>`).join('') || `<p class="muted">No custom ${escapeHtml(scopeLabel)} fields yet.</p>`;
 
@@ -633,7 +656,7 @@
       bodyEl.innerHTML = `
         ${typePicker}
         <div class="field-mgmt-list">
-          ${typeFieldMgmtRows(typeLayout.fields)}
+          ${typeFieldMgmtRows(typeLayout.fields, { canDelete: isAdminUser() })}
         </div>
         ${editing
           ? `<h3 class="field-edit-title">Edit matter field</h3>${customFieldFormHtml({
@@ -675,7 +698,20 @@
               { method: 'DELETE' }
             );
             if (String(fieldKey) === `cf:${editingId}`) editingId = null;
-            setMsg('');
+            setMsg('<div class="ok-banner">Custom field deleted.</div>');
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      });
+      bodyEl.querySelectorAll('[data-del-custom-field]').forEach((btn) => {
+        btn.onclick = async () => {
+          try {
+            const id = Number(btn.dataset.delCustomField);
+            await api(`/api/custom-fields/${id}`, { method: 'DELETE' });
+            if (Number(editingId) === id) editingId = null;
+            setMsg('<div class="ok-banner">Custom field deleted.</div>');
             await render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -703,6 +739,186 @@
     };
 
     await render();
+  }
+
+  async function bindProfilePermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
+    if (!bodyEl || !permissions) return;
+    const profiles = permissions.profiles || [];
+    const current = { ...(permissions.profilePermissions || {}) };
+    const setMsg = (html) => {
+      if (msgEl) msgEl.innerHTML = html || '';
+    };
+    const render = () => {
+      bodyEl.innerHTML = `
+        <div class="table-wrap"><table class="perms-table">
+          <thead>
+            <tr><th>Profile</th><th>Read Only</th><th>Read/Write</th></tr>
+          </thead>
+          <tbody>
+            ${profiles.map((p) => {
+              const mode = current[p.key] || 'read_write';
+              const locked = p.key === 'admin';
+              return `
+              <tr>
+                <td><strong>${escapeHtml(p.label)}</strong></td>
+                <td>
+                  <label class="check-inline">
+                    <input type="checkbox" data-profile-mode="${escapeHtml(p.key)}" data-mode="read_only"
+                      ${mode === 'read_only' ? 'checked' : ''} ${locked ? 'disabled' : ''} />
+                  </label>
+                </td>
+                <td>
+                  <label class="check-inline">
+                    <input type="checkbox" data-profile-mode="${escapeHtml(p.key)}" data-mode="read_write"
+                      ${mode === 'read_write' ? 'checked' : ''} ${locked ? 'disabled' : ''} />
+                  </label>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+        <div class="row-actions">
+          <button class="primary" type="button" id="saveProfilePermissions">Save profile permissions</button>
+        </div>`;
+      bodyEl.querySelectorAll('[data-profile-mode]').forEach((box) => {
+        box.onchange = () => {
+          if (!box.checked) {
+            box.checked = true;
+            return;
+          }
+          const profile = box.dataset.profileMode;
+          const mode = box.dataset.mode;
+          current[profile] = mode;
+          bodyEl.querySelectorAll(`[data-profile-mode="${profile}"]`).forEach((other) => {
+            other.checked = other.dataset.mode === mode;
+          });
+        };
+      });
+      const saveBtn = $('#saveProfilePermissions', bodyEl);
+      if (saveBtn) {
+        saveBtn.onclick = async () => {
+          try {
+            const updated = await api('/api/settings', {
+              method: 'PATCH',
+              body: JSON.stringify({ profilePermissions: current }),
+            });
+            state.settings = updated;
+            Object.assign(current, updated.permissions?.profilePermissions || current);
+            setMsg('<div class="ok-banner">Profile permissions saved.</div>');
+            render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      }
+    };
+    render();
+  }
+
+  async function bindRecordPageLayoutEditor({ bodyEl, msgEl, permissions } = {}) {
+    if (!bodyEl || !permissions) return;
+    const profiles = permissions.profiles || [];
+    let page = state.settingsLayoutPage || 'matter';
+    const layout = {
+      matter: { ...(permissions.recordPageLayout?.matter || {}) },
+      contact: { ...(permissions.recordPageLayout?.contact || {}) },
+    };
+    const catalogs = {
+      matter: permissions.matterFields || [],
+      contact: permissions.contactFields || [],
+    };
+    const setMsg = (html) => {
+      if (msgEl) msgEl.innerHTML = html || '';
+    };
+    const isVisible = (pageKey, fieldKey, profileKey) => {
+      if (fieldKey === 'name' || fieldKey === 'std:name') return true;
+      const row = layout[pageKey]?.[fieldKey];
+      if (!row || row[profileKey] === undefined) return true;
+      return !!row[profileKey];
+    };
+    const render = () => {
+      const fields = catalogs[page] || [];
+      bodyEl.innerHTML = `
+        <div class="row-actions" style="flex-wrap:wrap;gap:.5rem">
+          <button type="button" data-layout-page="matter" class="${page === 'matter' ? 'primary' : ''}">Matter</button>
+          <button type="button" data-layout-page="contact" class="${page === 'contact' ? 'primary' : ''}">Contact</button>
+        </div>
+        <div class="table-wrap"><table class="perms-table layout-vis-table">
+          <thead>
+            <tr>
+              <th>Field</th>
+              ${profiles.map((p) => `<th>${escapeHtml(p.label)} visible</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${fields.map((f) => {
+              const locked = f.key === 'name' || f.key === 'std:name';
+              return `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(f.label)}</strong>
+                  <div class="muted">${escapeHtml(f.group || f.kind || '')}</div>
+                </td>
+                ${profiles.map((p) => `
+                  <td>
+                    <label class="check-inline">
+                      <input type="checkbox" data-vis-field="${escapeHtml(f.key)}" data-vis-profile="${escapeHtml(p.key)}"
+                        ${isVisible(page, f.key, p.key) ? 'checked' : ''} ${locked ? 'disabled' : ''} />
+                    </label>
+                  </td>`).join('')}
+              </tr>`;
+            }).join('') || '<tr><td class="muted" colspan="5">No fields yet</td></tr>'}
+          </tbody>
+        </table></div>
+        <div class="row-actions">
+          <button class="primary" type="button" id="saveRecordPageLayout">Save record page layout</button>
+        </div>`;
+      bodyEl.querySelectorAll('[data-layout-page]').forEach((btn) => {
+        btn.onclick = () => {
+          page = btn.dataset.layoutPage;
+          state.settingsLayoutPage = page;
+          setMsg('');
+          render();
+        };
+      });
+      bodyEl.querySelectorAll('[data-vis-field]').forEach((box) => {
+        box.onchange = () => {
+          const fieldKey = box.dataset.visField;
+          const profileKey = box.dataset.visProfile;
+          if (!layout[page][fieldKey]) layout[page][fieldKey] = {};
+          layout[page][fieldKey][profileKey] = !!box.checked;
+        };
+      });
+      const saveBtn = $('#saveRecordPageLayout', bodyEl);
+      if (saveBtn) {
+        saveBtn.onclick = async () => {
+          try {
+            // Ensure every catalog field has an explicit row for current toggles
+            for (const f of catalogs[page] || []) {
+              if (!layout[page][f.key]) layout[page][f.key] = {};
+              for (const p of profiles) {
+                if (layout[page][f.key][p.key] === undefined) {
+                  layout[page][f.key][p.key] = isVisible(page, f.key, p.key);
+                }
+              }
+            }
+            const updated = await api('/api/settings', {
+              method: 'PATCH',
+              body: JSON.stringify({ recordPageLayout: layout }),
+            });
+            state.settings = updated;
+            const next = updated.permissions?.recordPageLayout || layout;
+            layout.matter = { ...(next.matter || {}) };
+            layout.contact = { ...(next.contact || {}) };
+            setMsg('<div class="ok-banner">Record page layout saved.</div>');
+            render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      }
+    };
+    render();
   }
 
   function matterSearchText(m) {
@@ -1426,7 +1642,7 @@
     if (state.matterSearch.q) params.set('q', state.matterSearch.q);
 
     const hasQuery = !!state.matterSearch.q;
-    const canEdit = canCreateMatter(state.user);
+    const canEdit = canCreateMatter(state.user) && profileCanWrite();
 
     const showCreate = canEdit && state.showCreateMatter;
     const [hits, clients, allMatters, recordTypes] = await Promise.all([
@@ -1697,7 +1913,7 @@
   }
 
   async function renderContacts() {
-    const canEdit = canCreateMatter(state.user);
+    const canEdit = canCreateMatter(state.user) && profileCanWrite();
     const showCreate = canEdit && state.showCreateContact;
     const q = state.contactSearch.q || '';
     const [contacts, createFields, fieldConfig] = await Promise.all([
@@ -1863,8 +2079,8 @@
       state.view = 'contacts';
       return renderContacts();
     }
-    const canEdit = canCreateMatter(state.user);
     const page = await api(`/api/clients/${state.contactId}`);
+    const canEdit = canCreateMatter(state.user) && page.canEdit !== false && profileCanWrite();
     const c = page.client;
     const fields = page.fields || [];
     const enabledStd = (page.fieldConfig && page.fieldConfig.enabledStandard) || [];
@@ -2299,7 +2515,7 @@
     const matterTypeLabel = ((recordTypes || []).find((t) => t.key === m.matter_type) || {}).label
       || m.matter_type
       || 'Billable';
-    const canEdit = canCreateMatter(state.user);
+    const canEdit = canCreateMatter(state.user) && page.canEdit !== false && profileCanWrite();
     const matterReports = [
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
       ['lodestar-matter-summary', 'Lodestar Summary', 'Hours and amounts by timekeeper'],
@@ -2806,6 +3022,23 @@
           await renderMatterDetail();
         } catch (e) {
           $('#matterFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        }
+      };
+    });
+    main.querySelectorAll('[data-del-custom-field]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!isAdminUser()) return;
+        try {
+          const id = Number(btn.dataset.delCustomField);
+          await api(`/api/custom-fields/${id}`, { method: 'DELETE' });
+          if (Number(state.editingMatterFieldId) === id) state.editingMatterFieldId = null;
+          state.matterFieldPanelFlash = {
+            title: 'Custom field deleted',
+            detail: 'The field was removed for this firm.',
+          };
+          await renderMatterDetail();
+        } catch (e) {
+          $('#matterFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     });
@@ -3804,6 +4037,20 @@
         <div id="timeFieldMsg"></div>
       </div>` : ''}
 
+      ${isAdmin ? `
+      <div class="card stack" id="profilePermissionsCard">
+        <h2>Profile permissions</h2>
+        <p class="hint">Choose whether each profile can edit records (Read/Write) or only view them (Read Only). Admin stays Read/Write.</p>
+        <div id="profilePermissionsBody" class="stack"></div>
+        <div id="profilePermissionsMsg"></div>
+      </div>
+      <div class="card stack" id="recordPageLayoutCard">
+        <h2>Record page layout</h2>
+        <p class="hint">Control which fields are visible on matter and contact pages for each profile. Name is always visible.</p>
+        <div id="recordPageLayoutBody" class="stack"></div>
+        <div id="recordPageLayoutMsg"></div>
+      </div>` : ''}
+
       <form id="settingsForm" class="card stack">
         <h2>Time and Billing</h2>
         <p class="hint">Duration display and rounding for new time entries.</p>
@@ -4091,6 +4338,19 @@
         bodyEl: $('#timeFieldsBody'),
         msgEl: $('#timeFieldMsg'),
         appliesTo: 'time_entry',
+      });
+    }
+
+    if (isAdmin && settings.permissions) {
+      await bindProfilePermissionsEditor({
+        bodyEl: $('#profilePermissionsBody'),
+        msgEl: $('#profilePermissionsMsg'),
+        permissions: settings.permissions,
+      });
+      await bindRecordPageLayoutEditor({
+        bodyEl: $('#recordPageLayoutBody'),
+        msgEl: $('#recordPageLayoutMsg'),
+        permissions: settings.permissions,
       });
     }
 

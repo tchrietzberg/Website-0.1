@@ -785,7 +785,8 @@ function syncTypeCustomFieldsToMatterLayout(db, matter, layout) {
   }
 }
 
-function getMatterPage(db, matterId) {
+function getMatterPage(db, matterId, actor = null) {
+  const permissions = require('./permissions');
   const matter = db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
@@ -806,11 +807,17 @@ function getMatterPage(db, matterId) {
     'SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?'
   ).all(matterId);
   const valueMap = Object.fromEntries(values.map((v) => [v.field_id, v.value_text]));
+  const role = actor?.role || null;
+  const pageAccess = role ? permissions.getProfileAccess(db, role) : 'read_write';
+  const readOnly = pageAccess === 'read_only';
 
   const sections = {};
   for (const item of items) {
     const def = defs.get(item.field_key);
     if (!def) continue;
+    if (role && !permissions.isFieldVisibleForProfile(db, 'matter', role, item.field_key)) {
+      continue;
+    }
     const section = item.section || 'details';
     if (!sections[section]) sections[section] = [];
     let value = null;
@@ -834,6 +841,7 @@ function getMatterPage(db, matterId) {
       ...def,
       width: item.width || def.width || 'half',
       value,
+      readonly: !!(def.readonly || readOnly),
     });
   }
 
@@ -853,6 +861,8 @@ function getMatterPage(db, matterId) {
     typeLayout: getTypeLayout(db, matter.matter_type),
     onedrive: onedrive.getMatterOneDrive(db, matterId),
     onedriveSuggestedName: onedrive.suggestFolderName(matter),
+    pageAccess,
+    canEdit: !readOnly,
   };
 }
 

@@ -128,6 +128,7 @@ function readSettings(db) {
   const msAuth = require('../services/msAuth');
   const mail = require('../mail');
   const clientsSvc = require('../services/clients');
+  const permissions = require('../services/permissions');
   return {
     roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
     roundMode: getSetting(db, 'round_mode', 'up'),
@@ -139,6 +140,7 @@ function readSettings(db) {
     microsoft: msAuth.connectionStatus(db),
     email: mail.mailStatus(db),
     contactFieldConfig: clientsSvc.getContactFieldConfig(db),
+    permissions: permissions.getPermissionsSettings(db),
   };
 }
 
@@ -449,7 +451,7 @@ function createServer(db = openDb()) {
       if (req.method === 'GET' && pathname.match(/^\/api\/clients\/\d+$/)) {
         const clientsSvc = require('../services/clients');
         const id = Number(pathname.split('/')[3]);
-        const page = clientsSvc.getClient(db, id);
+        const page = clientsSvc.getClient(db, id, user);
         if (!page) return json(res, 404, { error: 'not found' });
         return json(res, 200, page);
       }
@@ -493,20 +495,28 @@ function createServer(db = openDb()) {
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/matters\/\d+$/)) {
         const id = Number(pathname.split('/')[3]);
-        const page = matterSvc.getMatter(db, id);
+        const page = matterSvc.getMatter(db, id, user);
         if (!page) return json(res, 404, { error: 'not found' });
         return json(res, 200, page);
       }
       if (req.method === 'POST' && pathname === '/api/matters') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
-        const body = await parseBody(req);
-        return json(res, 201, matterSvc.createMatter(db, user, body));
+        try {
+          const body = await parseBody(req);
+          return json(res, 201, matterSvc.createMatter(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/matters\/\d+$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
-        const id = Number(pathname.split('/')[3]);
-        const body = await parseBody(req);
-        return json(res, 200, matterSvc.updateMatter(db, user, id, body));
+        try {
+          const id = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          return json(res, 200, matterSvc.updateMatter(db, user, id, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/custom-fields$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
@@ -613,7 +623,7 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.addStandardFieldToType(db, user, key, body.fieldKey));
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/record-types\/[^/]+\/layout-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!requireRoles(user, res, ['admin'])) return;
         const key = decodeURIComponent(pathname.split('/')[3]);
         const fieldKey = url.searchParams.get('fieldKey');
         if (!fieldKey) return json(res, 400, { error: 'fieldKey required' });
@@ -647,7 +657,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!requireRoles(user, res, ['admin'])) return;
         const fieldId = Number(pathname.split('/')[3]);
         return json(res, 200, customFields.deactivateCustomField(db, user, fieldId));
       }
@@ -786,6 +796,16 @@ function createServer(db = openDb()) {
         if (body.contactStandardFields !== undefined) {
           const clientsSvc = require('../services/clients');
           clientsSvc.setEnabledContactStandardKeys(db, user, body.contactStandardFields);
+        }
+        if (body.profilePermissions !== undefined || body.recordPageLayout !== undefined) {
+          if (!requireRoles(user, res, ['admin'])) return;
+          const permissions = require('../services/permissions');
+          if (body.profilePermissions !== undefined) {
+            permissions.setProfilePermissions(db, user, body.profilePermissions);
+          }
+          if (body.recordPageLayout !== undefined) {
+            permissions.setRecordPageLayout(db, user, body.recordPageLayout);
+          }
         }
         return json(res, 200, readSettings(db));
       }

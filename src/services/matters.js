@@ -1,6 +1,7 @@
 const { allocateNumber, audit } = require('../db');
 const customFields = require('./customFields');
 const matterIndex = require('./matterIndex');
+const permissions = require('./permissions');
 
 const NAME_SEP = ' - ';
 
@@ -117,6 +118,7 @@ function writeMatterName(db, actor, id, oldName, nextName) {
 }
 
 function createMatter(db, actor, input = {}) {
+  permissions.assertCanWriteRecords(db, actor, 'Matters');
   const name = String(input.name || '').trim();
   if (!name) throw new Error('name required');
 
@@ -191,10 +193,11 @@ function createMatter(db, actor, input = {}) {
     entityId: id,
     detail: { number },
   });
-  return getMatter(db, id);
+  return getMatter(db, id, actor);
 }
 
 function updateMatter(db, actor, id, patch) {
+  permissions.assertCanWriteRecords(db, actor, 'Matters');
   const current = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
   if (!current) throw new Error('matter not found');
 
@@ -273,7 +276,7 @@ function updateMatter(db, actor, id, patch) {
   matterIndex.indexMatter(db, id);
 
   audit(db, { actorId: actor.id, action: 'matter.update', entityType: 'matter', entityId: id, detail: patch });
-  return getMatter(db, id);
+  return getMatter(db, id, actor);
 }
 
 /** All matters (dropdowns / internal). */
@@ -302,8 +305,8 @@ function searchMatters(db, filters = {}) {
   return matterIndex.searchMatters(db, filters);
 }
 
-function getMatter(db, id) {
-  return customFields.getMatterPage(db, id);
+function getMatter(db, id, actor = null) {
+  return customFields.getMatterPage(db, id, actor);
 }
 
 function listClients(db) {

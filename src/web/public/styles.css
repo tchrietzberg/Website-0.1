@@ -526,6 +526,19 @@ body {
 .matter-type-picker {
   max-width: 18rem;
 }
+.perms-table th,
+.perms-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+.perms-table th:first-child,
+.perms-table td:first-child {
+  text-align: left;
+}
+.layout-vis-table th {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
 .create-matter-fields-panel,
 .post-create-fields-panel {
   margin-top: 0.25rem;
