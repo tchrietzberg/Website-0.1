@@ -1865,6 +1865,58 @@
         <div id="settingsMsg"></div>
       </form>
 
+      ${isAdmin ? `
+      <div class="card stack" id="emailSettingsCard">
+        <h2>Email</h2>
+        <p class="lead">Required to deliver invites, password resets, and sign-in links.</p>
+        ${settings.email?.configured
+          ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email configured.')}</div>`
+          : `<div class="error">${escapeHtml(settings.email?.message || 'Email is not configured — messages are not sent to users.')}</div>`}
+        <form id="emailConfigForm" class="grid two">
+          <label>Provider
+            <select name="provider" id="emailProvider">
+              <option value="resend" ${settings.email?.provider === 'resend' ? 'selected' : ''}>Resend (API)</option>
+              <option value="smtp" ${settings.email?.provider === 'smtp' || !settings.email?.configured ? 'selected' : ''}>SMTP</option>
+            </select>
+          </label>
+          <label>From address
+            <input name="smtpFrom" type="email" required
+              value="${escapeHtml(settings.email?.from || '')}"
+              placeholder="billing@yourfirm.com" />
+          </label>
+          <div class="span-all" id="emailResendFields" ${settings.email?.provider === 'smtp' ? 'hidden' : ''}>
+            <label class="span-all">Resend API key
+              <input name="resendApiKey" type="password" autocomplete="off"
+                placeholder="${settings.email?.provider === 'resend' && settings.email?.apiKeyMasked ? 'Saved — enter a new key to replace' : 're_xxxxxxxx'}" />
+            </label>
+            <p class="hint">Create a key at <a href="https://resend.com" target="_blank" rel="noopener noreferrer">resend.com</a>. From address must be a verified domain/sender.</p>
+          </div>
+          <div class="span-all grid two" id="emailSmtpFields" ${settings.email?.provider === 'resend' ? 'hidden' : ''}>
+            <label>SMTP host
+              <input name="smtpHost" value="${escapeHtml(settings.email?.host || '')}" placeholder="smtp.gmail.com" />
+            </label>
+            <label>Port
+              <input name="smtpPort" type="number" value="${escapeHtml(String(settings.email?.port || 587))}" />
+            </label>
+            <label>Username
+              <input name="smtpUser" value="${escapeHtml(settings.email?.user || '')}" autocomplete="off" />
+            </label>
+            <label>Password
+              <input name="smtpPass" type="password" autocomplete="off"
+                placeholder="${settings.email?.passConfigured ? 'Saved — enter a new password to replace' : 'App password / SMTP password'}" />
+            </label>
+            <label class="span-all"><input type="checkbox" name="smtpSecure" ${settings.email?.secure ? 'checked' : ''} /> Use TLS from connect (port 465)</label>
+            <p class="hint span-all">Gmail: smtp.gmail.com:587 + an app password. Or use SendGrid / SES / Mailgun SMTP.</p>
+          </div>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Save email settings</button>
+            <button type="button" id="emailTestBtn">Send test email</button>
+          </div>
+        </form>
+        <div id="emailSettingsMsg"></div>
+        <p class="hint">Environment variables <code>RESEND_API_KEY</code> / <code>SMTP_*</code> override these settings when set.</p>
+      </div>` : ''}
+
       ${(isAdmin || state.user.role === 'billing_clerk') ? `
       <div class="card stack" id="onedriveSettingsCard">
         <h2>OneDrive / SharePoint</h2>
@@ -2179,6 +2231,72 @@
       window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}#settings`);
     }
 
+    const emailProvider = $('#emailProvider');
+    const syncEmailProvider = () => {
+      const v = emailProvider?.value || 'smtp';
+      const resend = $('#emailResendFields');
+      const smtp = $('#emailSmtpFields');
+      if (resend) resend.hidden = v !== 'resend';
+      if (smtp) smtp.hidden = v !== 'smtp';
+    };
+    if (emailProvider) {
+      emailProvider.onchange = syncEmailProvider;
+      syncEmailProvider();
+    }
+
+    const emailForm = $('#emailConfigForm');
+    if (emailForm) {
+      emailForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(emailForm);
+        const provider = String(fd.get('provider') || 'smtp');
+        const emailConfig = {
+          provider,
+          smtpFrom: fd.get('smtpFrom'),
+          clearSmtp: provider === 'resend',
+          clearResend: provider === 'smtp',
+        };
+        if (provider === 'resend') {
+          emailConfig.resendApiKey = fd.get('resendApiKey');
+        } else {
+          emailConfig.smtpHost = fd.get('smtpHost');
+          emailConfig.smtpPort = fd.get('smtpPort');
+          emailConfig.smtpUser = fd.get('smtpUser');
+          emailConfig.smtpPass = fd.get('smtpPass');
+          emailConfig.smtpSecure = fd.get('smtpSecure') === 'on';
+        }
+        try {
+          await api('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ emailConfig }),
+          });
+          await renderSettings();
+          const msg = $('#emailSettingsMsg');
+          if (msg) msg.innerHTML = '<div class="ok-banner">Email settings saved.</div>';
+        } catch (e) {
+          $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    const emailTestBtn = $('#emailTestBtn');
+    if (emailTestBtn) {
+      emailTestBtn.onclick = async () => {
+        try {
+          emailTestBtn.disabled = true;
+          const result = await api('/api/settings/email/test', {
+            method: 'POST',
+            body: JSON.stringify({ to: state.user.email }),
+          });
+          $('#emailSettingsMsg').innerHTML = `<div class="ok-banner">Test email sent (${escapeHtml(result.delivery?.mode || 'ok')}).</div>`;
+        } catch (e) {
+          $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        } finally {
+          emailTestBtn.disabled = false;
+        }
+      };
+    }
+
     const tkForm = $('#tkForm');
     if (tkForm) {
       tkForm.onsubmit = async (ev) => {
@@ -2197,16 +2315,17 @@
               rateEffectiveDate: fd.get('rateEffectiveDate'),
             }),
           });
-          const mode = invited.delivery?.mode === 'smtp'
+          const delivered = invited.delivery?.ok === true;
+          const mode = delivered
             ? 'Invite email sent.'
-            : 'Invite created. Configure SMTP for delivery, or use the link below.';
+            : (invited.warning || 'Invite created, but email was not delivered. Configure Email in Settings, or use the link below.');
           await refreshRefs();
           await renderSettings();
           const msg = $('#tkMsg');
           if (msg) {
             const link = invited.devLink
               || (invited.devToken ? `${window.location.origin}/?auth_token=${encodeURIComponent(invited.devToken)}` : '');
-            msg.innerHTML = `<div class="ok-banner">${escapeHtml(mode)}${
+            msg.innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
               link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a></div>` : ''
             }</div>`;
           }
@@ -2224,13 +2343,20 @@
             method: 'POST',
             body: '{}',
           });
-          const mode = result.delivery?.mode === 'smtp'
+          const delivered = result.delivery?.ok === true;
+          const mode = delivered
             ? 'Password reset email sent.'
-            : 'Reset link created (email logged locally — configure SMTP for delivery).';
-          $('#rateMsg').innerHTML = `<div class="ok-banner">${escapeHtml(mode)}</div>`;
+            : (result.warning || 'Reset link created, but email was not delivered. Configure Email in Settings.');
+          const link = result.devLink
+            || (result.devToken ? `${window.location.origin}/?auth_token=${encodeURIComponent(result.devToken)}` : '');
+          $('#rateMsg').innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
+            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a></div>` : ''
+          }</div>`;
         } catch (e) {
           btn.disabled = false;
           $('#rateMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        } finally {
+          btn.disabled = false;
         }
       };
     });

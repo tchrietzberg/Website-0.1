@@ -125,6 +125,7 @@ function serveStatic(req, res) {
 function readSettings(db) {
   const onedrive = require('../services/onedrive');
   const msAuth = require('../services/msAuth');
+  const mail = require('../mail');
   return {
     roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
     roundMode: getSetting(db, 'round_mode', 'up'),
@@ -134,6 +135,7 @@ function readSettings(db) {
     roundingModes: ROUNDING_MODES,
     msGraphConfigured: onedrive.graphConfigured(db),
     microsoft: msAuth.connectionStatus(db),
+    email: mail.mailStatus(db),
   };
 }
 
@@ -622,7 +624,31 @@ function createServer(db = openDb()) {
             clientSecret: body.msClientSecret,
           });
         }
+        if (body.emailConfig) {
+          if (!requireRoles(user, res, ['admin'])) return;
+          const mail = require('../mail');
+          mail.saveMailConfig(db, user, body.emailConfig);
+        }
         return json(res, 200, readSettings(db));
+      }
+
+      if (req.method === 'POST' && pathname === '/api/settings/email/test') {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const mail = require('../mail');
+        const body = await parseBody(req);
+        const to = String(body.to || user.email || '').trim().toLowerCase();
+        try {
+          const delivery = await mail.sendMail({
+            db,
+            to,
+            subject: 'Firm Billing test email',
+            text: 'This is a test email from Firm Billing. Email delivery is working.',
+            allowLog: false,
+          });
+          return json(res, 200, { ok: true, delivery });
+        } catch (e) {
+          return json(res, 400, { error: e.code || 'mail_error', message: e.message });
+        }
       }
 
       if (req.method === 'POST' && pathname === '/api/onedrive/connect/start') {

@@ -200,15 +200,20 @@ async function sendAuthEmail(db, req, {
     ].join('\n');
   }
 
-  const delivery = await mail.sendMail({ to: user.email, subject, text });
+  const delivery = await mail.sendMail({ to: user.email, subject, text, db });
   audit(db, {
     actorId,
     action: `auth.email_${purpose}`,
     entityType: 'user',
     entityId: user.id,
-    detail: { email: user.email, mode: delivery.mode },
+    detail: { email: user.email, mode: delivery.mode, ok: delivery.ok },
   });
-  return { delivery, link: isProduction() ? undefined : link };
+  // Always return a usable link to the admin when mail did not deliver.
+  const exposeLink = !delivery.ok || !isProduction();
+  return {
+    delivery,
+    link: exposeLink ? link : undefined,
+  };
 }
 
 function inviteUser(db, actor, input) {
@@ -246,16 +251,30 @@ async function inviteUserAndEmail(db, actor, req, input) {
     purpose: 'invite',
     createdBy: actor.id,
   });
-  const mailed = await sendAuthEmail(db, req, {
-    user,
-    purpose: 'invite',
-    rawToken: token.raw,
-    actorId: actor.id,
-  });
+  let mailed;
+  try {
+    mailed = await sendAuthEmail(db, req, {
+      user,
+      purpose: 'invite',
+      rawToken: token.raw,
+      actorId: actor.id,
+    });
+  } catch (e) {
+    // User + token exist; surface send failure with a recoverable link.
+    return {
+      user,
+      delivery: { ok: false, mode: 'error', message: e.message },
+      devToken: token.raw,
+      devLink: authLink(req, token.raw),
+      warning: e.message,
+    };
+  }
   return {
     user,
     delivery: mailed.delivery,
-    ...(isProduction() ? {} : { devToken: token.raw, devLink: mailed.link }),
+    warning: mailed.delivery?.ok ? undefined : (mailed.delivery?.message || 'Email was not delivered'),
+    devToken: mailed.delivery?.ok && isProduction() ? undefined : token.raw,
+    devLink: mailed.link || authLink(req, token.raw),
   };
 }
 
@@ -280,12 +299,27 @@ async function requestPasswordReset(db, req, emailInput) {
   }
 
   const token = createAuthToken(db, { userId: user.id, purpose: 'reset' });
-  const mailed = await sendAuthEmail(db, req, {
-    user,
-    purpose: 'reset',
-    rawToken: token.raw,
-    actorId: null,
-  });
+  let mailed;
+  try {
+    mailed = await sendAuthEmail(db, req, {
+      user,
+      purpose: 'reset',
+      rawToken: token.raw,
+      actorId: null,
+    });
+  } catch (e) {
+    audit(db, {
+      actorId: null,
+      action: 'auth.reset_request',
+      entityType: 'user',
+      entityId: user.id,
+      detail: { email, found: true, error: e.message },
+    });
+    return {
+      ...generic,
+      ...(isProduction() ? {} : { devToken: token.raw, devLink: authLink(req, token.raw) }),
+    };
+  }
   audit(db, {
     actorId: null,
     action: 'auth.reset_request',
@@ -310,17 +344,29 @@ async function adminSendPasswordReset(db, actor, req, userId) {
     purpose: 'reset',
     createdBy: actor.id,
   });
-  const mailed = await sendAuthEmail(db, req, {
-    user,
-    purpose: 'reset',
-    rawToken: token.raw,
-    actorId: actor.id,
-  });
-  return {
-    ok: true,
-    delivery: mailed.delivery,
-    ...(isProduction() ? {} : { devToken: token.raw, devLink: mailed.link }),
-  };
+  try {
+    const mailed = await sendAuthEmail(db, req, {
+      user,
+      purpose: 'reset',
+      rawToken: token.raw,
+      actorId: actor.id,
+    });
+    return {
+      ok: true,
+      delivery: mailed.delivery,
+      warning: mailed.delivery?.ok ? undefined : (mailed.delivery?.message || 'Email was not delivered'),
+      devToken: mailed.delivery?.ok && isProduction() ? undefined : token.raw,
+      devLink: mailed.link || authLink(req, token.raw),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      delivery: { ok: false, mode: 'error', message: e.message },
+      warning: e.message,
+      devToken: token.raw,
+      devLink: authLink(req, token.raw),
+    };
+  }
 }
 
 async function requestMagicLogin(db, req, emailInput) {
@@ -344,12 +390,27 @@ async function requestMagicLogin(db, req, emailInput) {
   }
 
   const token = createAuthToken(db, { userId: user.id, purpose: 'magic_login' });
-  const mailed = await sendAuthEmail(db, req, {
-    user,
-    purpose: 'magic_login',
-    rawToken: token.raw,
-    actorId: null,
-  });
+  let mailed;
+  try {
+    mailed = await sendAuthEmail(db, req, {
+      user,
+      purpose: 'magic_login',
+      rawToken: token.raw,
+      actorId: null,
+    });
+  } catch (e) {
+    audit(db, {
+      actorId: null,
+      action: 'auth.magic_request',
+      entityType: 'user',
+      entityId: user.id,
+      detail: { email, found: true, error: e.message },
+    });
+    return {
+      ...generic,
+      ...(isProduction() ? {} : { devToken: token.raw, devLink: authLink(req, token.raw) }),
+    };
+  }
   audit(db, {
     actorId: null,
     action: 'auth.magic_request',

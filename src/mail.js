@@ -2,17 +2,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
 const tls = require('node:tls');
+const { getSetting, setSetting, audit } = require('./db');
 
-/** In-memory outbox when SMTP is not configured (tests / local dev). */
+/** In-memory outbox when SMTP/Resend is not configured (tests / local dev). */
 const outbox = [];
-
-function smtpConfigured() {
-  return Boolean(String(process.env.SMTP_HOST || '').trim());
-}
-
-function mailFrom() {
-  return String(process.env.SMTP_FROM || process.env.MAIL_FROM || 'noreply@firm.example').trim();
-}
 
 function clearOutbox() {
   outbox.length = 0;
@@ -35,6 +28,159 @@ function appendLogFile(entry) {
   } catch {
     // best-effort logging only
   }
+}
+
+function maskSecret(value) {
+  const s = String(value || '');
+  if (!s) return '';
+  if (s.length <= 6) return '••••';
+  return `${s.slice(0, 2)}••••${s.slice(-2)}`;
+}
+
+/** Resolve delivery config: env wins, then firm_settings. */
+function resolveMailConfig(db = null) {
+  const envResend = String(process.env.RESEND_API_KEY || '').trim();
+  const envFrom = String(process.env.SMTP_FROM || process.env.MAIL_FROM || '').trim();
+  if (envResend) {
+    return {
+      provider: 'resend',
+      source: 'env',
+      apiKey: envResend,
+      from: envFrom || 'noreply@firm.example',
+      configured: true,
+    };
+  }
+
+  const envHost = String(process.env.SMTP_HOST || '').trim();
+  if (envHost) {
+    const port = Number(process.env.SMTP_PORT || 587);
+    return {
+      provider: 'smtp',
+      source: 'env',
+      host: envHost,
+      port,
+      secure: process.env.SMTP_SECURE === '1' || port === 465,
+      user: String(process.env.SMTP_USER || '').trim() || null,
+      pass: String(process.env.SMTP_PASS || ''),
+      from: envFrom || 'noreply@firm.example',
+      configured: true,
+    };
+  }
+
+  if (db) {
+    const resendKey = getSetting(db, 'resend_api_key', '');
+    const from = getSetting(db, 'smtp_from', '') || 'noreply@firm.example';
+    if (resendKey) {
+      return {
+        provider: 'resend',
+        source: 'settings',
+        apiKey: resendKey,
+        from,
+        configured: true,
+      };
+    }
+    const host = getSetting(db, 'smtp_host', '');
+    if (host) {
+      const port = Number(getSetting(db, 'smtp_port', '587') || 587);
+      const secureSetting = getSetting(db, 'smtp_secure', '');
+      return {
+        provider: 'smtp',
+        source: 'settings',
+        host,
+        port,
+        secure: secureSetting === '1' || port === 465,
+        user: getSetting(db, 'smtp_user', '') || null,
+        pass: getSetting(db, 'smtp_pass', '') || '',
+        from,
+        configured: true,
+      };
+    }
+  }
+
+  return {
+    provider: 'log',
+    source: 'none',
+    from: envFrom || 'noreply@firm.example',
+    configured: false,
+  };
+}
+
+function mailStatus(db) {
+  const cfg = resolveMailConfig(db);
+  if (!cfg.configured) {
+    return {
+      configured: false,
+      provider: 'log',
+      source: 'none',
+      from: cfg.from,
+      message: 'Email is not configured — messages are logged locally only.',
+    };
+  }
+  if (cfg.provider === 'resend') {
+    return {
+      configured: true,
+      provider: 'resend',
+      source: cfg.source,
+      from: cfg.from,
+      apiKeyMasked: maskSecret(cfg.apiKey),
+      message: `Sending via Resend (${cfg.source}).`,
+    };
+  }
+  return {
+    configured: true,
+    provider: 'smtp',
+    source: cfg.source,
+    from: cfg.from,
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    user: cfg.user || '',
+    passConfigured: Boolean(cfg.pass),
+    message: `Sending via SMTP ${cfg.host}:${cfg.port} (${cfg.source}).`,
+  };
+}
+
+function saveMailConfig(db, actor, input = {}) {
+  const provider = String(input.provider || 'smtp').trim();
+  if (provider === 'resend') {
+    if (input.resendApiKey != null && String(input.resendApiKey).trim()) {
+      setSetting(db, 'resend_api_key', String(input.resendApiKey).trim());
+    }
+    if (input.smtpFrom != null) setSetting(db, 'smtp_from', String(input.smtpFrom || '').trim());
+    // Clear SMTP host so Resend wins when reading settings
+    if (input.clearSmtp) {
+      setSetting(db, 'smtp_host', '');
+      setSetting(db, 'smtp_user', '');
+      setSetting(db, 'smtp_pass', '');
+    }
+  } else {
+    if (input.smtpHost != null) setSetting(db, 'smtp_host', String(input.smtpHost || '').trim());
+    if (input.smtpPort != null) setSetting(db, 'smtp_port', String(Number(input.smtpPort) || 587));
+    if (input.smtpSecure != null) setSetting(db, 'smtp_secure', input.smtpSecure ? '1' : '0');
+    if (input.smtpUser != null) setSetting(db, 'smtp_user', String(input.smtpUser || '').trim());
+    if (input.smtpPass != null && String(input.smtpPass).trim()) {
+      setSetting(db, 'smtp_pass', String(input.smtpPass));
+    }
+    if (input.smtpFrom != null) setSetting(db, 'smtp_from', String(input.smtpFrom || '').trim());
+    if (input.clearResend) setSetting(db, 'resend_api_key', '');
+  }
+
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'settings.mail_saved',
+    entityType: 'settings',
+    entityId: null,
+    detail: { provider },
+  });
+  return mailStatus(db);
+}
+
+function smtpConfigured(db = null) {
+  return resolveMailConfig(db).configured;
+}
+
+function mailFrom(db = null) {
+  return resolveMailConfig(db).from;
 }
 
 class SmtpSession {
@@ -70,7 +216,6 @@ class SmtpSession {
         this.buf += chunk.toString('utf8');
         continue;
       }
-      // Collect full multi-line reply
       let end = 0;
       let complete = false;
       while (end < this.buf.length) {
@@ -179,48 +324,100 @@ async function smtpSend({ host, port, secure, user, pass, from, to, subject, tex
   }
 }
 
+async function resendSend({ apiKey, from, to, subject, text }) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject,
+      text,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = body.message || body.error || res.statusText || 'Resend request failed';
+    throw new Error(msg);
+  }
+  return body;
+}
+
 /**
- * Send a plain-text email. Without SMTP_HOST, messages go to the in-memory outbox
- * and data/mail-outbox.jsonl.
+ * Send a plain-text email.
+ * Providers: Resend API key, SMTP, or local log (dev/tests).
+ * Pass `db` so firm_settings SMTP/Resend config is used when env is unset.
  */
-async function sendMail({ to, subject, text }) {
+async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) {
+  const cfg = resolveMailConfig(db);
   const msg = {
     to: String(to || '').trim().toLowerCase(),
-    from: mailFrom(),
+    from: cfg.from,
     subject: String(subject || '').trim(),
     text: String(text || ''),
   };
   if (!msg.to || !msg.to.includes('@')) throw new Error('valid recipient email required');
   if (!msg.subject) throw new Error('subject required');
 
-  if (!smtpConfigured()) {
+  if (!cfg.configured) {
+    if (!allowLog) {
+      const err = new Error('Email is not configured. Add Resend or SMTP under Settings → Email.');
+      err.code = 'MAIL_NOT_CONFIGURED';
+      throw err;
+    }
     outbox.push(msg);
     appendLogFile(msg);
     if (process.env.MAIL_LOG !== '0') {
       console.info(`[mail:log] to=${msg.to} subject=${msg.subject}`);
     }
-    return { ok: true, mode: 'log' };
+    return {
+      ok: false,
+      mode: 'log',
+      message: 'Email not configured — message logged locally only.',
+    };
   }
 
-  const port = Number(process.env.SMTP_PORT || 587);
-  await smtpSend({
-    host: String(process.env.SMTP_HOST).trim(),
-    port,
-    secure: process.env.SMTP_SECURE === '1' || port === 465,
-    user: String(process.env.SMTP_USER || '').trim() || null,
-    pass: String(process.env.SMTP_PASS || ''),
-    from: msg.from,
-    to: msg.to,
-    subject: msg.subject,
-    text: msg.text,
-  });
-  return { ok: true, mode: 'smtp' };
+  try {
+    if (cfg.provider === 'resend') {
+      await resendSend({
+        apiKey: cfg.apiKey,
+        from: msg.from,
+        to: msg.to,
+        subject: msg.subject,
+        text: msg.text,
+      });
+      return { ok: true, mode: 'resend', source: cfg.source };
+    }
+    await smtpSend({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      user: cfg.user,
+      pass: cfg.pass,
+      from: msg.from,
+      to: msg.to,
+      subject: msg.subject,
+      text: msg.text,
+    });
+    return { ok: true, mode: 'smtp', source: cfg.source };
+  } catch (e) {
+    const err = new Error(`Email send failed: ${e.message}`);
+    err.code = 'MAIL_SEND_FAILED';
+    err.cause = e;
+    throw err;
+  }
 }
 
 module.exports = {
   sendMail,
   smtpConfigured,
   mailFrom,
+  mailStatus,
+  saveMailConfig,
+  resolveMailConfig,
   getOutbox,
   clearOutbox,
 };
