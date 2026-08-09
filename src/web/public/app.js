@@ -20,6 +20,8 @@
     settingsMatterRecordTypeKey: 'billable',
     settingsContactRecordTypeKey: 'person',
     settingsRoleKey: 'attorney',
+    usersFlash: null,
+    focusAddUser: false,
     focusTimeEntry: false,
     timeFlash: null,
     matterTimeFlash: null,
@@ -71,6 +73,10 @@
     state._apiCache[key] = { at: Date.now(), data };
   }
 
+  function canManageUsers(user = state.user) {
+    return !!user && ['admin', 'billing_clerk'].includes(user.role);
+  }
+
   function shellSignature() {
     return [
       state.user?.id,
@@ -82,6 +88,7 @@
       roleCanModify('matter') ? 1 : 0,
       roleCanModify('contact') ? 1 : 0,
       roleCanModify('time') ? 1 : 0,
+      canManageUsers() ? 1 : 0,
     ].join('|');
   }
 
@@ -141,13 +148,12 @@
       void api('/api/firm-reports');
     } else if (view === 'dashboard') {
       void api('/api/dashboard');
+    } else if (view === 'users') {
+      if (canManageUsers()) void api('/api/timekeepers');
     } else if (view === 'settings') {
       void api('/api/settings');
       void api('/api/record-types');
       void api('/api/record-types?appliesTo=client');
-      if (['admin', 'billing_clerk'].includes(state.user.role)) {
-        void api('/api/timekeepers');
-      }
     }
   }
 
@@ -2124,7 +2130,7 @@
     await refreshRefs();
     renderShell();
     await renderView();
-    ['matters', 'contacts', 'time', 'billing', 'reports', 'dashboard', 'settings']
+    ['matters', 'contacts', 'users', 'time', 'billing', 'reports', 'dashboard', 'settings']
       .filter((v) => v !== state.view)
       .forEach((v) => prefetchView(v));
   }
@@ -2152,7 +2158,7 @@
     await renderView();
     ensureHelpAgent();
     // Warm sibling nav targets so the next toggle is usually cache-hit.
-    ['matters', 'contacts', 'time', 'billing', 'reports', 'dashboard', 'settings']
+    ['matters', 'contacts', 'users', 'time', 'billing', 'reports', 'dashboard', 'settings']
       .filter((v) => v !== state.view)
       .forEach((v) => prefetchView(v));
   }
@@ -2496,6 +2502,7 @@
       reports: `<svg ${common}><path d="M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M14 3.5V9h5.5M9 13h6M9 16.5h4"/></svg>`,
       dashboard: `<svg ${common}><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="4.5" rx="1.4"/><rect x="13" y="10" width="7.5" height="10.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/></svg>`,
       settings: `<svg ${common}><circle cx="12" cy="12" r="3.1"/><path d="M12 3.5v2.2M12 18.3v2.2M4.9 6.5l1.6 1.6M17.5 15.9l1.6 1.6M3.5 12h2.2M18.3 12h2.2M4.9 17.5l1.6-1.6M17.5 8.1l1.6-1.6"/></svg>`,
+      users: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><path d="M17 8v6M14 11h6"/></svg>`,
       plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
     };
     return icons[name] || icons.matters;
@@ -2511,6 +2518,7 @@
     // Matters stay under Quick actions (Create Matter opens create + search).
     const items = [
       roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
+      canManageUsers() ? ['users', 'Add a user', 'users', 'Invite & rates'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
@@ -2530,6 +2538,9 @@
       state.view = items[0]?.[0] || 'settings';
     }
     if ((state.view === 'reports' || state.view === 'dashboard') && !roleCanView('report')) {
+      state.view = items[0]?.[0] || 'settings';
+    }
+    if (state.view === 'users' && !canManageUsers()) {
       state.view = items[0]?.[0] || 'settings';
     }
     const activeView = navActiveId(state.view);
@@ -2642,6 +2653,7 @@
       else if (view === 'billing') await renderBilling();
       else if (view === 'reports') await renderReports();
       else if (view === 'dashboard') await renderDashboard();
+      else if (view === 'users') await renderUsers();
       else if (view === 'settings') await renderSettings();
       else if (view === 'audit') await renderAudit();
       else await renderMatters();
@@ -6606,20 +6618,253 @@
     render();
   }
 
+  async function renderUsers() {
+    if (!canManageUsers()) {
+      main.innerHTML = `<div class="card"><div class="error">Only admins and billing clerks can manage users and rates.</div></div>`;
+      return;
+    }
+    const isAdmin = state.user.role === 'admin';
+    const timekeepers = await api('/api/timekeepers').catch(() => []);
+    if (!stillOnView('users')) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const flash = state.usersFlash;
+    state.usersFlash = null;
+
+    main.innerHTML = `
+      <div class="card stack page-card">
+        <div class="page-head">
+          <h1>Users</h1>
+        </div>
+        <p class="lead">Invite people to the firm and manage timekeeper default rates.</p>
+        ${flash ? successNoticeHtml(flash) : ''}
+
+        ${isAdmin ? `
+        <div class="page-section" id="addUserSection">
+          <h2>Add a user</h2>
+          <p class="hint">They get an email with a one-time link to set a password and sign in. No temporary password to share.</p>
+          <form id="tkForm" class="grid two">
+            <label>Name <input name="name" required placeholder="Alex Associate" /></label>
+            <label>Email <input name="email" type="email" required placeholder="alex@firm.example" /></label>
+            <label>Role
+              <select name="role">
+                <option value="attorney">Attorney</option>
+                <option value="paralegal">Paralegal</option>
+                <option value="billing_clerk">Billing clerk</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <label>Default rate ($/hr)
+              <input class="rate-dollars" name="defaultRate" type="text" inputmode="decimal" placeholder="350.00" required />
+            </label>
+            <label>Rate effective date
+              <input name="rateEffectiveDate" type="date" value="${today}" required />
+            </label>
+            <div class="row-actions span-all" style="align-items:end">
+              <button class="primary" type="submit">Send invite email</button>
+            </div>
+          </form>
+          <div id="tkMsg"></div>
+        </div>` : `
+        <div class="page-section">
+          <p class="hint">Only admins can invite users. You can add or change timekeeper rates below.</p>
+        </div>`}
+
+        <div class="page-section" id="tkRatesSection">
+          <h2>Timekeepers &amp; Rates</h2>
+          <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates.</p>
+
+          <form id="tkSearch" class="matter-search-bar" role="search">
+            <input name="q" value="${escapeHtml(state.tkSearch.q || '')}"
+              placeholder="Search by timekeeper…" aria-label="Search by timekeeper"
+              autocomplete="off" />
+            <button type="button" id="clearTkSearch">Clear</button>
+          </form>
+
+          <div class="table-wrap"><table>
+            <thead>
+              <tr><th>Timekeeper</th><th>Role</th><th>Current rate</th><th>Effective</th><th>Add rate change</th>${isAdmin ? '<th></th>' : ''}</tr>
+            </thead>
+            <tbody id="tkRatesBody">
+              ${timekeepers.map((t) => {
+                const roleLabel = String(t.role || '').replace(/_/g, ' ');
+                const searchText = [t.name, t.email, roleLabel, t.role].filter(Boolean).join(' ').toLowerCase();
+                return `
+                <tr data-tk="${t.id}" data-tk-text="${escapeHtml(searchText)}">
+                  <td>${escapeHtml(t.name)}<div class="muted">${escapeHtml(t.email)}</div></td>
+                  <td>${escapeHtml(roleLabel)}</td>
+                  <td>${t.current_rate_cents == null ? '—' : `${money(t.current_rate_cents)}/hr`}</td>
+                  <td>${escapeHtml(t.current_effective_date || '—')}</td>
+                  <td>
+                    <form class="rate-form row-actions" data-scope-id="${t.id}">
+                      <input name="amount" class="rate-dollars" type="text" inputmode="decimal" placeholder="375.00" required style="width:6.5rem" />
+                      <input name="effectiveDate" type="date" value="${today}" required />
+                      <button type="submit">Add</button>
+                    </form>
+                    <details class="hint" style="margin-top:.4rem">
+                      <summary>Rate history (${t.rates.length})</summary>
+                      <ul>
+                        ${t.rates.map((r) => `<li>${escapeHtml(r.effective_date)}: ${money(r.amount_cents)}/hr</li>`).join('') || '<li>None</li>'}
+                      </ul>
+                    </details>
+                  </td>
+                  ${isAdmin ? `
+                  <td>
+                    <button type="button" data-send-reset="${t.id}">Email reset</button>
+                  </td>` : ''}
+                </tr>`;
+              }).join('') || `<tr data-tk-empty="1"><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers</td></tr>`}
+              <tr data-tk-none hidden><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers match your search</td></tr>
+            </tbody>
+          </table></div>
+          <div id="rateMsg"></div>
+        </div>
+      </div>`;
+
+    const tkSearchForm = $('#tkSearch');
+    if (tkSearchForm) {
+      const tkSearchInput = tkSearchForm.querySelector('input[name="q"]');
+      const applyTkSearch = (raw) => {
+        const needle = String(raw || '').trim().toLowerCase();
+        state.tkSearch = { q: String(raw || '') };
+        const rows = main.querySelectorAll('#tkRatesBody tr[data-tk]');
+        let shown = 0;
+        rows.forEach((row) => {
+          const hay = (row.dataset.tkText || '').toLowerCase();
+          const match = !needle || hay.includes(needle);
+          row.hidden = !match;
+          if (match) shown += 1;
+        });
+        const none = $('#tkRatesBody [data-tk-none]');
+        if (none) none.hidden = !(needle && shown === 0 && rows.length > 0);
+      };
+      tkSearchForm.onsubmit = (ev) => {
+        ev.preventDefault();
+        applyTkSearch(tkSearchInput?.value || '');
+      };
+      if (tkSearchInput) {
+        tkSearchInput.oninput = () => applyTkSearch(tkSearchInput.value);
+      }
+      const clearTk = $('#clearTkSearch');
+      if (clearTk) {
+        clearTk.onclick = () => {
+          if (tkSearchInput) tkSearchInput.value = '';
+          applyTkSearch('');
+          tkSearchInput?.focus();
+        };
+      }
+      applyTkSearch(state.tkSearch.q || '');
+    }
+
+    const tkForm = $('#tkForm');
+    if (tkForm) {
+      tkForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(tkForm);
+        try {
+          const defaultRateCents = dollarsToCents(fd.get('defaultRate'));
+          const invited = await api('/api/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              invite: true,
+              name: fd.get('name'),
+              email: fd.get('email'),
+              role: fd.get('role'),
+              defaultRateCents,
+              rateEffectiveDate: fd.get('rateEffectiveDate'),
+            }),
+          });
+          const delivered = invited.delivery?.ok === true;
+          const mode = delivered
+            ? 'Invite email sent.'
+            : (invited.warning || 'Invite created, but email was not delivered. Configure Email in Settings, or use the link below.');
+          await refreshRefs();
+          state.tkSearch = { q: '' };
+          const link = localAuthLink(invited.devToken) || invited.devLink || '';
+          state.usersFlash = {
+            title: delivered ? 'User invited' : 'Invite created',
+            detail: mode,
+          };
+          await renderUsers();
+          const msg = $('#tkMsg');
+          if (msg && link) {
+            msg.innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}
+              <div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a>
+              <span class="muted">(use this if email link fails)</span></div></div>`;
+          }
+          $('#addUserSection')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (e) {
+          $('#tkMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    main.querySelectorAll('[data-send-reset]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          btn.disabled = true;
+          const result = await api(`/api/users/${btn.dataset.sendReset}/send-reset`, {
+            method: 'POST',
+            body: '{}',
+          });
+          const delivered = result.delivery?.ok === true;
+          const mode = delivered
+            ? 'Password reset email sent.'
+            : (result.warning || 'Reset link created, but email was not delivered. Configure Email in Settings.');
+          const link = localAuthLink(result.devToken) || result.devLink || '';
+          $('#rateMsg').innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
+            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
+          }</div>`;
+        } catch (e) {
+          btn.disabled = false;
+          $('#rateMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        } finally {
+          btn.disabled = false;
+        }
+      };
+    });
+
+    main.querySelectorAll('form.rate-form').forEach((rf) => {
+      rf.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(rf);
+        try {
+          await api('/api/rates', {
+            method: 'POST',
+            body: JSON.stringify({
+              scope: 'timekeeper',
+              scopeId: Number(rf.dataset.scopeId),
+              amountCents: dollarsToCents(fd.get('amount')),
+              effectiveDate: fd.get('effectiveDate'),
+            }),
+          });
+          state.usersFlash = { title: 'Rate change saved', detail: 'The new effective-dated rate is active.' };
+          await renderUsers();
+        } catch (e) {
+          $('#rateMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
+
+    if (state.focusAddUser && isAdmin) {
+      state.focusAddUser = false;
+      setTimeout(() => {
+        $('#tkForm input[name="name"]')?.focus();
+        $('#addUserSection')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 0);
+    }
+  }
+
   async function renderSettings() {
     const isAdmin = state.user.role === 'admin';
     const canEditBilling = isAdmin || state.user.role === 'billing_clerk';
     const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
-    const [settings, timekeepers, matterRecordTypesPrefetch, contactRecordTypesPrefetch] = await Promise.all([
+    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch] = await Promise.all([
       api('/api/settings'),
-      canEditBilling ? api('/api/timekeepers').catch(() => []) : Promise.resolve([]),
       canConfigureFields ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
       canConfigureFields ? api('/api/record-types?appliesTo=client').catch(() => []) : Promise.resolve([]),
     ]);
     if (!stillOnView('settings')) return;
     state.settings = settings;
-
-    const today = new Date().toISOString().slice(0, 10);
 
     main.innerHTML = `
       <div class="card stack">
@@ -6852,88 +7097,6 @@
           </form>
         </details>` : ''}
         <div id="onedriveSettingsMsg"></div>
-        </div>
-      </details>` : ''}
-
-      ${canEditBilling ? `
-      <details class="onedrive-collapse settings-collapse" id="tkRatesSection" ${state.tkSearch.q ? 'open' : ''}>
-        <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">Timekeepers &amp; Rates</span>
-          <span class="onedrive-collapse-meta muted">${timekeepers.length} timekeeper${timekeepers.length === 1 ? '' : 's'}</span>
-        </summary>
-        <div class="onedrive-collapse-body stack">
-        <p class="lead">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates.</p>
-
-        ${isAdmin ? `
-        <form id="tkForm" class="grid two">
-          <label>Name <input name="name" required placeholder="Alex Associate" /></label>
-          <label>Email <input name="email" type="email" required placeholder="alex@firm.example" /></label>
-          <label>Role
-            <select name="role">
-              <option value="attorney">Attorney</option>
-              <option value="paralegal">Paralegal</option>
-              <option value="billing_clerk">Billing clerk</option>
-              <option value="admin">Admin</option>
-            </select>
-          </label>
-          <label>Default rate ($/hr)
-            <input class="rate-dollars" name="defaultRate" type="text" inputmode="decimal" placeholder="350.00" required />
-          </label>
-          <label>Rate effective date
-            <input name="rateEffectiveDate" type="date" value="${today}" required />
-          </label>
-          <p class="hint span-all">They get an email with a one-time link to set a password and sign in. No temporary password to share.</p>
-          <div class="row-actions span-all" style="align-items:end">
-            <button class="primary" type="submit">Send invite email</button>
-          </div>
-        </form>
-        <div id="tkMsg"></div>
-        ` : '<p class="hint">Only admins can invite timekeepers. Billing clerks can add/change rates.</p>'}
-
-        <form id="tkSearch" class="matter-search-bar" role="search">
-          <input name="q" value="${escapeHtml(state.tkSearch.q || '')}"
-            placeholder="Search by timekeeper…" aria-label="Search by timekeeper"
-            autocomplete="off" />
-          <button type="button" id="clearTkSearch">Clear</button>
-        </form>
-
-        <div class="table-wrap"><table>
-          <thead>
-            <tr><th>Timekeeper</th><th>Role</th><th>Current rate</th><th>Effective</th><th>Add rate change</th>${isAdmin ? '<th></th>' : ''}</tr>
-          </thead>
-          <tbody id="tkRatesBody">
-            ${timekeepers.map((t) => {
-              const roleLabel = String(t.role || '').replace(/_/g, ' ');
-              const searchText = [t.name, t.email, roleLabel, t.role].filter(Boolean).join(' ').toLowerCase();
-              return `
-              <tr data-tk="${t.id}" data-tk-text="${escapeHtml(searchText)}">
-                <td>${escapeHtml(t.name)}<div class="muted">${escapeHtml(t.email)}</div></td>
-                <td>${escapeHtml(roleLabel)}</td>
-                <td>${t.current_rate_cents == null ? '—' : `${money(t.current_rate_cents)}/hr`}</td>
-                <td>${escapeHtml(t.current_effective_date || '—')}</td>
-                <td>
-                  <form class="rate-form row-actions" data-scope-id="${t.id}">
-                    <input name="amount" class="rate-dollars" type="text" inputmode="decimal" placeholder="375.00" required style="width:6.5rem" />
-                    <input name="effectiveDate" type="date" value="${today}" required />
-                    <button type="submit">Add</button>
-                  </form>
-                  <details class="hint" style="margin-top:.4rem">
-                    <summary>Rate history (${t.rates.length})</summary>
-                    <ul>
-                      ${t.rates.map((r) => `<li>${escapeHtml(r.effective_date)}: ${money(r.amount_cents)}/hr</li>`).join('') || '<li>None</li>'}
-                    </ul>
-                  </details>
-                </td>
-                ${isAdmin ? `
-                <td>
-                  <button type="button" data-send-reset="${t.id}">Email reset</button>
-                </td>` : ''}
-              </tr>`;
-            }).join('') || `<tr data-tk-empty="1"><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers</td></tr>`}
-            <tr data-tk-none hidden><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers match your search</td></tr>
-          </tbody>
-        </table></div>
-        <div id="rateMsg"></div>
         </div>
       </details>` : ''}`;
 
@@ -7205,139 +7368,6 @@
       };
     }
 
-    const tkSearchForm = $('#tkSearch');
-    if (tkSearchForm) {
-      const tkSearchInput = tkSearchForm.querySelector('input[name="q"]');
-      const applyTkSearch = (raw) => {
-        const needle = String(raw || '').trim().toLowerCase();
-        state.tkSearch = { q: String(raw || '') };
-        const rows = main.querySelectorAll('#tkRatesBody tr[data-tk]');
-        let shown = 0;
-        rows.forEach((row) => {
-          const hay = (row.dataset.tkText || '').toLowerCase();
-          const match = !needle || hay.includes(needle);
-          row.hidden = !match;
-          if (match) shown += 1;
-        });
-        const none = $('#tkRatesBody [data-tk-none]');
-        if (none) none.hidden = !(needle && shown === 0 && rows.length > 0);
-        const section = $('#tkRatesSection');
-        if (section && needle) section.open = true;
-        const meta = section?.querySelector('.onedrive-collapse-meta');
-        if (meta) {
-          meta.textContent = needle
-            ? `${shown} of ${rows.length} timekeeper${rows.length === 1 ? '' : 's'}`
-            : `${rows.length} timekeeper${rows.length === 1 ? '' : 's'}`;
-        }
-      };
-      tkSearchForm.onsubmit = (ev) => {
-        ev.preventDefault();
-        applyTkSearch(tkSearchInput?.value || '');
-      };
-      if (tkSearchInput) {
-        tkSearchInput.oninput = () => applyTkSearch(tkSearchInput.value);
-      }
-      const clearTk = $('#clearTkSearch');
-      if (clearTk) {
-        clearTk.onclick = () => {
-          if (tkSearchInput) tkSearchInput.value = '';
-          applyTkSearch('');
-          tkSearchInput?.focus();
-        };
-      }
-      applyTkSearch(state.tkSearch.q || '');
-    }
-
-    const tkForm = $('#tkForm');
-    if (tkForm) {
-      tkForm.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(tkForm);
-        try {
-          const defaultRateCents = dollarsToCents(fd.get('defaultRate'));
-          const invited = await api('/api/users', {
-            method: 'POST',
-            body: JSON.stringify({
-              invite: true,
-              name: fd.get('name'),
-              email: fd.get('email'),
-              role: fd.get('role'),
-              defaultRateCents,
-              rateEffectiveDate: fd.get('rateEffectiveDate'),
-            }),
-          });
-          const delivered = invited.delivery?.ok === true;
-          const mode = delivered
-            ? 'Invite email sent.'
-            : (invited.warning || 'Invite created, but email was not delivered. Configure Email in Settings, or use the link below.');
-          await refreshRefs();
-          state.tkSearch = { q: '' };
-          await renderSettings();
-          const section = $('#tkRatesSection');
-          if (section) section.open = true;
-          const msg = $('#tkMsg');
-          if (msg) {
-            // Always prefer the current browser origin — email/server links may use a dead pod host.
-            const link = localAuthLink(invited.devToken) || invited.devLink || '';
-            msg.innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
-              link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
-            }</div>`;
-          }
-        } catch (e) {
-          $('#tkMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    main.querySelectorAll('[data-send-reset]').forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          btn.disabled = true;
-          const result = await api(`/api/users/${btn.dataset.sendReset}/send-reset`, {
-            method: 'POST',
-            body: '{}',
-          });
-          const delivered = result.delivery?.ok === true;
-          const mode = delivered
-            ? 'Password reset email sent.'
-            : (result.warning || 'Reset link created, but email was not delivered. Configure Email in Settings.');
-          const link = localAuthLink(result.devToken) || result.devLink || '';
-          $('#rateMsg').innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
-            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
-          }</div>`;
-        } catch (e) {
-          btn.disabled = false;
-          $('#rateMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        } finally {
-          btn.disabled = false;
-        }
-      };
-    });
-
-    main.querySelectorAll('form.rate-form').forEach((rf) => {
-      rf.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(rf);
-        try {
-          await api('/api/rates', {
-            method: 'POST',
-            body: JSON.stringify({
-              scope: 'timekeeper',
-              scopeId: Number(rf.dataset.scopeId),
-              amountCents: dollarsToCents(fd.get('amount')),
-              effectiveDate: fd.get('effectiveDate'),
-            }),
-          });
-          await renderSettings();
-          const section = $('#tkRatesSection');
-          if (section) section.open = true;
-          const rateMsg = $('#rateMsg');
-          if (rateMsg) rateMsg.innerHTML = '<div class="ok-banner">Rate change saved.</div>';
-        } catch (e) {
-          $('#rateMsg').innerHTML = `<div class="error">${e.message}</div>`;
-        }
-      };
-    });
   }
 
   async function renderAudit() {
@@ -7433,6 +7463,15 @@
       links: [
         { label: 'Go to Billing', target: 'billing' },
         { label: 'Open Settings', target: 'settings' },
+      ],
+    },
+    {
+      id: 'users',
+      label: 'Add a user',
+      keywords: ['user', 'invite', 'timekeeper', 'rate', 'add a user', 'hire'],
+      answer: 'Open [[Add a user|users]] in Navigate. Admins can invite someone by name, email, role, and default rate — they get a one-time link to set a password. Admins and billing clerks can update timekeeper rates on the same page.',
+      links: [
+        { label: 'Go to Add a user', target: 'users' },
       ],
     },
     {
@@ -7562,6 +7601,13 @@
         await goAppView('dashboard');
       } else if (key === 'settings') {
         await goAppView('settings');
+      } else if (key === 'users' || key === 'add-user') {
+        if (!canManageUsers()) {
+          main.innerHTML = `<div class="card"><div class="error">Only admins and billing clerks can manage users and rates.</div></div>`;
+        } else {
+          state.focusAddUser = true;
+          await goAppView('users');
+        }
       } else if (key === 'settings-matter-fields') {
         await focusSettings('#defaultFieldsCard');
       } else if (key === 'settings-contact-fields') {
