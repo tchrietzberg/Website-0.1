@@ -1,7 +1,7 @@
 const { audit } = require('../db');
 const matterIndex = require('./matterIndex');
 
-/** Built-in matter record types. Custom fields attach per type. */
+/** Seeded default matter record types. Firms can add more via createRecordType. */
 const RECORD_TYPES = [
   { key: 'billable', label: 'Billable' },
   { key: 'non_billable', label: 'Non-Billable' },
@@ -9,6 +9,8 @@ const RECORD_TYPES = [
 const DEFAULT_RECORD_TYPE_KEY = 'billable';
 const DEFAULT_RECORD_TYPE_LABEL = 'Billable';
 const KNOWN_RECORD_TYPE_KEYS = RECORD_TYPES.map((t) => t.key);
+/** Old keys remapped onto Billable; firm-added types are preserved. */
+const LEGACY_RECORD_TYPE_KEYS = ['default', 'litigation', 'sw_admin', 'other'];
 
 const STANDARD_FIELDS = [
   { key: 'std:number', label: 'Matter number', type: 'text', readonly: true, width: 'half' },
@@ -192,33 +194,54 @@ function ensureRecordTypes(db) {
     upsertRecordTypeRow(db, t.key, t.label);
   }
 
-  // Legacy single type "default" → Billable
-  if (db.prepare("SELECT key FROM record_types WHERE key = 'default'").get()) {
-    remapRecordTypeKey(db, 'default', DEFAULT_RECORD_TYPE_KEY);
+  // Remap only known legacy keys onto Billable; keep firm-added types.
+  for (const fromKey of LEGACY_RECORD_TYPE_KEYS) {
+    if (db.prepare('SELECT key FROM record_types WHERE key = ?').get(fromKey)) {
+      remapRecordTypeKey(db, fromKey, DEFAULT_RECORD_TYPE_KEY);
+    }
   }
 
-  // Collapse other legacy seeded types onto Billable; keep Non-Billable.
-  const known = new Set(KNOWN_RECORD_TYPE_KEYS);
-  const legacy = db.prepare('SELECT key FROM record_types').all()
-    .filter((row) => !known.has(row.key));
-  for (const row of legacy) {
-    remapRecordTypeKey(db, row.key, DEFAULT_RECORD_TYPE_KEY);
-  }
-
-  // Any stray matter/field keys still pointing at unknown types → Billable
+  // Orphaned matter/field keys with no matching type → Billable
   db.prepare(`
     UPDATE matters SET matter_type = ?
-    WHERE matter_type NOT IN (${KNOWN_RECORD_TYPE_KEYS.map(() => '?').join(',')})
-  `).run(DEFAULT_RECORD_TYPE_KEY, ...KNOWN_RECORD_TYPE_KEYS);
+    WHERE matter_type NOT IN (SELECT key FROM record_types)
+  `).run(DEFAULT_RECORD_TYPE_KEY);
   db.prepare(`
     UPDATE custom_fields SET record_type_key = ?
     WHERE record_type_key IS NOT NULL
-      AND record_type_key NOT IN (${KNOWN_RECORD_TYPE_KEYS.map(() => '?').join(',')})
-  `).run(DEFAULT_RECORD_TYPE_KEY, ...KNOWN_RECORD_TYPE_KEYS);
+      AND record_type_key NOT IN (SELECT key FROM record_types)
+  `).run(DEFAULT_RECORD_TYPE_KEY);
 
-  for (const t of RECORD_TYPES) {
+  const types = db.prepare('SELECT key FROM record_types WHERE active = 1').all();
+  for (const t of types) {
     createTypeLayoutRow(db, t.key);
   }
+}
+
+function createRecordType(db, actor, input = {}) {
+  ensureRecordTypes(db);
+  const label = String(input.label || '').trim();
+  if (!label) throw new Error('label required');
+  let key = String(input.key || slugify(label)).trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_]*$/.test(key)) {
+    throw new Error('key must be snake_case starting with a letter');
+  }
+  if (LEGACY_RECORD_TYPE_KEYS.includes(key)) {
+    throw new Error('reserved record type key');
+  }
+  const existing = db.prepare('SELECT key FROM record_types WHERE key = ?').get(key);
+  if (existing) throw new Error('record type already exists');
+
+  upsertRecordTypeRow(db, key, label);
+  createTypeLayoutRow(db, key);
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'record_type.create',
+    entityType: 'record_type',
+    entityId: null,
+    detail: { key, label },
+  });
+  return db.prepare('SELECT * FROM record_types WHERE key = ?').get(key);
 }
 
 function normalizeRecordTypeKey(db, key, { required = false } = {}) {
@@ -449,9 +472,7 @@ function createCustomField(db, actor, input) {
     const width = fieldType === 'textarea' ? 'full' : 'half';
     const fieldKey = `cf:${id}`;
     if (matterId) {
-      ensureMatterLayout(db, matterId);
-      const layout = db.prepare('SELECT id FROM page_layouts WHERE matter_id = ?').get(matterId);
-      addFieldToLayout(db, layout.id, fieldKey, width);
+      // Matter-only custom fields appear via buildMatterDisplayItems; no layout fork required.
     } else if (recordTypeKey) {
       const layout = ensureTypeLayout(db, recordTypeKey);
       addFieldToLayout(db, layout.id, fieldKey, width);
@@ -763,10 +784,38 @@ function ensureMatterLayout(db, matterId) {
 }
 
 function resolveLayout(db, matter) {
-  const matterLayout = db.prepare('SELECT * FROM page_layouts WHERE matter_id = ?').get(matter.id);
-  if (matterLayout) return { layout: matterLayout, source: 'record' };
+  // Type page layout is the source of truth for shared fields.
   const typeLayout = ensureTypeLayout(db, matter.matter_type);
   return { layout: typeLayout, source: 'record_type' };
+}
+
+/** Display items = record-type page layout + matter-only custom fields. */
+function buildMatterDisplayItems(db, matter) {
+  const typeLayout = ensureTypeLayout(db, matter.matter_type || DEFAULT_RECORD_TYPE_KEY);
+  const typeItems = layoutItems(db, typeLayout.id);
+  const items = typeItems.map((item) => ({ ...item }));
+  const present = new Set(items.map((i) => i.field_key));
+
+  const recordFields = db.prepare(`
+    SELECT id, field_type FROM custom_fields
+    WHERE matter_id = ? AND active = 1
+    ORDER BY id
+  `).all(matter.id);
+  let order = items.length;
+  for (const f of recordFields) {
+    const key = `cf:${f.id}`;
+    if (present.has(key)) continue;
+    items.push({
+      id: null,
+      layout_id: typeLayout.id,
+      field_key: key,
+      section: 'details',
+      sort_order: order++,
+      width: f.field_type === 'textarea' ? 'full' : 'half',
+    });
+    present.add(key);
+  }
+  return { items, typeLayout, source: 'record_type' };
 }
 
 function layoutItems(db, layoutId) {
@@ -820,12 +869,7 @@ function getMatterPage(db, matterId, actor = null) {
   `).get(matterId);
   if (!matter) return null;
 
-  let { layout, source } = resolveLayout(db, matter);
-  if (source === 'record') {
-    syncTypeCustomFieldsToMatterLayout(db, matter, layout);
-    ({ layout, source } = resolveLayout(db, matter));
-  }
-  const items = layoutItems(db, layout.id);
+  const { items, typeLayout, source } = buildMatterDisplayItems(db, matter);
   const defs = fieldDefsForMatter(db, matter);
   const values = db.prepare(
     'SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?'
@@ -877,12 +921,35 @@ function getMatterPage(db, matterId, actor = null) {
     .filter((f) => OPTIONAL_STANDARD_KEYS.includes(f.key) && !presentKeys.has(f.key))
     .map((f) => ({ ...f, kind: 'standard' }));
 
+  const typeLayoutFields = describeLayoutFields(db, typeLayout.id);
+  const typeKeys = new Set(typeLayoutFields.map((f) => f.fieldKey));
+  const matterOnlyFields = items
+    .filter((item) => !typeKeys.has(item.field_key))
+    .map((item) => {
+      const def = defs.get(item.field_key);
+      return {
+        fieldKey: item.field_key,
+        label: def?.label || item.field_key,
+        width: item.width,
+        section: item.section || 'details',
+        removable: true,
+        kind: def?.kind || 'custom',
+        required: !!def?.required,
+        isDefault: !!def?.isDefault,
+        is_default: def?.isDefault ? 1 : 0,
+        fieldId: def?.fieldId ?? null,
+        fieldType: def?.type || null,
+        type: def?.type || null,
+        options: def?.options || null,
+      };
+    });
+
   const onedrive = require('./onedrive');
   return {
     matter,
-    layout: { id: layout.id, name: layout.name, source },
+    layout: { id: typeLayout.id, name: typeLayout.name, source },
     sections,
-    layoutFields: describeLayoutFields(db, layout.id),
+    layoutFields: [...typeLayoutFields, ...matterOnlyFields],
     availableFields: [...defs.values()],
     availableStandardFields,
     typeLayout: getTypeLayout(db, matter.matter_type),
@@ -894,49 +961,46 @@ function getMatterPage(db, matterId, actor = null) {
   };
 }
 
-/** Add an optional standard field to this matter's record layout. */
+/** Add an optional standard field to this matter's record-type page layout. */
 function addStandardFieldToMatter(db, actor, matterId, fieldKey) {
-  if (!OPTIONAL_STANDARD_KEYS.includes(fieldKey)) {
-    throw new Error('field cannot be added');
-  }
-  const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
-  if (!std) throw new Error('unknown field');
-
-  const layout = ensureMatterLayout(db, matterId);
-  addFieldToLayout(db, layout.id, fieldKey, std.width || 'half');
-
-  audit(db, {
-    actorId: actor.id,
-    action: 'matter.layout.add_field',
-    entityType: 'matter',
-    entityId: matterId,
-    detail: { fieldKey },
-  });
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
+  if (!matter) throw new Error('matter not found');
+  addStandardFieldToType(db, actor, matter.matter_type, fieldKey);
   return getMatterPage(db, matterId);
 }
 
 function removeFieldFromMatter(db, actor, matterId, fieldKey) {
   if (CORE_LAYOUT_KEYS.includes(fieldKey)) throw new Error('core fields cannot be removed');
-  const layout = ensureMatterLayout(db, matterId);
-  db.prepare(
-    'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
-  ).run(layout.id, fieldKey);
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
+  if (!matter) throw new Error('matter not found');
+
   if (String(fieldKey).startsWith('cf:')) {
     const id = Number(String(fieldKey).slice(3));
-    const field = db.prepare(
+    const recordField = db.prepare(
       'SELECT * FROM custom_fields WHERE id = ? AND matter_id = ?'
     ).get(id, matterId);
-    if (field) {
+    if (recordField) {
       db.prepare('UPDATE custom_fields SET active = 0 WHERE id = ?').run(id);
+      // Also drop from any legacy matter-specific layout clone
+      const matterLayout = db.prepare('SELECT id FROM page_layouts WHERE matter_id = ?').get(matterId);
+      if (matterLayout) {
+        db.prepare(
+          'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
+        ).run(matterLayout.id, fieldKey);
+      }
+      audit(db, {
+        actorId: actor.id,
+        action: 'matter.layout.remove_field',
+        entityType: 'matter',
+        entityId: matterId,
+        detail: { fieldKey },
+      });
+      return getMatterPage(db, matterId);
     }
   }
-  audit(db, {
-    actorId: actor.id,
-    action: 'matter.layout.remove_field',
-    entityType: 'matter',
-    entityId: matterId,
-    detail: { fieldKey },
-  });
+
+  // Shared std / type-scoped fields are removed from the record-type page layout.
+  removeFieldFromType(db, actor, matter.matter_type, fieldKey);
   return getMatterPage(db, matterId);
 }
 
@@ -1003,16 +1067,19 @@ function saveLayoutItems(db, actor, layoutId, items) {
 module.exports = {
   RECORD_TYPES,
   KNOWN_RECORD_TYPE_KEYS,
+  LEGACY_RECORD_TYPE_KEYS,
   DEFAULT_RECORD_TYPE_KEY,
   DEFAULT_RECORD_TYPE_LABEL,
   STANDARD_FIELDS,
   CORE_LAYOUT_KEYS,
   OPTIONAL_STANDARD_KEYS,
   ensureRecordTypes,
+  createRecordType,
   normalizeRecordTypeKey,
   ensureTypeLayout,
   ensureMatterLayout,
   listRecordTypes,
+  buildMatterDisplayItems,
   createCustomField,
   updateCustomField,
   getCustomField,

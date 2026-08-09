@@ -489,6 +489,15 @@ function createServer(db = openDb()) {
       if (req.method === 'GET' && pathname === '/api/record-types') {
         return json(res, 200, customFields.listRecordTypes(db));
       }
+      if (req.method === 'POST' && pathname === '/api/record-types') {
+        if (!requireRoles(user, res, ['admin'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 201, customFields.createRecordType(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/matters') {
         try {
           const permissions = require('../services/permissions');

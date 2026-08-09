@@ -310,18 +310,29 @@
     delAttr = 'data-del-type-field',
     editAttr = 'data-edit-type-field',
     canDelete = isAdminUser(),
+    includeBuiltIns = false,
   } = {}) {
-    const rows = (fields || []).filter((f) => !isBuiltInField(f));
-    if (!rows.length) return '<p class="muted">No custom fields yet</p>';
+    const rows = includeBuiltIns
+      ? (fields || [])
+      : (fields || []).filter((f) => !isBuiltInField(f));
+    if (!rows.length) {
+      return includeBuiltIns
+        ? '<p class="muted">No fields on this record page layout yet</p>'
+        : '<p class="muted">No custom fields yet</p>';
+    }
     return rows.map((f) => {
       const id = fieldIdFromMgmt(f);
-      const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
+      const builtIn = isBuiltInField(f);
+      const typeLabel = builtIn
+        ? 'built-in'
+        : fieldTypeLabel(f.fieldType || f.type || f.kind);
       const isDefault = !!(f.isDefault || f.is_default);
+      const core = !f.removable && builtIn;
       return `
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}${isDefault ? ' · default' : ''}</span>
+          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}${isDefault ? ' · default' : ''}${core ? ' · always shown' : ''}</span>
         </div>
         <div class="row-actions">
           ${id ? `
@@ -333,7 +344,7 @@
           ${canDelete && id
             ? `<button type="button" data-del-custom-field="${id}">Delete</button>`
             : (canDelete && f.removable
-              ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
+              ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey || f.key)}">Remove</button>`
               : '')}
         </div>
       </div>`;
@@ -704,7 +715,7 @@
         return;
       }
 
-      const types = recordTypes || await api('/api/record-types').catch(() => []);
+      const types = await api('/api/record-types').catch(() => recordTypes || []);
       if (!types.some((t) => t.key === key) && types[0]) key = types[0].key;
       const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
       const editing = editingId
@@ -712,22 +723,51 @@
           || (typeLayout.customFields || []).find((f) => Number(f.id) === Number(editingId))
         : null;
       const typeLabel = typeLayout.label || key;
-      const typePicker = (types || []).length > 1 ? `
-        <label class="matter-type-picker">Record type
-          <select id="settingsMatterTypeSelect" name="recordTypeKey">
-            ${(types || []).map((t) => `
-              <option value="${escapeHtml(t.key)}" ${t.key === key ? 'selected' : ''}>
-                ${escapeHtml(t.label || t.key)}
-              </option>`).join('')}
-          </select>
-        </label>
-        <p class="hint">Custom fields for <strong>${escapeHtml(typeLabel)}</strong> matters. Switching types shows that type’s fields.</p>`
-        : `<p class="hint">Custom fields for ${escapeHtml(typeLabel)} matters.</p>`;
+      const availableStd = typeLayout.availableStandardFields || [];
+      const typePicker = `
+        <div class="row-actions" style="flex-wrap:wrap;align-items:flex-end;gap:.75rem">
+          <label class="matter-type-picker">Record page
+            <select id="settingsMatterTypeSelect" name="recordTypeKey">
+              ${(types || []).map((t) => `
+                <option value="${escapeHtml(t.key)}" ${t.key === key ? 'selected' : ''}>
+                  ${escapeHtml(t.label || t.key)}
+                </option>`).join('')}
+            </select>
+          </label>
+          ${isAdminUser() ? `
+            <button type="button" id="showAddRecordType">Add record page</button>` : ''}
+        </div>
+        <p class="hint">Fields on the <strong>${escapeHtml(typeLabel)}</strong> record page layout appear on every matter of this type.</p>
+        <form id="addRecordTypeForm" class="stack" hidden>
+          <div class="grid two">
+            <label>Label *
+              <input name="label" required placeholder="e.g. Contested" />
+            </label>
+            <label>Key
+              <input name="key" placeholder="auto from label" />
+            </label>
+          </div>
+          <div class="row-actions">
+            <button class="primary" type="submit">Create record page</button>
+            <button type="button" id="cancelAddRecordType">Cancel</button>
+          </div>
+        </form>`;
       bodyEl.innerHTML = `
         ${typePicker}
         <div class="field-mgmt-list">
-          ${typeFieldMgmtRows(typeLayout.fields, { canDelete: isAdminUser() })}
+          ${typeFieldMgmtRows(typeLayout.fields, { canDelete: isAdminUser(), includeBuiltIns: true })}
         </div>
+        ${availableStd.length ? `
+          <div class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:center">
+            <label class="matter-type-picker" style="margin:0">Add built-in field
+              <select id="addTypeStandardField">
+                <option value="">Choose…</option>
+                ${availableStd.map((f) => `
+                  <option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
+              </select>
+            </label>
+            <button type="button" id="addTypeStandardFieldBtn">Add to layout</button>
+          </div>` : ''}
         ${editing
           ? `<h3 class="field-edit-title">Edit matter field</h3>${customFieldFormHtml({
             formId: 'typeFieldForm',
@@ -738,7 +778,7 @@
           })}`
           : customFieldFormHtml({
             formId: 'typeFieldForm',
-            submitLabel: 'Add field',
+            submitLabel: 'Add custom field',
             requiredLabel: 'Required field',
           })}`;
 
@@ -750,6 +790,65 @@
           setMsg('');
           if (typeof onRecordTypeChange === 'function') onRecordTypeChange(key);
           render();
+        };
+      }
+      const showAddType = bodyEl.querySelector('#showAddRecordType');
+      const addTypeForm = bodyEl.querySelector('#addRecordTypeForm');
+      const cancelAddType = bodyEl.querySelector('#cancelAddRecordType');
+      if (showAddType && addTypeForm) {
+        showAddType.onclick = () => {
+          addTypeForm.hidden = false;
+          showAddType.hidden = true;
+        };
+      }
+      if (cancelAddType && addTypeForm && showAddType) {
+        cancelAddType.onclick = () => {
+          addTypeForm.hidden = true;
+          showAddType.hidden = false;
+        };
+      }
+      if (addTypeForm) {
+        addTypeForm.onsubmit = async (ev) => {
+          ev.preventDefault();
+          const fd = new FormData(addTypeForm);
+          const payload = {
+            label: String(fd.get('label') || '').trim(),
+            key: String(fd.get('key') || '').trim() || undefined,
+          };
+          try {
+            const created = await api('/api/record-types', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+            key = created.key;
+            editingId = null;
+            if (typeof onRecordTypeChange === 'function') onRecordTypeChange(key);
+            setMsg(`<div class="ok-banner">Record page “${escapeHtml(created.label)}” created.</div>`);
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      }
+      const addStdSelect = bodyEl.querySelector('#addTypeStandardField');
+      const addStdBtn = bodyEl.querySelector('#addTypeStandardFieldBtn');
+      if (addStdBtn && addStdSelect) {
+        addStdBtn.onclick = async () => {
+          const fieldKey = addStdSelect.value;
+          if (!fieldKey) {
+            setMsg('<div class="error">Choose a built-in field to add.</div>');
+            return;
+          }
+          try {
+            await api(`/api/record-types/${encodeURIComponent(key)}/standard-fields`, {
+              method: 'POST',
+              body: JSON.stringify({ fieldKey }),
+            });
+            setMsg('<div class="ok-banner">Built-in field added to this record page layout.</div>');
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
         };
       }
       bodyEl.querySelectorAll('[data-edit-type-field]').forEach((btn) => {
@@ -2773,13 +2872,11 @@
             showCancel: true,
             requiredLabel: 'Required field',
           })}`
-          : `${customFieldFormHtml({
+          : customFieldFormHtml({
             formId,
             submitLabel: 'Add field',
             requiredLabel: 'Required field',
-          })}${page.layout.source !== 'record'
-            ? '<div class="row-actions"><button type="button" id="useRecordLayout">Use default layout</button></div>'
-            : ''}`}
+          })}
         <div id="matterFieldMsg">${msgHtml}</div>
       </div>`;
     };
@@ -3325,17 +3422,6 @@
         }
       };
     }
-    const useRec = $('#useRecordLayout');
-    if (useRec) {
-      useRec.onclick = async () => {
-        try {
-          await api(`/api/matters/${m.id}/use-record-layout`, { method: 'POST', body: '{}' });
-          await renderMatterDetail();
-        } catch (e) {
-          $('#matterFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
-        }
-      };
-    }
   }
 
   async function renderTime() {
@@ -3437,9 +3523,10 @@
       };
     });
 
+    let matterPicker = null;
     const timeForm = $('#timeForm');
     if (timeForm) {
-      const matterPicker = wireMatterPicker(timeForm, { matters });
+      matterPicker = wireMatterPicker(timeForm, { matters });
       wireTimeEntrySubmit(timeForm, {
         msgEl: $('#timeMsg'),
         timeFieldDefs,
@@ -3980,13 +4067,16 @@
   }
 
   async function renderReports() {
-    const [customReportList, billableFields, nonBillableFields, timeFields] = await Promise.all([
+    const [customReportList, recordTypes, timeFields] = await Promise.all([
       api('/api/custom-reports').catch(() => []),
-      api('/api/custom-fields?appliesTo=matter&type=billable').catch(() => []),
-      api('/api/custom-fields?appliesTo=matter&type=non_billable').catch(() => []),
+      api('/api/record-types').catch(() => []),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
     ]);
-    const matterFields = [...(billableFields || []), ...(nonBillableFields || [])]
+    const matterFieldLists = await Promise.all(
+      (recordTypes || []).map((t) =>
+        api(`/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(t.key)}`).catch(() => []))
+    );
+    const matterFields = matterFieldLists.flat()
       .filter((f, i, arr) => arr.findIndex((x) => Number(x.id) === Number(f.id)) === i);
     const canEditReports = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
     const firmReports = [
@@ -4289,8 +4379,8 @@
 
       ${canConfigureFields ? `
       <div class="card stack" id="defaultFieldsCard">
-        <h2>Matter fields</h2>
-        <p class="hint">Custom fields depend on record type (Billable or Non-Billable). New matters default to Billable.</p>
+        <h2>Matter record pages</h2>
+        <p class="hint">Each record page (Billable, Non-Billable, or ones you add) has its own field layout. Matters show the fields from their record page layout. New matters default to Billable.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
       </div>
@@ -5016,7 +5106,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matters use record types Billable (default) and Non-Billable. In Settings → Matter fields, pick a record type and add fields for that type. On Create Matter, choose the record type to see its custom fields. For dropdowns, enter options in the options box that appears. Matter fields use Required field when they must be filled.',
+      answer: 'Matters use record pages (Billable by default, Non-Billable, plus any you add in Settings → Matter record pages). Each record page has its own field layout — those fields appear on every matter of that type. On Create Matter, choose the record page to see its custom fields. For dropdowns, enter options in the options box. Use Required field when a value must be filled.',
     },
     {
       id: 'reports',

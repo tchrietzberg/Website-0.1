@@ -56,7 +56,7 @@ describe('matter search and record-based fields', () => {
 
   it('seeds Billable and Non-Billable record types; Billable is default', () => {
     const types = customFields.listRecordTypes(db);
-    assert.equal(types.length, 2);
+    assert.ok(types.length >= 2);
     assert.equal(types[0].key, 'billable');
     assert.equal(types[0].label, 'Billable');
     assert.equal(types[1].key, 'non_billable');
@@ -67,6 +67,31 @@ describe('matter search and record-based fields', () => {
       clientId: 1, name: 'Default Type Matter', openedOn: '2026-01-01',
     });
     assert.equal(page.matter.matter_type, 'billable');
+  });
+
+  it('lets admins add more record pages that survive remigrate', () => {
+    const created = customFields.createRecordType(db, admin, { label: 'Contested' });
+    assert.equal(created.key, 'contested');
+    assert.equal(created.label, 'Contested');
+
+    customFields.addStandardFieldToType(db, admin, 'contested', 'std:court');
+    const layout = customFields.getTypeLayout(db, 'contested');
+    assert.ok(layout.fields.some((f) => f.fieldKey === 'std:court'));
+
+    customFields.ensureRecordTypes(db);
+    const types = customFields.listRecordTypes(db);
+    assert.ok(types.some((t) => t.key === 'contested'));
+
+    const page = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Dispute',
+      openedOn: '2026-06-01',
+      recordTypeKey: 'contested',
+    });
+    assert.equal(page.matter.matter_type, 'contested');
+    const keys = Object.values(page.sections).flat().map((f) => f.key);
+    assert.ok(keys.includes('std:court'));
+    assert.equal(page.layout.source, 'record_type');
   });
 
   it('custom fields depend on the chosen matter record type', () => {
@@ -158,7 +183,7 @@ describe('matter search and record-based fields', () => {
     const allFields = Object.values(page.sections).flat();
     assert.equal(allFields.find((f) => f.fieldId === typeField.id).value, 'Discovery');
     assert.equal(allFields.find((f) => f.fieldId === recordField.id).value, 'Fee petition matter');
-    assert.equal(page.layout.source, 'record');
+    assert.equal(page.layout.source, 'record_type');
 
     const byCustom = matterSvc.searchMatters(db, { q: 'petition' });
     assert.equal(byCustom.length, 1);
@@ -168,7 +193,7 @@ describe('matter search and record-based fields', () => {
     assert.equal(matterSvc.searchMatters(db, { q: 'Discovery' }).length, 1);
   });
 
-  it('new matters show only core fields; optional standards can be added later', () => {
+  it('new matters show only core fields; optional standards follow the type layout', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Lean Matter' });
     const keys = Object.values(page0.sections).flat().map((f) => f.key);
     assert.deepEqual(keys.sort(), ['std:name', 'std:number']);
@@ -179,8 +204,13 @@ describe('matter search and record-based fields', () => {
     const page1 = customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:client');
     const keys1 = Object.values(page1.sections).flat().map((f) => f.key);
     assert.ok(keys1.includes('std:client'));
-    assert.equal(page1.layout.source, 'record');
+    assert.equal(page1.layout.source, 'record_type');
     assert.ok(!page1.availableStandardFields.some((f) => f.key === 'std:client'));
+
+    // Type-layout change applies to other matters of the same record page
+    const page2 = matterSvc.createMatter(db, admin, { name: 'Sibling Matter' });
+    const keys2 = Object.values(page2.sections).flat().map((f) => f.key);
+    assert.ok(keys2.includes('std:client'));
   });
 
   it('can add and delete fields on default type and matter layouts', () => {
@@ -239,11 +269,10 @@ describe('matter search and record-based fields', () => {
     assert.equal(next.matter.name, 'Alpha Matter - Trial - 2025');
   });
 
-  it('shows type dropdown fields on matter pages even after record layout exists', () => {
+  it('shows type dropdown fields on matter pages from the record page layout', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Status Matter' });
-    // Force a matter-specific layout (freeze clone of type layout)
     customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:status');
-    assert.equal(matterSvc.getMatter(db, page0.matter.id).layout.source, 'record');
+    assert.equal(matterSvc.getMatter(db, page0.matter.id).layout.source, 'record_type');
 
     const stage = customFields.createCustomField(db, admin, {
       label: 'Case status',
@@ -258,6 +287,7 @@ describe('matter search and record-based fields', () => {
     assert.ok(found, 'dropdown custom field should appear on matter page sections');
     assert.equal(found.type, 'dropdown');
     assert.deepEqual(found.options, ['Open', 'On hold', 'Closed']);
+    assert.ok(fields.some((f) => f.key === 'std:status'));
   });
 
   it('updates custom field label, type, options, and required', () => {
