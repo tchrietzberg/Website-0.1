@@ -1283,10 +1283,10 @@ function createServer(db = openDb()) {
           return json(res, 400, { error: e.message, message: e.message });
         }
       }
-      if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+$/)) {
-        const id = Number(pathname.split('/')[3]);
+      if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+\/?$/)) {
+        const id = Number(pathname.split('/').filter(Boolean)[2]);
         const inv = invoiceSvc.getInvoice(db, id);
-        if (!inv) return json(res, 404, { error: 'not found' });
+        if (!inv) return json(res, 404, { error: 'not found', message: 'Invoice not found' });
         return json(res, 200, inv);
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+\/export$/)) {
@@ -1346,14 +1346,20 @@ function createServer(db = openDb()) {
         const body = await parseBody(req);
         return json(res, 200, invoiceSvc.setStatus(db, user, id, body.status));
       }
-      if (req.method === 'DELETE' && pathname.match(/^\/api\/invoices\/\d+$/)) {
+      if (
+        (req.method === 'DELETE' && pathname.match(/^\/api\/invoices\/\d+\/?$/))
+        || (req.method === 'POST' && pathname.match(/^\/api\/invoices\/\d+\/delete\/?$/))
+      ) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
-        const id = Number(pathname.split('/')[3]);
+        const id = Number(pathname.split('/').filter(Boolean)[2]);
+        if (!Number.isFinite(id) || id <= 0) {
+          return json(res, 400, { error: 'invalid_id', message: 'Invalid invoice id' }, req);
+        }
         try {
-          return json(res, 200, invoiceSvc.deleteInvoice(db, user, id));
+          return json(res, 200, invoiceSvc.deleteInvoice(db, user, id), req);
         } catch (e) {
           const status = /not found/i.test(e.message) ? 404 : 400;
-          return json(res, status, { error: e.message, message: e.message });
+          return json(res, status, { error: e.message, message: e.message }, req);
         }
       }
 

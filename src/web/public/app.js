@@ -5941,7 +5941,7 @@
                 <td>${money(i.total_cents)}</td>
                 <td class="row-actions">
                   <button type="button" data-open="${i.id}">Open</button>
-                  ${canBill ? `<button type="button" class="danger" data-delete-invoice="${i.id}" data-invoice-number="${escapeHtml(i.number)}">Delete</button>` : ''}
+                  ${canBill ? `<button type="button" class="danger" data-invoice-delete="${Number(i.id)}" data-invoice-number="${escapeHtml(i.number || '')}">Delete</button>` : ''}
                 </td>
               </tr>`).join('') || '<tr><td colspan="5" class="muted">No bills yet</td></tr>'}
           </tbody>
@@ -6089,13 +6089,23 @@
     main.querySelectorAll('[data-open]').forEach((b) => {
       b.onclick = () => showInvoice(Number(b.dataset.open));
     });
-    main.querySelectorAll('[data-delete-invoice]').forEach((b) => {
-      b.onclick = () => deleteInvoiceFromLedger(Number(b.dataset.deleteInvoice), b.dataset.invoiceNumber);
+    main.querySelectorAll('[data-invoice-delete]').forEach((b) => {
+      b.onclick = () => {
+        const id = Number(b.getAttribute('data-invoice-delete'));
+        const number = b.getAttribute('data-invoice-number') || '';
+        deleteInvoiceFromLedger(id, number);
+      };
     });
   }
 
   async function deleteInvoiceFromLedger(id, number) {
-    const label = number || `bill #${id}`;
+    const invoiceId = Number(id);
+    if (!Number.isFinite(invoiceId) || invoiceId <= 0) {
+      const msg = $('#billMsg') || $('#invMsg');
+      if (msg) msg.innerHTML = '<div class="error">Could not determine which bill to delete.</div>';
+      return;
+    }
+    const label = number || `bill #${invoiceId}`;
     const ok = await confirmAction({
       title: 'Delete bill?',
       message: `Delete ${label} from the ledger? Time entries return to unbilled. Payment applications on this bill are removed.`,
@@ -6104,9 +6114,10 @@
     });
     if (!ok) return;
     try {
-      await api(`/api/invoices/${id}`, { method: 'DELETE' });
+      // Prefer POST /delete — some previews/proxies mishandle HTTP DELETE.
+      await api(`/api/invoices/${invoiceId}/delete`, { method: 'POST', body: '{}' });
       const detail = $('#invoiceDetail');
-      if (detail && Number(detail.dataset.invoiceId) === Number(id)) {
+      if (detail && Number(detail.dataset.invoiceId) === invoiceId) {
         detail.innerHTML = '';
         delete detail.dataset.invoiceId;
       }
