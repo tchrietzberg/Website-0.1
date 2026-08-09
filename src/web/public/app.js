@@ -4036,16 +4036,27 @@
                 && (isOwn || roleCanDeleteOthersTime());
               const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
               if (editable) {
+                const entryId = Number(e.id);
+                const matterChoices = Array.isArray(matters) ? [...matters] : [];
+                if (
+                  e.matter_id != null
+                  && !matterChoices.some((m) => Number(m.id) === Number(e.matter_id))
+                ) {
+                  matterChoices.unshift({
+                    id: e.matter_id,
+                    name: e.matter_name || e.matter_number || `Matter ${e.matter_id}`,
+                  });
+                }
                 return `
-              <tr data-time-row="${e.id}">
+              <tr data-time-row="${entryId}">
                 <td>
                   <input class="inline-input" type="date" data-field="serviceDate"
-                    value="${escapeHtml(e.service_date || '')}" />
+                    value="${escapeHtml(String(e.service_date || '').slice(0, 10))}" />
                 </td>
                 <td>
                   <select class="inline-input" data-field="matterId" aria-label="Matter">
-                    ${(matters || []).map((m) => `
-                      <option value="${m.id}" ${Number(m.id) === Number(e.matter_id) ? 'selected' : ''}>
+                    ${matterChoices.map((m) => `
+                      <option value="${Number(m.id)}" ${Number(m.id) === Number(e.matter_id) ? 'selected' : ''}>
                         ${escapeHtml(m.name || m.number || String(m.id))}
                       </option>`).join('')}
                   </select>
@@ -4061,8 +4072,8 @@
                 </td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td class="row-actions">
-                  <button type="button" class="primary" data-save-time="${e.id}">Save</button>
-                  ${deletable ? `<button type="button" data-del-time="${e.id}">Delete</button>` : ''}
+                  <button type="button" class="primary" data-save-time="${entryId}">Save</button>
+                  ${deletable ? `<button type="button" data-del-time="${entryId}">Delete</button>` : ''}
                 </td>
               </tr>`;
               }
@@ -4091,13 +4102,24 @@
 
     main.querySelectorAll('[data-save-time]').forEach((btn) => {
       btn.onclick = async () => {
-        const id = Number(btn.dataset.saveTime);
+        const id = Number(btn.getAttribute('data-save-time'));
+        if (!Number.isFinite(id) || id <= 0) {
+          listMsg('<div class="error">Could not determine which time entry to save.</div>');
+          return;
+        }
         const row = main.querySelector(`[data-time-row="${id}"]`);
-        if (!row) return;
-        const serviceDate = row.querySelector('[data-field="serviceDate"]')?.value;
+        if (!row) {
+          listMsg('<div class="error">Time entry row not found. Refresh and try again.</div>');
+          return;
+        }
+        const serviceDate = String(row.querySelector('[data-field="serviceDate"]')?.value || '').slice(0, 10);
         const matterId = Number(row.querySelector('[data-field="matterId"]')?.value);
         const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
         const hours = Number(row.querySelector('[data-field="hours"]')?.value);
+        if (!serviceDate) {
+          listMsg('<div class="error">Enter a service date.</div>');
+          return;
+        }
         if (!matterId) {
           listMsg('<div class="error">Select a matter.</div>');
           return;
@@ -4130,6 +4152,11 @@
 
     main.querySelectorAll('[data-del-time]').forEach((btn) => {
       btn.onclick = async () => {
+        const id = Number(btn.getAttribute('data-del-time'));
+        if (!Number.isFinite(id) || id <= 0) {
+          listMsg('<div class="error">Could not determine which time entry to delete.</div>');
+          return;
+        }
         const sure = await confirmAction({
           title: 'Delete this time entry?',
           message: 'Are you sure you want to delete this time entry? This cannot be undone.',
@@ -4138,7 +4165,7 @@
         });
         if (!sure) return;
         try {
-          await api(`/api/time-entries/${btn.dataset.delTime}`, { method: 'DELETE' });
+          await api(`/api/time-entries/${id}`, { method: 'DELETE' });
           state.timeFlash = { title: 'Time entry deleted' };
           await renderTime();
         } catch (e) {

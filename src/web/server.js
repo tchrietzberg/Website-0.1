@@ -1080,10 +1080,12 @@ function createServer(db = openDb()) {
           return json(res, code, { error: e.message, message: e.message });
         }
       }
-      if (req.method === 'PATCH' && pathname.match(/^\/api\/time-entries\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/time-entries\/\d+\/?$/)) {
         try {
-          const id = Number(pathname.split('/')[3]);
+          const id = Number(pathname.split('/').filter(Boolean)[2]);
+          if (!Number.isFinite(id) || id <= 0) {
+            return json(res, 400, { error: 'invalid_id', message: 'Invalid time entry id' }, req);
+          }
           const body = await parseBody(req);
           const customValues = {};
           if (body.customValues && typeof body.customValues === 'object') {
@@ -1114,19 +1116,24 @@ function createServer(db = openDb()) {
               ? Number(body.roundIncrementMinutes) : undefined,
             customValues: Object.keys(customValues).length ? customValues : undefined,
           });
-          return json(res, 200, updated);
+          return json(res, 200, updated, req);
         } catch (e) {
-          const code = e.code === 'FORBIDDEN' ? 403 : 400;
-          return json(res, code, { error: e.message, message: e.message });
+          const notFound = /not found$/i.test(String(e.message || ''));
+          const code = e.code === 'FORBIDDEN' ? 403 : notFound ? 404 : 400;
+          return json(res, code, { error: e.message, message: e.message }, req);
         }
       }
-      if (req.method === 'DELETE' && pathname.match(/^\/api\/time-entries\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/time-entries\/\d+\/?$/)) {
         try {
-          const id = Number(pathname.split('/')[3]);
-          return json(res, 200, timeSvc.deleteEntry(db, user, id));
+          const id = Number(pathname.split('/').filter(Boolean)[2]);
+          if (!Number.isFinite(id) || id <= 0) {
+            return json(res, 400, { error: 'invalid_id', message: 'Invalid time entry id' }, req);
+          }
+          return json(res, 200, timeSvc.deleteEntry(db, user, id), req);
         } catch (e) {
-          return json(res, 400, { error: e.message, message: e.message });
+          const notFound = /not found$/i.test(String(e.message || ''));
+          const code = e.code === 'FORBIDDEN' ? 403 : notFound ? 404 : 400;
+          return json(res, code, { error: e.message, message: e.message }, req);
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/time-entries\/\d+\/submit$/)) {

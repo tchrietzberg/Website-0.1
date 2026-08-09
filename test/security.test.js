@@ -157,4 +157,69 @@ describe('public security controls', () => {
     );
   });
 
+  it('PATCHes recent time entries over HTTP (inline edit)', async () => {
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    assert.equal(login.status, 200);
+    const cookie = sessionCookie(login.setCookie);
+    const csrf = login.json.csrf;
+
+    const created = await request(port, 'POST', '/api/time-entries', {
+      body: {
+        matterId: 1,
+        serviceDate: '2026-08-01',
+        description: 'Inline edit seed',
+        hours: 1,
+      },
+      cookies: cookie,
+      headers: { 'X-CSRF-Token': csrf },
+    });
+    assert.equal(created.status, 201, created.raw);
+    const id = created.json.id;
+    assert.ok(Number.isFinite(id) && id > 0);
+
+    const patched = await request(port, 'PATCH', `/api/time-entries/${id}`, {
+      body: {
+        matterId: 1,
+        serviceDate: '2026-08-02',
+        description: 'Inline edit saved',
+        hours: 1.5,
+      },
+      cookies: cookie,
+      headers: { 'X-CSRF-Token': csrf },
+    });
+    assert.equal(patched.status, 200, patched.raw);
+    assert.equal(patched.json.description, 'Inline edit saved');
+    assert.equal(patched.json.roundedMinutes, 90);
+    assert.equal(patched.json.serviceDate, '2026-08-02');
+
+    // Trailing slash must not fall through to bare "not found"
+    const trailing = await request(port, 'PATCH', `/api/time-entries/${id}/`, {
+      body: {
+        matterId: 1,
+        serviceDate: '2026-08-03',
+        description: 'Trailing slash ok',
+        hours: 2,
+      },
+      cookies: cookie,
+      headers: { 'X-CSRF-Token': csrf },
+    });
+    assert.equal(trailing.status, 200, trailing.raw);
+    assert.equal(trailing.json.description, 'Trailing slash ok');
+
+    const missing = await request(port, 'PATCH', '/api/time-entries/99999', {
+      body: {
+        matterId: 1,
+        serviceDate: '2026-08-03',
+        description: 'missing',
+        hours: 1,
+      },
+      cookies: cookie,
+      headers: { 'X-CSRF-Token': csrf },
+    });
+    assert.equal(missing.status, 404);
+    assert.match(String(missing.json.message || missing.json.error || ''), /entry not found/i);
+  });
+
 });
