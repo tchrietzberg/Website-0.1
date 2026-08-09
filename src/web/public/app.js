@@ -14,6 +14,8 @@
     tkSearch: { q: '' },
     showCreateMatter: false,
     focusTimeEntry: false,
+    timeFlash: '',
+    timeEntryRetain: null,
   };
 
   function canCreateMatter(user) {
@@ -1679,8 +1681,18 @@
     state.settings = settings;
     state.matters = matters;
     const today = new Date().toISOString().slice(0, 10);
-    const preferredMatterId = state.matterId
+    const retain = state.timeEntryRetain || {};
+    const addAnother = !!retain.addAnother;
+    const preferredMatterId = retain.matterId
+      || state.matterId
       || (matters.length === 1 ? matters[0].id : null);
+    const formDate = retain.serviceDate || today;
+    const formTimekeeperId = retain.timekeeperId || state.user.id;
+    const formMinutes = addAnother ? '' : '7';
+    const formDescription = addAnother ? '' : 'Reviewed production set';
+    const flash = state.timeFlash || '';
+    state.timeFlash = '';
+    state.timeEntryRetain = null;
     const timeFieldDefs = (timeFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -1706,30 +1718,33 @@
             <span class="hint">Type to filter by matter name or client.</span>
           </div>
           <label>Date
-            <input name="serviceDate" type="date" value="${today}" required />
+            <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
           </label>
           <label>Minutes
-            <input name="rawMinutes" type="number" min="1" value="7" required />
+            <input name="rawMinutes" type="number" min="1" value="${escapeHtml(formMinutes)}"
+              placeholder="Minutes" required />
           </label>
           <label>Timekeeper
             <select name="timekeeperId">
               ${state.users.map((u) =>
-                `<option value="${u.id}" ${u.id === state.user.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
+                `<option value="${u.id}" ${Number(u.id) === Number(formTimekeeperId) ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
               ).join('')}
             </select>
           </label>
           <label class="span-all">Description
-            <textarea name="description" rows="2" required>Reviewed production set</textarea>
+            <textarea name="description" rows="2" required
+              placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
           </label>
           ${timeFieldDefs.map((field) => `
             <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}
               ${renderFieldInput(field, { canEdit: true })}
             </label>`).join('')}
           <div class="row-actions span-all">
-            <button class="primary" type="submit">Save draft</button>
+            <button class="primary" type="submit" data-save-mode="save">Save draft</button>
+            <button type="submit" data-save-mode="save-another">Save &amp; add another</button>
           </div>
         </form>
-        <div id="timeMsg" style="margin-top:.75rem"></div>
+        <div id="timeMsg" style="margin-top:.75rem">${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}</div>
       </div>
       <div class="card">
         <h2>Recent entries</h2>
@@ -1760,8 +1775,16 @@
       </div>`;
 
     const matterPicker = wireMatterPicker($('#timeForm'), { matters });
+    let saveMode = 'save';
+    $('#timeForm').querySelectorAll('[data-save-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        saveMode = btn.dataset.saveMode || 'save';
+      });
+    });
     $('#timeForm').onsubmit = async (ev) => {
       ev.preventDefault();
+      const mode = saveMode;
+      saveMode = 'save';
       const fd = new FormData(ev.target);
       const body = Object.fromEntries(fd.entries());
       body.matterId = Number(body.matterId);
@@ -1795,8 +1818,23 @@
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
-        $('#timeMsg').innerHTML = `<div class="ok-banner">${escapeHtml(msg)}</div>`;
+        if (mode === 'save-another') {
+          msg += ' Add another entry below.';
+          state.matterId = body.matterId;
+          state.timeEntryRetain = {
+            addAnother: true,
+            matterId: body.matterId,
+            serviceDate: body.serviceDate,
+            timekeeperId: body.timekeeperId,
+          };
+          state.focusTimeEntry = true;
+        }
+        state.timeFlash = msg;
         await renderTime();
+        if (mode === 'save-another') {
+          const desc = $('#timeForm textarea[name="description"]');
+          if (desc) desc.focus();
+        }
       } catch (e) {
         $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
       }
