@@ -4794,30 +4794,30 @@
       || state.user?.name
       || 'You';
     return `
-      <label class="time-core-field">Date
-        <input class="time-core-control" name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
+      <label>Date
+        <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
       </label>
-      <label class="time-core-field">Hours
-        <input class="time-core-control" name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
+      <label>Hours
+        <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
           value="${escapeHtml(formHours)}" placeholder="0.25" required />
       </label>
-      <label class="time-core-field">Timekeeper
+      <label>Timekeeper
         ${canSelectTk ? `
-        <select class="time-core-control" name="timekeeperId">
+        <select name="timekeeperId">
           ${timekeeperOptions.map((u) =>
             `<option value="${u.id}" ${Number(u.id) === Number(selectedId) ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
           ).join('')}
         </select>` : `
         <input type="hidden" name="timekeeperId" value="${lockedId}" />
-        <input class="time-core-control" type="text" value="${escapeHtml(selfName)}" disabled aria-label="Timekeeper" />`}
+        <input type="text" value="${escapeHtml(selfName)}" disabled aria-label="Timekeeper" />`}
       </label>
       <label class="check-inline span-all" style="align-self:center">
         <input type="checkbox" name="billable" value="1" id="timeEntryBillable"
           ${formBillable ? 'checked' : ''} />
         <span>Billable</span>
       </label>
-      <label class="time-core-field time-core-desc span-all">Description
-        <textarea class="time-core-control" name="description" rows="3" required
+      <label class="span-all">Description
+        <textarea name="description" rows="2" required
           placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
       </label>
       ${timeFieldDefs.map((field) => `
