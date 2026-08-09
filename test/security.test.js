@@ -99,8 +99,8 @@ describe('public security controls', () => {
     });
     assert.equal(ok.status, 200);
     assert.ok(ok.json.csrf);
+    assert.ok(ok.json.token);
     assert.equal(ok.json.user.email, 'avery@firm.example');
-    assert.equal(ok.json.token, undefined);
     const cookie = sessionCookie(ok.setCookie);
     assert.match(cookie, /^session=/);
     assert.match(ok.setCookie.join(';'), /HttpOnly/i);
@@ -121,6 +121,13 @@ describe('public security controls', () => {
       headers: { 'X-CSRF-Token': me.json.csrf },
     });
     assert.equal(created.status, 201, created.raw);
+
+    // Bearer token works even without cookies (preview/proxy fallback)
+    const viaBearer = await request(port, 'GET', '/api/me', {
+      headers: { Authorization: `Bearer ${ok.json.token}` },
+    });
+    assert.equal(viaBearer.status, 200);
+    assert.equal(viaBearer.json.user.email, 'avery@firm.example');
   });
 
   it('sets security headers on HTML and JSON', async () => {

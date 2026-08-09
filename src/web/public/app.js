@@ -1,5 +1,7 @@
 (() => {
+  const TOKEN_KEY = 'billing_session';
   const state = {
+    token: null,
     csrf: null,
     user: null,
     view: 'matters',
@@ -25,21 +27,41 @@
   const sidebarActions = $('#sidebarActions');
   const appEl = $('#app');
 
-  // Remove legacy token storage (sessions are HttpOnly cookies now)
   try { localStorage.removeItem('billing_token'); } catch { /* ignore */ }
+  try { state.token = sessionStorage.getItem(TOKEN_KEY) || null; } catch { state.token = null; }
+
+  function persistSession(token, csrf) {
+    if (token) {
+      state.token = token;
+      try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
+    }
+    if (csrf) state.csrf = csrf;
+  }
+
+  function clearSession() {
+    state.token = null;
+    state.csrf = null;
+    state.user = null;
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+  }
 
   async function api(path, opts = {}) {
     const method = String(opts.method || 'GET').toUpperCase();
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-    if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    if (state.token) headers.Authorization = `Bearer ${state.token}`;
+    if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) && path !== '/api/login') {
       headers['X-CSRF-Token'] = state.csrf;
     }
-    const res = await fetch(path, { ...opts, method, headers, credentials: 'same-origin' });
+    const res = await fetch(path, { ...opts, method, headers, credentials: 'include' });
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) {
       const data = await res.json();
       if (data && data.csrf) state.csrf = data.csrf;
+      if (data && data.token) persistSession(data.token, data.csrf || state.csrf);
       if (!res.ok) {
+        if (res.status === 401 && path !== '/api/login' && path !== '/api/me') {
+          clearSession();
+        }
         const err = new Error(data.message || data.error || res.statusText);
         err.code = data.error;
         err.payload = data;
@@ -301,9 +323,9 @@
       const me = await api('/api/me');
       state.user = me.user;
       state.csrf = me.csrf || null;
+      if (!me.user) clearSession();
     } catch {
-      state.user = null;
-      state.csrf = null;
+      clearSession();
     }
     if (!state.user) return renderLogin();
     await refreshRefs();
@@ -345,20 +367,21 @@
           <p class="login-lead">Sign in with your firm email and password</p>
           <label class="login-field">Email
             <input id="email" type="email" autocomplete="username"
-              placeholder="you@firm.example" value="" />
+              placeholder="avery@firm.example" value="avery@firm.example" />
           </label>
           <label class="login-field">Password
             <input id="password" type="password" autocomplete="current-password"
-              placeholder="Password" value="" />
+              placeholder="Password" value="demo-change-me" />
           </label>
           <button class="primary login-submit" id="loginBtn" type="button">Sign in</button>
           <div id="loginErr"></div>
-          <p class="login-hint">Local demo · avery@firm.example / demo-change-me</p>
+          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>
         </div>
       </div>`;
     const submit = async () => {
       try {
         $('#loginBtn').disabled = true;
+        $('#loginErr').innerHTML = '';
         const data = await api('/api/login', {
           method: 'POST',
           body: JSON.stringify({
@@ -366,8 +389,8 @@
             password: $('#password').value,
           }),
         });
+        persistSession(data.token, data.csrf);
         state.user = data.user;
-        state.csrf = data.csrf || null;
         document.body.classList.remove('login-mode');
         if (appEl) appEl.classList.remove('login-mode');
         await refreshRefs();
@@ -489,8 +512,7 @@
     $('#logout').onclick = async () => {
       try { await api('/api/logout', { method: 'POST', body: '{}' }); }
       catch { /* still clear local state */ }
-      state.csrf = null;
-      state.user = null;
+      clearSession();
       renderLogin();
     };
   }

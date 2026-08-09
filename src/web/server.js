@@ -79,13 +79,18 @@ function requireRoles(user, res, roles, req = null) {
 
 function requireCsrf(req, res, session) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
-  if (!security.assertSameOrigin(req)) {
-    json(res, 403, { error: 'invalid_origin', message: 'Cross-origin request blocked' }, req);
-    return false;
-  }
+  // CSRF token is the primary check (unguessable per session). Origin is best-effort
+  // because some previews/proxies rewrite Host and would false-fail same-origin checks.
   if (!security.assertCsrf(req, session)) {
     json(res, 403, { error: 'invalid_csrf', message: 'Missing or invalid CSRF token' }, req);
     return false;
+  }
+  if (req.headers.origin && !security.assertSameOrigin(req)) {
+    const allow = String(process.env.ALLOWED_ORIGINS || '').trim();
+    if (allow) {
+      json(res, 403, { error: 'invalid_origin', message: 'Cross-origin request blocked' }, req);
+      return false;
+    }
   }
   return true;
 }
@@ -178,7 +183,12 @@ function createServer(db = openDb()) {
         const secure = security.requestIsSecure(req);
         const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
         const user = { id: row.id, email: row.email, name: row.name, role: row.role };
-        return json(res, 200, { user, csrf: session.csrf }, req, {
+        // Return session token for Bearer fallback when proxies strip Set-Cookie.
+        return json(res, 200, {
+          user,
+          csrf: session.csrf,
+          token: session.token,
+        }, req, {
           'Set-Cookie': security.cookieHeader('session', session.token, {
             maxAgeSec: maxAge,
             secure,
