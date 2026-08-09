@@ -1841,11 +1841,8 @@
       timeFieldDefs,
       fixedMatterId: m.id,
       onSaved: async (entry, body) => {
-        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing.`;
-        if (entry.duplicateWarnings?.length) {
-          msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
-        }
-        state.matterTimeFlash = msg;
+        const desc = String(body.description || entry.description || '').trim() || 'Time entry';
+        state.matterTimeFlash = `Saved ${desc} — ${formatDuration(entry.roundedMinutes)} hrs`;
         state.matterTimeRetain = {
           addAnother: true,
           serviceDate: body.serviceDate,
