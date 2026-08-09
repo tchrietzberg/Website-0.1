@@ -250,7 +250,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY,
   matter_id INTEGER NOT NULL REFERENCES matters(id),
   number TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'prebill'
+  status TEXT NOT NULL DEFAULT 'sent'
     CHECK (status IN ('prebill','in_review','approved','sent','void')),
   issue_date TEXT,
   due_date TEXT,

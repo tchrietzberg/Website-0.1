@@ -104,9 +104,10 @@ describe('invoice lifecycle', () => {
     return e.id;
   }
 
-  it('snapshots rates on pre-bill; later rate changes do not alter invoice', () => {
+  it('snapshots rates on bill; later rate changes do not alter invoice', () => {
     approvedEntry(60);
-    const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
+    assert.equal(inv.status, 'sent');
     assert.equal(inv.lines[0].rate_cents, 45000);
     assert.equal(inv.lines[0].amount_cents, 45000);
     // change matter rate
@@ -115,19 +116,18 @@ describe('invoice lifecycle', () => {
     assert.equal(again.lines[0].rate_cents, 45000);
   });
 
-  it('write-down records who/why/delta and reduces total', () => {
+  it('blocks write-downs on issued bills', () => {
     approvedEntry(60);
-    const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
-    const updated = invoiceSvc.writeDownLine(ctx.db, ctx.clerk, inv.lines[0].id, 5000, 'courtesy');
-    assert.equal(updated.write_down_cents, 5000);
-    assert.equal(updated.total_cents, 40000);
-    assert.equal(updated.writeDowns[0].reason, 'courtesy');
-    assert.equal(updated.writeDowns[0].created_by, ctx.clerk.id);
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
+    assert.throws(
+      () => invoiceSvc.writeDownLine(ctx.db, ctx.clerk, inv.lines[0].id, 5000, 'courtesy'),
+      /cannot be edited/
+    );
   });
 
   it('exports bills as PDF and Excel with matter name', () => {
     approvedEntry(60);
-    const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
     assert.equal(inv.matter_name, 'NDCal Case');
     const pdf = invoiceSvc.toInvoicePdf(inv);
     assert.ok(Buffer.isBuffer(pdf));
@@ -144,34 +144,24 @@ describe('invoice lifecycle', () => {
     assert.equal(xlsx[1], 0x4b);
   });
 
-  it('pre-bill marks entries invoiced; void before bill releases them; sent bills are immutable', () => {
+  it('create bill issues immediately, marks entries invoiced, and is immutable', () => {
     approvedEntry(60);
-    const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
+    assert.equal(inv.status, 'sent');
+    assert.ok(inv.issue_date);
     const linked = ctx.db.prepare('SELECT status, invoice_id FROM time_entries LIMIT 1').get();
     assert.equal(linked.status, 'invoiced');
     assert.equal(linked.invoice_id, inv.id);
 
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'in_review');
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'approved');
-    // void before bill releases entries back to approved
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'void');
-    const entry = ctx.db.prepare('SELECT status, invoice_id FROM time_entries LIMIT 1').get();
-    assert.equal(entry.status, 'approved');
-    assert.equal(entry.invoice_id, null);
-
-    // new invoice, send it
-    const inv2 = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv2.id, 'in_review');
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv2.id, 'approved');
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv2.id, 'sent');
-
     assert.throws(() => {
-      ctx.db.prepare('UPDATE invoices SET total_cents = 1 WHERE id = ?').run(inv2.id);
+      ctx.db.prepare('UPDATE invoices SET total_cents = 1 WHERE id = ?').run(inv.id);
     }, /immutable/);
 
-    const cn = invoiceSvc.createCreditNote(ctx.db, ctx.clerk, inv2.id, 1000, 'billing error');
+    assert.throws(() => invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'void'));
+    assert.throws(() => invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'in_review'));
+
+    const cn = invoiceSvc.createCreditNote(ctx.db, ctx.clerk, inv.id, 1000, 'billing error');
     assert.equal(cn.amount_cents, 1000);
-    assert.throws(() => invoiceSvc.setStatus(ctx.db, ctx.clerk, inv2.id, 'void'));
   });
 });
 
@@ -186,11 +176,7 @@ describe('payments', () => {
     });
     timeSvc.submitEntry(ctx.db, ctx.para, e.id);
     timeSvc.approveEntry(ctx.db, ctx.clerk, e.id);
-    const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'in_review');
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'approved');
-    invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'sent');
-    return inv;
+    return invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
   }
 
   it('applies oldest-first and keeps overpayment unapplied', () => {

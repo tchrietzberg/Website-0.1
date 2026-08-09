@@ -4,7 +4,8 @@ const { allocateNumber, audit } = require('../db');
 const { buildXlsx } = require('../xlsx');
 const { buildTextPdf } = require('../pdf');
 
-function generatePrebill(db, actor, matterId, entryIds = null) {
+/** Create and issue a bill in one step from approved, unbilled time. */
+function createBill(db, actor, matterId, entryIds = null) {
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
   if (!matter) throw new Error('matter not found');
 
@@ -25,23 +26,16 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
     `).all(matterId);
   }
   if (!entries.length) {
-    throw new Error('No approved time entries ready for pre-bill on this matter');
+    throw new Error('No approved time entries ready to bill on this matter');
   }
 
   const year = new Date().getUTCFullYear();
   const number = allocateNumber(db, 'invoice', year, 'INV-');
+  const today = new Date().toISOString().slice(0, 10);
 
-  const inv = db.prepare(`
-    INSERT INTO invoices(matter_id, number, status, created_by, subtotal_cents, write_down_cents, total_cents)
-    VALUES (?, ?, 'prebill', ?, 0, 0, 0)
-  `).run(matterId, number, actor.id);
-  const invoiceId = Number(inv.lastInsertRowid);
-
+  const lineRows = [];
   let subtotal = 0;
   let order = 0;
-  const markEntry = db.prepare(`
-    UPDATE time_entries SET status = 'invoiced', invoice_id = ? WHERE id = ?
-  `);
   for (const e of entries) {
     const rate = resolveRate(db, {
       matterId: matter.id,
@@ -52,6 +46,35 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
     if (!rate) throw new Error(`no rate for entry ${e.id} on ${e.service_date}`);
     const amount = amountFromMinutes(e.rounded_minutes, rate.amountCents);
     subtotal += amount;
+    lineRows.push({
+      entry: e,
+      rateCents: rate.amountCents,
+      amount,
+      sortOrder: order++,
+    });
+  }
+
+  const inv = db.prepare(`
+    INSERT INTO invoices(
+      matter_id, number, status, created_by,
+      issue_date, due_date, sent_at,
+      subtotal_cents, write_down_cents, total_cents,
+      approved_by, approved_at
+    )
+    VALUES (
+      ?, ?, 'sent', ?,
+      ?, date(?, '+30 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+      ?, 0, ?,
+      ?, strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    )
+  `).run(matterId, number, actor.id, today, today, subtotal, subtotal, actor.id);
+  const invoiceId = Number(inv.lastInsertRowid);
+
+  const markEntry = db.prepare(`
+    UPDATE time_entries SET status = 'invoiced', invoice_id = ? WHERE id = ?
+  `);
+  for (const row of lineRows) {
+    const e = row.entry;
     db.prepare(`
       INSERT INTO invoice_lines(
         invoice_id, time_entry_id, service_date, description, timekeeper_id,
@@ -59,18 +82,14 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
     `).run(
       invoiceId, e.id, e.service_date, e.description, e.timekeeper_id,
-      e.rounded_minutes, rate.amountCents, amount, order++
+      e.rounded_minutes, row.rateCents, row.amount, row.sortOrder
     );
     markEntry.run(invoiceId, e.id);
   }
 
-  db.prepare(`
-    UPDATE invoices SET subtotal_cents = ?, write_down_cents = 0, total_cents = ? WHERE id = ?
-  `).run(subtotal, subtotal, invoiceId);
-
   audit(db, {
     actorId: actor.id,
-    action: 'invoice.prebill',
+    action: 'invoice.bill',
     entityType: 'invoice',
     entityId: invoiceId,
     detail: { number, entryCount: entries.length, subtotal },
@@ -78,7 +97,12 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
   return getInvoice(db, invoiceId);
 }
 
-/** Matters with approved, unbilled time ready to pre-bill. */
+/** @deprecated Use createBill — kept for callers that still name it pre-bill. */
+function generatePrebill(db, actor, matterId, entryIds = null) {
+  return createBill(db, actor, matterId, entryIds);
+}
+
+/** Matters with approved, unbilled time ready to bill. */
 function listMattersReadyForBilling(db) {
   return db.prepare(`
     SELECT m.id, m.number, m.name, c.name AS client_name,
@@ -104,9 +128,7 @@ function recomputeTotals(db, invoiceId) {
 }
 
 function assertEditable(inv) {
-  if (!['prebill', 'in_review'].includes(inv.status)) {
-    throw new Error(`invoice in status ${inv.status} cannot be edited`);
-  }
+  throw new Error(`invoice in status ${inv.status} cannot be edited`);
 }
 
 function writeDownLine(db, actor, lineId, deltaCents, reason) {
@@ -137,9 +159,10 @@ function writeDownLine(db, actor, lineId, deltaCents, reason) {
 function setStatus(db, actor, invoiceId, status) {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
   if (!inv) throw new Error('invoice not found');
+  // Simple billing: new bills are created already sent. Legacy drafts may still be voided or issued.
   const transitions = {
-    prebill: ['in_review', 'void'],
-    in_review: ['approved', 'prebill', 'void'],
+    prebill: ['sent', 'void'],
+    in_review: ['sent', 'void'],
     approved: ['sent', 'void'],
     sent: [],
     void: [],
@@ -150,7 +173,6 @@ function setStatus(db, actor, invoiceId, status) {
 
   if (status === 'void') {
     if (inv.status === 'sent') throw new Error('cannot void a sent invoice');
-    // release WIP
     db.prepare(`
       UPDATE time_entries SET status = 'approved', invoice_id = NULL
       WHERE invoice_id = ?
@@ -158,17 +180,15 @@ function setStatus(db, actor, invoiceId, status) {
     db.prepare(`
       UPDATE invoices SET status = 'void', voided_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?
     `).run(invoiceId);
-  } else if (status === 'approved') {
-    db.prepare(`
-      UPDATE invoices SET status = 'approved', approved_by = ?,
-        approved_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?
-    `).run(actor.id, invoiceId);
   } else if (status === 'sent') {
     const today = new Date().toISOString().slice(0, 10);
     db.prepare(`
       UPDATE invoices SET status = 'sent', issue_date = ?, due_date = date(?, '+30 days'),
-        sent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?
-    `).run(today, today, invoiceId);
+        sent_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+        approved_by = COALESCE(approved_by, ?),
+        approved_at = COALESCE(approved_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      WHERE id = ?
+    `).run(today, today, actor.id, invoiceId);
   } else {
     db.prepare('UPDATE invoices SET status = ? WHERE id = ?').run(status, invoiceId);
   }
@@ -236,9 +256,9 @@ function listInvoices(db) {
 
 function invoiceStageLabel(status) {
   const map = {
-    prebill: 'Pre-bill',
-    in_review: 'In review',
-    approved: 'Ready to bill',
+    prebill: 'Draft',
+    in_review: 'Draft',
+    approved: 'Draft',
     sent: 'Billed',
     void: 'Void',
   };
@@ -256,7 +276,7 @@ function invoiceExportRows(inv) {
     [{ v: 'Matter name', t: 's' }, { v: matterName, t: 's' }],
     [{ v: 'Matter number', t: 's' }, { v: inv.matter_number || '', t: 's' }],
     [{ v: 'Client', t: 's' }, { v: inv.client_name || '', t: 's' }],
-    [{ v: 'Stage', t: 's' }, { v: invoiceStageLabel(inv.status), t: 's' }],
+    [{ v: 'Status', t: 's' }, { v: invoiceStageLabel(inv.status), t: 's' }],
     [],
   ];
   const header = [
@@ -295,7 +315,7 @@ function toInvoicePdf(inv) {
     `Matter name: ${matterName}`,
     inv.matter_number ? `Matter number: ${inv.matter_number}` : null,
     `Client: ${inv.client_name || ''}`,
-    `Stage: ${invoiceStageLabel(inv.status)}`,
+    `Status: ${invoiceStageLabel(inv.status)}`,
     inv.issue_date ? `Issue date: ${inv.issue_date}` : null,
     inv.due_date ? `Due date: ${inv.due_date}` : null,
     '',
@@ -328,6 +348,7 @@ function toInvoicePdf(inv) {
 }
 
 module.exports = {
+  createBill,
   generatePrebill,
   writeDownLine,
   setStatus,

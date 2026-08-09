@@ -889,7 +889,7 @@
     const items = [
       ['matters', 'Matters', 'M', 'Matters & search'],
       ['time', 'Time Entry', 'T', 'Log & review time'],
-      ['billing', 'Billing', 'B', 'Pre-bill → bill'],
+      ['billing', 'Billing', 'B', 'Create bills'],
       ['reports', 'Reports', 'R', 'Matters & lodestar'],
       ['settings', 'Settings', 'S', 'Firm preferences'],
     ];
@@ -1849,7 +1849,7 @@
       b.onclick = async () => {
         try {
           await api(`/api/time-entries/${b.dataset.approve}/approve`, { method: 'POST', body: '{}' });
-          $('#timeMsg').innerHTML = '<div class="ok-banner">Entry approved — ready for Billing → Pre-bill.</div>';
+          $('#timeMsg').innerHTML = '<div class="ok-banner">Entry approved — ready for Billing.</div>';
           await renderTime();
         } catch (e) {
           $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -1877,9 +1877,9 @@
 
   function invoiceStageLabel(status) {
     const map = {
-      prebill: 'Pre-bill',
-      in_review: 'In review',
-      approved: 'Ready to bill',
+      prebill: 'Draft',
+      in_review: 'Draft',
+      approved: 'Draft',
       sent: 'Billed',
       void: 'Void',
     };
@@ -1898,9 +1898,9 @@
     main.innerHTML = `
       <div class="card stack">
         <h1>Billing</h1>
-        <p class="lead">Move approved time into a pre-bill, then issue the bill.</p>
+        <p class="lead">Create a bill from approved time in one step.</p>
         ${canBill ? `
-        <form id="prebillForm" class="grid two">
+        <form id="billForm" class="grid two">
           <div class="field span-all">
             <span class="field-label">Matter</span>
             ${renderMatterPicker({
@@ -1911,18 +1911,18 @@
               ),
             })}
             <span class="hint">${(ready || []).length
-              ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with approved time ready for pre-bill.`
-              : 'Approve submitted time on Time Entry first, then generate a pre-bill here.'}</span>
+              ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with approved time ready to bill.`
+              : 'Approve submitted time on Time Entry first, then create a bill here.'}</span>
           </div>
           <div class="row-actions span-all">
-            <button class="primary" type="submit" ${(ready || []).length ? '' : 'disabled'}>Generate pre-bill</button>
+            <button class="primary" type="submit" ${(ready || []).length ? '' : 'disabled'}>Create bill</button>
           </div>
-        </form>` : '<div class="error">Only admins and billing clerks can generate pre-bills.</div>'}
+        </form>` : '<div class="error">Only admins and billing clerks can create bills.</div>'}
         <div id="billMsg"></div>
       </div>
       ${(ready || []).length ? `
       <div class="card">
-        <h2>Ready for pre-bill</h2>
+        <h2>Ready to bill</h2>
         <div class="table-wrap"><table>
           <thead><tr><th>Matter</th><th>Entries</th><th>Time</th></tr></thead>
           <tbody>
@@ -1936,9 +1936,9 @@
         </table></div>
       </div>` : ''}
       <div class="card">
-        <h2>Invoices</h2>
+        <h2>Bills</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Number</th><th>Matter</th><th>Stage</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Number</th><th>Matter</th><th>Status</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${invoices.map((i) => `
               <tr>
@@ -1947,15 +1947,15 @@
                 <td><span class="pill" data-status="${escapeHtml(i.status)}">${escapeHtml(invoiceStageLabel(i.status))}</span></td>
                 <td>${money(i.total_cents)}</td>
                 <td><button data-open="${i.id}">Open</button></td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No invoices yet</td></tr>'}
+              </tr>`).join('') || '<tr><td colspan="5" class="muted">No bills yet</td></tr>'}
           </tbody>
         </table></div>
       </div>
       <div id="invoiceDetail"></div>`;
 
     if (canBill) {
-      const billMatterPicker = wireMatterPicker($('#prebillForm'), { matters });
-      $('#prebillForm').onsubmit = async (ev) => {
+      const billMatterPicker = wireMatterPicker($('#billForm'), { matters });
+      $('#billForm').onsubmit = async (ev) => {
         ev.preventDefault();
         const matterId = Number(new FormData(ev.target).get('matterId'));
         if (!matterId) {
@@ -1965,11 +1965,11 @@
           return;
         }
         try {
-          const inv = await api('/api/invoices/prebill', {
+          const inv = await api('/api/invoices/bill', {
             method: 'POST',
             body: JSON.stringify({ matterId }),
           });
-          $('#billMsg').innerHTML = `<div class="ok-banner">Pre-bill ${escapeHtml(inv.number)} created.</div>`;
+          $('#billMsg').innerHTML = `<div class="ok-banner">Bill ${escapeHtml(inv.number)} created.</div>`;
           await renderBilling();
           await showInvoice(inv.id);
         } catch (e) {
@@ -2036,16 +2036,16 @@
     });
 
     const actions = $('#invActions');
-    const btn = (label, status, primary) => {
-      if (!canBill || !actions) return;
-      const b = document.createElement('button');
-      b.textContent = label;
-      if (primary) b.className = 'primary';
-      b.onclick = async () => {
+    // Legacy draft invoices (pre-simple-billing) can still be issued or voided.
+    if (canBill && actions && ['prebill', 'in_review', 'approved'].includes(inv.status)) {
+      const issue = document.createElement('button');
+      issue.textContent = 'Issue bill';
+      issue.className = 'primary';
+      issue.onclick = async () => {
         try {
           await api(`/api/invoices/${id}/status`, {
             method: 'POST',
-            body: JSON.stringify({ status }),
+            body: JSON.stringify({ status: 'sent' }),
           });
           await renderBilling();
           await showInvoice(id);
@@ -2053,20 +2053,22 @@
           $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
-      actions.appendChild(b);
-    };
-    if (inv.status === 'prebill') {
-      btn('Continue to review', 'in_review', true);
-      btn('Void', 'void');
-    }
-    if (inv.status === 'in_review') {
-      btn('Approve', 'approved', true);
-      btn('Back to pre-bill', 'prebill');
-      btn('Void', 'void');
-    }
-    if (inv.status === 'approved') {
-      btn('Issue bill', 'sent', true);
-      btn('Void', 'void');
+      actions.appendChild(issue);
+      const voidBtn = document.createElement('button');
+      voidBtn.textContent = 'Void';
+      voidBtn.onclick = async () => {
+        try {
+          await api(`/api/invoices/${id}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status: 'void' }),
+          });
+          await renderBilling();
+          await showInvoice(id);
+        } catch (e) {
+          $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+      actions.appendChild(voidBtn);
     }
   }
 

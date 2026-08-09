@@ -834,10 +834,13 @@ function createServer(db = openDb()) {
         }
         return json(res, 400, { error: 'unsupported_format', message: 'Use format=pdf or format=xlsx' });
       }
-      if (req.method === 'POST' && pathname === '/api/invoices/prebill') {
+      if (
+        req.method === 'POST'
+        && (pathname === '/api/invoices/bill' || pathname === '/api/invoices/prebill')
+      ) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
-        return json(res, 201, invoiceSvc.generatePrebill(db, user, Number(body.matterId), body.entryIds || null));
+        return json(res, 201, invoiceSvc.createBill(db, user, Number(body.matterId), body.entryIds || null));
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/invoice-lines\/\d+\/write-down$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
