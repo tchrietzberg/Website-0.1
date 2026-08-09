@@ -124,6 +124,117 @@
       </div>`).join('');
   }
 
+  /** Field formatters available when adding default / custom record fields. */
+  const FIELD_FORMATTERS = [
+    { value: 'text', label: 'Text' },
+    { value: 'textarea', label: 'Text area' },
+    { value: 'number', label: 'Number' },
+    { value: 'date', label: 'Date' },
+    { value: 'select', label: 'Select' },
+    { value: 'checkbox', label: 'Checkbox' },
+  ];
+
+  function fieldFormatterOptions(selected = 'text') {
+    return FIELD_FORMATTERS.map((f) =>
+      `<option value="${f.value}" ${f.value === selected ? 'selected' : ''}>${f.label}</option>`
+    ).join('');
+  }
+
+  /** Manage the single Default record-type layout (used on Settings). */
+  async function bindDefaultFieldsEditor({ bodyEl, msgEl, recordTypeKey = 'default' } = {}) {
+    if (!bodyEl) return;
+    const key = recordTypeKey || 'default';
+    const setMsg = (html) => {
+      if (msgEl) msgEl.innerHTML = html || '';
+    };
+
+    const render = async () => {
+      const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
+      bodyEl.innerHTML = `
+        <div class="field-mgmt-list">
+          ${typeFieldMgmtRows(typeLayout.fields)}
+        </div>
+        ${(typeLayout.availableStandardFields || []).length ? `
+        <form id="addTypeStandardForm" class="field-mgmt-add">
+          <label>Add default field
+            <select name="fieldKey" required>
+              ${typeLayout.availableStandardFields.map((f) =>
+                `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
+            </select>
+          </label>
+          <button class="primary" type="submit">Add field</button>
+        </form>` : '<p class="muted">All optional default fields are on this layout.</p>'}
+        <form id="typeFieldForm" class="grid two">
+          <label>Custom field label
+            <input name="label" required placeholder="Case stage" />
+          </label>
+          <label>Formatter
+            <select name="fieldType">
+              ${fieldFormatterOptions('text')}
+            </select>
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Add default field formatter</button>
+          </div>
+        </form>`;
+
+      bodyEl.querySelectorAll('[data-del-type-field]').forEach((btn) => {
+        btn.onclick = async () => {
+          try {
+            await api(
+              `/api/record-types/${encodeURIComponent(key)}/layout-fields?fieldKey=${encodeURIComponent(btn.dataset.delTypeField)}`,
+              { method: 'DELETE' }
+            );
+            setMsg('');
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      });
+      const addStdType = bodyEl.querySelector('#addTypeStandardForm');
+      if (addStdType) {
+        addStdType.onsubmit = async (ev) => {
+          ev.preventDefault();
+          const fd = new FormData(addStdType);
+          try {
+            await api(`/api/record-types/${encodeURIComponent(key)}/standard-fields`, {
+              method: 'POST',
+              body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
+            });
+            setMsg('<div class="ok-banner">Default field added.</div>');
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      }
+      const typeFieldForm = bodyEl.querySelector('#typeFieldForm');
+      if (typeFieldForm) {
+        typeFieldForm.onsubmit = async (ev) => {
+          ev.preventDefault();
+          const fd = new FormData(typeFieldForm);
+          try {
+            await api('/api/custom-fields', {
+              method: 'POST',
+              body: JSON.stringify({
+                label: fd.get('label'),
+                fieldType: fd.get('fieldType'),
+                recordTypeKey: key,
+              }),
+            });
+            setMsg('<div class="ok-banner">Default field formatter added.</div>');
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      }
+    };
+
+    await render();
+  }
+
   function matterSearchText(m, { hideNumber = false } = {}) {
     return [
       hideNumber ? null : m.number,
@@ -568,19 +679,15 @@
 
     const hasQuery = !!state.matterSearch.q;
     const canEdit = canCreateMatter(state.user);
-    const canConfigure = ['admin', 'billing_clerk'].includes(state.user.role);
 
-    const [hits, recordTypes, clients, allMatters] = await Promise.all([
+    const [hits, clients, allMatters] = await Promise.all([
       api(`/api/matters?${params}`),
-      api('/api/record-types'),
       api('/api/clients'),
       api('/api/matters'), // full list for dropdowns elsewhere; not shown here
     ]);
     state.matters = allMatters;
     state.clients = clients;
     const showCreate = canEdit && state.showCreateMatter;
-    const defaultTypeKey = (recordTypes[0] && recordTypes[0].key) || 'default';
-    const defaultTypeLabel = (recordTypes[0] && recordTypes[0].label) || 'Default';
 
     main.innerHTML = `
       <div class="card stack page-card">
@@ -631,15 +738,7 @@
             </tbody>
           </table></div>`}
         </div>
-      </div>
-
-      ${canConfigure ? `
-      <div class="card stack" id="defaultFieldsCard">
-        <h2>Default fields</h2>
-        <p class="hint">Manage fields on the <strong>${defaultTypeLabel}</strong> record type layout. These apply to matters that use the type layout.</p>
-        <div id="defaultFieldsBody" class="stack"></div>
-        <div id="typeFieldMsg"></div>
-      </div>` : ''}`;
+      </div>`;
 
     $('#matterSearch').onsubmit = async (ev) => {
       ev.preventDefault();
@@ -694,98 +793,6 @@
           $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
-    }
-
-    if (canConfigure) {
-      const key = defaultTypeKey;
-      const renderDefaultFields = async () => {
-        const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
-        const body = $('#defaultFieldsBody');
-        body.innerHTML = `
-          <div class="field-mgmt-list">
-            ${typeFieldMgmtRows(typeLayout.fields)}
-          </div>
-          ${(typeLayout.availableStandardFields || []).length ? `
-          <form id="addTypeStandardForm" class="field-mgmt-add">
-            <label>Add default field
-              <select name="fieldKey" required>
-                ${typeLayout.availableStandardFields.map((f) =>
-                  `<option value="${f.key}">${f.label}</option>`).join('')}
-              </select>
-            </label>
-            <button class="primary" type="submit">Add field</button>
-          </form>` : '<p class="muted">All optional default fields are on this type.</p>'}
-          <form id="typeFieldForm" class="grid two">
-            <label>Custom field label
-              <input name="label" required placeholder="Case stage" />
-            </label>
-            <label>Field type
-              <select name="fieldType">
-                <option value="text">Text</option>
-                <option value="textarea">Text area</option>
-                <option value="number">Number</option>
-                <option value="date">Date</option>
-                <option value="select">Select</option>
-                <option value="checkbox">Checkbox</option>
-              </select>
-            </label>
-            <div class="row-actions span-all">
-              <button class="primary" type="submit">Add custom type field</button>
-            </div>
-          </form>`;
-
-        body.querySelectorAll('[data-del-type-field]').forEach((btn) => {
-          btn.onclick = async () => {
-            try {
-              await api(
-                `/api/record-types/${encodeURIComponent(key)}/layout-fields?fieldKey=${encodeURIComponent(btn.dataset.delTypeField)}`,
-                { method: 'DELETE' }
-              );
-              await renderDefaultFields();
-            } catch (e) {
-              $('#typeFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
-            }
-          };
-        });
-        const addStdType = $('#addTypeStandardForm');
-        if (addStdType) {
-          addStdType.onsubmit = async (ev) => {
-            ev.preventDefault();
-            const fd = new FormData(addStdType);
-            try {
-              await api(`/api/record-types/${encodeURIComponent(key)}/standard-fields`, {
-                method: 'POST',
-                body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
-              });
-              await renderDefaultFields();
-            } catch (e) {
-              $('#typeFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
-            }
-          };
-        }
-        const typeFieldForm = $('#typeFieldForm');
-        if (typeFieldForm) {
-          typeFieldForm.onsubmit = async (ev) => {
-            ev.preventDefault();
-            const fd = new FormData(typeFieldForm);
-            try {
-              await api('/api/custom-fields', {
-                method: 'POST',
-                body: JSON.stringify({
-                  label: fd.get('label'),
-                  fieldType: fd.get('fieldType'),
-                  recordTypeKey: key,
-                }),
-              });
-              $('#typeFieldMsg').innerHTML = '<div class="ok-banner">Custom type field added.</div>';
-              await renderDefaultFields();
-            } catch (e) {
-              $('#typeFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
-            }
-          };
-        }
-      };
-      await renderDefaultFields();
     }
   }
 
@@ -1075,56 +1082,18 @@
         </form>` : '<p class="muted">All optional standard fields are on this matter.</p>'}
         <form id="recordFieldForm" class="grid two">
           <label>Custom field label <input name="label" required placeholder="Special billing note" /></label>
-          <label>Field type
+          <label>Formatter
             <select name="fieldType">
-              <option value="text">Text</option>
-              <option value="textarea">Text area</option>
-              <option value="number">Number</option>
-              <option value="date">Date</option>
-              <option value="select">Select</option>
-              <option value="checkbox">Checkbox</option>
+              ${fieldFormatterOptions('text')}
             </select>
           </label>
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add custom field</button>
-            ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Use matter-only layout</button>' : ''}
+            ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Use default layout</button>' : ''}
           </div>
         </form>
         <div id="matterFieldMsg"></div>
-
-        ${['admin', 'billing_clerk'].includes(state.user.role) && page.typeLayout ? `
-        <h3>Default fields (${escapeHtml(page.typeLayout.label)})</h3>
-        <p class="hint">Changes here apply to the record-type default layout.</p>
-        <div class="field-mgmt-list">
-          ${typeFieldMgmtRows(page.typeLayout.fields)}
-        </div>
-        ${(page.typeLayout.availableStandardFields || []).length ? `
-        <form id="addTypeStandardOnMatterForm" class="field-mgmt-add">
-          <label>Add default field
-            <select name="fieldKey" required>
-              ${page.typeLayout.availableStandardFields.map((f) =>
-                `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
-            </select>
-          </label>
-          <button class="primary" type="submit">Add to default</button>
-        </form>` : '<p class="muted">All optional default fields are on this type.</p>'}
-        <form id="typeFieldOnMatterForm" class="grid two">
-          <label>Custom type field label <input name="label" required placeholder="Case stage" /></label>
-          <label>Field type
-            <select name="fieldType">
-              <option value="text">Text</option>
-              <option value="textarea">Text area</option>
-              <option value="number">Number</option>
-              <option value="date">Date</option>
-              <option value="select">Select</option>
-              <option value="checkbox">Checkbox</option>
-            </select>
-          </label>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Add custom type field</button>
-          </div>
-        </form>
-        <div id="typeFieldOnMatterMsg"></div>` : ''}
+        <p class="hint">Firm-wide default fields are managed in <a href="#settings">Settings</a>.</p>
       </div>` : ''}
 
       <details class="onedrive-collapse" id="onedriveCard">
@@ -1383,57 +1352,6 @@
           await renderMatterDetail();
         } catch (e) {
           $('#matterFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
-        }
-      };
-    }
-
-    main.querySelectorAll('[data-del-type-field]').forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          await api(
-            `/api/record-types/${encodeURIComponent(m.matter_type)}/layout-fields?fieldKey=${encodeURIComponent(btn.dataset.delTypeField)}`,
-            { method: 'DELETE' }
-          );
-          await renderMatterDetail();
-        } catch (e) {
-          const el = $('#typeFieldOnMatterMsg');
-          if (el) el.innerHTML = `<div class="error">${e.message}</div>`;
-        }
-      };
-    });
-    const addTypeStd = $('#addTypeStandardOnMatterForm');
-    if (addTypeStd) {
-      addTypeStd.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(addTypeStd);
-        try {
-          await api(`/api/record-types/${encodeURIComponent(m.matter_type)}/standard-fields`, {
-            method: 'POST',
-            body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
-          });
-          await renderMatterDetail();
-        } catch (e) {
-          $('#typeFieldOnMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
-        }
-      };
-    }
-    const typeOnMatter = $('#typeFieldOnMatterForm');
-    if (typeOnMatter) {
-      typeOnMatter.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(typeOnMatter);
-        try {
-          await api('/api/custom-fields', {
-            method: 'POST',
-            body: JSON.stringify({
-              label: fd.get('label'),
-              fieldType: fd.get('fieldType'),
-              recordTypeKey: m.matter_type,
-            }),
-          });
-          await renderMatterDetail();
-        } catch (e) {
-          $('#typeFieldOnMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
     }
@@ -1906,12 +1824,22 @@
 
     const today = new Date().toISOString().slice(0, 10);
 
+    const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
+
     main.innerHTML = `
       <div class="card stack">
         <h1>Settings</h1>
-        <p class="lead">Time and billing preferences${isAdmin ? ', timekeepers, and rates' : ''}.</p>
+        <p class="lead">Time and billing preferences${canConfigureFields ? ', default matter fields' : ''}${isAdmin ? ', timekeepers, and rates' : ''}.</p>
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
       </div>
+
+      ${canConfigureFields ? `
+      <div class="card stack" id="defaultFieldsCard">
+        <h2>Default fields</h2>
+        <p class="hint">One <strong>Default</strong> record layout for all matters. Add built-in fields or custom fields with a formatter.</p>
+        <div id="defaultFieldsBody" class="stack"></div>
+        <div id="typeFieldMsg"></div>
+      </div>` : ''}
 
       <form id="settingsForm" class="card stack">
         <h2>Time and Billing</h2>
@@ -2104,6 +2032,14 @@
 
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
+
+    if (canConfigureFields) {
+      await bindDefaultFieldsEditor({
+        bodyEl: $('#defaultFieldsBody'),
+        msgEl: $('#typeFieldMsg'),
+        recordTypeKey: 'default',
+      });
+    }
 
     const form = $('#settingsForm');
     const interval = $('#roundIncrementMinutes');
