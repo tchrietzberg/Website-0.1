@@ -188,9 +188,9 @@
           <div class="field-mgmt-list">${rows}</div>
           <form id="timeFieldForm" class="grid two">
             <label>Custom field label
-              <input name="label" required placeholder="Activity code" />
+              <input name="label" required />
             </label>
-            <label>Formatter
+            <label>Custom field type
               <select name="fieldType">
                 ${fieldFormatterOptions('text')}
               </select>
@@ -251,9 +251,9 @@
         </form>` : '<p class="muted">All optional built-in matter fields are on this layout.</p>'}
         <form id="typeFieldForm" class="grid two">
           <label>Custom field label
-            <input name="label" required placeholder="Case stage" />
+            <input name="label" required />
           </label>
-          <label>Formatter
+          <label>Custom field type
             <select name="fieldType">
               ${fieldFormatterOptions('text')}
             </select>
@@ -1391,8 +1391,8 @@
           <button class="primary" type="submit">Add to matter</button>
         </form>` : '<p class="muted">All optional standard fields are on this matter.</p>'}
         <form id="recordFieldForm" class="grid two">
-          <label>Custom field label <input name="label" required placeholder="Special billing note" /></label>
-          <label>Formatter
+          <label>Custom field label <input name="label" required /></label>
+          <label>Custom field type
             <select name="fieldType">
               ${fieldFormatterOptions('text')}
             </select>
