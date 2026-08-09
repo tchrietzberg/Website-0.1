@@ -487,22 +487,6 @@ body {
   outline: none;
   box-shadow: none;
 }
-.lookup-hotkey {
-  -webkit-flex: 0 0 auto;
-  flex: 0 0 auto;
-  font-family: var(--sans);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--soft);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.12rem 0.35rem;
-  background: #f4f7fb;
-}
-.lookup-scopes {
-  margin: 0.35rem 0 0;
-  font-size: 0.78rem;
-}
 .lookup-results {
   position: absolute;
   left: 0;
@@ -2981,6 +2965,12 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   .grid.two { grid-template-columns: 1fr; }
   .matter-search-bar,
   .create-matter-form { width: 100%; -webkit-flex-basis: 100%; flex-basis: 100%; }
+  .create-matter-type-field {
+    -webkit-flex: 1 1 100%;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
   .matters-toolbar h1 { width: 100%; }
   .sidebar-actions { grid-template-columns: 1fr; }
   table { min-width: 28rem; }

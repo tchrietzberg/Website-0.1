@@ -8214,16 +8214,6 @@
     });
   }
 
-  function lookupScopeHint() {
-    const parts = [];
-    if (roleCanSearch('matter')) parts.push('Matters');
-    if (roleCanSearch('contact')) parts.push('Contacts');
-    if (roleCanSearch('time')) parts.push('Time');
-    if (roleCanSearch('report')) parts.push('Reports');
-    if (['admin', 'billing_clerk'].includes(state.user?.role)) parts.push('Invoices');
-    return parts.length ? parts.join(', ') : 'No search scopes enabled for your role';
-  }
-
   async function goLookupResult(item) {
     const target = item?.target || {};
     const view = target.view;
@@ -8275,10 +8265,16 @@
     if (!state.user) {
       lookupBar.hidden = true;
       lookupBar.innerHTML = '';
+      delete lookupBar.dataset.ready;
       return;
     }
     lookupBar.hidden = false;
-    const hint = lookupScopeHint();
+    // Drop legacy scope line / ⌘K chip if an older lookup chrome is still mounted.
+    if (lookupBar.dataset.ready
+      && (lookupBar.querySelector('.lookup-hotkey') || lookupBar.querySelector('#globalLookupScopes'))) {
+      delete lookupBar.dataset.ready;
+      lookupBar.innerHTML = '';
+    }
     if (!lookupBar.dataset.ready) {
       lookupBar.innerHTML = `
         <form class="lookup-form" id="globalLookupForm" autocomplete="off" role="search">
@@ -8293,9 +8289,7 @@
               placeholder="Search matters, contacts, time, reports…"
               aria-label="Global lookup" aria-autocomplete="list" aria-controls="globalLookupResults"
               aria-expanded="false" />
-            <kbd class="lookup-hotkey" title="Keyboard shortcut">⌘K</kbd>
           </div>
-          <p class="lookup-scopes muted" id="globalLookupScopes">${escapeHtml(hint)}</p>
           <div class="lookup-results" id="globalLookupResults" hidden role="listbox" aria-label="Lookup results"></div>
         </form>`;
       lookupBar.dataset.ready = '1';
@@ -8318,19 +8312,6 @@
 
       const renderResults = (payload) => {
         lastResults = payload?.results || [];
-        const scopes = payload?.scopes || {};
-        const enabled = Object.entries(scopes)
-          .filter(([, on]) => on)
-          .map(([k]) => ({
-            matter: 'Matters', contact: 'Contacts', time: 'Time',
-            report: 'Reports', invoice: 'Invoices',
-          }[k] || k));
-        const scopesEl = $('#globalLookupScopes', lookupBar);
-        if (scopesEl) {
-          scopesEl.textContent = enabled.length
-            ? `Searching: ${enabled.join(', ')}`
-            : 'No search scopes enabled for your role';
-        }
         if (!String(input.value || '').trim()) {
           closeResults();
           return;
@@ -8374,8 +8355,6 @@
         const q = String(input.value || '').trim();
         if (!q) {
           closeResults();
-          const scopesEl = $('#globalLookupScopes', lookupBar);
-          if (scopesEl) scopesEl.textContent = lookupScopeHint();
           return;
         }
         const seq = ++reqSeq;
@@ -8442,11 +8421,6 @@
         input.focus();
         input.select();
       });
-    } else {
-      const scopesEl = $('#globalLookupScopes', lookupBar);
-      if (scopesEl && !String($('#globalLookupInput', lookupBar)?.value || '').trim()) {
-        scopesEl.textContent = lookupScopeHint();
-      }
     }
   }
 
