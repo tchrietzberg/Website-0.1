@@ -3,6 +3,7 @@ const { amountFromMinutes, minutesToDecimalHours } = require('../money');
 const { resolveRate } = require('../rates');
 const reports = require('./reports');
 const { buildTextPdf } = require('../pdf');
+const permissions = require('./permissions');
 
 const SOURCES = new Set(['time_entry', 'matter']);
 const METRICS = new Set(['count', 'hours', 'amount']);
@@ -29,6 +30,7 @@ const FIRM_REPORT_CATALOG = [
 
 const FIRM_REPORT_IDS = new Set(FIRM_REPORT_CATALOG.map((r) => r.id));
 const DASHBOARD_FIRM_SETTING = 'dashboard_firm_reports';
+const DISABLED_FIRM_SETTING = 'disabled_firm_reports';
 const FIRM_CURRENCY_KEYS = [
   'amount_cents', 'rate_cents', 'balance_cents', 'wip_cents',
   'billed_cents', 'write_down_cents', 'net_billed_cents', 'collected_cents', 'delta_cents',
@@ -57,7 +59,8 @@ function getField(db, fieldId) {
   return field;
 }
 
-function listReports(db, { dashboardOnly = false } = {}) {
+function listReports(db, { dashboardOnly = false, actor = null } = {}) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'report');
   return db.prepare(`
     SELECT r.*, f.label AS group_by_label, f.applies_to AS field_applies_to,
            f.field_type AS field_type, u.name AS created_by_name
@@ -83,6 +86,7 @@ function getReport(db, id) {
 }
 
 function createReport(db, actor, input) {
+  permissions.assertCanModifyRecords(db, actor, 'report');
   const name = String(input.name || '').trim();
   if (!name) throw new Error('name is required');
   const source = assertSource(String(input.source || ''));
@@ -130,7 +134,63 @@ function createReport(db, actor, input) {
   return getReport(db, id);
 }
 
+function updateReport(db, actor, id, input = {}) {
+  permissions.assertCanModifyRecords(db, actor, 'report');
+  const existing = db.prepare('SELECT * FROM custom_reports WHERE id = ? AND active = 1').get(id);
+  if (!existing) throw new Error('custom report not found');
+
+  const name = input.name !== undefined ? String(input.name || '').trim() : existing.name;
+  if (!name) throw new Error('name is required');
+  const source = input.source !== undefined
+    ? assertSource(String(input.source || ''))
+    : existing.source;
+  const metric = input.metric !== undefined
+    ? assertMetric(String(input.metric || 'count'))
+    : existing.metric;
+  const chartType = input.chartType !== undefined
+    ? assertChartType(String(input.chartType || 'bar'))
+    : existing.chart_type;
+  const fieldId = input.groupByFieldId !== undefined
+    ? Number(input.groupByFieldId)
+    : existing.group_by_field_id;
+  if (!Number.isInteger(fieldId) || fieldId <= 0) {
+    throw new Error('groupByFieldId is required');
+  }
+  const field = getField(db, fieldId);
+  if (field.applies_to !== source) {
+    throw new Error(`field applies to ${field.applies_to}, not ${source}`);
+  }
+  if (source === 'matter' && metric !== 'count') {
+    throw new Error('matter reports only support the count metric');
+  }
+
+  let showOnDashboard = existing.show_on_dashboard;
+  if (input.showOnDashboard !== undefined) {
+    showOnDashboard = input.showOnDashboard === 0 || input.showOnDashboard === false ? 0 : 1;
+  }
+  const description = input.description !== undefined
+    ? (String(input.description || '').trim() || null)
+    : existing.description;
+
+  db.prepare(`
+    UPDATE custom_reports SET
+      name = ?, description = ?, source = ?, group_by_field_id = ?,
+      metric = ?, chart_type = ?, show_on_dashboard = ?
+    WHERE id = ?
+  `).run(name, description, source, fieldId, metric, chartType, showOnDashboard, id);
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'custom_report.update',
+    entityType: 'custom_report',
+    entityId: id,
+    detail: { name, source, metric, groupByFieldId: fieldId, showOnDashboard: !!showOnDashboard },
+  });
+  return getReport(db, id);
+}
+
 function deactivateReport(db, actor, id) {
+  permissions.assertCanDeleteRecords(db, actor, 'report');
   const existing = db.prepare('SELECT * FROM custom_reports WHERE id = ? AND active = 1').get(id);
   if (!existing) throw new Error('custom report not found');
   db.prepare('UPDATE custom_reports SET active = 0 WHERE id = ?').run(id);
@@ -144,6 +204,7 @@ function deactivateReport(db, actor, id) {
 }
 
 function setShowOnDashboard(db, actor, id, showOnDashboard) {
+  permissions.assertCanModifyRecords(db, actor, 'report');
   const existing = db.prepare('SELECT * FROM custom_reports WHERE id = ? AND active = 1').get(id);
   if (!existing) throw new Error('custom report not found');
   const flag = showOnDashboard === 0 || showOnDashboard === false ? 0 : 1;
@@ -158,6 +219,70 @@ function setShowOnDashboard(db, actor, id, showOnDashboard) {
   return getReport(db, id);
 }
 
+function getDisabledFirmReportIds(db) {
+  const raw = getSetting(db, DISABLED_FIRM_SETTING, '[]');
+  let parsed;
+  try {
+    parsed = JSON.parse(raw || '[]');
+  } catch {
+    parsed = [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((id) => FIRM_REPORT_IDS.has(String(id))).map(String);
+}
+
+function saveDisabledFirmReportIds(db, actor, ids) {
+  const unique = [];
+  for (const id of ids) {
+    const key = String(id);
+    if (!FIRM_REPORT_IDS.has(key)) throw new Error(`unknown firm report: ${key}`);
+    if (!unique.includes(key)) unique.push(key);
+  }
+  setSetting(db, DISABLED_FIRM_SETTING, JSON.stringify(unique));
+  if (actor) {
+    audit(db, {
+      actorId: actor.id,
+      action: 'firm_reports.disabled',
+      entityType: 'firm_settings',
+      entityId: 0,
+      detail: { ids: unique },
+    });
+  }
+  return unique;
+}
+
+function listFirmReports(db, { includeDisabled = false } = {}) {
+  const disabled = new Set(getDisabledFirmReportIds(db));
+  return FIRM_REPORT_CATALOG
+    .filter((r) => includeDisabled || !disabled.has(r.id))
+    .map((r) => ({ ...r, disabled: disabled.has(r.id) }));
+}
+
+function disableFirmReport(db, actor, reportId) {
+  permissions.assertCanDeleteRecords(db, actor, 'report');
+  const id = String(reportId || '');
+  if (!FIRM_REPORT_IDS.has(id)) throw new Error('unknown firm report');
+  // Unpin while still considered enabled, then mark disabled.
+  removeFirmReportFromDashboard(db, actor, id);
+  const disabled = getDisabledFirmReportIds(db);
+  if (!disabled.includes(id)) disabled.push(id);
+  saveDisabledFirmReportIds(db, actor, disabled);
+  return { ok: true, id, disabled: true };
+}
+
+function enableFirmReport(db, actor, reportId) {
+  // Restore is allowed with Modify or Delete so the same people who remove can undo.
+  if (!permissions.canModifyAll(db, actor?.role, 'report')
+    && !permissions.canDelete(db, actor?.role, 'report')) {
+    permissions.assertCanModifyRecords(db, actor, 'report');
+  }
+  const id = String(reportId || '');
+  if (!FIRM_REPORT_IDS.has(id)) throw new Error('unknown firm report');
+  const disabled = getDisabledFirmReportIds(db).filter((x) => x !== id);
+  saveDisabledFirmReportIds(db, actor, disabled);
+  return { ok: true, id, disabled: false };
+}
+
 function getDashboardFirmReportIds(db) {
   const raw = getSetting(db, DASHBOARD_FIRM_SETTING, '[]');
   let parsed;
@@ -167,7 +292,10 @@ function getDashboardFirmReportIds(db) {
     parsed = [];
   }
   if (!Array.isArray(parsed)) return [];
-  return parsed.filter((id) => FIRM_REPORT_IDS.has(String(id))).map(String);
+  const disabled = new Set(getDisabledFirmReportIds(db));
+  return parsed
+    .filter((id) => FIRM_REPORT_IDS.has(String(id)) && !disabled.has(String(id)))
+    .map(String);
 }
 
 function saveDashboardFirmReportIds(db, actor, ids) {
@@ -193,6 +321,9 @@ function saveDashboardFirmReportIds(db, actor, ids) {
 function addFirmReportToDashboard(db, actor, reportId) {
   const id = String(reportId || '');
   if (!FIRM_REPORT_IDS.has(id)) throw new Error('unknown firm report');
+  if (getDisabledFirmReportIds(db).includes(id)) {
+    throw new Error('This firm report has been removed. Restore it on Reports first.');
+  }
   const ids = getDashboardFirmReportIds(db);
   if (!ids.includes(id)) ids.push(id);
   saveDashboardFirmReportIds(db, actor, ids);
@@ -218,9 +349,13 @@ function firmReportRows(db, reportId) {
   throw new Error('unknown firm report');
 }
 
-function runFirmReport(db, reportId) {
+function runFirmReport(db, reportId, actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'report');
   const meta = firmReportMeta(reportId);
   if (!meta) throw new Error('unknown firm report');
+  if (getDisabledFirmReportIds(db).includes(String(reportId))) {
+    throw new Error('This firm report has been removed');
+  }
   const rows = firmReportRows(db, reportId);
   const columns = rows.length ? Object.keys(rows[0]) : [];
   return {
@@ -244,7 +379,7 @@ function listAvailableDashboardAdds(db) {
   const pinnedFirm = new Set(getDashboardFirmReportIds(db));
   const custom = listReports(db).filter((r) => !r.show_on_dashboard);
   return {
-    firm: FIRM_REPORT_CATALOG.filter((r) => !pinnedFirm.has(r.id)),
+    firm: listFirmReports(db).filter((r) => !pinnedFirm.has(r.id)),
     custom: custom.map((r) => ({
       id: r.id,
       name: r.name,
@@ -257,6 +392,7 @@ function listAvailableDashboardAdds(db) {
 }
 
 function pinDashboardReport(db, actor, { kind, id } = {}) {
+  permissions.assertCanModifyRecords(db, actor, 'report');
   const type = String(kind || '');
   if (type === 'firm') {
     return addFirmReportToDashboard(db, actor, id);
@@ -271,6 +407,7 @@ function pinDashboardReport(db, actor, { kind, id } = {}) {
 }
 
 function unpinDashboardReport(db, actor, { kind, id } = {}) {
+  permissions.assertCanModifyRecords(db, actor, 'report');
   const type = String(kind || '');
   if (type === 'firm') {
     return removeFirmReportFromDashboard(db, actor, id);
@@ -365,7 +502,8 @@ function runMatterReport(db, report) {
   })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 }
 
-function runReport(db, id) {
+function runReport(db, id, actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'report');
   const report = getReport(db, id);
   const rows = report.source === 'time_entry'
     ? runTimeEntryReport(db, report)
@@ -402,7 +540,8 @@ function runReport(db, id) {
   };
 }
 
-function dashboard(db) {
+function dashboard(db, actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'report');
   const widgets = [];
 
   for (const firmId of getDashboardFirmReportIds(db)) {
@@ -472,7 +611,8 @@ function customWidgetExportRows(widget) {
   }));
 }
 
-function exportDashboard(db, format = 'pdf') {
+function exportDashboard(db, format = 'pdf', actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'report');
   const fmt = String(format || 'pdf').toLowerCase();
   const { widgets } = dashboard(db);
   const filenameBase = 'dashboard-reports';
@@ -576,6 +716,7 @@ module.exports = {
   listReports,
   getReport,
   createReport,
+  updateReport,
   deactivateReport,
   setShowOnDashboard,
   runReport,
@@ -588,6 +729,10 @@ module.exports = {
   removeFirmReportFromDashboard,
   getDashboardFirmReportIds,
   listAvailableDashboardAdds,
+  listFirmReports,
+  disableFirmReport,
+  enableFirmReport,
+  getDisabledFirmReportIds,
   FIRM_REPORT_CATALOG,
   SOURCES,
   METRICS,

@@ -5,6 +5,7 @@ const os = require('node:os');
 const { resetDb, setSetting } = require('../src/db');
 const customFields = require('../src/services/customFields');
 const customReports = require('../src/services/customReports');
+const permissions = require('../src/services/permissions');
 const timeSvc = require('../src/services/time');
 
 describe('custom reports and dashboard', () => {
@@ -191,5 +192,110 @@ describe('custom reports and dashboard', () => {
     const xlsx = customReports.exportDashboard(db, 'xlsx');
     assert.match(xlsx.contentType, /spreadsheetml/);
     assert.ok(xlsx.body.length > 40);
+  });
+
+  it('deletes and restores firm reports from the firm catalog', () => {
+    customReports.pinDashboardReport(db, admin, { kind: 'firm', id: 'matters' });
+    assert.ok(customReports.dashboard(db).widgets.some((w) => w.report.id === 'matters'));
+
+    const removed = customReports.disableFirmReport(db, admin, 'matters');
+    assert.equal(removed.ok, true);
+    assert.ok(customReports.getDisabledFirmReportIds(db).includes('matters'));
+    assert.ok(!customReports.listFirmReports(db).some((r) => r.id === 'matters'));
+    assert.ok(customReports.listFirmReports(db, { includeDisabled: true })
+      .some((r) => r.id === 'matters' && r.disabled));
+    assert.ok(!customReports.dashboard(db).widgets.some((w) => w.report.id === 'matters'));
+    assert.throws(() => customReports.runFirmReport(db, 'matters'), /removed/i);
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+          report: { viewAll: true, modifyAll: false, delete: false },
+        },
+      },
+    });
+    assert.throws(() => customReports.disableFirmReport(db, para, 'lodestar-summary'), /permission to delete/);
+    assert.throws(() => customReports.enableFirmReport(db, para, 'matters'), /read only/i);
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+          report: { viewAll: true, modifyAll: false, delete: true },
+        },
+      },
+    });
+    customReports.enableFirmReport(db, para, 'matters');
+    assert.ok(!customReports.getDisabledFirmReportIds(db).includes('matters'));
+    customReports.disableFirmReport(db, para, 'matters');
+
+    customReports.enableFirmReport(db, admin, 'matters');
+    assert.ok(!customReports.getDisabledFirmReportIds(db).includes('matters'));
+    assert.ok(customReports.listFirmReports(db).some((r) => r.id === 'matters'));
+  });
+
+  it('updates and deletes custom reports with report permissions', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Desk',
+      fieldType: 'text',
+      appliesTo: 'matter',
+      recordTypeKey: 'billable',
+    });
+    const report = customReports.createReport(db, admin, {
+      name: 'By desk',
+      source: 'matter',
+      groupByFieldId: field.id,
+      metric: 'count',
+      chartType: 'bar',
+      showOnDashboard: true,
+    });
+    const updated = customReports.updateReport(db, admin, report.id, {
+      name: 'Desks revised',
+      description: 'Updated firm report',
+      chartType: 'pie',
+      showOnDashboard: false,
+    });
+    assert.equal(updated.name, 'Desks revised');
+    assert.equal(updated.description, 'Updated firm report');
+    assert.equal(updated.chart_type, 'pie');
+    assert.equal(updated.show_on_dashboard, 0);
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+          report: { viewAll: true, modifyAll: false, delete: false },
+        },
+      },
+    });
+    assert.throws(
+      () => customReports.updateReport(db, para, report.id, { name: 'Nope' }),
+      /read only/i
+    );
+    assert.throws(
+      () => customReports.deactivateReport(db, para, report.id),
+      /permission to delete/
+    );
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+          report: { viewAll: true, modifyAll: true, delete: true },
+        },
+      },
+    });
+    const removed = customReports.deactivateReport(db, para, report.id);
+    assert.equal(removed.ok, true);
+    assert.equal(customReports.listReports(db).length, 0);
   });
 });

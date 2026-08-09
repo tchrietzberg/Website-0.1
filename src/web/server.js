@@ -711,74 +711,121 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.deactivateCustomField(db, user, fieldId));
       }
 
+      // Firm report catalog (enable/disable for the firm)
+      if (req.method === 'GET' && pathname === '/api/firm-reports') {
+        try {
+          permissions.assertCanViewRecords(db, user, 'report');
+          const includeDisabled = url.searchParams.get('includeDisabled') === '1';
+          return json(res, 200, customReports.listFirmReports(db, { includeDisabled }));
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/firm-reports\/[^/]+$/)) {
+        try {
+          const id = decodeURIComponent(pathname.split('/')[3]);
+          return json(res, 200, customReports.disableFirmReport(db, user, id));
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/firm-reports\/[^/]+\/restore$/)) {
+        try {
+          const id = decodeURIComponent(pathname.split('/')[3]);
+          return json(res, 200, customReports.enableFirmReport(db, user, id));
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
+        }
+      }
+
       // Custom reports & dashboard
       if (req.method === 'GET' && pathname === '/api/custom-reports') {
-        return json(res, 200, customReports.listReports(db));
+        try {
+          return json(res, 200, customReports.listReports(db, { actor: user }));
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname === '/api/custom-reports') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 201, customReports.createReport(db, user, body));
         } catch (e) {
-          return json(res, 400, { error: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/custom-reports\/\d+\/run$/)) {
         try {
           const id = Number(pathname.split('/')[3]);
-          return json(res, 200, customReports.runReport(db, id));
+          return json(res, 200, customReports.runReport(db, id, user));
         } catch (e) {
-          return json(res, 404, { error: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 404;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/custom-reports\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         try {
           const id = Number(pathname.split('/')[3]);
           const body = await parseBody(req);
+          const editingDefinition = [
+            'name', 'description', 'source', 'groupByFieldId', 'metric', 'chartType',
+          ].some((key) => body[key] !== undefined);
+          if (editingDefinition) {
+            return json(res, 200, customReports.updateReport(db, user, id, body));
+          }
           if (body.showOnDashboard === undefined) {
-            return json(res, 400, { error: 'showOnDashboard is required' });
+            return json(res, 400, { error: 'showOnDashboard is required', message: 'showOnDashboard is required' });
           }
           return json(res, 200, customReports.setShowOnDashboard(db, user, id, body.showOnDashboard));
         } catch (e) {
-          return json(res, 404, { error: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 404;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-reports\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         try {
           const id = Number(pathname.split('/')[3]);
           return json(res, 200, customReports.deactivateReport(db, user, id));
         } catch (e) {
-          return json(res, 404, { error: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 404;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'GET' && pathname === '/api/dashboard') {
-        return json(res, 200, customReports.dashboard(db));
+        try {
+          return json(res, 200, customReports.dashboard(db, user));
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname === '/api/dashboard/pin') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 200, customReports.pinDashboardReport(db, user, body));
         } catch (e) {
-          return json(res, 400, { error: e.message, message: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'POST' && pathname === '/api/dashboard/unpin') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 200, customReports.unpinDashboardReport(db, user, body));
         } catch (e) {
-          return json(res, 400, { error: e.message, message: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'GET' && pathname === '/api/dashboard/export') {
         try {
           const fmt = url.searchParams.get('format') || 'pdf';
-          const file = customReports.exportDashboard(db, fmt);
+          const file = customReports.exportDashboard(db, fmt, user);
           res.writeHead(200, {
             'Content-Type': file.contentType,
             'Content-Disposition': `attachment; filename="${file.filename}"`,
@@ -787,7 +834,8 @@ function createServer(db = openDb()) {
           res.end(file.body);
           return;
         } catch (e) {
-          return json(res, 400, { error: e.message, message: e.message });
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
         }
       }
 
@@ -1202,6 +1250,11 @@ function createServer(db = openDb()) {
 
         // Matter-scoped lodestar PDFs / Excels (demo-style)
         if (name === 'lodestar-matter-detail' || name === 'lodestar-matter-summary') {
+          try {
+            permissions.assertCanViewRecords(db, user, 'report');
+          } catch (e) {
+            return json(res, e.code === 'FORBIDDEN' ? 403 : 400, { error: e.message, message: e.message });
+          }
           if (!matterId) {
             return json(res, 400, { error: 'matterId required', message: 'Select a matter for this report.' });
           }
@@ -1233,6 +1286,20 @@ function createServer(db = openDb()) {
             ? reports.lodestarMatterDetail(db, matterId)
             : reports.lodestarMatterSummary(db, matterId);
           return json(res, 200, payload);
+        }
+
+        try {
+          permissions.assertCanViewRecords(db, user, 'report');
+        } catch (e) {
+          return json(res, e.code === 'FORBIDDEN' ? 403 : 400, { error: e.message, message: e.message });
+        }
+
+        if (['matters', 'lodestar-summary', 'lodestar-detail'].includes(name)
+          && customReports.getDisabledFirmReportIds(db).includes(name)) {
+          return json(res, 404, {
+            error: 'This firm report has been removed',
+            message: 'This firm report has been removed',
+          });
         }
 
         let rows;

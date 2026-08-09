@@ -231,6 +231,7 @@ describe('role permissions and field permissions', () => {
           matter: { viewAll: false, modifyAll: false, delete: false },
           contact: { viewAll: true, modifyAll: true, delete: true },
           time: { viewAll: true, modifyAll: true, delete: false },
+          report: { viewAll: true, modifyAll: false, delete: false },
         },
       },
     });
@@ -244,5 +245,29 @@ describe('role permissions and field permissions', () => {
     );
     const removed = timeSvc.deleteEntry(db, admin, entry.id);
     assert.equal(removed.ok, true);
+  });
+
+  it('includes Reports in role object permissions', () => {
+    const settings = permissions.getPermissionsSettings(db);
+    assert.ok(settings.objects.some((o) => o.key === 'report' && o.label === 'Reports'));
+    assert.equal(settings.rolePermissions.paralegal.objects.report.viewAll, true);
+    assert.equal(settings.rolePermissions.paralegal.objects.report.modifyAll, true);
+    assert.equal(settings.rolePermissions.paralegal.objects.report.delete, true);
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+          report: { viewAll: true, modifyAll: false, delete: false },
+        },
+      },
+    });
+    assert.equal(permissions.canViewAll(db, 'paralegal', 'report'), true);
+    assert.equal(permissions.canModifyAll(db, 'paralegal', 'report'), false);
+    assert.equal(permissions.canDelete(db, 'paralegal', 'report'), false);
+    assert.equal(permissions.canModifyAll(db, 'admin', 'report'), true);
+    assert.equal(permissions.canDelete(db, 'admin', 'report'), true);
   });
 });

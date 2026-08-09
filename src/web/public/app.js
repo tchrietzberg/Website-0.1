@@ -932,7 +932,7 @@
   }
 
   function normalizeRolePermEntry(entry) {
-    const objects = { matter: {}, contact: {}, time: {} };
+    const objects = { matter: {}, contact: {}, time: {}, report: {} };
     const src = entry && typeof entry === 'object' ? entry : {};
     const objectsSrc = src.objects && typeof src.objects === 'object' ? src.objects : src;
     if (typeof entry === 'string') {
@@ -960,6 +960,7 @@
       { key: 'matter', label: 'Matters' },
       { key: 'contact', label: 'Contacts' },
       { key: 'time', label: 'Time entries' },
+      { key: 'report', label: 'Reports' },
     ];
     const current = {};
     for (const role of roles) {
@@ -1788,8 +1789,8 @@
       roleCanView('matter') ? ['matters', 'Matters', 'matters', 'Matters & search'] : null,
       roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
-      ['reports', 'Reports', 'reports', 'Lodestar & custom'],
-      ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'],
+      roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
+      roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
       ['settings', 'Settings', 'settings', 'Firm preferences'],
     ].filter(Boolean);
     // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
@@ -1803,6 +1804,9 @@
       if (!roleCanView('contact')) state.view = items[0]?.[0] || 'settings';
     }
     if (state.view === 'time' && !roleCanView('time')) {
+      state.view = items[0]?.[0] || 'settings';
+    }
+    if ((state.view === 'reports' || state.view === 'dashboard') && !roleCanView('report')) {
       state.view = items[0]?.[0] || 'settings';
     }
     const activeView = state.view === 'matter'
@@ -4171,7 +4175,7 @@
     const data = await api('/api/dashboard');
     const widgets = data.widgets || [];
     const available = data.available || { firm: [], custom: [] };
-    const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
+    const canEdit = roleCanModify('report');
     const addOptions = [
       ...(available.firm || []).map((r) =>
         `<option value="firm:${escapeHtml(r.id)}">${escapeHtml(r.name)} (firm)</option>`),
@@ -4295,10 +4299,12 @@
   }
 
   async function renderReports() {
-    const [customReportList, recordTypes, timeFields] = await Promise.all([
+    const includeDisabledFirm = roleCanModify('report') || roleCanDelete('report');
+    const [customReportList, recordTypes, timeFields, firmReportList] = await Promise.all([
       api('/api/custom-reports').catch(() => []),
       api('/api/record-types').catch(() => []),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
+      api(`/api/firm-reports${includeDisabledFirm ? '?includeDisabled=1' : ''}`).catch(() => []),
     ]);
     const matterFieldLists = await Promise.all(
       (recordTypes || []).map((t) =>
@@ -4306,15 +4312,81 @@
     );
     const matterFields = matterFieldLists.flat()
       .filter((f, i, arr) => arr.findIndex((x) => Number(x.id) === Number(f.id)) === i);
-    const canEditReports = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
-    const firmReports = [
-      ['matters', 'Matters'],
-      ['lodestar-summary', 'Lodestar Summary (all matters)'],
-      ['lodestar-detail', 'Lodestar Detail (all matters)'],
-    ];
-    const fieldOptions = (fields) => (fields || []).map((f) =>
-      `<option value="${f.id}">${escapeHtml(f.label)}</option>`
+    const canEditReports = roleCanModify('report');
+    const canDeleteReports = roleCanDelete('report');
+    const editingReportId = state.editingCustomReportId
+      ? Number(state.editingCustomReportId)
+      : null;
+    const editingReport = editingReportId
+      ? (customReportList || []).find((r) => Number(r.id) === editingReportId)
+      : null;
+    const firmReports = (firmReportList || []).length
+      ? firmReportList
+      : [
+        { id: 'matters', name: 'Matters', disabled: false },
+        { id: 'lodestar-summary', name: 'Lodestar Summary (all matters)', disabled: false },
+        { id: 'lodestar-detail', name: 'Lodestar Detail (all matters)', disabled: false },
+      ];
+    const fieldOptions = (fields, selectedId = null) => (fields || []).map((f) =>
+      `<option value="${f.id}" ${Number(f.id) === Number(selectedId) ? 'selected' : ''}>${escapeHtml(f.label)}</option>`
     ).join('');
+    const reportFormHtml = ({
+      formId,
+      submitLabel,
+      report = null,
+      sourceSelectId,
+      fieldSelectId,
+      metricSelectId,
+    }) => {
+      const source = report?.source || 'time_entry';
+      const fields = source === 'matter' ? matterFields : timeFields;
+      return `
+        <form id="${formId}" class="grid two">
+          <label>Report name
+            <input name="name" required placeholder="e.g. Hours by case stage"
+              value="${escapeHtml(report?.name || '')}" />
+          </label>
+          <label>Source
+            <select name="source" id="${sourceSelectId}">
+              <option value="time_entry" ${source === 'time_entry' ? 'selected' : ''}>Time entries</option>
+              <option value="matter" ${source === 'matter' ? 'selected' : ''}>Matters</option>
+            </select>
+          </label>
+          <label>Group by custom field
+            <select name="groupByFieldId" id="${fieldSelectId}" required>
+              ${fieldOptions(fields, report?.group_by_field_id)
+                || '<option value="">No custom fields for this source</option>'}
+            </select>
+          </label>
+          <label>Metric
+            <select name="metric" id="${metricSelectId}">
+              <option value="hours" ${!report || report?.metric === 'hours' ? 'selected' : ''}>Hours</option>
+              <option value="amount" ${report?.metric === 'amount' ? 'selected' : ''}>Amount</option>
+              <option value="count" ${report?.metric === 'count' ? 'selected' : ''}>Count</option>
+            </select>
+          </label>
+          <label>Chart
+            <select name="chartType">
+              <option value="bar" ${!report || report?.chart_type === 'bar' ? 'selected' : ''}>Bar</option>
+              <option value="pie" ${report?.chart_type === 'pie' ? 'selected' : ''}>Pie</option>
+              <option value="table" ${report?.chart_type === 'table' ? 'selected' : ''}>Table only</option>
+            </select>
+          </label>
+          <label class="check-inline">
+            <input type="checkbox" name="showOnDashboard"
+              ${!report || report?.show_on_dashboard ? 'checked' : ''} />
+            Show on dashboard
+          </label>
+          <label class="span-all">Description
+            <input name="description" placeholder="Optional"
+              value="${escapeHtml(report?.description || '')}" />
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
+            ${report ? '<button type="button" data-cancel-edit-report>Cancel</button>' : ''}
+          </div>
+        </form>`;
+    };
     main.innerHTML = `
       <div class="card stack">
         <h1>Reports</h1>
@@ -4323,47 +4395,24 @@
         <h2>Custom reports</h2>
         <p class="hint">Group matters or time by a custom field, then pin the result to the Dashboard.</p>
         ${canEditReports ? `
-        <form id="customReportForm" class="grid two">
-          <label>Report name
-            <input name="name" required placeholder="e.g. Hours by case stage" />
-          </label>
-          <label>Source
-            <select name="source" id="crSource">
-              <option value="time_entry">Time entries</option>
-              <option value="matter">Matters</option>
-            </select>
-          </label>
-          <label>Group by custom field
-            <select name="groupByFieldId" id="crField" required>
-              ${fieldOptions(timeFields) || '<option value="">No time-entry fields yet</option>'}
-            </select>
-          </label>
-          <label>Metric
-            <select name="metric" id="crMetric">
-              <option value="hours">Hours</option>
-              <option value="amount">Amount</option>
-              <option value="count">Count</option>
-            </select>
-          </label>
-          <label>Chart
-            <select name="chartType">
-              <option value="bar">Bar</option>
-              <option value="pie">Pie</option>
-              <option value="table">Table only</option>
-            </select>
-          </label>
-          <label class="check-inline">
-            <input type="checkbox" name="showOnDashboard" checked />
-            Show on dashboard
-          </label>
-          <label class="span-all">Description
-            <input name="description" placeholder="Optional" />
-          </label>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Create report</button>
-          </div>
-        </form>
-        <div id="customReportMsg"></div>` : '<p class="muted">Ask an admin or attorney to create custom reports.</p>'}
+        ${editingReport ? `
+          <h3>Edit report</h3>
+          ${reportFormHtml({
+            formId: 'customReportEditForm',
+            submitLabel: 'Save report',
+            report: editingReport,
+            sourceSelectId: 'crEditSource',
+            fieldSelectId: 'crEditField',
+            metricSelectId: 'crEditMetric',
+          })}
+        ` : reportFormHtml({
+          formId: 'customReportForm',
+          submitLabel: 'Create report',
+          sourceSelectId: 'crSource',
+          fieldSelectId: 'crField',
+          metricSelectId: 'crMetric',
+        })}
+        <div id="customReportMsg"></div>` : '<p class="muted">Your role can view reports but not create or edit them.</p>'}
         <div class="stack" id="customReportList">
           ${(customReportList || []).map((r) => `
             <div class="report-row" data-custom-report="${r.id}">
@@ -4373,8 +4422,11 @@
                   · ${escapeHtml(r.source === 'time_entry' ? 'Time' : 'Matters')}
                   ${r.show_on_dashboard ? ' · Dashboard' : ''}</div>
               </div>
-              <button type="button" data-run-custom="${r.id}">View</button>
-              ${canEditReports ? `<button type="button" data-del-custom="${r.id}">Remove</button>` : ''}
+              <div class="row-actions">
+                <button type="button" data-run-custom="${r.id}">View</button>
+                ${canEditReports ? `<button type="button" data-edit-custom="${r.id}">Edit</button>` : ''}
+                ${canDeleteReports ? `<button type="button" data-del-custom="${r.id}">Delete</button>` : ''}
+              </div>
             </div>`).join('') || '<p class="muted">No custom reports yet.</p>'}
         </div>
         <div id="customReportOut" hidden></div>
@@ -4382,60 +4434,95 @@
 
       <div class="card">
         <h2>Firm reports</h2>
-        <p class="hint">Pin these to the Dashboard from the Dashboard page to include them in dashboard exports.</p>
+        <p class="hint">Pin these to the Dashboard from the Dashboard page to include them in dashboard exports.
+          ${canDeleteReports ? ' Delete removes a firm report from this firm (it can be restored later).' : ''}</p>
+        <div id="firmReportMsg"></div>
         <div>
-          ${firmReports.map(([id, label]) => `
-            <div class="report-row" data-firm-report-row="${id}">
-              <strong>${label}</strong>
-              <button data-view-report="${id}">View</button>
-              <a class="btn" href="/api/reports/${id}?format=pdf">PDF</a>
-              <a class="btn" href="/api/reports/${id}?format=csv" target="_blank">CSV</a>
-              <a class="btn" href="/api/reports/${id}?format=xlsx">Excel</a>
-            </div>`).join('')}
+          ${firmReports.map((r) => {
+            const id = r.id;
+            const label = r.name || id;
+            const disabled = !!r.disabled;
+            if (disabled) {
+              return `
+            <div class="report-row is-disabled" data-firm-report-row="${escapeHtml(id)}">
+              <div>
+                <strong>${escapeHtml(label)}</strong>
+                <div class="muted">Removed from firm</div>
+              </div>
+              ${canEditReports || canDeleteReports
+                ? `<button type="button" data-restore-firm="${escapeHtml(id)}">Restore</button>`
+                : '<span class="muted">—</span>'}
+            </div>`;
+            }
+            return `
+            <div class="report-row" data-firm-report-row="${escapeHtml(id)}">
+              <strong>${escapeHtml(label)}</strong>
+              <div class="row-actions">
+                <button type="button" data-view-report="${escapeHtml(id)}">View</button>
+                <a class="btn" href="/api/reports/${encodeURIComponent(id)}?format=pdf">PDF</a>
+                <a class="btn" href="/api/reports/${encodeURIComponent(id)}?format=csv" target="_blank">CSV</a>
+                <a class="btn" href="/api/reports/${encodeURIComponent(id)}?format=xlsx">Excel</a>
+                ${canDeleteReports
+                  ? `<button type="button" data-del-firm="${escapeHtml(id)}">Delete</button>`
+                  : ''}
+              </div>
+            </div>`;
+          }).join('') || '<p class="muted">No firm reports available.</p>'}
         </div>
       </div>
       <div id="reportOut" class="card" hidden></div>`;
 
-    const crSource = $('#crSource');
-    const crField = $('#crField');
-    const crMetric = $('#crMetric');
-    const syncCustomReportFields = () => {
-      if (!crSource || !crField) return;
-      const source = crSource.value;
-      const fields = source === 'matter' ? matterFields : timeFields;
-      crField.innerHTML = fields.length
-        ? fields.map((f) => `<option value="${f.id}">${escapeHtml(f.label)}</option>`).join('')
-        : '<option value="">No custom fields for this source</option>';
-      if (crMetric) {
-        [...crMetric.options].forEach((opt) => {
-          opt.hidden = source === 'matter' && opt.value !== 'count';
-        });
-        if (source === 'matter') crMetric.value = 'count';
-      }
+    const wireReportSourceFields = (sourceEl, fieldEl, metricEl, preferredFieldId = null) => {
+      if (!sourceEl || !fieldEl) return;
+      const sync = () => {
+        const source = sourceEl.value;
+        const fields = source === 'matter' ? matterFields : timeFields;
+        fieldEl.innerHTML = fields.length
+          ? fields.map((f) =>
+            `<option value="${f.id}" ${Number(f.id) === Number(preferredFieldId) ? 'selected' : ''}>${escapeHtml(f.label)}</option>`
+          ).join('')
+          : '<option value="">No custom fields for this source</option>';
+        if (metricEl) {
+          [...metricEl.options].forEach((opt) => {
+            opt.hidden = source === 'matter' && opt.value !== 'count';
+          });
+          if (source === 'matter') metricEl.value = 'count';
+        }
+      };
+      sourceEl.onchange = sync;
+      sync();
     };
-    if (crSource) {
-      crSource.onchange = syncCustomReportFields;
-      syncCustomReportFields();
-    }
+    wireReportSourceFields($('#crSource'), $('#crField'), $('#crMetric'));
+    wireReportSourceFields(
+      $('#crEditSource'),
+      $('#crEditField'),
+      $('#crEditMetric'),
+      editingReport?.group_by_field_id
+    );
+
+    const reportBodyFromForm = (form) => {
+      const fd = new FormData(form);
+      return {
+        name: fd.get('name'),
+        description: fd.get('description'),
+        source: fd.get('source'),
+        groupByFieldId: Number(fd.get('groupByFieldId')),
+        metric: fd.get('metric'),
+        chartType: fd.get('chartType'),
+        showOnDashboard: fd.get('showOnDashboard') === 'on',
+      };
+    };
 
     const customForm = $('#customReportForm');
     if (customForm) {
       customForm.onsubmit = async (ev) => {
         ev.preventDefault();
-        const fd = new FormData(customForm);
         try {
           await api('/api/custom-reports', {
             method: 'POST',
-            body: JSON.stringify({
-              name: fd.get('name'),
-              description: fd.get('description'),
-              source: fd.get('source'),
-              groupByFieldId: Number(fd.get('groupByFieldId')),
-              metric: fd.get('metric'),
-              chartType: fd.get('chartType'),
-              showOnDashboard: fd.get('showOnDashboard') === 'on',
-            }),
+            body: JSON.stringify(reportBodyFromForm(customForm)),
           });
+          state.editingCustomReportId = null;
           $('#customReportMsg').innerHTML = '<div class="ok-banner">Custom report created.</div>';
           await renderReports();
         } catch (e) {
@@ -4443,6 +4530,30 @@
         }
       };
     }
+
+    const editForm = $('#customReportEditForm');
+    if (editForm && editingReportId) {
+      editForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        try {
+          await api(`/api/custom-reports/${editingReportId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(reportBodyFromForm(editForm)),
+          });
+          state.editingCustomReportId = null;
+          $('#customReportMsg').innerHTML = '<div class="ok-banner">Report updated.</div>';
+          await renderReports();
+        } catch (e) {
+          $('#customReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+    main.querySelectorAll('[data-cancel-edit-report]').forEach((btn) => {
+      btn.onclick = async () => {
+        state.editingCustomReportId = null;
+        await renderReports();
+      };
+    });
 
     const showCustomRun = async (id) => {
       try {
@@ -4455,20 +4566,42 @@
           ${renderReportResult(payload)}`;
         out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } catch (e) {
-        $('#customReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        const msg = $('#customReportMsg');
+        if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
       }
     };
 
     main.querySelectorAll('[data-run-custom]').forEach((b) => {
       b.onclick = () => showCustomRun(Number(b.dataset.runCustom));
     });
+    main.querySelectorAll('[data-edit-custom]').forEach((b) => {
+      b.onclick = async () => {
+        state.editingCustomReportId = Number(b.dataset.editCustom);
+        await renderReports();
+        const form = $('#customReportEditForm');
+        if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+    });
     main.querySelectorAll('[data-del-custom]').forEach((b) => {
       b.onclick = async () => {
+        const id = Number(b.dataset.delCustom);
+        const row = (customReportList || []).find((r) => Number(r.id) === id);
+        const sure = await confirmAction({
+          title: 'Delete this report?',
+          message: row?.name
+            ? `Delete “${row.name}”? It will be removed from Reports and the Dashboard.`
+            : 'Delete this custom report? It will be removed from Reports and the Dashboard.',
+          confirmLabel: 'Yes, delete report',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
         try {
-          await api(`/api/custom-reports/${b.dataset.delCustom}`, { method: 'DELETE' });
+          await api(`/api/custom-reports/${id}`, { method: 'DELETE' });
+          if (Number(state.editingCustomReportId) === id) state.editingCustomReportId = null;
           await renderReports();
         } catch (e) {
-          $('#customReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          const msg = $('#customReportMsg');
+          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     });
@@ -4542,6 +4675,45 @@
 
     main.querySelectorAll('[data-view-report]').forEach((b) => {
       b.onclick = () => showFirmReport(b.dataset.viewReport);
+    });
+
+    const firmMsg = (html) => {
+      const el = $('#firmReportMsg');
+      if (el) el.innerHTML = html || '';
+    };
+    main.querySelectorAll('[data-del-firm]').forEach((b) => {
+      b.onclick = async () => {
+        const id = b.dataset.delFirm;
+        const meta = firmReports.find((r) => String(r.id) === String(id));
+        const sure = await confirmAction({
+          title: 'Delete this firm report?',
+          message: meta?.name
+            ? `Remove “${meta.name}” from this firm’s Reports list and Dashboard? You can restore it later.`
+            : 'Remove this firm report from Reports and the Dashboard? You can restore it later.',
+          confirmLabel: 'Yes, delete report',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
+        try {
+          await api(`/api/firm-reports/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          await renderReports();
+        } catch (e) {
+          firmMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
+    main.querySelectorAll('[data-restore-firm]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api(`/api/firm-reports/${encodeURIComponent(b.dataset.restoreFirm)}/restore`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+          });
+          await renderReports();
+        } catch (e) {
+          firmMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
     });
 
     if (state.focusFirmReportId) {

@@ -1879,6 +1879,12 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   min-width: 10.5rem;
   font-weight: 600;
 }
+.report-row.is-disabled {
+  opacity: 0.72;
+}
+.report-row .row-actions {
+  margin-left: auto;
+}
 
 .check-inline {
   display: -webkit-flex;

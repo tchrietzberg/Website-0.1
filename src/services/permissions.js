@@ -14,11 +14,12 @@ const ROLE_KEYS = ROLES.map((r) => r.key);
 /** @deprecated use ROLE_KEYS */
 const PROFILE_KEYS = ROLE_KEYS;
 
-const OBJECT_KEYS = ['matter', 'contact', 'time'];
+const OBJECT_KEYS = ['matter', 'contact', 'time', 'report'];
 const OBJECT_LABELS = {
   matter: 'Matters',
   contact: 'Contacts',
   time: 'Time entries',
+  report: 'Reports',
 };
 
 const FIELD_MODES = ['hidden', 'read', 'write'];
@@ -207,24 +208,30 @@ function getProfileAccess(db, role) {
   return OBJECT_KEYS.every((o) => objs[o].modifyAll) ? 'read_write' : 'read_only';
 }
 
+function forbidden(message) {
+  const err = new Error(message);
+  err.code = 'FORBIDDEN';
+  return err;
+}
+
 function assertCanViewRecords(db, actor, objectKey) {
   const label = OBJECT_LABELS[objectKey] || objectKey;
   if (!canViewAll(db, actor?.role, objectKey)) {
-    throw new Error(`${label} are not viewable for your role`);
+    throw forbidden(`${label} are not viewable for your role`);
   }
 }
 
 function assertCanModifyRecords(db, actor, objectKey) {
   const label = OBJECT_LABELS[objectKey] || objectKey;
   if (!canModifyAll(db, actor?.role, objectKey)) {
-    throw new Error(`${label} are read only for your role`);
+    throw forbidden(`${label} are read only for your role`);
   }
 }
 
 function assertCanDeleteRecords(db, actor, objectKey) {
   const label = OBJECT_LABELS[objectKey] || objectKey;
   if (!canDelete(db, actor?.role, objectKey)) {
-    throw new Error(`You do not have permission to delete ${label.toLowerCase()}`);
+    throw forbidden(`You do not have permission to delete ${label.toLowerCase()}`);
   }
 }
 
@@ -234,6 +241,7 @@ function assertCanWriteRecords(db, actor, areaLabel = 'records') {
     Matters: 'matter',
     Contacts: 'contact',
     'Time entries': 'time',
+    Reports: 'report',
     records: 'matter',
   };
   const objectKey = map[areaLabel] || 'matter';
