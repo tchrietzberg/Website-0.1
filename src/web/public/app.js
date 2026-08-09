@@ -1831,10 +1831,6 @@
         }
         state.timeFlash = msg;
         await renderTime();
-        if (mode === 'save-another') {
-          const desc = $('#timeForm textarea[name="description"]');
-          if (desc) desc.focus();
-        }
       } catch (e) {
         $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
       }
@@ -1864,10 +1860,14 @@
     if (state.focusTimeEntry) {
       state.focusTimeEntry = false;
       const form = $('#timeForm');
+      const preferDescription = addAnother;
       setTimeout(() => {
         if (form && form.scrollIntoView) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
         if (!preferredMatterId) matterPicker?.focus();
-        else {
+        else if (preferDescription) {
+          const desc = form && form.querySelector('textarea[name="description"]');
+          if (desc) desc.focus();
+        } else {
           const minutes = form && form.querySelector('input[name="rawMinutes"]');
           if (minutes) minutes.focus();
         }
