@@ -338,7 +338,7 @@
           ${id ? `
             <label class="check-inline">
               <input type="checkbox" data-toggle-default-cf="${id}" ${isDefault ? 'checked' : ''} />
-              Default field
+              Record type default field
             </label>` : ''}
           ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
           ${canDelete && id
@@ -359,11 +359,11 @@
       </label>`;
   }
 
-  function defaultFieldCheckboxHtml(checked = false) {
+  function defaultFieldCheckboxHtml(checked = false, label = 'Default field') {
     return `
       <label class="check-inline span-all">
         <input type="checkbox" name="isDefault" ${checked ? 'checked' : ''} />
-        Default field
+        ${escapeHtml(label)}
       </label>`;
   }
 
@@ -433,6 +433,7 @@
     field = null,
     showCancel = false,
     requiredLabel = 'Required on create',
+    defaultLabel = 'Default field',
   } = {}) {
     const type = field
       ? (field.field_type || field.fieldType || field.type || 'text')
@@ -456,7 +457,7 @@
           </select>
         </label>
         ${dropdownOptionsFieldHtml(options, { show: uiType === 'dropdown' })}
-        ${defaultFieldCheckboxHtml(isDefault)}
+        ${defaultFieldCheckboxHtml(isDefault, defaultLabel)}
         ${requiredFieldCheckboxHtml(required, requiredLabel)}
         <div class="row-actions span-all">
           <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
@@ -774,12 +775,14 @@
             submitLabel: 'Save changes',
             field: editing,
             showCancel: true,
-            requiredLabel: 'Required field',
+            defaultLabel: 'Record type default field',
+            requiredLabel: 'Record type required field',
           })}`
           : customFieldFormHtml({
             formId: 'typeFieldForm',
             submitLabel: 'Add custom field',
-            requiredLabel: 'Required field',
+            defaultLabel: 'Record type default field',
+            requiredLabel: 'Record type required field',
           })}`;
 
       const typeSelect = bodyEl.querySelector('#settingsMatterTypeSelect');
@@ -865,7 +868,7 @@
               method: 'PATCH',
               body: JSON.stringify({ isDefault: !!box.checked }),
             });
-            setMsg('<div class="ok-banner">Default field updated.</div>');
+            setMsg('<div class="ok-banner">Record type default field updated.</div>');
             await render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -5506,7 +5509,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matters use record pages (Billable by default, Non-Billable, plus any you add in Settings → Matter record pages). Each record page has its own field layout — those fields appear on every matter of that type. On Create Matter, choose the record page to see its custom fields. For dropdowns, enter options in the options box. Use Required field when a value must be filled.',
+      answer: 'Matters use record pages (Billable by default, Non-Billable, plus any you add in Settings → Matter record pages). Each record page has its own field layout — those fields appear on every matter of that type. On Create Matter, choose the record page to see its custom fields. For dropdowns, enter options in the options box. Use Record type required field when a value must be filled, and Record type default field to include it by default on that record type.',
     },
     {
       id: 'reports',
