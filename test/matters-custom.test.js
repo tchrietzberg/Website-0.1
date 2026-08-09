@@ -201,6 +201,37 @@ describe('matter search and record-based fields', () => {
     assert.deepEqual(found.options, ['Open', 'On hold', 'Closed']);
   });
 
+  it('updates custom field label, type, options, and required', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Priority',
+      fieldType: 'text',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+      required: false,
+    });
+    assert.equal(field.required, 0);
+    assert.equal(field.field_type, 'text');
+
+    const updated = customFields.updateCustomField(db, admin, field.id, {
+      label: 'Case priority',
+      fieldType: 'dropdown',
+      options: ['Low', 'High'],
+      required: true,
+    });
+    assert.equal(updated.label, 'Case priority');
+    assert.equal(updated.field_type, 'dropdown');
+    assert.deepEqual(updated.options, ['Low', 'High']);
+    assert.equal(updated.required, 1);
+
+    const again = customFields.updateCustomField(db, admin, field.id, {
+      required: false,
+      fieldType: 'text',
+    });
+    assert.equal(again.required, 0);
+    assert.equal(again.field_type, 'text');
+    assert.equal(again.options, null);
+  });
+
   it('requires custom fields on matter and time entry creation', () => {
     const timeSvc = require('../src/services/time');
     const matterReq = customFields.createCustomField(db, admin, {

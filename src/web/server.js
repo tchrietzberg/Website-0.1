@@ -599,6 +599,16 @@ function createServer(db = openDb()) {
           return json(res, 400, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        try {
+          const fieldId = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          return json(res, 200, customFields.updateCustomField(db, user, fieldId, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const fieldId = Number(pathname.split('/')[3]);

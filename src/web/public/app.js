@@ -20,6 +20,7 @@
     timeEntryRetain: null,
     matterTimeRetain: null,
     focusCustomReportId: null,
+    editingMatterFieldId: null,
   };
 
   function canCreateMatter(user) {
@@ -120,40 +121,65 @@
     return String(key).startsWith('std:');
   }
 
-  function fieldMgmtRows(fields) {
+  function fieldIdFromMgmt(f) {
+    if (f.fieldId != null) return Number(f.fieldId);
+    if (f.id != null) return Number(f.id);
+    const key = f.fieldKey || f.key || '';
+    if (String(key).startsWith('cf:')) return Number(String(key).slice(3));
+    return null;
+  }
+
+  function fieldMgmtRows(fields, { editAttr = 'data-edit-matter-field' } = {}) {
     const rows = (fields || []).filter((f) => !isBuiltInField(f));
     if (!rows.length) return '<p class="muted">No custom fields yet</p>';
-    return rows.map((f) => `
+    return rows.map((f) => {
+      const id = fieldIdFromMgmt(f);
+      const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
+      return `
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(f.kind)}${f.required ? ' · required' : ''}</span>
+          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}</span>
         </div>
-        ${f.removable
-          ? `<button type="button" data-del-matter-field="${escapeHtml(f.fieldKey)}">Delete</button>`
-          : ''}
-      </div>`).join('');
+        <div class="row-actions">
+          ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
+          ${f.removable
+            ? `<button type="button" data-del-matter-field="${escapeHtml(f.fieldKey)}">Delete</button>`
+            : ''}
+        </div>
+      </div>`;
+    }).join('');
   }
 
-  function typeFieldMgmtRows(fields, delAttr = 'data-del-type-field') {
+  function typeFieldMgmtRows(fields, {
+    delAttr = 'data-del-type-field',
+    editAttr = 'data-edit-type-field',
+  } = {}) {
     const rows = (fields || []).filter((f) => !isBuiltInField(f));
     if (!rows.length) return '<p class="muted">No custom fields yet</p>';
-    return rows.map((f) => `
+    return rows.map((f) => {
+      const id = fieldIdFromMgmt(f);
+      const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
+      return `
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(f.kind)}${f.required ? ' · required' : ''}</span>
+          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}</span>
         </div>
-        ${f.removable
-          ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
-          : ''}
-      </div>`).join('');
+        <div class="row-actions">
+          ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
+          ${f.removable
+            ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
+            : ''}
+        </div>
+      </div>`;
+    }).join('');
   }
 
-  function requiredFieldCheckboxHtml() {
+  function requiredFieldCheckboxHtml(checked = false) {
     return `
       <label class="check-inline span-all">
-        <input type="checkbox" name="required" />
+        <input type="checkbox" name="required" ${checked ? 'checked' : ''} />
         Required on create
       </label>`;
   }
@@ -207,13 +233,47 @@
     return { fieldType, options, body };
   }
 
-  function dropdownOptionsFieldHtml() {
+  function dropdownOptionsFieldHtml(optionsText = '', { show = false } = {}) {
     return `
-      <label class="span-all" data-dropdown-options hidden>
+      <label class="span-all" data-dropdown-options ${show ? '' : 'hidden'}>
         Dropdown options
-        <input name="optionsText" placeholder="e.g. Discovery, Trial, Appeal" />
+        <input name="optionsText" value="${escapeHtml(optionsText)}"
+          placeholder="e.g. Discovery, Trial, Appeal" />
         <span class="hint">Comma-separated list of choices</span>
       </label>`;
+  }
+
+  function customFieldFormHtml({
+    formId,
+    submitLabel = 'Add field',
+    field = null,
+    showCancel = false,
+  } = {}) {
+    const type = field
+      ? (field.field_type || field.fieldType || field.type || 'text')
+      : 'text';
+    const uiType = type === 'select' ? 'dropdown' : type;
+    const options = Array.isArray(field?.options) ? field.options.join(', ') : '';
+    const required = !!(field && field.required);
+    const label = field?.label || '';
+    return `
+      <form id="${escapeHtml(formId)}" class="grid two">
+        <label>Custom field label
+          <input name="label" required value="${escapeHtml(label)}"
+            placeholder="e.g. Case stage" />
+        </label>
+        <label>Custom field type
+          <select name="fieldType">
+            ${fieldFormatterOptions(uiType)}
+          </select>
+        </label>
+        ${dropdownOptionsFieldHtml(options, { show: uiType === 'dropdown' })}
+        ${requiredFieldCheckboxHtml(required)}
+        <div class="row-actions span-all">
+          <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
+          ${showCancel ? '<button type="button" data-cancel-field-edit>Cancel</button>' : ''}
+        </div>
+      </form>`;
   }
 
   function wireDropdownOptionsToggle(form) {
@@ -242,42 +302,81 @@
     if (!bodyEl) return;
     const key = recordTypeKey || 'default';
     const isTime = appliesTo === 'time_entry';
+    let editingId = null;
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
+    };
+
+    const submitFieldForm = async (form, { createBody } = {}) => {
+      const fd = new FormData(form);
+      const { fieldType, options, body } = customFieldPayload(fd);
+      if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+        setMsg('<div class="error">Add at least one dropdown option.</div>');
+        return;
+      }
+      try {
+        if (editingId) {
+          await api(`/api/custom-fields/${editingId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(body),
+          });
+          setMsg('<div class="ok-banner">Custom field updated.</div>');
+          editingId = null;
+        } else {
+          await api('/api/custom-fields', {
+            method: 'POST',
+            body: JSON.stringify({ ...body, ...createBody }),
+          });
+          setMsg(`<div class="ok-banner">${isTime ? 'Time field added.' : 'Matter field added.'}</div>`);
+        }
+        await render();
+      } catch (e) {
+        setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+      }
     };
 
     const render = async () => {
       if (isTime) {
         const fields = await api('/api/custom-fields?appliesTo=time_entry');
+        const editing = editingId
+          ? (fields || []).find((f) => Number(f.id) === Number(editingId))
+          : null;
         const rows = (fields || []).map((f) => `
           <div class="field-mgmt-row">
             <div>
               <strong>${escapeHtml(f.label)}</strong>
               <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · time entry${f.required ? ' · required' : ''}</div>
             </div>
-            <button type="button" data-del-time-field="${f.id}">Remove</button>
+            <div class="row-actions">
+              <button type="button" data-edit-time-field="${f.id}">Edit</button>
+              <button type="button" data-del-time-field="${f.id}">Remove</button>
+            </div>
           </div>`).join('') || '<p class="muted">No time-entry fields yet.</p>';
         bodyEl.innerHTML = `
           <div class="field-mgmt-list">${rows}</div>
-          <form id="timeFieldForm" class="grid two">
-            <label>Custom field label
-              <input name="label" required />
-            </label>
-            <label>Custom field type
-              <select name="fieldType">
-                ${fieldFormatterOptions('text')}
-              </select>
-            </label>
-            ${dropdownOptionsFieldHtml()}
-            ${requiredFieldCheckboxHtml()}
-            <div class="row-actions span-all">
-              <button class="primary" type="submit">Add time field</button>
-            </div>
-          </form>`;
+          ${editing
+            ? `<h3 class="field-edit-title">Edit time field</h3>${customFieldFormHtml({
+              formId: 'timeFieldForm',
+              submitLabel: 'Save changes',
+              field: editing,
+              showCancel: true,
+            })}`
+            : customFieldFormHtml({
+              formId: 'timeFieldForm',
+              submitLabel: 'Add time field',
+            })}`;
+        bodyEl.querySelectorAll('[data-edit-time-field]').forEach((btn) => {
+          btn.onclick = () => {
+            editingId = Number(btn.dataset.editTimeField);
+            setMsg('');
+            render();
+          };
+        });
         bodyEl.querySelectorAll('[data-del-time-field]').forEach((btn) => {
           btn.onclick = async () => {
             try {
               await api(`/api/custom-fields/${btn.dataset.delTimeField}`, { method: 'DELETE' });
+              if (Number(editingId) === Number(btn.dataset.delTimeField)) editingId = null;
               setMsg('<div class="ok-banner">Time field removed.</div>');
               await render();
             } catch (e) {
@@ -285,63 +384,62 @@
             }
           };
         });
+        const cancel = bodyEl.querySelector('[data-cancel-field-edit]');
+        if (cancel) {
+          cancel.onclick = () => {
+            editingId = null;
+            setMsg('');
+            render();
+          };
+        }
         const timeFieldForm = bodyEl.querySelector('#timeFieldForm');
         wireDropdownOptionsToggle(timeFieldForm);
         if (timeFieldForm) {
           timeFieldForm.onsubmit = async (ev) => {
             ev.preventDefault();
-            const fd = new FormData(timeFieldForm);
-            const { fieldType, options, body } = customFieldPayload(fd);
-            if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
-              setMsg('<div class="error">Add at least one dropdown option.</div>');
-              return;
-            }
-            try {
-              await api('/api/custom-fields', {
-                method: 'POST',
-                body: JSON.stringify({
-                  ...body,
-                  appliesTo: 'time_entry',
-                }),
-              });
-              setMsg('<div class="ok-banner">Time field added.</div>');
-              await render();
-            } catch (e) {
-              setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
-            }
+            await submitFieldForm(timeFieldForm, { createBody: { appliesTo: 'time_entry' } });
           };
         }
         return;
       }
 
       const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
+      const editing = editingId
+        ? (typeLayout.fields || []).find((f) => Number(fieldIdFromMgmt(f)) === Number(editingId))
+          || (typeLayout.customFields || []).find((f) => Number(f.id) === Number(editingId))
+        : null;
       bodyEl.innerHTML = `
         <div class="field-mgmt-list">
           ${typeFieldMgmtRows(typeLayout.fields)}
         </div>
-        <form id="typeFieldForm" class="grid two">
-          <label>Custom field label
-            <input name="label" required placeholder="e.g. Case stage" />
-          </label>
-          <label>Custom field type
-            <select name="fieldType">
-              ${fieldFormatterOptions('text')}
-            </select>
-          </label>
-          ${dropdownOptionsFieldHtml()}
-          ${requiredFieldCheckboxHtml()}
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Add field</button>
-          </div>
-        </form>`;
+        ${editing
+          ? `<h3 class="field-edit-title">Edit matter field</h3>${customFieldFormHtml({
+            formId: 'typeFieldForm',
+            submitLabel: 'Save changes',
+            field: editing,
+            showCancel: true,
+          })}`
+          : customFieldFormHtml({
+            formId: 'typeFieldForm',
+            submitLabel: 'Add field',
+          })}`;
 
+      bodyEl.querySelectorAll('[data-edit-type-field]').forEach((btn) => {
+        btn.onclick = () => {
+          editingId = Number(btn.dataset.editTypeField);
+          setMsg('');
+          render();
+        };
+      });
       bodyEl.querySelectorAll('[data-del-type-field]').forEach((btn) => {
         btn.onclick = async () => {
           try {
+            const fieldKey = btn.dataset.delTypeField;
             await api(
-              `/api/record-types/${encodeURIComponent(key)}/layout-fields?fieldKey=${encodeURIComponent(btn.dataset.delTypeField)}`,
+              `/api/record-types/${encodeURIComponent(key)}/layout-fields?fieldKey=${encodeURIComponent(fieldKey)}`,
               { method: 'DELETE' }
             );
+            if (String(fieldKey) === `cf:${editingId}`) editingId = null;
             setMsg('');
             await render();
           } catch (e) {
@@ -349,31 +447,22 @@
           }
         };
       });
+      const cancel = bodyEl.querySelector('[data-cancel-field-edit]');
+      if (cancel) {
+        cancel.onclick = () => {
+          editingId = null;
+          setMsg('');
+          render();
+        };
+      }
       const typeFieldForm = bodyEl.querySelector('#typeFieldForm');
       wireDropdownOptionsToggle(typeFieldForm);
       if (typeFieldForm) {
         typeFieldForm.onsubmit = async (ev) => {
           ev.preventDefault();
-          const fd = new FormData(typeFieldForm);
-          const { fieldType, options, body } = customFieldPayload(fd);
-          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
-            setMsg('<div class="error">Add at least one dropdown option.</div>');
-            return;
-          }
-          try {
-            await api('/api/custom-fields', {
-              method: 'POST',
-              body: JSON.stringify({
-                ...body,
-                recordTypeKey: key,
-                appliesTo: 'matter',
-              }),
-            });
-            setMsg('<div class="ok-banner">Matter field added.</div>');
-            await render();
-          } catch (e) {
-            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
-          }
+          await submitFieldForm(typeFieldForm, {
+            createBody: { recordTypeKey: key, appliesTo: 'matter' },
+          });
         };
       }
     };
@@ -1662,32 +1751,36 @@
         <div id="matterReportOut" hidden></div>
       </div>
 
-      ${canEdit ? `
+      ${canEdit ? (() => {
+        const editingField = state.editingMatterFieldId
+          ? (page.layoutFields || []).find(
+            (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingMatterFieldId)
+          )
+          : null;
+        return `
       <div class="card stack">
         <h2>Manage fields</h2>
-        <p class="hint">Add custom fields with a label and type. Firm-wide defaults are managed in Settings.</p>
+        <p class="hint">Add or edit custom fields (label, type, required). Firm-wide defaults are managed in Settings.</p>
 
         <div class="field-mgmt-list">
           ${fieldMgmtRows(page.layoutFields)}
         </div>
-        <form id="recordFieldForm" class="grid two">
-          <label>Custom field label
-            <input name="label" required placeholder="e.g. Case stage" />
-          </label>
-          <label>Custom field type
-            <select name="fieldType">
-              ${fieldFormatterOptions('text')}
-            </select>
-          </label>
-          ${dropdownOptionsFieldHtml()}
-          ${requiredFieldCheckboxHtml()}
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Add field</button>
-            ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Use default layout</button>' : ''}
-          </div>
-        </form>
+        ${editingField
+          ? `<h3 class="field-edit-title">Edit field</h3>${customFieldFormHtml({
+            formId: 'recordFieldForm',
+            submitLabel: 'Save changes',
+            field: editingField,
+            showCancel: true,
+          })}`
+          : `${customFieldFormHtml({
+            formId: 'recordFieldForm',
+            submitLabel: 'Add field',
+          })}${page.layout.source !== 'record'
+            ? '<div class="row-actions"><button type="button" id="useRecordLayout">Use default layout</button></div>'
+            : ''}`}
         <div id="matterFieldMsg"></div>
-      </div>` : ''}
+      </div>`;
+      })() : ''}
 
       <details class="onedrive-collapse" id="onedriveCard">
         <summary class="onedrive-collapse-summary">
@@ -1983,6 +2076,12 @@
       wireOneDriveBrowser(m.id, page.onedrive, canEdit);
     }
 
+    main.querySelectorAll('[data-edit-matter-field]').forEach((btn) => {
+      btn.onclick = async () => {
+        state.editingMatterFieldId = Number(btn.dataset.editMatterField);
+        await renderMatterDetail();
+      };
+    });
     main.querySelectorAll('[data-del-matter-field]').forEach((btn) => {
       btn.onclick = async () => {
         try {
@@ -1990,12 +2089,23 @@
             `/api/matters/${m.id}/layout-fields?fieldKey=${encodeURIComponent(btn.dataset.delMatterField)}`,
             { method: 'DELETE' }
           );
+          if (String(btn.dataset.delMatterField) === `cf:${state.editingMatterFieldId}`) {
+            state.editingMatterFieldId = null;
+          }
           await renderMatterDetail();
         } catch (e) {
           $('#matterFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
         }
       };
     });
+
+    const cancelFieldEdit = main.querySelector('[data-cancel-field-edit]');
+    if (cancelFieldEdit) {
+      cancelFieldEdit.onclick = async () => {
+        state.editingMatterFieldId = null;
+        await renderMatterDetail();
+      };
+    }
 
     const rf = $('#recordFieldForm');
     wireDropdownOptionsToggle(rf);
@@ -2009,10 +2119,18 @@
           return;
         }
         try {
-          await api(`/api/matters/${m.id}/custom-fields`, {
-            method: 'POST',
-            body: JSON.stringify(body),
-          });
+          if (state.editingMatterFieldId) {
+            await api(`/api/custom-fields/${state.editingMatterFieldId}`, {
+              method: 'PATCH',
+              body: JSON.stringify(body),
+            });
+            state.editingMatterFieldId = null;
+          } else {
+            await api(`/api/matters/${m.id}/custom-fields`, {
+              method: 'POST',
+              body: JSON.stringify(body),
+            });
+          }
           await renderMatterDetail();
         } catch (e) {
           $('#matterFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -2110,10 +2228,7 @@
       timeFieldDefs,
       matterPicker,
       onSaved: async (entry, body) => {
-        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing. Add another entry below.`;
-        if (entry.duplicateWarnings?.length) {
-          msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
-        }
+        const desc = String(body.description || entry.description || '').trim() || 'Time entry';
         state.matterId = body.matterId;
         state.timeEntryRetain = {
           addAnother: true,
@@ -2122,7 +2237,7 @@
           timekeeperId: body.timekeeperId,
         };
         state.focusTimeEntry = true;
-        state.timeFlash = msg;
+        state.timeFlash = `Saved ${desc} — ${formatDuration(entry.roundedMinutes)} hrs`;
         await renderTime();
       },
     });

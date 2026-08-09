@@ -44,12 +44,17 @@ function describeLayoutFields(db, layoutId) {
   return layoutItems(db, layoutId).map((item) => {
     const isCustom = String(item.field_key).startsWith('cf:');
     let required = false;
+    let fieldId = null;
+    let fieldType = null;
+    let options = null;
     if (isCustom) {
-      const fieldId = Number(String(item.field_key).slice(3));
-      const row = db.prepare(
-        'SELECT required FROM custom_fields WHERE id = ? AND active = 1'
-      ).get(fieldId);
-      required = !!row?.required;
+      fieldId = Number(String(item.field_key).slice(3));
+      const row = getCustomField(db, fieldId);
+      if (row) {
+        required = !!row.required;
+        fieldType = row.field_type;
+        options = row.options;
+      }
     }
     return {
       fieldKey: item.field_key,
@@ -59,6 +64,10 @@ function describeLayoutFields(db, layoutId) {
       removable: !CORE_LAYOUT_KEYS.includes(item.field_key),
       kind: isCustom ? 'custom' : 'standard',
       required,
+      fieldId,
+      fieldType,
+      type: fieldType,
+      options,
     };
   });
 }
@@ -462,6 +471,78 @@ function deactivateCustomField(db, actor, fieldId) {
   return { ok: true, id: fieldId };
 }
 
+function updateCustomField(db, actor, fieldId, patch = {}) {
+  const existing = db.prepare(
+    'SELECT * FROM custom_fields WHERE id = ? AND active = 1'
+  ).get(fieldId);
+  if (!existing) throw new Error('field not found');
+
+  let label = existing.label;
+  if (patch.label !== undefined) {
+    label = String(patch.label || '').trim();
+    if (!label) throw new Error('label required');
+  }
+
+  let fieldType = existing.field_type;
+  if (patch.fieldType !== undefined || patch.field_type !== undefined) {
+    fieldType = normalizeFieldType(patch.fieldType || patch.field_type);
+    if (!['text', 'textarea', 'number', 'date', 'select', 'checkbox'].includes(fieldType)) {
+      throw new Error('invalid fieldType');
+    }
+  }
+
+  let optionsJson = existing.options_json;
+  if (fieldType === 'select') {
+    const optionsProvided = patch.options !== undefined || patch.optionsText !== undefined;
+    if (optionsProvided || existing.field_type !== 'select') {
+      const optionList = parseFieldOptions(patch);
+      if (!optionList.length) {
+        if (existing.field_type === 'select' && existing.options_json && !optionsProvided) {
+          optionsJson = existing.options_json;
+        } else {
+          throw new Error('dropdown fields need at least one option');
+        }
+      } else {
+        optionsJson = JSON.stringify(optionList);
+      }
+    }
+  } else {
+    optionsJson = null;
+  }
+
+  let required = existing.required ? 1 : 0;
+  if (patch.required !== undefined) {
+    required = patch.required === 0 || patch.required === false ? 0 : 1;
+  }
+
+  db.prepare(`
+    UPDATE custom_fields
+    SET label = ?, field_type = ?, options_json = ?, required = ?
+    WHERE id = ?
+  `).run(label, fieldType, optionsJson, required, fieldId);
+
+  if (fieldType !== existing.field_type) {
+    const width = fieldType === 'textarea' ? 'full' : 'half';
+    db.prepare(`
+      UPDATE page_layout_items SET width = ? WHERE field_key = ?
+    `).run(width, `cf:${fieldId}`);
+  }
+
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'custom_field.update',
+    entityType: 'custom_field',
+    entityId: fieldId,
+    detail: {
+      label,
+      fieldType,
+      required: !!required,
+      fromType: existing.field_type,
+    },
+  });
+  return getCustomField(db, fieldId);
+}
+
 function listTimeEntryFieldDefs(db) {
   return listCustomFields(db, { appliesTo: 'time_entry' }).map((f) => ({
     key: `cf:${f.id}`,
@@ -776,6 +857,7 @@ module.exports = {
   ensureMatterLayout,
   listRecordTypes,
   createCustomField,
+  updateCustomField,
   getCustomField,
   listCustomFields,
   deactivateCustomField,
