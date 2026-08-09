@@ -1,6 +1,8 @@
-const { amountFromMinutes } = require('../money');
+const { amountFromMinutes, formatCents, formatDuration } = require('../money');
 const { resolveRate } = require('../rates');
 const { allocateNumber, audit } = require('../db');
+const { buildXlsx } = require('../xlsx');
+const { buildTextPdf } = require('../pdf');
 
 function generatePrebill(db, actor, matterId, entryIds = null) {
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
@@ -243,6 +245,88 @@ function invoiceStageLabel(status) {
   return map[status] || status;
 }
 
+function invoiceExportRows(inv) {
+  const header = [
+    { v: 'Date', t: 's' },
+    { v: 'Timekeeper', t: 's' },
+    { v: 'Description', t: 's' },
+    { v: 'Hours', t: 's' },
+    { v: 'Minutes', t: 's' },
+    { v: 'Rate', t: 's' },
+    { v: 'Amount', t: 's' },
+    { v: 'Write-down', t: 's' },
+    { v: 'Net', t: 's' },
+  ];
+  const body = (inv.lines || []).map((l) => {
+    const net = Number(l.amount_cents || 0) - Number(l.write_down_cents || 0);
+    return [
+      { v: l.service_date || '', t: 's' },
+      { v: l.timekeeper_name || '', t: 's' },
+      { v: l.description || '', t: 's' },
+      { v: formatDuration(l.minutes || 0, 'decimal'), t: 's' },
+      { v: Number(l.minutes || 0), t: 'n' },
+      { v: Number(l.rate_cents || 0) / 100, t: 'currency' },
+      { v: Number(l.amount_cents || 0) / 100, t: 'currency' },
+      { v: Number(l.write_down_cents || 0) / 100, t: 'currency' },
+      { v: net / 100, t: 'currency' },
+    ];
+  });
+  const summary = [
+    [],
+    [{ v: 'Invoice', t: 's' }, { v: inv.number || '', t: 's' }],
+    [{ v: 'Stage', t: 's' }, { v: invoiceStageLabel(inv.status), t: 's' }],
+    [{ v: 'Client', t: 's' }, { v: inv.client_name || '', t: 's' }],
+    [{ v: 'Matter', t: 's' }, { v: inv.matter_name || inv.matter_number || '', t: 's' }],
+    [{ v: 'Subtotal', t: 's' }, { v: Number(inv.subtotal_cents || 0) / 100, t: 'currency' }],
+    [{ v: 'Write-down', t: 's' }, { v: Number(inv.write_down_cents || 0) / 100, t: 'currency' }],
+    [{ v: 'Total', t: 's' }, { v: Number(inv.total_cents || 0) / 100, t: 'currency' }],
+  ];
+  return [header, ...body, ...summary];
+}
+
+function toInvoiceXlsx(inv) {
+  return buildXlsx(invoiceExportRows(inv));
+}
+
+function toInvoicePdf(inv) {
+  const lines = [
+    `Stage: ${invoiceStageLabel(inv.status)}`,
+    `Client: ${inv.client_name || ''}`,
+    `Matter: ${inv.matter_name || inv.matter_number || ''}`,
+    inv.issue_date ? `Issue date: ${inv.issue_date}` : null,
+    inv.due_date ? `Due date: ${inv.due_date}` : null,
+    '',
+    'Date       Timekeeper                 Hours   Rate      Amount    Net',
+    '--------------------------------------------------------------------------',
+  ];
+  for (const l of inv.lines || []) {
+    const net = Number(l.amount_cents || 0) - Number(l.write_down_cents || 0);
+    const date = String(l.service_date || '').padEnd(10);
+    const tk = String(l.timekeeper_name || '').slice(0, 24).padEnd(24);
+    const hours = formatDuration(l.minutes || 0, 'decimal').padStart(6);
+    const rate = formatCents(l.rate_cents || 0).padStart(9);
+    const amount = formatCents(l.amount_cents || 0).padStart(9);
+    const netStr = formatCents(net).padStart(9);
+    lines.push(`${date} ${tk} ${hours} ${rate} ${amount} ${netStr}`);
+    if (l.description) lines.push(`  ${l.description}`);
+  }
+  lines.push('--------------------------------------------------------------------------');
+  lines.push(`Subtotal:   ${formatCents(inv.subtotal_cents || 0)}`);
+  lines.push(`Write-down: ${formatCents(inv.write_down_cents || 0)}`);
+  lines.push(`Total:      ${formatCents(inv.total_cents || 0)}`);
+  if ((inv.credits || []).length) {
+    lines.push('');
+    lines.push('Credit notes:');
+    for (const c of inv.credits) {
+      lines.push(`  ${c.number}: ${formatCents(c.amount_cents)} — ${c.reason || ''}`);
+    }
+  }
+  return buildTextPdf({
+    title: `Bill ${inv.number || ''}`.trim(),
+    lines: lines.filter((l) => l != null),
+  });
+}
+
 module.exports = {
   generatePrebill,
   writeDownLine,
@@ -252,4 +336,6 @@ module.exports = {
   listInvoices,
   listMattersReadyForBilling,
   invoiceStageLabel,
+  toInvoiceXlsx,
+  toInvoicePdf,
 };

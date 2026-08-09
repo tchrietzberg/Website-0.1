@@ -125,6 +125,22 @@ describe('invoice lifecycle', () => {
     assert.equal(updated.writeDowns[0].created_by, ctx.clerk.id);
   });
 
+  it('exports bills as PDF and Excel', () => {
+    approvedEntry(60);
+    const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
+    const pdf = invoiceSvc.toInvoicePdf(inv);
+    assert.ok(Buffer.isBuffer(pdf));
+    assert.ok(pdf.slice(0, 5).toString() === '%PDF-');
+    assert.match(pdf.toString('latin1'), /Bill INV-/);
+
+    const xlsx = invoiceSvc.toInvoiceXlsx(inv);
+    assert.ok(Buffer.isBuffer(xlsx));
+    assert.ok(xlsx.length > 100);
+    // ZIP local file header signature
+    assert.equal(xlsx[0], 0x50);
+    assert.equal(xlsx[1], 0x4b);
+  });
+
   it('pre-bill marks entries invoiced; void before bill releases them; sent bills are immutable', () => {
     approvedEntry(60);
     const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);

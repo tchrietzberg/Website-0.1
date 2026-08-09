@@ -1976,9 +1976,32 @@
               </tr>`).join('') || '<tr><td colspan="7" class="muted">No lines</td></tr>'}
           </tbody>
         </table></div>
+        <div class="row-actions">
+          <button type="button" class="primary" data-export-invoice="pdf">Download PDF</button>
+          <button type="button" data-export-invoice="xlsx">Download Excel</button>
+        </div>
         <div class="row-actions" id="invActions"></div>
         <div id="invMsg"></div>
       </div>`;
+
+    el.querySelectorAll('[data-export-invoice]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          const fmt = b.dataset.exportInvoice;
+          const res = await api(`/api/invoices/${id}/export?format=${fmt}`);
+          const blob = await res.blob();
+          const tmp = document.createElement('a');
+          tmp.href = URL.createObjectURL(blob);
+          tmp.download = `${inv.number || `invoice-${id}`}.${fmt === 'xlsx' ? 'xlsx' : 'pdf'}`;
+          document.body.appendChild(tmp);
+          tmp.click();
+          tmp.remove();
+          URL.revokeObjectURL(tmp.href);
+        } catch (e) {
+          $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
 
     const actions = $('#invActions');
     const btn = (label, status, primary) => {

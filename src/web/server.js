@@ -806,6 +806,34 @@ function createServer(db = openDb()) {
         if (!inv) return json(res, 404, { error: 'not found' });
         return json(res, 200, inv);
       }
+      if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+\/export$/)) {
+        const id = Number(pathname.split('/')[3]);
+        const inv = invoiceSvc.getInvoice(db, id);
+        if (!inv) return json(res, 404, { error: 'not found' });
+        const fmt = String(url.searchParams.get('format') || 'pdf').toLowerCase();
+        const safeName = String(inv.number || `invoice-${id}`).replace(/[^\w.-]+/g, '_');
+        if (fmt === 'xlsx' || fmt === 'excel') {
+          const buf = invoiceSvc.toInvoiceXlsx(inv);
+          res.writeHead(200, {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': `attachment; filename="${safeName}.xlsx"`,
+            'Content-Length': buf.length,
+          });
+          res.end(buf);
+          return;
+        }
+        if (fmt === 'pdf') {
+          const buf = invoiceSvc.toInvoicePdf(inv);
+          res.writeHead(200, {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${safeName}.pdf"`,
+            'Content-Length': buf.length,
+          });
+          res.end(buf);
+          return;
+        }
+        return json(res, 400, { error: 'unsupported_format', message: 'Use format=pdf or format=xlsx' });
+      }
       if (req.method === 'POST' && pathname === '/api/invoices/prebill') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
