@@ -4,6 +4,7 @@
  * No sample matters — create matters in the UI; Matter Search indexes them.
  */
 const { resetDb, setSetting, DEFAULT_DB } = require('../src/db');
+const { hashPassword } = require('../src/security');
 const customFields = require('../src/services/customFields');
 
 const dbFile = process.env.DB_FILE || DEFAULT_DB;
@@ -15,6 +16,10 @@ setSetting(db, 'duration_format', 'decimal');
 setSetting(db, 'firm_timezone', 'America/New_York');
 setSetting(db, 'firm_name', 'Demo Securities Litigation LLP');
 
+// Demo password is intentionally simple for local demos — change before any public deploy.
+const demoPassword = process.env.DEMO_PASSWORD || 'demo-change-me';
+const passwordHash = hashPassword(demoPassword);
+
 const users = [
   ['avery@firm.example', 'Avery Admin', 'admin'],
   ['jordan@firm.example', 'Jordan Lead', 'attorney'],
@@ -23,7 +28,9 @@ const users = [
   ['billie@firm.example', 'Billie Clerk', 'billing_clerk'],
 ];
 for (const [email, name, role] of users) {
-  db.prepare('INSERT INTO users(email, name, role) VALUES (?, ?, ?)').run(email, name, role);
+  db.prepare(
+    'INSERT INTO users(email, name, role, password_hash) VALUES (?, ?, ?, ?)'
+  ).run(email, name, role, passwordHash);
 }
 
 const avery = db.prepare("SELECT * FROM users WHERE email='avery@firm.example'").get();
@@ -76,5 +83,6 @@ customFields.createCustomField(db, avery, {
 });
 
 console.log(`Seeded ${dbFile}`);
-console.log('Demo logins: avery / jordan / riley / sam / billie @firm.example');
+console.log(`Demo logins: *@firm.example  password: ${demoPassword}`);
+console.log('Change DEMO_PASSWORD / user passwords before any public deploy.');
 console.log('No sample matters — create matters under Matters; Matter Search uses the search index.');

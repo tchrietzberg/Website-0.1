@@ -19,6 +19,7 @@ function migrate(db) {
   migrateTimeEntryRoundingCheck(db);
   migrateMatterTypeCheck(db);
   migrateOneDriveColumns(db);
+  migrateAuthColumns(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -29,6 +30,11 @@ function migrate(db) {
   if (matterCount > 0 && idxCount === 0) {
     matterIndex.reindexAllMatters(db);
   }
+}
+
+function migrateAuthColumns(db) {
+  const security = require('./security');
+  security.ensureSessionTables(db);
 }
 
 function tableColumns(db, table) {

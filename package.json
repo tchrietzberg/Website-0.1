@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/web/server.js",
     "seed": "node seed/seed.js",
-    "test": "node --test test/billing.test.js test/matters-custom.test.js test/money.test.js test/onedrive.test.js test/rates.test.js test/users-rates.test.js"
+    "test": "node --test test/billing.test.js test/matters-custom.test.js test/money.test.js test/onedrive.test.js test/rates.test.js test/users-rates.test.js test/security.test.js"
   },
   "engines": { "node": ">=22.13" },
   "license": "UNLICENSED",

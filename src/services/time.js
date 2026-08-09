@@ -42,6 +42,15 @@ function createEntry(db, actor, input) {
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(input.matterId);
   if (!matter) throw new Error('matter not found');
 
+  let timekeeperId = Number(input.timekeeperId || actor.id);
+  const canProxy = actor.role === 'admin' || actor.role === 'billing_clerk';
+  if (!canProxy && timekeeperId !== actor.id) {
+    const err = new Error('You can only create time entries for yourself');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = actor.id;
+
   let billable = input.billable;
   if (billable == null) {
     billable = 1;
@@ -49,7 +58,7 @@ function createEntry(db, actor, input) {
 
   const candidate = {
     matterId: input.matterId,
-    timekeeperId: input.timekeeperId,
+    timekeeperId,
     serviceDate: input.serviceDate,
     rawMinutes: input.rawMinutes,
     roundedMinutes: rounded,
@@ -102,6 +111,12 @@ function createEntry(db, actor, input) {
 function submitEntry(db, actor, id) {
   const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
   if (!entry) throw new Error('entry not found');
+  const canProxy = actor.role === 'admin' || actor.role === 'billing_clerk';
+  if (!canProxy && entry.timekeeper_id !== actor.id) {
+    const err = new Error('You can only submit your own time entries');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
   if (entry.status !== 'draft' && entry.status !== 'rejected') {
     throw new Error(`cannot submit from status ${entry.status}`);
   }

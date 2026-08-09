@@ -26,19 +26,21 @@ docker compose exec billing node seed/seed.js
 
 Then open http://localhost:3000.
 
-## Demo logins (prototype auth: email only)
+## Demo logins
+
+Password for all seeded users (override with `DEMO_PASSWORD` when seeding): **`demo-change-me`**
 
 | Email | Role |
 |---|---|
 | avery@firm.example | admin |
-| jordan@firm.example | attorney (responsible on both litigation matters) |
+| jordan@firm.example | attorney |
 | riley@firm.example | attorney |
 | sam@firm.example | paralegal |
 | billie@firm.example | billing clerk |
 
 ## Demo flow (Definition of Done walkthrough)
 
-1. Sign in as **avery** → **Matters** → create a matter (indexed automatically) → Matter Search → open record → add fields.
+1. Sign in as **avery** / `demo-change-me` → **Matters** → create a matter → Matter Search → open record → add fields.
 2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked;
    try a N.D. Cal matter without category → blocked).
 3. Submit the entry, sign in as **billie** → approve via API/queue (nav hidden) or continue billing.
@@ -49,10 +51,18 @@ Then open http://localhost:3000.
 
 ## Environment variables
 
+See `.env.example` for a full public-deploy checklist. Important:
+
 | Var | Default | Purpose |
 |---|---|---|
 | `DB_FILE` | `data/billing.db` | SQLite database path |
 | `PORT` | `3000` | HTTP port |
+| `SESSION_SECRET` | (dev auto) | **Required in production** — signs/derives session crypto material |
+| `NODE_ENV` | — | Set `production` for Secure cookies / stricter checks |
+| `ALLOWED_ORIGINS` | — | Comma-separated origins for CSRF/OAuth host checks |
+| `PUBLIC_ORIGIN` | — | Canonical https origin for OAuth redirect URI |
+| `TRUST_PROXY` | — | `1` when behind TLS-terminating proxy |
+| `MS_CLIENT_ID` | — | Azure app id for OneDrive (server-owned) |
 
 ## Architecture
 
@@ -78,14 +88,31 @@ Then open http://localhost:3000.
 - Lodestar summary and detail reports; all reports export to native Excel (.xlsx) and CSV.
   Dollar amounts export as real numbers with currency formatting, so Excel formulas work on them.
 
-## Security notes (prototype-grade — read before any real use)
+## Security (before going public)
 
-- Auth is email-only with in-memory sessions: **demo only**. Real deployment needs credentials/SSO,
-  TLS, CSRF protection, and persistent session management.
-- Role-based access control is enforced on API routes; matter-level visibility scoping is not yet implemented.
-- No client PII is written to logs; audit snapshots live only in the database.
-- SQLite is appropriate for a single-office prototype; the schema is written to port to PostgreSQL
-  for multi-user production use.
-- Trust/IOLTA accounting is intentionally out of scope (see DECISIONS.md D2).
+Built-in controls (zero npm deps):
+
+- **Password auth** (scrypt) — email-only login removed
+- **Persistent DB sessions** with sliding expiry, HttpOnly cookies (Secure in production)
+- **CSRF** (`X-CSRF-Token`) + same-origin checks on mutating API calls
+- **Login rate limiting**, request body size limits
+- **Security headers**: CSP, nosniff, frame deny, Referrer-Policy, Permissions-Policy, HSTS (prod/proxy)
+- **Static path hardening**, OAuth redirect host allowlist (`ALLOWED_ORIGINS` / `PUBLIC_ORIGIN`)
+- Timekeepers can only create/submit **their own** time entries (admins/clerks may proxy)
+
+Public deploy checklist:
+
+1. Put TLS in front (Caddy/nginx/Cloudflare) and set `TRUST_PROXY=1`, `FORCE_SECURE_COOKIES=1`, `FORCE_HSTS=1`
+2. Set a long random `SESSION_SECRET` and `NODE_ENV=production`
+3. Set `ALLOWED_ORIGINS` / `PUBLIC_ORIGIN` to your https origin
+4. Re-seed or reset demo passwords — never ship `demo-change-me`
+5. Set `MS_CLIENT_ID` for OneDrive; prefer env secrets over DB storage
+6. Bind to localhost behind the proxy (`BIND_HOST=127.0.0.1`) when possible
+
+Still deferred / not full firm compliance:
+
+- Matter-level visibility scoping (any signed-in firm user can list firm matters)
+- SSO/OIDC, DB encryption at rest, Postgres multi-writer HA
+- Independent pen-test / bar-counsel review
 
 Not legal or bar-compliance advice — have billing counsel review rules before production use.

@@ -1,6 +1,6 @@
 (() => {
   const state = {
-    token: localStorage.getItem('billing_token') || null,
+    csrf: null,
     user: null,
     view: 'matters',
     matters: [],
@@ -25,13 +25,20 @@
   const sidebarActions = $('#sidebarActions');
   const appEl = $('#app');
 
+  // Remove legacy token storage (sessions are HttpOnly cookies now)
+  try { localStorage.removeItem('billing_token'); } catch { /* ignore */ }
+
   async function api(path, opts = {}) {
+    const method = String(opts.method || 'GET').toUpperCase();
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-    if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    const res = await fetch(path, { ...opts, headers });
+    if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      headers['X-CSRF-Token'] = state.csrf;
+    }
+    const res = await fetch(path, { ...opts, method, headers, credentials: 'same-origin' });
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) {
       const data = await res.json();
+      if (data && data.csrf) state.csrf = data.csrf;
       if (!res.ok) {
         const err = new Error(data.message || data.error || res.statusText);
         err.code = data.error;
@@ -250,8 +257,10 @@
     try {
       const me = await api('/api/me');
       state.user = me.user;
+      state.csrf = me.csrf || null;
     } catch {
       state.user = null;
+      state.csrf = null;
     }
     if (!state.user) return renderLogin();
     await refreshRefs();
@@ -290,46 +299,53 @@
       <div class="login-stage">
         <div class="login-panel">
           <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Sign in with your firm email</p>
+          <p class="login-lead">Sign in with your firm email and password</p>
           <label class="login-field">Email
-            <input id="email" list="emails" autocomplete="username"
-              placeholder="avery@firm.example" value="avery@firm.example" />
+            <input id="email" type="email" autocomplete="username"
+              placeholder="you@firm.example" value="" />
           </label>
-          <datalist id="emails">
-            <option value="avery@firm.example">
-            <option value="jordan@firm.example">
-            <option value="riley@firm.example">
-            <option value="sam@firm.example">
-            <option value="billie@firm.example">
-          </datalist>
-          <button class="primary login-submit" id="loginBtn" type="button">Continue</button>
+          <label class="login-field">Password
+            <input id="password" type="password" autocomplete="current-password"
+              placeholder="Password" value="" />
+          </label>
+          <button class="primary login-submit" id="loginBtn" type="button">Sign in</button>
           <div id="loginErr"></div>
-          <p class="login-hint">Demo · avery@firm.example</p>
+          <p class="login-hint">Local demo · avery@firm.example / demo-change-me</p>
         </div>
       </div>`;
     const submit = async () => {
       try {
+        $('#loginBtn').disabled = true;
         const data = await api('/api/login', {
           method: 'POST',
-          body: JSON.stringify({ email: $('#email').value.trim() }),
+          body: JSON.stringify({
+            email: $('#email').value.trim(),
+            password: $('#password').value,
+          }),
         });
-        state.token = data.token;
-        localStorage.setItem('billing_token', data.token);
         state.user = data.user;
+        state.csrf = data.csrf || null;
         document.body.classList.remove('login-mode');
         if (appEl) appEl.classList.remove('login-mode');
         await refreshRefs();
         renderShell();
         renderView();
       } catch (e) {
-        $('#loginErr').innerHTML = `<div class="error">${e.message}</div>`;
+        $('#loginBtn').disabled = false;
+        $('#loginErr').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
       }
     };
     $('#loginBtn').onclick = submit;
-    $('#email').addEventListener('keydown', (ev) => {
+    $('#password').addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') {
         ev.preventDefault();
         submit();
+      }
+    });
+    $('#email').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        $('#password').focus();
       }
     });
   }
@@ -425,12 +441,12 @@
     });
     userbar.innerHTML = `
       <p class="sidebar-label">Signed in</p>
-      <div class="who"><strong>${state.user.name}</strong><span>${state.user.role.replace('_', ' ')}</span></div>
+      <div class="who"><strong>${escapeHtml(state.user.name)}</strong><span>${escapeHtml(state.user.role.replace('_', ' '))}</span></div>
       <button type="button" id="logout" class="sidebar-logout">Sign out</button>`;
     $('#logout').onclick = async () => {
-      await api('/api/logout', { method: 'POST' });
-      state.token = null;
-      localStorage.removeItem('billing_token');
+      try { await api('/api/logout', { method: 'POST', body: '{}' }); }
+      catch { /* still clear local state */ }
+      state.csrf = null;
       state.user = null;
       renderLogin();
     };
@@ -451,7 +467,7 @@
       const msg = e.message === 'forbidden'
         ? 'You do not have access to this section with your current role.'
         : e.message;
-      main.innerHTML = `<div class="card"><div class="error">${msg}</div></div>`;
+      main.innerHTML = `<div class="card"><div class="error">${escapeHtml(msg)}</div></div>`;
     }
   }
 
@@ -1960,6 +1976,10 @@
               <option value="admin">Admin</option>
             </select>
           </label>
+          <label>Temporary password
+            <input name="password" type="password" autocomplete="new-password" required minlength="10"
+              placeholder="At least 10 characters" />
+          </label>
           <label>Default rate ($/hr)
             <input class="rate-dollars" name="defaultRate" type="text" inputmode="decimal" placeholder="350.00" required />
           </label>
@@ -2183,6 +2203,7 @@
               name: fd.get('name'),
               email: fd.get('email'),
               role: fd.get('role'),
+              password: fd.get('password'),
               defaultRateCents,
               rateEffectiveDate: fd.get('rateEffectiveDate'),
             }),
@@ -2191,7 +2212,7 @@
           await refreshRefs();
           await renderSettings();
         } catch (e) {
-          $('#tkMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          $('#tkMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }

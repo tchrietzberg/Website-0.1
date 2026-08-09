@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 require('../loadEnv').loadEnvFile();
 const { openDb, migrate, DEFAULT_DB, getSetting, setSetting } = require('../db');
+const security = require('../security');
 const {
   ROUNDING_INCREMENTS,
   DURATION_FORMATS,
@@ -23,73 +24,76 @@ const customFields = require('../services/customFields');
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
 
-const sessions = new Map(); // token -> userId
+function withSecHeaders(req, extra = {}) {
+  return { ...security.securityHeaders(req), ...extra };
+}
 
-function json(res, status, body) {
+function json(res, status, body, req = null, extraHeaders = {}) {
   const data = JSON.stringify(body);
-  res.writeHead(status, {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(data),
-  });
+    ...(req ? security.securityHeaders(req) : {}),
+    ...extraHeaders,
+  };
+  res.writeHead(status, headers);
   res.end(data);
 }
 
-function text(res, status, body, type = 'text/plain; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(body) });
+function text(res, status, body, type = 'text/plain; charset=utf-8', req = null) {
+  const headers = {
+    'Content-Type': type,
+    'Content-Length': Buffer.byteLength(body),
+    ...(req ? security.securityHeaders(req) : {}),
+  };
+  res.writeHead(status, headers);
   res.end(body);
 }
 
 function parseBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve({});
-      try { resolve(JSON.parse(raw)); }
-      catch (e) { reject(new Error('invalid JSON body')); }
-    });
-    req.on('error', reject);
-  });
+  return security.parseBodyLimited(req);
 }
 
-function getToken(req) {
-  const h = req.headers.authorization || '';
-  if (h.startsWith('Bearer ')) return h.slice(7);
-  const cookie = req.headers.cookie || '';
-  const m = cookie.match(/(?:^|;\s*)session=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
-function currentUser(db, req) {
-  const token = getToken(req);
-  if (!token || !sessions.has(token)) return null;
-  const id = sessions.get(token);
-  return db.prepare('SELECT id, email, name, role FROM users WHERE id = ? AND active = 1').get(id) || null;
+function currentSession(db, req) {
+  const token = security.getSessionToken(req);
+  return security.readSession(db, token);
 }
 
 function requireUser(db, req, res) {
-  const user = currentUser(db, req);
-  if (!user) {
-    json(res, 401, { error: 'sign in required' });
+  const session = currentSession(db, req);
+  if (!session) {
+    json(res, 401, { error: 'sign in required' }, req);
     return null;
   }
-  return user;
+  req.session = session;
+  return session.user;
 }
 
-function requireRoles(user, res, roles) {
+function requireRoles(user, res, roles, req = null) {
   if (!roles.includes(user.role)) {
-    json(res, 403, { error: 'forbidden' });
+    json(res, 403, { error: 'forbidden' }, req);
+    return false;
+  }
+  return true;
+}
+
+function requireCsrf(req, res, session) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+  if (!security.assertSameOrigin(req)) {
+    json(res, 403, { error: 'invalid_origin', message: 'Cross-origin request blocked' }, req);
+    return false;
+  }
+  if (!security.assertCsrf(req, session)) {
+    json(res, 403, { error: 'invalid_csrf', message: 'Missing or invalid CSRF token' }, req);
     return false;
   }
   return true;
 }
 
 function serveStatic(req, res) {
-  let urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-  if (urlPath === '/') urlPath = '/index.html';
-  const file = path.normalize(path.join(PUBLIC, urlPath));
-  if (!file.startsWith(PUBLIC)) return text(res, 403, 'forbidden');
+  const urlPath = new URL(req.url, 'http://localhost').pathname;
+  const file = security.safeStaticPath(PUBLIC, urlPath);
+  if (!file) return text(res, 403, 'forbidden', 'text/plain; charset=utf-8', req);
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) return false;
   const ext = path.extname(file);
   const types = {
@@ -99,9 +103,12 @@ function serveStatic(req, res) {
     '.svg': 'image/svg+xml',
   };
   const body = fs.readFileSync(file);
-  const headers = { 'Content-Type': types[ext] || 'application/octet-stream' };
-  // Avoid stale SPA assets after deploys (query ?v= also used for busting)
-  if (ext === '.html' || ext === '.js' || ext === '.css') {
+  const headers = withSecHeaders(req, {
+    'Content-Type': types[ext] || 'application/octet-stream',
+  });
+  if (ext === '.html') {
+    headers['Cache-Control'] = 'no-store';
+  } else if (ext === '.js' || ext === '.css') {
     headers['Cache-Control'] = 'no-cache, must-revalidate';
   }
   res.writeHead(200, headers);
@@ -126,48 +133,81 @@ function readSettings(db) {
 
 function createServer(db = openDb()) {
   migrate(db);
+  security.sessionSecret(db);
+  security.ensureSessionTables(db);
 
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       const { pathname } = url;
 
+      if (req.method === 'OPTIONS') {
+        return json(res, 204, {}, req);
+      }
+
       if (req.method === 'GET' && !pathname.startsWith('/api/')) {
         if (serveStatic(req, res) !== false) return;
-        return text(res, 404, 'not found');
+        return text(res, 404, 'not found', 'text/plain; charset=utf-8', req);
       }
 
       // Auth
       if (req.method === 'POST' && pathname === '/api/login') {
+        const limit = security.checkLoginRateLimit(req);
+        if (!limit.ok) {
+          return json(res, 429, {
+            error: 'rate_limited',
+            message: 'Too many sign-in attempts. Try again later.',
+            retryAfterSec: limit.retryAfterSec,
+          }, req, { 'Retry-After': String(limit.retryAfterSec) });
+        }
         const body = await parseBody(req);
-        const user = db.prepare(
-          'SELECT id, email, name, role FROM users WHERE lower(email) = lower(?) AND active = 1'
-        ).get(body.email || '');
-        if (!user) return json(res, 401, { error: 'unknown email' });
-        const token = `s_${user.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        sessions.set(token, user.id);
-        res.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': `session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`,
+        const email = String(body.email || '').trim().toLowerCase();
+        const password = String(body.password || '');
+        const row = db.prepare(
+          'SELECT id, email, name, role, password_hash FROM users WHERE lower(email) = ? AND active = 1'
+        ).get(email);
+        const ok = row && row.password_hash && security.verifyPassword(password, row.password_hash);
+        if (!ok) {
+          security.recordLoginFailure(req);
+          security.auditLogin(db, row?.id || null, false, { email, ip: security.clientIp(req) });
+          return json(res, 401, { error: 'invalid_credentials', message: 'Invalid email or password' }, req);
+        }
+        security.clearLoginFailures(req);
+        const session = security.createSession(db, row.id, req);
+        security.auditLogin(db, row.id, true, { email: row.email, ip: security.clientIp(req) });
+        const secure = security.requestIsSecure(req);
+        const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
+        const user = { id: row.id, email: row.email, name: row.name, role: row.role };
+        return json(res, 200, { user, csrf: session.csrf }, req, {
+          'Set-Cookie': security.cookieHeader('session', session.token, {
+            maxAgeSec: maxAge,
+            secure,
+            httpOnly: true,
+            sameSite: 'Lax',
+          }),
         });
-        res.end(JSON.stringify({ token, user }));
-        return;
       }
 
       if (req.method === 'POST' && pathname === '/api/logout') {
-        const token = getToken(req);
-        if (token) sessions.delete(token);
-        res.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Set-Cookie': 'session=; Path=/; Max-Age=0',
+        const token = security.getSessionToken(req);
+        const session = security.readSession(db, token);
+        if (session && !security.assertCsrf(req, session)) {
+          // Still allow logout with same-origin to clear stolen cookies without CSRF
+          if (!security.assertSameOrigin(req) && req.headers.origin) {
+            return json(res, 403, { error: 'invalid_origin' }, req);
+          }
+        }
+        security.destroySession(db, token);
+        const secure = security.requestIsSecure(req);
+        return json(res, 200, { ok: true }, req, {
+          'Set-Cookie': security.clearCookie('session', { secure }),
         });
-        res.end(JSON.stringify({ ok: true }));
-        return;
       }
 
       if (req.method === 'GET' && pathname === '/api/me') {
-        const user = currentUser(db, req);
-        return json(res, 200, { user });
+        const session = currentSession(db, req);
+        if (!session) return json(res, 200, { user: null, csrf: null }, req);
+        return json(res, 200, { user: session.user, csrf: session.csrf }, req);
       }
 
       // Microsoft OAuth redirect must work even if session cookie is delayed
@@ -179,13 +219,13 @@ function createServer(db = openDb()) {
           const err = url.searchParams.get('error_description') || url.searchParams.get('error');
           if (err) throw new Error(err);
           await msAuth.finishAuthCode(db, { code, state });
-          res.writeHead(302, { Location: '/?onedrive=connected#settings' });
+          res.writeHead(302, withSecHeaders(req, { Location: '/?onedrive=connected#settings' }));
           res.end();
           return;
         } catch (e) {
-          res.writeHead(302, {
+          res.writeHead(302, withSecHeaders(req, {
             Location: `/?onedrive=error&msg=${encodeURIComponent(e.message)}#settings`,
-          });
+          }));
           res.end();
           return;
         }
@@ -193,6 +233,7 @@ function createServer(db = openDb()) {
 
       const user = requireUser(db, req, res);
       if (!user) return;
+      if (!requireCsrf(req, res, req.session)) return;
 
       // Reference data
       if (req.method === 'GET' && pathname === '/api/users') {
@@ -492,7 +533,7 @@ function createServer(db = openDb()) {
               message: 'Microsoft sign-in is not configured on this server. Set MS_CLIENT_ID in the environment (one Azure app for the product), then restart.',
             });
           }
-          const redirectUri = `${url.protocol}//${url.host}/api/onedrive/oauth/callback`;
+          const redirectUri = security.oauthRedirectUri(req);
           const started = msAuth.startAuthCode(db, user, { redirectUri });
           return json(res, 200, { authUrl: started.authUrl, microsoft: msAuth.connectionStatus(db) });
         } catch (e) {
@@ -516,9 +557,9 @@ function createServer(db = openDb()) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const msAuth = require('../services/msAuth');
         try {
-          const redirectUri = `${url.protocol}//${url.host}/api/onedrive/oauth/callback`;
+          const redirectUri = security.oauthRedirectUri(req);
           const started = msAuth.startAuthCode(db, user, { redirectUri });
-          res.writeHead(302, { Location: started.authUrl });
+          res.writeHead(302, withSecHeaders(req, { Location: started.authUrl }));
           res.end();
           return;
         } catch (e) {
@@ -657,12 +698,15 @@ function createServer(db = openDb()) {
         `).all());
       }
 
-      return json(res, 404, { error: 'not found' });
+      return json(res, 404, { error: 'not found' }, req);
     } catch (err) {
+      if (err.code === 'PAYLOAD_TOO_LARGE') {
+        return json(res, 413, { error: 'payload_too_large', message: 'Request body too large' }, req);
+      }
       const status = err.code === 'FORBIDDEN' ? 403
         : err.code === 'BILLING_RULE' ? 400
           : 400;
-      json(res, status, { error: err.message, errors: err.errors });
+      json(res, status, { error: err.message, errors: err.errors }, req);
     }
   });
 
@@ -673,10 +717,14 @@ if (require.main === module) {
   const db = openDb(DEFAULT_DB);
   migrate(db);
   const server = createServer(db);
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Firm billing prototype listening on http://localhost:${PORT}`);
+  const bindHost = process.env.BIND_HOST || '0.0.0.0';
+  server.listen(PORT, bindHost, () => {
+    console.log(`Firm billing listening on http://${bindHost}:${PORT}`);
     console.log(`DB: ${DEFAULT_DB}`);
+    if (security.isProduction()) {
+      console.log('NODE_ENV=production — password auth, CSRF, secure cookies, security headers enabled');
+    }
   });
 }
 
-module.exports = { createServer, sessions };
+module.exports = { createServer };

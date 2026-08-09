@@ -24,6 +24,7 @@ describe('timekeepers and effective-dated rates', () => {
       email: 'alex@firm.example',
       name: 'Alex Associate',
       role: 'attorney',
+      password: 'test-password-ok',
     });
     ratesAdmin.addRate(db, admin, {
       scope: 'timekeeper',
@@ -45,6 +46,7 @@ describe('timekeepers and effective-dated rates', () => {
       email: 'alex@firm.example',
       name: 'Alex',
       role: 'attorney',
+      password: 'test-password-ok',
     });
     ratesAdmin.addRate(db, admin, {
       scope: 'timekeeper', scopeId: user.id, amountCents: 30000, effectiveDate: '2026-01-01',
