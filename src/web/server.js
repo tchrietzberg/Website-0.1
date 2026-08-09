@@ -755,14 +755,16 @@ function createServer(db = openDb()) {
             customValues[key.slice(3)] = value;
           }
         }
+        const hoursNum = body.hours != null && body.hours !== '' ? Number(body.hours) : NaN;
+        const minutesNum = body.rawMinutes != null && body.rawMinutes !== ''
+          ? Number(body.rawMinutes)
+          : NaN;
         const entry = timeSvc.createEntry(db, user, {
           matterId: Number(body.matterId),
           timekeeperId: Number(body.timekeeperId || user.id),
           serviceDate: body.serviceDate,
-          hours: body.hours != null && body.hours !== '' ? Number(body.hours) : undefined,
-          rawMinutes: body.rawMinutes != null && body.rawMinutes !== ''
-            ? Number(body.rawMinutes)
-            : undefined,
+          hours: Number.isFinite(hoursNum) ? hoursNum : undefined,
+          rawMinutes: Number.isFinite(minutesNum) ? minutesNum : undefined,
           description: body.description,
           billable: body.billable == null ? null : (body.billable ? 1 : 0),
           category: body.category,

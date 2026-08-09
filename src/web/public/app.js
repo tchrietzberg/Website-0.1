@@ -1702,9 +1702,8 @@
             <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
           </label>
           <label>Hours
-            <input name="hours" type="number" min="0.25" step="0.25" value="${escapeHtml(formHours)}"
-              placeholder="0.25" required />
-            <span class="hint">0.25 = 15 min · 0.50 = 30 min · 0.75 = 45 min · 1 = 1 hour · 1.25 = 1h 15m</span>
+            <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
+              value="${escapeHtml(formHours)}" placeholder="0.25" required />
           </label>
           <label>Timekeeper
             <select name="timekeeperId">
@@ -1760,7 +1759,14 @@
       const body = Object.fromEntries(fd.entries());
       body.matterId = Number(body.matterId);
       body.timekeeperId = Number(body.timekeeperId);
-      body.hours = Number(body.hours);
+      const hoursRaw = String(body.hours ?? '').trim();
+      body.hours = Number(hoursRaw);
+      if (!Number.isFinite(body.hours) || body.hours <= 0) {
+        $('#timeMsg').innerHTML = '<div class="error">Enter hours in 0.25 increments (e.g. 0.25, 0.50, 1.25).</div>';
+        const hoursInput = ev.target.querySelector('input[name="hours"]');
+        if (hoursInput) hoursInput.focus();
+        return;
+      }
       delete body.rawMinutes;
       delete body.category;
       delete body.subcategory;

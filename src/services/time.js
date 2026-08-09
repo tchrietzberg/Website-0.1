@@ -36,14 +36,20 @@ function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinu
 }
 
 function resolveMinutes(input) {
-  if (input.hours != null && input.hours !== '') {
+  const hoursValue = input.hours;
+  const hasHours = hoursValue != null && hoursValue !== ''
+    && !(typeof hoursValue === 'number' && Number.isNaN(hoursValue));
+  if (hasHours) {
     // Quarter-hour entry already matches billed increments — do not re-round.
-    const rawMinutes = hoursToMinutes(input.hours);
+    const rawMinutes = hoursToMinutes(hoursValue);
     return { rawMinutes, rounded: rawMinutes, fromHours: true };
+  }
+  if (input.rawMinutes == null || input.rawMinutes === '') {
+    throw new Error('hours is required (0.25 increments)');
   }
   const rawMinutes = Number(input.rawMinutes);
   if (!Number.isInteger(rawMinutes)) {
-    throw new Error('rawMinutes must be an integer');
+    throw new Error(`rawMinutes must be an integer, got ${input.rawMinutes}`);
   }
   return { rawMinutes, rounded: null, fromHours: false };
 }
