@@ -2594,12 +2594,13 @@
       appEl.classList.add('app-shell');
     }
     // Matters stay under Quick actions (Create Matter opens create + search).
+    // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
       roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
-      canManageUsers() ? ['users', 'Add a user', 'users', 'Admin · invite & rates'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
+      canManageUsers() ? ['users', 'Add a user', 'users', 'Admin · invite & rates'] : null,
       ['settings', 'Settings', 'settings', 'Firm preferences'],
     ].filter(Boolean);
     // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
