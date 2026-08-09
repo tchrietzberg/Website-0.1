@@ -523,6 +523,14 @@ body {
   display: none;
 }
 
+.create-matter-fields-panel,
+.post-create-fields-panel {
+  margin-top: 0.25rem;
+}
+.create-matter-fields-panel h2,
+.post-create-fields-panel h2 {
+  font-family: var(--font);
+}
 .create-matter-panel #newMatterMsg:not(:empty) {
   margin-top: 0.65rem;
 }

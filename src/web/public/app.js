@@ -13,11 +13,15 @@
     matterSearch: { q: '' },
     tkSearch: { q: '' },
     showCreateMatter: false,
+    createMatterDraftName: '',
     focusTimeEntry: false,
     timeFlash: null,
     matterTimeFlash: null,
     matterFieldFlash: null,
     matterCreateFlash: null,
+    showPostCreateFields: false,
+    matterFieldPanelFlash: null,
+    createMatterFieldMsg: null,
     timeEntryRetain: null,
     matterTimeRetain: null,
     focusCustomReportId: null,
@@ -1397,6 +1401,9 @@
     ]);
     state.matters = allMatters;
     state.clients = clients;
+    const draftName = state.createMatterDraftName || '';
+    const createFieldMsg = state.createMatterFieldMsg;
+    state.createMatterFieldMsg = null;
     const createFieldDefs = (createMatterFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -1408,6 +1415,7 @@
       width: f.field_type === 'textarea' ? 'full' : 'half',
       value: null,
     }));
+    const createCustomRows = (createMatterFields || []).filter((f) => f.id != null);
 
     main.innerHTML = `
       <div class="card stack page-card">
@@ -1421,6 +1429,7 @@
             <label class="create-matter-label" for="createMatterName">Create Matter</label>
             <div class="create-matter-row">
               <input id="createMatterName" name="name" required
+                value="${escapeHtml(draftName)}"
                 placeholder="Create Matter" aria-label="Create Matter" />
               <button class="primary" type="submit">Create</button>
               <button type="button" id="cancelCreateMatter">Cancel</button>
@@ -1435,6 +1444,25 @@
             </div>` : ''}
           </form>
           <div id="newMatterMsg"></div>
+        </div>
+
+        <div id="createMatterFieldsPanel" class="card stack page-section create-matter-fields-panel">
+          <h2>Add custom fields</h2>
+          <p class="hint">Add fields for new matters in this separate panel. New fields appear in the create form above.</p>
+          <div class="field-mgmt-list">
+            ${createCustomRows.map((f) => `
+              <div class="field-mgmt-row">
+                <div>
+                  <strong>${escapeHtml(f.label)}</strong>
+                  <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))}${f.required ? ' · required' : ''}</span>
+                </div>
+              </div>`).join('') || '<p class="muted">No custom fields yet</p>'}
+          </div>
+          ${customFieldFormHtml({
+            formId: 'createMatterFieldForm',
+            submitLabel: 'Add field',
+          })}
+          <div id="createMatterFieldMsg">${createFieldMsg ? successNoticeHtml(createFieldMsg) : ''}</div>
         </div>` : ''}
 
         <div class="page-section">
@@ -1485,12 +1513,17 @@
     if (cancelCreate) {
       cancelCreate.onclick = async () => {
         state.showCreateMatter = false;
+        state.createMatterDraftName = '';
+        state.createMatterFieldMsg = null;
         await renderMatters();
       };
     }
     if (showCreate) {
       const nameInput = $('#createMatterName') || $('#createMatterSection input[name="name"]');
       if (nameInput) {
+        nameInput.addEventListener('input', () => {
+          state.createMatterDraftName = String(nameInput.value || '');
+        });
         setTimeout(() => {
           nameInput.focus();
           const section = $('#createMatterSection');
@@ -1498,6 +1531,36 @@
             section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
         }, 0);
+      }
+      const createFieldForm = $('#createMatterFieldForm');
+      wireDropdownOptionsToggle(createFieldForm);
+      if (createFieldForm) {
+        createFieldForm.onsubmit = async (ev) => {
+          ev.preventDefault();
+          const nameEl = $('#createMatterName');
+          if (nameEl) state.createMatterDraftName = String(nameEl.value || '');
+          const fd = new FormData(createFieldForm);
+          const { fieldType, options, body } = customFieldPayload(fd);
+          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+            $('#createMatterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
+            return;
+          }
+          try {
+            await api('/api/custom-fields', {
+              method: 'POST',
+              body: JSON.stringify({ ...body, recordTypeKey: 'default', appliesTo: 'matter' }),
+            });
+            state.createMatterFieldMsg = {
+              title: 'Custom field added',
+              detail: body.label || 'It now appears in the create form above.',
+            };
+            await renderMatters();
+            const panel = $('#createMatterFieldsPanel');
+            if (panel?.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          } catch (e) {
+            $('#createMatterFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          }
+        };
       }
     }
 
@@ -1542,11 +1605,15 @@
           });
           await refreshRefs();
           state.showCreateMatter = false;
+          state.createMatterDraftName = '';
+          state.createMatterFieldMsg = null;
           state.matterSearch = { q: page.matter.name };
           state.matterCreateFlash = {
             title: 'Matter created',
             detail: page.matter.name,
           };
+          state.showPostCreateFields = true;
+          state.editingMatterFieldId = null;
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -2168,10 +2235,53 @@
     const flash = state.matterTimeFlash;
     const matterFlash = state.matterFieldFlash;
     const createFlash = state.matterCreateFlash;
+    const fieldPanelFlash = state.matterFieldPanelFlash;
+    const showPostCreateFields = canEdit && !!state.showPostCreateFields;
     state.matterTimeFlash = null;
     state.matterFieldFlash = null;
     state.matterCreateFlash = null;
+    state.matterFieldPanelFlash = null;
     state.matterTimeRetain = null;
+    const editingField = state.editingMatterFieldId
+      ? (page.layoutFields || []).find(
+        (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingMatterFieldId)
+      )
+      : null;
+    const fieldMgmtPanelHtml = (opts = {}) => {
+      const {
+        title = 'Manage fields',
+        hint = 'Add or edit custom fields (label, type, required). Firm-wide defaults are managed in Settings.',
+        formId = 'recordFieldForm',
+        panelId = '',
+        showDismiss = false,
+        msgHtml = '',
+      } = opts;
+      return `
+      <div class="card stack${showDismiss ? ' post-create-fields-panel' : ''}"${panelId ? ` id="${panelId}"` : ''}>
+        <div class="page-head matters-toolbar" style="margin:0">
+          <h2 style="margin:0">${escapeHtml(title)}</h2>
+          ${showDismiss ? '<button type="button" id="dismissPostCreateFields">Done</button>' : ''}
+        </div>
+        <p class="hint">${escapeHtml(hint)}</p>
+        <div class="field-mgmt-list">
+          ${fieldMgmtRows(page.layoutFields)}
+        </div>
+        ${editingField
+          ? `<h3 class="field-edit-title">Edit field</h3>${customFieldFormHtml({
+            formId,
+            submitLabel: 'Save changes',
+            field: editingField,
+            showCancel: true,
+          })}`
+          : `${customFieldFormHtml({
+            formId,
+            submitLabel: 'Add field',
+          })}${page.layout.source !== 'record'
+            ? '<div class="row-actions"><button type="button" id="useRecordLayout">Use default layout</button></div>'
+            : ''}`}
+        <div id="matterFieldMsg">${msgHtml}</div>
+      </div>`;
+    };
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
     const fieldCtx = {
       canEdit,
@@ -2208,6 +2318,15 @@
           </div>` : ''}
         <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
       </form>
+
+      ${showPostCreateFields ? fieldMgmtPanelHtml({
+        title: 'Add custom fields',
+        hint: 'Optional — add custom fields for this matter here. Keep adding as needed, then press Done.',
+        formId: 'recordFieldForm',
+        panelId: 'postCreateFieldsPanel',
+        showDismiss: true,
+        msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
+      }) : ''}
 
       <div class="card">
         <h2>Add time</h2>
@@ -2261,36 +2380,9 @@
         <div id="matterReportOut" hidden></div>
       </div>
 
-      ${canEdit ? (() => {
-        const editingField = state.editingMatterFieldId
-          ? (page.layoutFields || []).find(
-            (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingMatterFieldId)
-          )
-          : null;
-        return `
-      <div class="card stack">
-        <h2>Manage fields</h2>
-        <p class="hint">Add or edit custom fields (label, type, required). Firm-wide defaults are managed in Settings.</p>
-
-        <div class="field-mgmt-list">
-          ${fieldMgmtRows(page.layoutFields)}
-        </div>
-        ${editingField
-          ? `<h3 class="field-edit-title">Edit field</h3>${customFieldFormHtml({
-            formId: 'recordFieldForm',
-            submitLabel: 'Save changes',
-            field: editingField,
-            showCancel: true,
-          })}`
-          : `${customFieldFormHtml({
-            formId: 'recordFieldForm',
-            submitLabel: 'Add field',
-          })}${page.layout.source !== 'record'
-            ? '<div class="row-actions"><button type="button" id="useRecordLayout">Use default layout</button></div>'
-            : ''}`}
-        <div id="matterFieldMsg"></div>
-      </div>`;
-      })() : ''}
+      ${canEdit && !showPostCreateFields ? fieldMgmtPanelHtml({
+        msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
+      }) : ''}
 
       <details class="onedrive-collapse" id="onedriveCard">
         <summary class="onedrive-collapse-summary">
@@ -2400,9 +2492,28 @@
     $('#backMatters').onclick = () => {
       state.view = 'matters';
       state.matterId = null;
+      state.showPostCreateFields = false;
+      state.editingMatterFieldId = null;
       renderShell();
       renderView();
     };
+
+    const dismissPostCreate = $('#dismissPostCreateFields');
+    if (dismissPostCreate) {
+      dismissPostCreate.onclick = async () => {
+        state.showPostCreateFields = false;
+        state.editingMatterFieldId = null;
+        await renderMatterDetail();
+      };
+    }
+    if (showPostCreateFields) {
+      setTimeout(() => {
+        const panel = $('#postCreateFieldsPanel');
+        if (panel?.scrollIntoView) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 0);
+    }
 
     const matterForm = $('#matterForm');
     if (matterForm && canEdit) {
@@ -2646,6 +2757,10 @@
               method: 'POST',
               body: JSON.stringify(body),
             });
+            state.matterFieldPanelFlash = {
+              title: 'Custom field added',
+              detail: body.label || 'It is available on this matter.',
+            };
           }
           await renderMatterDetail();
         } catch (e) {
