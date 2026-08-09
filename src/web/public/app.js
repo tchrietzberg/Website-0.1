@@ -639,6 +639,9 @@
     { value: 'textarea', label: 'Text Area' },
   ];
 
+  /** End-user matter-only fields (Settings → Matter record pages keeps the full admin set). */
+  const MATTER_ONLY_FIELD_FORMATTERS = TIME_ENTRY_FIELD_FORMATTERS;
+
   const SYSTEM_FIELD_TYPES = new Set(['auto_number', 'formula']);
   const OPTION_FIELD_TYPES = new Set(['dropdown', 'select', 'multiselect', 'picklist']);
 
@@ -647,11 +650,18 @@
     if (scope === 'time' || scope === 'time_entry' || scope === 'time-entry') {
       return TIME_ENTRY_FIELD_FORMATTERS;
     }
+    if (scope === 'matter_only' || scope === 'matter-only') {
+      return MATTER_ONLY_FIELD_FORMATTERS;
+    }
     return FIELD_FORMATTERS;
   }
 
   function fieldFormatterOptions(selected = 'text', appliesTo = 'matter') {
-    const list = formattersForAppliesTo(appliesTo);
+    const list = [...formattersForAppliesTo(appliesTo)];
+    if (selected && !list.some((f) => f.value === selected)) {
+      const extra = FIELD_FORMATTERS.find((f) => f.value === selected);
+      if (extra) list.push(extra);
+    }
     const selectedValue = list.some((f) => f.value === selected) ? selected : 'text';
     return list.map((f) =>
       `<option value="${f.value}" ${f.value === selectedValue ? 'selected' : ''}>${f.label}</option>`
@@ -1230,7 +1240,7 @@
         </div>
         <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every ${escapeHtml(entityNoun)} of this type.${
           entityAppliesTo === 'matter'
-            ? ' For a field on one matter only, open that matter and use Manage fields.'
+            ? ' For a field on one matter only, open that matter and use Add custom fields at the bottom of the page.'
             : ''
         }</p>
         <form id="addRecordTypeForm" class="stack" hidden>
@@ -4302,76 +4312,56 @@
     const matterFlash = state.matterFieldFlash;
     const createFlash = state.matterCreateFlash;
     const fieldPanelFlash = state.matterFieldPanelFlash;
-    const showPostCreateFields = canEdit && !!state.showPostCreateFields;
+    const scrollToMatterFields = canEdit && !!state.showPostCreateFields;
     state.matterTimeFlash = null;
     state.matterFieldFlash = null;
     state.matterCreateFlash = null;
     state.matterFieldPanelFlash = null;
     state.matterTimeRetain = null;
+    const isMatterOnlyField = (f) => !!(
+      f
+      && !isBuiltInField(f)
+      && (f.scope === 'record' || f.matter_id || f.matterId)
+    );
+    const matterOnlyFields = (page.layoutFields || []).filter(isMatterOnlyField);
     const editingField = state.editingMatterFieldId
-      ? (page.layoutFields || []).find(
+      ? matterOnlyFields.find(
         (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingMatterFieldId)
       )
       : null;
-    const editingFieldScope = editingField
-      ? (editingField.scope === 'record' || editingField.matter_id || editingField.matterId
-        ? 'record'
-        : 'record_type')
-      : null;
-    const fieldMgmtPanelHtml = (opts = {}) => {
-      const {
-        title = 'Manage fields',
-        hint = `Choose whether a new field is for this matter only, or for every <strong>${escapeHtml(matterTypeLabel)}</strong> matter (record type). Record type fields can also be managed in Settings → Matter record pages.`,
-        formId = 'recordFieldForm',
-        panelId = '',
-        showDismiss = false,
-        msgHtml = '',
-      } = opts;
-      const isEditingMatterOnly = editingFieldScope === 'record';
-      return `
-      <div class="card stack${showDismiss ? ' post-create-fields-panel' : ''}"${panelId ? ` id="${panelId}"` : ''}>
+    const matterOnlyFieldsPanelHtml = () => `
+      <div class="card stack${scrollToMatterFields ? ' post-create-fields-panel' : ''}" id="matterOnlyFieldsPanel">
         <div class="page-head matters-toolbar" style="margin:0">
-          <h2 style="margin:0">${escapeHtml(title)}</h2>
-          ${showDismiss ? '<button type="button" id="dismissPostCreateFields">Done</button>' : ''}
+          <h2 style="margin:0">Add custom fields</h2>
+          ${scrollToMatterFields ? '<button type="button" id="dismissPostCreateFields">Done</button>' : ''}
         </div>
-        <p class="hint">${hint}</p>
+        <p class="hint">Add a field for <strong>this matter only</strong>. Admins set shared defaults for all matters in Settings → Matter record pages.</p>
         <div class="field-mgmt-list">
-          ${fieldMgmtRows(page.layoutFields, { showScope: true })}
+          ${fieldMgmtRows(matterOnlyFields, {
+            canDelete: true,
+            showScope: false,
+          })}
         </div>
         ${editingField
-          ? `<h3 class="field-edit-title">Edit ${isEditingMatterOnly ? 'matter' : 'record type'} field</h3>${customFieldFormHtml({
-            formId,
+          ? `<h3 class="field-edit-title">Edit matter field</h3>${customFieldFormHtml({
+            formId: 'recordFieldForm',
             submitLabel: 'Save changes',
             field: editingField,
             showCancel: true,
-            showDefault: !isEditingMatterOnly,
-            defaultLabel: 'Record type default field',
-            requiredLabel: isEditingMatterOnly ? 'Required on this matter' : 'Record type required field',
-            appliesTo: 'matter',
-            formHint: isEditingMatterOnly
-              ? 'This field is for <strong>this matter only</strong>.'
-              : `This field is on the <strong>${escapeHtml(matterTypeLabel)}</strong> record type (all matters of this type).`,
+            showDefault: false,
+            requiredLabel: 'Required on this matter',
+            appliesTo: 'matter_only',
+            formHint: 'This field stays on this matter only.',
           })}`
           : customFieldFormHtml({
-            formId,
+            formId: 'recordFieldForm',
             submitLabel: 'Add field',
             showDefault: false,
-            defaultLabel: 'Record type default field',
-            requiredLabel: 'Required field',
-            appliesTo: 'matter',
-            scopeField: {
-              selectId: `${formId}Scope`,
-              selected: 'record',
-              options: [
-                { value: 'record', label: 'This matter only' },
-                { value: 'record_type', label: `All ${matterTypeLabel} matters (record type)` },
-              ],
-              hint: 'This matter only = one matter. Record type = every matter of this type.',
-            },
+            requiredLabel: 'Required on this matter',
+            appliesTo: 'matter_only',
           })}
-        <div id="matterFieldMsg">${msgHtml}</div>
+        <div id="matterFieldMsg">${fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : ''}</div>
       </div>`;
-    };
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
     const fieldCtx = {
       canEdit,
@@ -4406,22 +4396,13 @@
                 ${renderFieldInput(f, fieldCtx)}
               </label>`).join('')}
           </div>
-        `).join('') || '<p class="muted">No fields on this matter yet. Add one under Manage fields.</p>'}
+        `).join('') || '<p class="muted">No fields on this matter yet. Add one under Add custom fields below.</p>'}
         ${canEdit ? `
           <div class="row-actions">
             <button class="primary" type="submit">Save</button>
           </div>` : ''}
         <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
       </form>
-
-      ${showPostCreateFields ? fieldMgmtPanelHtml({
-        title: 'Add custom fields',
-        hint: `Optional — add a field for <strong>this matter only</strong>, or for every <strong>${escapeHtml(matterTypeLabel)}</strong> matter. Keep adding as needed, then press Done.`,
-        formId: 'recordFieldForm',
-        panelId: 'postCreateFieldsPanel',
-        showDismiss: true,
-        msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
-      }) : ''}
 
       ${canLogTime ? `<div class="card">
         <h2>Add time</h2>
@@ -4475,10 +4456,6 @@
           </div>`).join('')}
         <div id="matterReportOut" hidden></div>
       </div>
-
-      ${canEdit && !showPostCreateFields ? fieldMgmtPanelHtml({
-        msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
-      }) : ''}
 
       <details class="onedrive-collapse" id="onedriveCard">
         <summary class="onedrive-collapse-summary">
@@ -4583,7 +4560,9 @@
           `}
           <div id="onedriveMsg"></div>
         </div>
-      </details>`;
+      </details>
+
+      ${canEdit ? matterOnlyFieldsPanelHtml() : ''}`;
 
     $('#backMatters').onclick = () => {
       state.view = 'matters';
@@ -4627,9 +4606,9 @@
         await renderMatterDetail();
       };
     }
-    if (showPostCreateFields) {
+    if (scrollToMatterFields) {
       setTimeout(() => {
-        const panel = $('#postCreateFieldsPanel');
+        const panel = $('#matterOnlyFieldsPanel');
         if (panel?.scrollIntoView) {
           panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
@@ -4852,7 +4831,6 @@
     });
     main.querySelectorAll('[data-del-custom-field]').forEach((btn) => {
       btn.onclick = async () => {
-        if (!isAdminUser()) return;
         const label = fieldLabelFromDeleteBtn(btn);
         const sure = await confirmDeleteCustomField(label);
         if (!sure) return;
@@ -4862,7 +4840,7 @@
           if (Number(state.editingMatterFieldId) === id) state.editingMatterFieldId = null;
           state.matterFieldPanelFlash = {
             title: 'Custom field deleted',
-            detail: 'The field was removed for this firm.',
+            detail: 'The field was removed from this matter.',
           };
           await renderMatterDetail();
         } catch (e) {
@@ -4881,41 +4859,7 @@
 
     const rf = $('#recordFieldForm');
     wireDropdownOptionsToggle(rf);
-    const syncMatterFieldScopeUi = () => {
-      if (!rf || state.editingMatterFieldId) return;
-      const scopeSelect = rf.querySelector('[name="fieldScope"]');
-      const defaultWrap = rf.querySelector('[data-default-field-wrap]');
-      if (!scopeSelect) return;
-      const isRecordType = scopeSelect.value === 'record_type';
-      if (defaultWrap) {
-        defaultWrap.hidden = !isRecordType;
-        if (!isRecordType) {
-          const box = defaultWrap.querySelector('input[name="isDefault"]');
-          if (box) box.checked = false;
-        } else {
-          const defaultText = defaultWrap.querySelector('[data-default-label-text]');
-          if (defaultText) defaultText.textContent = 'Record type default field';
-        }
-      }
-      const requiredText = rf.querySelector('[data-required-label-text]');
-      if (requiredText) {
-        requiredText.textContent = isRecordType
-          ? 'Record type required field'
-          : 'Required on this matter';
-      }
-      const submitBtn = rf.querySelector('button[type="submit"]');
-      if (submitBtn) {
-        submitBtn.textContent = isRecordType
-          ? 'Add to record type'
-          : 'Add to this matter';
-      }
-    };
     if (rf) {
-      const scopeSelect = rf.querySelector('[name="fieldScope"]');
-      if (scopeSelect) {
-        scopeSelect.onchange = syncMatterFieldScopeUi;
-        syncMatterFieldScopeUi();
-      }
       rf.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(rf);
@@ -4931,31 +4875,19 @@
               body: JSON.stringify(body),
             });
             state.editingMatterFieldId = null;
+            state.matterFieldPanelFlash = {
+              title: 'Matter field updated',
+              detail: `${body.label || 'Field'} was saved for this matter.`,
+            };
           } else {
-            const scope = String(fd.get('fieldScope') || 'record');
-            if (scope === 'record_type') {
-              await api('/api/custom-fields', {
-                method: 'POST',
-                body: JSON.stringify({
-                  ...body,
-                  recordTypeKey: m.matter_type || 'billable',
-                  appliesTo: 'matter',
-                }),
-              });
-              state.matterFieldPanelFlash = {
-                title: 'Record type field added',
-                detail: `${body.label || 'Field'} added to every ${matterTypeLabel} matter.`,
-              };
-            } else {
-              await api(`/api/matters/${m.id}/custom-fields`, {
-                method: 'POST',
-                body: JSON.stringify(body),
-              });
-              state.matterFieldPanelFlash = {
-                title: 'Matter field added',
-                detail: `${body.label || 'Field'} is available on this matter only.`,
-              };
-            }
+            await api(`/api/matters/${m.id}/custom-fields`, {
+              method: 'POST',
+              body: JSON.stringify(body),
+            });
+            state.matterFieldPanelFlash = {
+              title: 'Matter field added',
+              detail: `${body.label || 'Field'} is available on this matter only.`,
+            };
           }
           await renderMatterDetail();
         } catch (e) {
@@ -6821,12 +6753,13 @@
   async function renderSettings() {
     const isAdmin = state.user.role === 'admin';
     const canEditBilling = isAdmin || state.user.role === 'billing_clerk';
+    const canConfigureMatterDefaults = isAdmin;
     const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
     // Billing clerks manage rates here; admins use Navigate → Add a user.
     const showClerkRates = canManageRates() && !canManageUsers();
     const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers] = await Promise.all([
       api('/api/settings'),
-      canConfigureFields ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
+      canConfigureMatterDefaults ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
       canConfigureFields ? api('/api/record-types?appliesTo=client').catch(() => []) : Promise.resolve([]),
       showClerkRates ? api('/api/timekeepers').catch(() => []) : Promise.resolve([]),
     ]);
@@ -6841,26 +6774,13 @@
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
       </div>
 
-      ${canConfigureFields ? `
+      ${canConfigureMatterDefaults ? `
       <div class="card stack" id="defaultFieldsCard">
         <h2>Matter record pages</h2>
-        <p class="hint">Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every matter of that type. For a field on one matter only, open the matter and use Manage fields. New matters default to Billable.</p>
+        <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Add custom fields at the bottom. New matters default to Billable.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
       </div>
-      <div class="card stack" id="contactFieldsCard">
-        <h2>Contact record pages</h2>
-        <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
-        <div id="contactFieldsBody" class="stack"></div>
-        <div id="contactFieldMsg"></div>
-      </div>
-      <div class="card stack" id="timeFieldsCard">
-        <h2>Time entry fields</h2>
-        <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
-        <div id="timeFieldsBody" class="stack"></div>
-        <div id="timeFieldMsg"></div>
-      </div>
-
       <details class="onedrive-collapse settings-collapse" id="matterNameFormulaCard">
         <summary class="onedrive-collapse-summary">
           <span class="onedrive-collapse-title">Matter name formula</span>
@@ -6872,6 +6792,20 @@
         </summary>
         <div class="onedrive-collapse-body stack" id="matterNameFormulaBody"></div>
       </details>` : ''}
+
+      ${canConfigureFields ? `
+      <div class="card stack" id="contactFieldsCard">
+        <h2>Contact record pages</h2>
+        <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
+        <div id="contactFieldsBody" class="stack"></div>
+        <div id="contactFieldMsg"></div>
+      </div>
+      <div class="card stack" id="timeFieldsCard">
+        <h2>Time entry fields</h2>
+        <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
+        <div id="timeFieldsBody" class="stack"></div>
+        <div id="timeFieldMsg"></div>
+      </div>` : ''}
 
       ${isAdmin ? `
       <div class="card stack" id="rolePermissionsCard">
@@ -7083,20 +7017,29 @@
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
 
-    if (canConfigureFields) {
+    if (canConfigureMatterDefaults) {
       const matterRecordTypes = matterRecordTypesPrefetch || [];
+      await bindDefaultFieldsEditor({
+        bodyEl: $('#defaultFieldsBody'),
+        msgEl: $('#typeFieldMsg'),
+        recordTypeKey: state.settingsMatterRecordTypeKey || 'billable',
+        appliesTo: 'matter',
+        recordTypes: matterRecordTypes,
+        onRecordTypeChange: (key) => {
+          state.settingsMatterRecordTypeKey = key;
+        },
+      });
+      if (!stillOnView('settings')) return;
+      await bindMatterNameFormulaEditor({
+        bodyEl: $('#matterNameFormulaBody'),
+        config: settings.matterNameFormula,
+        recordTypes: matterRecordTypes,
+      });
+    }
+
+    if (canConfigureFields) {
       const contactRecordTypes = contactRecordTypesPrefetch || [];
       await Promise.all([
-        bindDefaultFieldsEditor({
-          bodyEl: $('#defaultFieldsBody'),
-          msgEl: $('#typeFieldMsg'),
-          recordTypeKey: state.settingsMatterRecordTypeKey || 'billable',
-          appliesTo: 'matter',
-          recordTypes: matterRecordTypes,
-          onRecordTypeChange: (key) => {
-            state.settingsMatterRecordTypeKey = key;
-          },
-        }),
         bindDefaultFieldsEditor({
           bodyEl: $('#contactFieldsBody'),
           msgEl: $('#contactFieldMsg'),
@@ -7113,12 +7056,6 @@
           appliesTo: 'time_entry',
         }),
       ]);
-      if (!stillOnView('settings')) return;
-      await bindMatterNameFormulaEditor({
-        bodyEl: $('#matterNameFormulaBody'),
-        config: settings.matterNameFormula,
-        recordTypes: matterRecordTypes,
-      });
     }
 
     if (isAdmin && settings.permissions) {
@@ -7429,7 +7366,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Configure type layouts in [[Matter record pages|settings-matter-fields]] or [[Contact record pages|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter or contact, Manage fields can add a field for that record only.',
+      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure matter type layouts in [[Matter record pages|settings-matter-fields]]; contact layouts are in [[Contact record pages|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter, Add custom fields (bottom of the page) adds a field for that matter only.',
       links: [
         { label: 'Matter record pages', target: 'settings-matter-fields' },
         { label: 'Contact record pages', target: 'settings-contact-fields' },

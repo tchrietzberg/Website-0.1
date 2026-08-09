@@ -585,6 +585,13 @@ function createCustomField(db, actor, input) {
     );
   }
 
+  // Default / record-type matter fields are admin-managed (Settings → Matter record pages).
+  if (appliesTo === 'matter' && recordTypeKey && !matterId && actor?.role !== 'admin') {
+    const err = new Error('Only admins can add default matter fields');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
   let apiName = String(input.apiName || slugify(label));
   if (!/^[a-z][a-z0-9_]*$/.test(apiName)) {
     throw new Error('apiName must be snake_case starting with a letter');

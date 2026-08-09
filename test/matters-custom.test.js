@@ -502,4 +502,39 @@ describe('matter search and record-based fields', () => {
     assert.equal(stored.length, 1);
     assert.equal(stored[0].value_text, 'A101');
   });
+
+  it('only admins can add default matter fields; editors can add matter-only fields', () => {
+    const attorney = db.prepare('SELECT * FROM users WHERE id=2').get();
+    const page = matterSvc.createMatter(db, attorney, {
+      clientId: 1,
+      name: 'Editor Matter',
+      openedOn: '2026-03-01',
+      responsibleAttorneyId: attorney.id,
+    });
+    const matterOnly = customFields.createCustomField(db, attorney, {
+      label: 'Local note',
+      fieldType: 'text',
+      matterId: page.matter.id,
+    });
+    assert.equal(matterOnly.matter_id, page.matter.id);
+
+    assert.throws(
+      () => customFields.createCustomField(db, attorney, {
+        label: 'Type default',
+        fieldType: 'text',
+        recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+        appliesTo: 'matter',
+      }),
+      (err) => err && err.code === 'FORBIDDEN'
+    );
+
+    const adminDefault = customFields.createCustomField(db, admin, {
+      label: 'Type default',
+      fieldType: 'text',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+    });
+    assert.equal(adminDefault.record_type_key, customFields.DEFAULT_RECORD_TYPE_KEY);
+    assert.equal(adminDefault.matter_id, null);
+  });
 });

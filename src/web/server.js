@@ -598,14 +598,15 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/custom-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const matterId = Number(pathname.split('/')[3]);
           const body = await parseBody(req);
           const field = customFields.createCustomField(db, user, { ...body, matterId });
           return json(res, 201, { field, page: matterSvc.getMatter(db, matterId) });
         } catch (e) {
-          return json(res, 400, { error: e.message, message: e.message });
+          const status = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, status, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/use-record-layout$/)) {
@@ -696,8 +697,14 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.getTypeLayout(db, key));
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/record-types\/[^/]+\/standard-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        // Matter record-type layout edits are admin-only; contact types keep clerk access.
         const key = decodeURIComponent(pathname.split('/')[3]);
+        let appliesTo = 'matter';
+        try {
+          appliesTo = customFields.getTypeLayout(db, key).appliesTo || 'matter';
+        } catch (_) { /* unknown type → admin gate below */ }
+        const allowed = appliesTo === 'client' ? ['admin', 'billing_clerk'] : ['admin'];
+        if (!requireRoles(user, res, allowed)) return;
         const body = await parseBody(req);
         return json(res, 200, customFields.addStandardFieldToType(db, user, key, body.fieldKey));
       }
@@ -721,21 +728,35 @@ function createServer(db = openDb()) {
       if (req.method === 'POST' && pathname === '/api/custom-fields') {
         try {
           const body = await parseBody(req);
-          // Contact creators can add record-type fields after create; matter type fields stay admin/clerk.
+          // Matter record-type / default fields: admin only. Contact type fields: matter-edit roles.
+          // Time-entry firm fields: admin / billing clerk.
           const appliesTo = String(body.appliesTo || 'matter');
           const allowed = appliesTo === 'client'
             ? ['admin', 'billing_clerk', 'attorney', 'paralegal']
-            : ['admin', 'billing_clerk'];
+            : appliesTo === 'time_entry'
+              ? ['admin', 'billing_clerk']
+              : ['admin'];
           if (!requireRoles(user, res, allowed)) return;
           return json(res, 201, customFields.createCustomField(db, user, body));
         } catch (e) {
-          return json(res, 400, { error: e.message, message: e.message });
+          const status = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, status, { error: e.message, message: e.message });
         }
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         try {
           const fieldId = Number(pathname.split('/')[3]);
+          const existing = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(fieldId);
+          if (!existing) return json(res, 404, { error: 'not found', message: 'Field not found' });
+          // Matter/contact record-only fields: editors. Firm/type defaults: admin (or clerk for non-matter).
+          const isRecordOnly = !!(existing.matter_id || existing.client_id);
+          const appliesTo = String(existing.applies_to || 'matter');
+          const allowed = isRecordOnly
+            ? ['admin', 'billing_clerk', 'attorney', 'paralegal']
+            : appliesTo === 'matter'
+              ? ['admin']
+              : ['admin', 'billing_clerk'];
+          if (!requireRoles(user, res, allowed)) return;
           const body = await parseBody(req);
           return json(res, 200, customFields.updateCustomField(db, user, fieldId, body));
         } catch (e) {
@@ -743,8 +764,14 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin'])) return;
         const fieldId = Number(pathname.split('/')[3]);
+        const existing = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(fieldId);
+        if (!existing) return json(res, 404, { error: 'not found', message: 'Field not found' });
+        const isRecordOnly = !!(existing.matter_id || existing.client_id);
+        const allowed = isRecordOnly
+          ? ['admin', 'billing_clerk', 'attorney', 'paralegal']
+          : ['admin'];
+        if (!requireRoles(user, res, allowed)) return;
         return json(res, 200, customFields.deactivateCustomField(db, user, fieldId));
       }
 
