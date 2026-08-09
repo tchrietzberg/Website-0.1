@@ -430,9 +430,11 @@
 
     function renderList(q) {
       const needle = String(q || '').trim().toLowerCase();
-      filtered = !needle
-        ? matters.slice(0, 80)
-        : matters.filter((m) => matterSearchText(m).includes(needle)).slice(0, 80);
+      const matches = !needle
+        ? matters.slice()
+        : matters.filter((m) => matterSearchText(m).includes(needle));
+      const total = matches.length;
+      filtered = matches.slice(0, 5);
       activeIndex = filtered.length ? 0 : -1;
       empty.hidden = filtered.length > 0;
       list.innerHTML = filtered.map((m, i) => `
@@ -440,7 +442,9 @@
           data-id="${m.id}" aria-selected="${i === activeIndex ? 'true' : 'false'}">
           <span>${escapeHtml(m.name)}</span>
           <small>${escapeHtml(m.client_name || '—')}${m.status ? ` · ${escapeHtml(m.status)}` : ''}</small>
-        </li>`).join('');
+        </li>`).join('') + (total > 5
+        ? `<li class="matter-picker-more muted" aria-hidden="true">Showing 5 of ${total} — type to narrow</li>`
+        : '');
       list.querySelectorAll('[data-id]').forEach((el) => {
         el.onmousedown = (ev) => {
           ev.preventDefault();
@@ -1025,13 +1029,16 @@
 
         <div class="page-section">
           <h2>Results</h2>
-          ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
+          ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : (() => {
+            const shown = hits.slice(0, 5);
+            return `
+          ${hits.length > 5 ? `<p class="muted">Showing 5 of ${hits.length} — refine your search to narrow results.</p>` : ''}
           <div class="table-wrap"><table>
             <thead>
               <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
             </thead>
             <tbody>
-              ${hits.map((m) => `
+              ${shown.map((m) => `
                 <tr class="click-row" data-matter="${m.id}">
                   <td><strong>${escapeHtml(m.name)}</strong></td>
                   <td>${escapeHtml(m.client_name || '—')}</td>
@@ -1039,7 +1046,8 @@
                   <td>${escapeHtml(m.attorney_name || '—')}</td>
                 </tr>`).join('') || '<tr><td colspan="4" class="muted">No indexed matters match</td></tr>'}
             </tbody>
-          </table></div>`}
+          </table></div>`;
+          })()}
         </div>
       </div>`;
 
