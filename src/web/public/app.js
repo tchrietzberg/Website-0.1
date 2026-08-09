@@ -2809,7 +2809,7 @@
                 placeholder="${formulaActive ? 'Fills from name fields below' : 'Create Matter'}"
                 aria-label="Create Matter" />
               <button class="primary" type="submit">Create</button>
-              <button type="button" id="cancelCreateMatter">Cancel</button>
+              <button type="button" id="clearCreateMatter">Clear</button>
             </div>
             <div class="grid two create-matter-custom">
               <label>Client
@@ -2911,15 +2911,17 @@
       state.matterSearch = { q: '' };
       await renderMatters();
     };
-    const cancelCreate = $('#cancelCreateMatter');
-    if (cancelCreate) {
-      cancelCreate.onclick = async () => {
-        state.showCreateMatter = false;
+    const clearCreate = $('#clearCreateMatter');
+    if (clearCreate) {
+      clearCreate.onclick = async () => {
         state.createMatterDraftName = '';
         state.createMatterRecordTypeKey = 'billable';
         state.createMatterClientId = '';
         state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+        const msg = $('#newMatterMsg');
+        if (msg) msg.innerHTML = '';
         await renderMatters();
+        $('#createMatterName')?.focus();
       };
     }
     if (showCreate) {
