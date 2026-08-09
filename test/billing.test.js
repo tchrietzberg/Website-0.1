@@ -125,13 +125,16 @@ describe('invoice lifecycle', () => {
     assert.equal(updated.writeDowns[0].created_by, ctx.clerk.id);
   });
 
-  it('exports bills as PDF and Excel', () => {
+  it('exports bills as PDF and Excel with matter name', () => {
     approvedEntry(60);
     const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
+    assert.equal(inv.matter_name, 'NDCal Case');
     const pdf = invoiceSvc.toInvoicePdf(inv);
     assert.ok(Buffer.isBuffer(pdf));
     assert.ok(pdf.slice(0, 5).toString() === '%PDF-');
     assert.match(pdf.toString('latin1'), /Bill INV-/);
+    assert.match(pdf.toString('latin1'), /NDCal Case/);
+    assert.match(pdf.toString('latin1'), /Matter name/);
 
     const xlsx = invoiceSvc.toInvoiceXlsx(inv);
     assert.ok(Buffer.isBuffer(xlsx));

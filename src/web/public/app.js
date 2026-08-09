@@ -2058,17 +2058,50 @@
   }
 
   async function renderReports() {
-    const names = [
+    const matters = await api('/api/matters');
+    state.matters = matters;
+    const firmReports = [
       ['matters', 'Matters'],
-      ['lodestar-summary', 'Lodestar Summary'],
-      ['lodestar-detail', 'Lodestar Detail'],
+      ['lodestar-summary', 'Lodestar Summary (all matters)'],
+      ['lodestar-detail', 'Lodestar Detail (all matters)'],
+    ];
+    const matterReports = [
+      ['lodestar-matter-detail', 'Lodestar Matter Detail', 'Entry-level by timekeeper with matter name, subtotals, and summary'],
+      ['lodestar-matter-summary', 'Lodestar Matter Summary', 'Timekeeper summary with rates, hours, and lodestar totals'],
     ];
     main.innerHTML = `
-      <div class="card">
+      <div class="card stack">
         <h1>Reports</h1>
-        <p class="lead">Matters list and lodestar exports (CSV / Excel).</p>
+        <p class="lead">Firm listings and lodestar matter reports (PDF / Excel), including matter name.</p>
+
+        <h2>Lodestar by matter</h2>
+        <p class="hint">Similar to lodestar matter detail and matter export reports — select a matter, then download PDF or Excel.</p>
+        <div class="field">
+          <span class="field-label">Matter</span>
+          ${renderMatterPicker({
+            name: 'reportMatterId',
+            selectedId: matters[0]?.id || null,
+            matters,
+            hideNumber: true,
+          })}
+        </div>
+        <div id="matterReportMsg"></div>
+        ${matterReports.map(([id, label, hint]) => `
+          <div class="report-row">
+            <div>
+              <strong>${label}</strong>
+              <div class="muted">${hint}</div>
+            </div>
+            <button type="button" data-matter-report="${id}" data-format="pdf">PDF</button>
+            <button type="button" data-matter-report="${id}" data-format="xlsx">Excel</button>
+            <button type="button" data-view-matter-report="${id}">View</button>
+          </div>`).join('')}
+      </div>
+
+      <div class="card">
+        <h2>Firm reports</h2>
         <div>
-          ${names.map(([id, label]) => `
+          ${firmReports.map(([id, label]) => `
             <div class="report-row">
               <strong>${label}</strong>
               <button data-view-report="${id}">View</button>
@@ -2078,6 +2111,83 @@
         </div>
       </div>
       <div id="reportOut" class="card" hidden></div>`;
+
+    const matterPicker = wireMatterPicker(main, { matters, hideNumber: true });
+
+    const selectedMatterId = () => {
+      const input = main.querySelector('input[name="reportMatterId"]');
+      return Number(input?.value || 0);
+    };
+
+    const downloadMatterReport = async (reportId, format) => {
+      const matterId = selectedMatterId();
+      if (!matterId) {
+        matterPicker?.setInvalid(true);
+        $('#matterReportMsg').innerHTML = '<div class="error">Select a matter first.</div>';
+        return;
+      }
+      try {
+        const res = await api(`/api/reports/${reportId}?matterId=${matterId}&format=${format}`);
+        const blob = await res.blob();
+        const matter = matters.find((m) => Number(m.id) === matterId);
+        const slug = String(matter?.name || matterId).replace(/[^\w.-]+/g, '_').slice(0, 40);
+        const tmp = document.createElement('a');
+        tmp.href = URL.createObjectURL(blob);
+        tmp.download = `${reportId}-${slug}.${format === 'xlsx' ? 'xlsx' : 'pdf'}`;
+        document.body.appendChild(tmp);
+        tmp.click();
+        tmp.remove();
+        URL.revokeObjectURL(tmp.href);
+        $('#matterReportMsg').innerHTML = '';
+      } catch (e) {
+        $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
+    };
+
+    main.querySelectorAll('[data-matter-report]').forEach((b) => {
+      b.onclick = () => downloadMatterReport(b.dataset.matterReport, b.dataset.format);
+    });
+
+    main.querySelectorAll('[data-view-matter-report]').forEach((b) => {
+      b.onclick = async () => {
+        const matterId = selectedMatterId();
+        if (!matterId) {
+          matterPicker?.setInvalid(true);
+          $('#matterReportMsg').innerHTML = '<div class="error">Select a matter first.</div>';
+          return;
+        }
+        try {
+          const data = await api(`/api/reports/${b.dataset.viewMatterReport}?matterId=${matterId}`);
+          const out = $('#reportOut');
+          out.hidden = false;
+          const header = data.header || {};
+          const summary = data.summary || [];
+          out.innerHTML = `
+            <h2>${escapeHtml(b.dataset.viewMatterReport)}</h2>
+            <p class="lead">${escapeHtml(header.matter_name || '')}</p>
+            <p class="muted">${escapeHtml(header.client_name || '')}
+              ${header.attorney_name ? ` · Responsible attorney: ${escapeHtml(header.attorney_name)}` : ''}
+              · ${escapeHtml(header.status || '')}</p>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Lodestar</th></tr></thead>
+              <tbody>
+                ${summary.map((s) => `
+                  <tr>
+                    <td>${escapeHtml(s.timekeeper)}</td>
+                    <td>${escapeHtml(s.role || '')}</td>
+                    <td>${escapeHtml(formatDuration(s.minutes))}</td>
+                    <td>${money(s.rate_cents)}</td>
+                    <td>${money(s.amount_cents)}</td>
+                  </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time</td></tr>'}
+              </tbody>
+            </table></div>
+            <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
+              · ${money(data.totals?.amount_cents || 0)}</p>`;
+        } catch (e) {
+          $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
 
     // Auth header for download links via fetch+blob for xlsx/csv when needed
     main.querySelectorAll('a.btn').forEach((a) => {

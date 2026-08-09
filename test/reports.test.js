@@ -57,4 +57,38 @@ describe('matters report', () => {
     assert.equal(rows[0].time_entry_count, 0);
     assert.equal(rows[0].status, 'closed');
   });
+
+  it('builds lodestar matter detail and summary PDF/Excel with matter name', () => {
+    const entry = timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-03-01',
+      rawMinutes: 60,
+      description: 'Research',
+    });
+    timeSvc.submitEntry(db, para, entry.id);
+    timeSvc.approveEntry(db, admin, entry.id);
+
+    const detail = reports.lodestarMatterDetail(db, 1);
+    assert.equal(detail.header.matter_name, 'Alpha Matter');
+    assert.equal(detail.header.client_name, 'Client A');
+    assert.equal(detail.summary.length, 1);
+    assert.equal(detail.summary[0].timekeeper, 'Para');
+    assert.equal(detail.totals.minutes, 60);
+
+    const pdf = reports.lodestarMatterDetailPdf(db, 1);
+    assert.ok(Buffer.isBuffer(pdf));
+    assert.equal(pdf.slice(0, 5).toString(), '%PDF-');
+    assert.match(pdf.toString('latin1'), /Alpha Matter/);
+    assert.match(pdf.toString('latin1'), /Lodestar Matter Detail/);
+
+    const summaryPdf = reports.lodestarMatterSummaryPdf(db, 1);
+    assert.match(summaryPdf.toString('latin1'), /Alpha Matter/);
+    assert.match(summaryPdf.toString('latin1'), /Timekeeper Summary/);
+
+    const xlsx = reports.lodestarMatterDetailXlsx(db, 1);
+    assert.ok(xlsx[0] === 0x50 && xlsx[1] === 0x4b);
+    const summaryXlsx = reports.lodestarMatterSummaryXlsx(db, 1);
+    assert.ok(summaryXlsx.length > 100);
+  });
 });

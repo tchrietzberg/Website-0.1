@@ -873,13 +873,50 @@ function createServer(db = openDb()) {
       // Reports
       if (req.method === 'GET' && pathname.startsWith('/api/reports/')) {
         const name = pathname.slice('/api/reports/'.length);
-        const matterId = url.searchParams.get('matterId');
+        const matterIdRaw = url.searchParams.get('matterId');
+        const matterId = matterIdRaw ? Number(matterIdRaw) : null;
         const fmt = url.searchParams.get('format') || 'json';
-        let rows;
         let currencyKeys = ['amount_cents', 'rate_cents', 'balance_cents', 'wip_cents',
           'billed_cents', 'write_down_cents', 'net_billed_cents', 'collected_cents', 'delta_cents'];
-        if (name === 'lodestar-summary') rows = reports.lodestarSummary(db, { matterId: matterId && Number(matterId) });
-        else if (name === 'lodestar-detail') rows = reports.lodestarDetail(db, { matterId: matterId && Number(matterId) });
+
+        // Matter-scoped lodestar PDFs / Excels (demo-style)
+        if (name === 'lodestar-matter-detail' || name === 'lodestar-matter-summary') {
+          if (!matterId) {
+            return json(res, 400, { error: 'matterId required', message: 'Select a matter for this report.' });
+          }
+          if (fmt === 'pdf') {
+            const buf = name === 'lodestar-matter-detail'
+              ? reports.lodestarMatterDetailPdf(db, matterId)
+              : reports.lodestarMatterSummaryPdf(db, matterId);
+            res.writeHead(200, {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="${name}-${matterId}.pdf"`,
+              'Content-Length': buf.length,
+            });
+            res.end(buf);
+            return;
+          }
+          if (fmt === 'xlsx' || fmt === 'excel') {
+            const buf = name === 'lodestar-matter-detail'
+              ? reports.lodestarMatterDetailXlsx(db, matterId)
+              : reports.lodestarMatterSummaryXlsx(db, matterId);
+            res.writeHead(200, {
+              'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              'Content-Disposition': `attachment; filename="${name}-${matterId}.xlsx"`,
+              'Content-Length': buf.length,
+            });
+            res.end(buf);
+            return;
+          }
+          const payload = name === 'lodestar-matter-detail'
+            ? reports.lodestarMatterDetail(db, matterId)
+            : reports.lodestarMatterSummary(db, matterId);
+          return json(res, 200, payload);
+        }
+
+        let rows;
+        if (name === 'lodestar-summary') rows = reports.lodestarSummary(db, { matterId });
+        else if (name === 'lodestar-detail') rows = reports.lodestarDetail(db, { matterId });
         else if (name === 'matters') rows = reports.mattersReport(db);
         else if (name === 'ar-aging') rows = reports.arAging(db);
         else if (name === 'write-offs') rows = reports.writeOffs(db);

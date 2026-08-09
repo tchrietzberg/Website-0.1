@@ -245,7 +245,20 @@ function invoiceStageLabel(status) {
   return map[status] || status;
 }
 
+function invoiceMatterLabel(inv) {
+  return inv.matter_name || inv.matter_number || 'Matter';
+}
+
 function invoiceExportRows(inv) {
+  const matterName = invoiceMatterLabel(inv);
+  const headerMeta = [
+    [{ v: 'Bill', t: 's' }, { v: inv.number || '', t: 's' }],
+    [{ v: 'Matter name', t: 's' }, { v: matterName, t: 's' }],
+    [{ v: 'Matter number', t: 's' }, { v: inv.matter_number || '', t: 's' }],
+    [{ v: 'Client', t: 's' }, { v: inv.client_name || '', t: 's' }],
+    [{ v: 'Stage', t: 's' }, { v: invoiceStageLabel(inv.status), t: 's' }],
+    [],
+  ];
   const header = [
     { v: 'Date', t: 's' },
     { v: 'Timekeeper', t: 's' },
@@ -273,15 +286,11 @@ function invoiceExportRows(inv) {
   });
   const summary = [
     [],
-    [{ v: 'Invoice', t: 's' }, { v: inv.number || '', t: 's' }],
-    [{ v: 'Stage', t: 's' }, { v: invoiceStageLabel(inv.status), t: 's' }],
-    [{ v: 'Client', t: 's' }, { v: inv.client_name || '', t: 's' }],
-    [{ v: 'Matter', t: 's' }, { v: inv.matter_name || inv.matter_number || '', t: 's' }],
     [{ v: 'Subtotal', t: 's' }, { v: Number(inv.subtotal_cents || 0) / 100, t: 'currency' }],
     [{ v: 'Write-down', t: 's' }, { v: Number(inv.write_down_cents || 0) / 100, t: 'currency' }],
     [{ v: 'Total', t: 's' }, { v: Number(inv.total_cents || 0) / 100, t: 'currency' }],
   ];
-  return [header, ...body, ...summary];
+  return [...headerMeta, header, ...body, ...summary];
 }
 
 function toInvoiceXlsx(inv) {
@@ -289,10 +298,12 @@ function toInvoiceXlsx(inv) {
 }
 
 function toInvoicePdf(inv) {
+  const matterName = invoiceMatterLabel(inv);
   const lines = [
-    `Stage: ${invoiceStageLabel(inv.status)}`,
+    `Matter name: ${matterName}`,
+    inv.matter_number ? `Matter number: ${inv.matter_number}` : null,
     `Client: ${inv.client_name || ''}`,
-    `Matter: ${inv.matter_name || inv.matter_number || ''}`,
+    `Stage: ${invoiceStageLabel(inv.status)}`,
     inv.issue_date ? `Issue date: ${inv.issue_date}` : null,
     inv.due_date ? `Due date: ${inv.due_date}` : null,
     '',
@@ -322,7 +333,7 @@ function toInvoicePdf(inv) {
     }
   }
   return buildTextPdf({
-    title: `Bill ${inv.number || ''}`.trim(),
+    title: `Bill ${inv.number || ''} — ${matterName}`.trim(),
     lines: lines.filter((l) => l != null),
   });
 }
