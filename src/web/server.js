@@ -626,6 +626,19 @@ function createServer(db = openDb()) {
           return json(res, 404, { error: e.message });
         }
       }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/custom-reports\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        try {
+          const id = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          if (body.showOnDashboard === undefined) {
+            return json(res, 400, { error: 'showOnDashboard is required' });
+          }
+          return json(res, 200, customReports.setShowOnDashboard(db, user, id, body.showOnDashboard));
+        } catch (e) {
+          return json(res, 404, { error: e.message });
+        }
+      }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-reports\/\d+$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         try {
@@ -637,6 +650,39 @@ function createServer(db = openDb()) {
       }
       if (req.method === 'GET' && pathname === '/api/dashboard') {
         return json(res, 200, customReports.dashboard(db));
+      }
+      if (req.method === 'POST' && pathname === '/api/dashboard/pin') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 200, customReports.pinDashboardReport(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/dashboard/unpin') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 200, customReports.unpinDashboardReport(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'GET' && pathname === '/api/dashboard/export') {
+        try {
+          const fmt = url.searchParams.get('format') || 'pdf';
+          const file = customReports.exportDashboard(db, fmt);
+          res.writeHead(200, {
+            'Content-Type': file.contentType,
+            'Content-Disposition': `attachment; filename="${file.filename}"`,
+            'Content-Length': file.body.length,
+          });
+          res.end(file.body);
+          return;
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
 
       if (req.method === 'PUT' && pathname.match(/^\/api\/layouts\/\d+\/items$/)) {

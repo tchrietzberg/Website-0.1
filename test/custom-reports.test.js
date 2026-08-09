@@ -135,4 +135,61 @@ describe('custom reports and dashboard', () => {
     assert.equal(customReports.listReports(db).length, 0);
     assert.equal(customReports.dashboard(db).widgets.length, 0);
   });
+
+  it('pins and unpins firm reports on the dashboard', () => {
+    assert.equal(customReports.dashboard(db).widgets.length, 0);
+    customReports.pinDashboardReport(db, admin, { kind: 'firm', id: 'matters' });
+    customReports.pinDashboardReport(db, admin, { kind: 'firm', id: 'lodestar-summary' });
+    let dash = customReports.dashboard(db);
+    assert.equal(dash.widgets.length, 2);
+    assert.equal(dash.widgets[0].kind, 'firm');
+    assert.equal(dash.widgets[0].report.id, 'matters');
+    assert.equal(dash.widgets[0].rows.length, 2);
+    assert.ok(dash.available.firm.every((r) => r.id !== 'matters'));
+
+    customReports.unpinDashboardReport(db, admin, { kind: 'firm', id: 'matters' });
+    dash = customReports.dashboard(db);
+    assert.equal(dash.widgets.length, 1);
+    assert.equal(dash.widgets[0].report.id, 'lodestar-summary');
+    assert.ok(dash.available.firm.some((r) => r.id === 'matters'));
+  });
+
+  it('unpins custom reports without deleting them and exports dashboard', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Region',
+      fieldType: 'text',
+      appliesTo: 'matter',
+      recordTypeKey: 'default',
+    });
+    const report = customReports.createReport(db, admin, {
+      name: 'By region',
+      source: 'matter',
+      groupByFieldId: field.id,
+      metric: 'count',
+      showOnDashboard: true,
+    });
+    customReports.pinDashboardReport(db, admin, { kind: 'firm', id: 'matters' });
+
+    let dash = customReports.dashboard(db);
+    assert.equal(dash.widgets.length, 2);
+
+    customReports.unpinDashboardReport(db, admin, { kind: 'custom', id: report.id });
+    dash = customReports.dashboard(db);
+    assert.equal(dash.widgets.length, 1);
+    assert.equal(customReports.listReports(db).length, 1);
+    assert.equal(customReports.getReport(db, report.id).show_on_dashboard, 0);
+
+    const pdf = customReports.exportDashboard(db, 'pdf');
+    assert.equal(pdf.contentType, 'application/pdf');
+    assert.ok(pdf.body.length > 40);
+    assert.match(pdf.filename, /\.pdf$/);
+
+    const csv = customReports.exportDashboard(db, 'csv');
+    assert.match(csv.contentType, /csv/);
+    assert.match(csv.body.toString('utf8'), /Matters/);
+
+    const xlsx = customReports.exportDashboard(db, 'xlsx');
+    assert.match(xlsx.contentType, /spreadsheetml/);
+    assert.ok(xlsx.body.length > 40);
+  });
 });

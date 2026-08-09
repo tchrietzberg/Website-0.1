@@ -2381,7 +2381,47 @@
       </div>`;
   }
 
+  function renderFirmTable(payload) {
+    const { rows, columns, error } = payload;
+    if (error) return `<div class="error">${escapeHtml(error)}</div>`;
+    const cols = columns && columns.length
+      ? columns
+      : (rows && rows[0] ? Object.keys(rows[0]) : []);
+    if (!cols.length) return '<p class="muted">No rows</p>';
+    const currencyKeys = new Set([
+      'amount_cents', 'rate_cents', 'balance_cents', 'wip_cents',
+      'billed_cents', 'write_down_cents', 'net_billed_cents', 'collected_cents', 'delta_cents',
+    ]);
+    const fmtCell = (key, value) => {
+      if (value == null || value === '') return '';
+      if (currencyKeys.has(key) && Number.isInteger(value)) return money(value);
+      if (typeof value === 'number' && !Number.isInteger(value)) {
+        return String(Math.round(value * 100) / 100);
+      }
+      return String(value);
+    };
+    const label = (key) => String(key || '')
+      .replace(/_cents$/i, '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return `
+      <div class="custom-report-result">
+        <div class="table-wrap"><table>
+          <thead><tr>${cols.map((c) => `<th>${escapeHtml(label(c))}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${(rows || []).map((r) => `
+              <tr>${cols.map((c) => `<td>${escapeHtml(fmtCell(c, r[c]))}</td>`).join('')}</tr>
+            `).join('') || `<tr><td colspan="${cols.length}" class="muted">No rows</td></tr>`}
+          </tbody>
+        </table></div>
+        <p class="muted">${(rows || []).length} row${(rows || []).length === 1 ? '' : 's'}</p>
+      </div>`;
+  }
+
   function renderReportResult(payload) {
+    if (payload.kind === 'firm' || payload.report?.kind === 'firm') {
+      return renderFirmTable(payload);
+    }
     const { report, rows, totals, valueLabel, error } = payload;
     if (error) return `<div class="error">${escapeHtml(error)}</div>`;
     const metric = report.metric;
@@ -2412,43 +2452,137 @@
       </div>`;
   }
 
+  async function downloadDashboardExport(format) {
+    const res = await fetch(`/api/dashboard/export?format=${encodeURIComponent(format)}`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const data = await res.json();
+        message = data.message || data.error || message;
+      } catch { /* ignore */ }
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const tmp = document.createElement('a');
+    tmp.href = url;
+    tmp.download = `dashboard-reports.${format === 'xlsx' ? 'xlsx' : format}`;
+    tmp.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function renderDashboard() {
     const data = await api('/api/dashboard');
     const widgets = data.widgets || [];
+    const available = data.available || { firm: [], custom: [] };
+    const canEdit = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
+    const addOptions = [
+      ...(available.firm || []).map((r) =>
+        `<option value="firm:${escapeHtml(r.id)}">${escapeHtml(r.name)} (firm)</option>`),
+      ...(available.custom || []).map((r) =>
+        `<option value="custom:${r.id}">${escapeHtml(r.name)} (custom)</option>`),
+    ].join('');
+
+    const widgetMeta = (w) => {
+      if (w.kind === 'firm') return 'Firm report';
+      return `${w.report.groupByLabel || ''} · ${w.valueLabel || ''} · ${
+        w.report.source === 'time_entry' ? 'Time' : 'Matters'
+      }`;
+    };
+
     main.innerHTML = `
       <div class="card stack">
         <h1>Dashboard</h1>
-        <p class="lead">Visuals for custom reports pinned from Reports.</p>
-        <p class="hint">Create a custom report on the Reports page and keep “Show on dashboard” checked.</p>
+        <p class="lead">Pin firm or custom reports here, then export the full dashboard.</p>
+        <div class="row-actions dashboard-toolbar">
+          <button type="button" data-dash-export="pdf">Export PDF</button>
+          <button type="button" data-dash-export="csv">Export CSV</button>
+          <button type="button" data-dash-export="xlsx">Export Excel</button>
+        </div>
+        <div id="dashMsg"></div>
+        ${canEdit ? `
+        <form id="dashAddForm" class="dashboard-add-form">
+          <label class="span-grow">Add report
+            <select name="reportKey" required ${addOptions ? '' : 'disabled'}>
+              ${addOptions || '<option value="">No reports available to add</option>'}
+            </select>
+          </label>
+          <button class="primary" type="submit" ${addOptions ? '' : 'disabled'}>Add to dashboard</button>
+        </form>
+        <p class="hint">Create more custom reports on the Reports page. Firm reports can also be run from Reports.</p>` : ''}
       </div>
       ${widgets.length ? `
         <div class="dashboard-grid">
           ${widgets.map((w) => `
-            <div class="card dashboard-widget" data-report-id="${w.report.id}">
+            <div class="card dashboard-widget" data-kind="${escapeHtml(w.kind || 'custom')}" data-report-id="${escapeHtml(String(w.report.id))}">
               <div class="dashboard-widget-head">
                 <div>
                   <h2>${escapeHtml(w.report.name)}</h2>
-                  <p class="muted">${escapeHtml(w.report.groupByLabel || '')}
-                    · ${escapeHtml(w.valueLabel || '')}
-                    · ${escapeHtml(w.report.source === 'time_entry' ? 'Time' : 'Matters')}</p>
+                  <p class="muted">${escapeHtml(widgetMeta(w))}</p>
                 </div>
-                <button type="button" data-open-report="${w.report.id}">Open</button>
+                <div class="row-actions">
+                  ${w.kind === 'custom' ? `<button type="button" data-open-report="${w.report.id}">Open</button>` : `
+                    <button type="button" data-view-firm="${escapeHtml(String(w.report.id))}">Open</button>`}
+                  ${canEdit ? `<button type="button" data-unpin-kind="${escapeHtml(w.kind || 'custom')}" data-unpin-id="${escapeHtml(String(w.report.id))}">Remove</button>` : ''}
+                </div>
               </div>
               ${renderReportResult(w)}
             </div>`).join('')}
         </div>` : `
         <div class="card">
-          <p class="muted">No dashboard reports yet. Go to <button type="button" id="goReportsFromDash" class="linkish">Reports</button> to create one based on a custom field.</p>
+          <p class="muted">No dashboard reports yet.${canEdit ? ' Use Add report above, or create a custom report on Reports with “Show on dashboard” checked.' : ''}</p>
         </div>`}`;
 
-    const go = $('#goReportsFromDash');
-    if (go) {
-      go.onclick = () => {
-        state.view = 'reports';
-        renderShell();
-        renderView();
+    const dashMsg = $('#dashMsg');
+    main.querySelectorAll('[data-dash-export]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await downloadDashboardExport(btn.dataset.dashExport);
+          if (dashMsg) dashMsg.innerHTML = '<div class="ok-banner">Export downloaded.</div>';
+        } catch (e) {
+          if (dashMsg) dashMsg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
+
+    const addForm = $('#dashAddForm');
+    if (addForm) {
+      addForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const key = String(new FormData(addForm).get('reportKey') || '');
+        const [kind, ...rest] = key.split(':');
+        const id = rest.join(':');
+        try {
+          await api('/api/dashboard/pin', {
+            method: 'POST',
+            body: JSON.stringify({ kind, id: kind === 'custom' ? Number(id) : id }),
+          });
+          await renderDashboard();
+        } catch (e) {
+          if (dashMsg) dashMsg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
       };
     }
+
+    main.querySelectorAll('[data-unpin-kind]').forEach((btn) => {
+      btn.onclick = async () => {
+        const kind = btn.dataset.unpinKind;
+        const id = kind === 'custom' ? Number(btn.dataset.unpinId) : btn.dataset.unpinId;
+        try {
+          await api('/api/dashboard/unpin', {
+            method: 'POST',
+            body: JSON.stringify({ kind, id }),
+          });
+          await renderDashboard();
+        } catch (e) {
+          if (dashMsg) dashMsg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
+
     main.querySelectorAll('[data-open-report]').forEach((btn) => {
       btn.onclick = () => {
         state.view = 'reports';
@@ -2457,25 +2591,27 @@
         renderView();
       };
     });
+    main.querySelectorAll('[data-view-firm]').forEach((btn) => {
+      btn.onclick = () => {
+        state.view = 'reports';
+        state.focusFirmReportId = btn.dataset.viewFirm;
+        renderShell();
+        renderView();
+      };
+    });
   }
 
   async function renderReports() {
-    const [matters, customReportList, matterFields, timeFields] = await Promise.all([
-      api('/api/matters'),
+    const [customReportList, matterFields, timeFields] = await Promise.all([
       api('/api/custom-reports').catch(() => []),
       api('/api/custom-fields?appliesTo=matter&type=default').catch(() => []),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
     ]);
-    state.matters = matters;
     const canEditReports = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
     const firmReports = [
       ['matters', 'Matters'],
       ['lodestar-summary', 'Lodestar Summary (all matters)'],
       ['lodestar-detail', 'Lodestar Detail (all matters)'],
-    ];
-    const matterReports = [
-      ['lodestar-matter-detail', 'Lodestar Detail', 'Matter-specific entry detail by timekeeper, with subtotals'],
-      ['lodestar-matter-summary', 'Lodestar Summary', 'Matter-specific timekeeper rates, hours, and lodestar totals'],
     ];
     const fieldOptions = (fields) => (fields || []).map((f) =>
       `<option value="${f.id}">${escapeHtml(f.label)}</option>`
@@ -2483,7 +2619,7 @@
     main.innerHTML = `
       <div class="card stack">
         <h1>Reports</h1>
-        <p class="lead">Run Lodestar reports, or build custom reports from custom fields for the Dashboard.</p>
+        <p class="lead">Run firm Lodestar reports, or build custom reports from custom fields for the Dashboard.</p>
 
         <h2>Custom reports</h2>
         <p class="hint">Group matters or time by a custom field, then pin the result to the Dashboard.</p>
@@ -2545,35 +2681,12 @@
         <div id="customReportOut" hidden></div>
       </div>
 
-      <div class="card stack">
-        <h2>Lodestar by matter</h2>
-        <p class="hint">Select a matter, then run Lodestar Detail or Lodestar Summary for that matter only.</p>
-        <div class="field">
-          <span class="field-label">Matter</span>
-          ${matters.length ? renderMatterPicker({
-            name: 'reportMatterId',
-            selectedId: matters[0]?.id || null,
-            matters,
-          }) : '<p class="muted">No matters yet — create a matter first.</p>'}
-        </div>
-        <div id="matterReportMsg"></div>
-        ${matterReports.map(([id, label, hint]) => `
-          <div class="report-row">
-            <div>
-              <strong>${label}</strong>
-              <div class="muted">${hint}</div>
-            </div>
-            <button type="button" data-matter-report="${id}" data-format="pdf" ${matters.length ? '' : 'disabled'}>PDF</button>
-            <button type="button" data-matter-report="${id}" data-format="xlsx" ${matters.length ? '' : 'disabled'}>Excel</button>
-            <button type="button" data-view-matter-report="${id}" ${matters.length ? '' : 'disabled'}>View</button>
-          </div>`).join('')}
-      </div>
-
       <div class="card">
         <h2>Firm reports</h2>
+        <p class="hint">Pin these to the Dashboard from the Dashboard page to include them in dashboard exports.</p>
         <div>
           ${firmReports.map(([id, label]) => `
-            <div class="report-row">
+            <div class="report-row" data-firm-report-row="${id}">
               <strong>${label}</strong>
               <button data-view-report="${id}">View</button>
               <a class="btn" href="/api/reports/${id}?format=pdf">PDF</a>
@@ -2583,8 +2696,6 @@
         </div>
       </div>
       <div id="reportOut" class="card" hidden></div>`;
-
-    const matterPicker = matters.length ? wireMatterPicker(main, { matters }) : null;
 
     const crSource = $('#crSource');
     const crField = $('#crField');
@@ -2669,107 +2780,6 @@
       showCustomRun(focusId);
     }
 
-    const selectedMatterId = () => {
-      const input = main.querySelector('input[name="reportMatterId"]');
-      return Number(input?.value || 0);
-    };
-
-    const selectedMatter = () => {
-      const matterId = selectedMatterId();
-      return matters.find((m) => Number(m.id) === matterId) || null;
-    };
-
-    const downloadMatterReport = async (reportId, format) => {
-      const matterId = selectedMatterId();
-      if (!matterId) {
-        matterPicker?.setInvalid(true);
-        $('#matterReportMsg').innerHTML = '<div class="error">Select a matter first.</div>';
-        return;
-      }
-      try {
-        const res = await api(`/api/reports/${reportId}?matterId=${matterId}&format=${format}`);
-        const blob = await res.blob();
-        const matter = selectedMatter();
-        const slug = String(matter?.name || matterId).replace(/[^\w.-]+/g, '_').slice(0, 40);
-        const kind = reportId.includes('summary') ? 'lodestar-summary' : 'lodestar-detail';
-        const tmp = document.createElement('a');
-        tmp.href = URL.createObjectURL(blob);
-        tmp.download = `${kind}-${slug}.${format === 'xlsx' ? 'xlsx' : 'pdf'}`;
-        document.body.appendChild(tmp);
-        tmp.click();
-        tmp.remove();
-        URL.revokeObjectURL(tmp.href);
-        $('#matterReportMsg').innerHTML = '';
-      } catch (e) {
-        $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-      }
-    };
-
-    main.querySelectorAll('[data-matter-report]').forEach((b) => {
-      b.onclick = () => downloadMatterReport(b.dataset.matterReport, b.dataset.format);
-    });
-
-    main.querySelectorAll('[data-view-matter-report]').forEach((b) => {
-      b.onclick = async () => {
-        const matterId = selectedMatterId();
-        if (!matterId) {
-          matterPicker?.setInvalid(true);
-          $('#matterReportMsg').innerHTML = '<div class="error">Select a matter first.</div>';
-          return;
-        }
-        try {
-          const reportId = b.dataset.viewMatterReport;
-          const data = await api(`/api/reports/${reportId}?matterId=${matterId}`);
-          const out = $('#reportOut');
-          out.hidden = false;
-          const summary = data.summary || [];
-          const isDetail = reportId === 'lodestar-matter-detail';
-          if (isDetail) {
-            const entries = (data.timekeepers || []).flatMap((g) =>
-              (g.entries || []).map((e) => ({ ...e, timekeeper: e.timekeeper || g.timekeeper }))
-            );
-            out.innerHTML = `
-              <h2>Lodestar Detail</h2>
-              <div class="table-wrap"><table>
-                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
-                <tbody>
-                  ${entries.map((e) => `
-                    <tr>
-                      <td>${escapeHtml(e.service_date || '')}</td>
-                      <td>${escapeHtml(e.timekeeper || '')}</td>
-                      <td>${escapeHtml(formatDuration(e.minutes))}</td>
-                      <td>${money(e.amount_cents)}</td>
-                      <td>${escapeHtml(e.description || '')}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
-                </tbody>
-              </table></div>
-              <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
-                · ${money(data.totals?.amount_cents || 0)}</p>`;
-          } else {
-            out.innerHTML = `
-              <h2>Lodestar Summary</h2>
-              <div class="table-wrap"><table>
-                <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Amount</th></tr></thead>
-                <tbody>
-                  ${summary.map((s) => `
-                    <tr>
-                      <td>${escapeHtml(s.timekeeper)}</td>
-                      <td>${escapeHtml(s.role || '')}</td>
-                      <td>${escapeHtml(formatDuration(s.minutes))}</td>
-                      <td>${money(s.rate_cents)}</td>
-                      <td>${money(s.amount_cents)}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
-                </tbody>
-              </table></div>
-              <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
-                · ${money(data.totals?.amount_cents || 0)}</p>`;
-          }
-        } catch (e) {
-          $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    });
-
     // Auth header for download links via fetch+blob for pdf/xlsx/csv when needed
     main.querySelectorAll('a.btn').forEach((a) => {
       a.onclick = async (ev) => {
@@ -2806,30 +2816,40 @@
       };
     });
 
+    const showFirmReport = async (reportId) => {
+      const rows = await api(`/api/reports/${reportId}`);
+      const out = $('#reportOut');
+      out.hidden = false;
+      const title = firmReports.find(([id]) => id === reportId)?.[1] || reportId;
+      if (!rows.length) {
+        out.innerHTML = `<h2>${escapeHtml(title)}</h2><p class="muted">No rows</p>`;
+        return;
+      }
+      const keys = Object.keys(rows[0]);
+      out.innerHTML = `
+        <h2>${escapeHtml(title)}</h2>
+        <div class="table-wrap"><table>
+          <thead><tr>${keys.map((k) => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${rows.map((r) => `<tr>${keys.map((k) => {
+              const v = r[k];
+              if (String(k).endsWith('_cents') && Number.isInteger(v)) return `<td>${money(v)}</td>`;
+              return `<td>${escapeHtml(v == null ? '' : String(v))}</td>`;
+            }).join('')}</tr>`).join('')}
+          </tbody>
+        </table></div>`;
+      out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
     main.querySelectorAll('[data-view-report]').forEach((b) => {
-      b.onclick = async () => {
-        const rows = await api(`/api/reports/${b.dataset.viewReport}`);
-        const out = $('#reportOut');
-        out.hidden = false;
-        if (!rows.length) {
-          out.innerHTML = `<h2>${b.dataset.viewReport}</h2><p class="muted">No rows</p>`;
-          return;
-        }
-        const keys = Object.keys(rows[0]);
-        out.innerHTML = `
-          <h2>${b.dataset.viewReport}</h2>
-          <div class="table-wrap"><table>
-            <thead><tr>${keys.map((k) => `<th>${k}</th>`).join('')}</tr></thead>
-            <tbody>
-              ${rows.map((r) => `<tr>${keys.map((k) => {
-                const v = r[k];
-                if (String(k).endsWith('_cents') && Number.isInteger(v)) return `<td>${money(v)}</td>`;
-                return `<td>${v ?? ''}</td>`;
-              }).join('')}</tr>`).join('')}
-            </tbody>
-          </table></div>`;
-      };
+      b.onclick = () => showFirmReport(b.dataset.viewReport);
     });
+
+    if (state.focusFirmReportId) {
+      const firmId = state.focusFirmReportId;
+      state.focusFirmReportId = null;
+      showFirmReport(firmId);
+    }
   }
 
   function wireChoiceGroup(root, name) {

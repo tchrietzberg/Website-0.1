@@ -1,10 +1,38 @@
-const { audit } = require('../db');
+const { audit, getSetting, setSetting } = require('../db');
 const { amountFromMinutes, minutesToDecimalHours } = require('../money');
 const { resolveRate } = require('../rates');
+const reports = require('./reports');
+const { buildTextPdf } = require('../pdf');
 
 const SOURCES = new Set(['time_entry', 'matter']);
 const METRICS = new Set(['count', 'hours', 'amount']);
 const CHART_TYPES = new Set(['bar', 'pie', 'table']);
+
+/** Firm reports that can be pinned to the dashboard. */
+const FIRM_REPORT_CATALOG = [
+  {
+    id: 'matters',
+    name: 'Matters',
+    description: 'Firm matter listing',
+  },
+  {
+    id: 'lodestar-summary',
+    name: 'Lodestar Summary',
+    description: 'Lodestar summary across all matters',
+  },
+  {
+    id: 'lodestar-detail',
+    name: 'Lodestar Detail',
+    description: 'Lodestar detail across all matters',
+  },
+];
+
+const FIRM_REPORT_IDS = new Set(FIRM_REPORT_CATALOG.map((r) => r.id));
+const DASHBOARD_FIRM_SETTING = 'dashboard_firm_reports';
+const FIRM_CURRENCY_KEYS = [
+  'amount_cents', 'rate_cents', 'balance_cents', 'wip_cents',
+  'billed_cents', 'write_down_cents', 'net_billed_cents', 'collected_cents', 'delta_cents',
+];
 
 function assertSource(source) {
   if (!SOURCES.has(source)) throw new Error('source must be time_entry or matter');
@@ -113,6 +141,147 @@ function deactivateReport(db, actor, id) {
     entityId: id,
   });
   return { ok: true };
+}
+
+function setShowOnDashboard(db, actor, id, showOnDashboard) {
+  const existing = db.prepare('SELECT * FROM custom_reports WHERE id = ? AND active = 1').get(id);
+  if (!existing) throw new Error('custom report not found');
+  const flag = showOnDashboard === 0 || showOnDashboard === false ? 0 : 1;
+  db.prepare('UPDATE custom_reports SET show_on_dashboard = ? WHERE id = ?').run(flag, id);
+  audit(db, {
+    actorId: actor.id,
+    action: 'custom_report.dashboard',
+    entityType: 'custom_report',
+    entityId: id,
+    detail: { showOnDashboard: !!flag },
+  });
+  return getReport(db, id);
+}
+
+function getDashboardFirmReportIds(db) {
+  const raw = getSetting(db, DASHBOARD_FIRM_SETTING, '[]');
+  let parsed;
+  try {
+    parsed = JSON.parse(raw || '[]');
+  } catch {
+    parsed = [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((id) => FIRM_REPORT_IDS.has(String(id))).map(String);
+}
+
+function saveDashboardFirmReportIds(db, actor, ids) {
+  const unique = [];
+  for (const id of ids) {
+    const key = String(id);
+    if (!FIRM_REPORT_IDS.has(key)) throw new Error(`unknown firm report: ${key}`);
+    if (!unique.includes(key)) unique.push(key);
+  }
+  setSetting(db, DASHBOARD_FIRM_SETTING, JSON.stringify(unique));
+  if (actor) {
+    audit(db, {
+      actorId: actor.id,
+      action: 'dashboard.firm_reports',
+      entityType: 'firm_settings',
+      entityId: 0,
+      detail: { ids: unique },
+    });
+  }
+  return unique;
+}
+
+function addFirmReportToDashboard(db, actor, reportId) {
+  const id = String(reportId || '');
+  if (!FIRM_REPORT_IDS.has(id)) throw new Error('unknown firm report');
+  const ids = getDashboardFirmReportIds(db);
+  if (!ids.includes(id)) ids.push(id);
+  saveDashboardFirmReportIds(db, actor, ids);
+  return { ok: true, ids };
+}
+
+function removeFirmReportFromDashboard(db, actor, reportId) {
+  const id = String(reportId || '');
+  if (!FIRM_REPORT_IDS.has(id)) throw new Error('unknown firm report');
+  const ids = getDashboardFirmReportIds(db).filter((x) => x !== id);
+  saveDashboardFirmReportIds(db, actor, ids);
+  return { ok: true, ids };
+}
+
+function firmReportMeta(id) {
+  return FIRM_REPORT_CATALOG.find((r) => r.id === id) || null;
+}
+
+function firmReportRows(db, reportId) {
+  if (reportId === 'matters') return reports.mattersReport(db);
+  if (reportId === 'lodestar-summary') return reports.lodestarSummary(db, {});
+  if (reportId === 'lodestar-detail') return reports.lodestarDetail(db, {});
+  throw new Error('unknown firm report');
+}
+
+function runFirmReport(db, reportId) {
+  const meta = firmReportMeta(reportId);
+  if (!meta) throw new Error('unknown firm report');
+  const rows = firmReportRows(db, reportId);
+  const columns = rows.length ? Object.keys(rows[0]) : [];
+  return {
+    kind: 'firm',
+    report: {
+      id: meta.id,
+      name: meta.name,
+      description: meta.description,
+      chartType: 'table',
+      kind: 'firm',
+      showOnDashboard: true,
+    },
+    rows,
+    columns,
+    totals: { count: rows.length, minutes: 0, hours: 0, amount_cents: 0, value: rows.length },
+    valueLabel: 'Rows',
+  };
+}
+
+function listAvailableDashboardAdds(db) {
+  const pinnedFirm = new Set(getDashboardFirmReportIds(db));
+  const custom = listReports(db).filter((r) => !r.show_on_dashboard);
+  return {
+    firm: FIRM_REPORT_CATALOG.filter((r) => !pinnedFirm.has(r.id)),
+    custom: custom.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      groupByLabel: r.group_by_label,
+      source: r.source,
+      metric: r.metric,
+    })),
+  };
+}
+
+function pinDashboardReport(db, actor, { kind, id } = {}) {
+  const type = String(kind || '');
+  if (type === 'firm') {
+    return addFirmReportToDashboard(db, actor, id);
+  }
+  if (type === 'custom') {
+    const reportId = Number(id);
+    if (!Number.isInteger(reportId) || reportId <= 0) throw new Error('id is required');
+    setShowOnDashboard(db, actor, reportId, true);
+    return { ok: true };
+  }
+  throw new Error('kind must be firm or custom');
+}
+
+function unpinDashboardReport(db, actor, { kind, id } = {}) {
+  const type = String(kind || '');
+  if (type === 'firm') {
+    return removeFirmReportFromDashboard(db, actor, id);
+  }
+  if (type === 'custom') {
+    const reportId = Number(id);
+    if (!Number.isInteger(reportId) || reportId <= 0) throw new Error('id is required');
+    setShowOnDashboard(db, actor, reportId, false);
+    return { ok: true };
+  }
+  throw new Error('kind must be firm or custom');
 }
 
 function blankLabel(value) {
@@ -234,32 +403,173 @@ function runReport(db, id) {
 }
 
 function dashboard(db) {
-  const reports = listReports(db, { dashboardOnly: true });
+  const widgets = [];
+
+  for (const firmId of getDashboardFirmReportIds(db)) {
+    try {
+      widgets.push(runFirmReport(db, firmId));
+    } catch (e) {
+      const meta = firmReportMeta(firmId);
+      widgets.push({
+        kind: 'firm',
+        report: {
+          id: firmId,
+          name: meta?.name || firmId,
+          description: meta?.description || '',
+          chartType: 'table',
+          kind: 'firm',
+          showOnDashboard: true,
+        },
+        rows: [],
+        columns: [],
+        totals: { count: 0, minutes: 0, hours: 0, amount_cents: 0, value: 0 },
+        valueLabel: 'Rows',
+        error: e.message,
+      });
+    }
+  }
+
+  for (const r of listReports(db, { dashboardOnly: true })) {
+    try {
+      const payload = runReport(db, r.id);
+      widgets.push({ ...payload, kind: 'custom' });
+    } catch (e) {
+      widgets.push({
+        kind: 'custom',
+        report: {
+          id: r.id,
+          name: r.name,
+          description: r.description,
+          source: r.source,
+          metric: r.metric,
+          chartType: r.chart_type,
+          groupByFieldId: r.group_by_field_id,
+          groupByLabel: r.group_by_label,
+          showOnDashboard: true,
+        },
+        rows: [],
+        totals: { count: 0, minutes: 0, hours: 0, amount_cents: 0, value: 0 },
+        valueLabel: r.metric === 'hours' ? 'Hours' : r.metric === 'amount' ? 'Amount' : 'Count',
+        error: e.message,
+      });
+    }
+  }
+
   return {
-    widgets: reports.map((r) => {
-      try {
-        return runReport(db, r.id);
-      } catch (e) {
-        return {
-          report: {
-            id: r.id,
-            name: r.name,
-            description: r.description,
-            source: r.source,
-            metric: r.metric,
-            chartType: r.chart_type,
-            groupByFieldId: r.group_by_field_id,
-            groupByLabel: r.group_by_label,
-            showOnDashboard: true,
-          },
-          rows: [],
-          totals: { count: 0, minutes: 0, hours: 0, amount_cents: 0, value: 0 },
-          valueLabel: r.metric === 'hours' ? 'Hours' : r.metric === 'amount' ? 'Amount' : 'Count',
-          error: e.message,
-        };
-      }
-    }),
+    widgets,
+    available: listAvailableDashboardAdds(db),
+    firmCatalog: FIRM_REPORT_CATALOG,
   };
+}
+
+function customWidgetExportRows(widget) {
+  return (widget.rows || []).map((r) => ({
+    group: r.label,
+    value: r.value,
+    count: r.count,
+    hours: r.hours,
+    amount_cents: r.amount_cents,
+  }));
+}
+
+function exportDashboard(db, format = 'pdf') {
+  const fmt = String(format || 'pdf').toLowerCase();
+  const { widgets } = dashboard(db);
+  const filenameBase = 'dashboard-reports';
+
+  if (fmt === 'csv') {
+    const chunks = [];
+    for (const w of widgets) {
+      chunks.push(`# ${w.report.name}`);
+      const rows = w.kind === 'firm' ? (w.rows || []) : customWidgetExportRows(w);
+      chunks.push(rows.length ? reports.toCsv(rows) : 'No rows');
+      chunks.push('');
+    }
+    if (!chunks.length) chunks.push('# Dashboard', 'No reports pinned');
+    return {
+      contentType: 'text/csv; charset=utf-8',
+      filename: `${filenameBase}.csv`,
+      body: Buffer.from(chunks.join('\n'), 'utf8'),
+    };
+  }
+
+  if (fmt === 'xlsx' || fmt === 'excel') {
+    const sheetRows = [];
+    for (const w of widgets) {
+      const rows = w.kind === 'firm' ? (w.rows || []) : customWidgetExportRows(w);
+      sheetRows.push([{ v: w.report.name, t: 's' }]);
+      if (!rows.length) {
+        sheetRows.push([{ v: 'No rows', t: 's' }]);
+      } else {
+        const keys = Object.keys(rows[0]);
+        sheetRows.push(keys.map((k) => ({ v: k, t: 's' })));
+        for (const row of rows) {
+          sheetRows.push(keys.map((k) => {
+            if (FIRM_CURRENCY_KEYS.includes(k) && Number.isInteger(row[k])) {
+              return { v: row[k] / 100, t: 'currency' };
+            }
+            if (typeof row[k] === 'number') return { v: row[k], t: 'n' };
+            return { v: row[k] ?? '', t: 's' };
+          }));
+        }
+      }
+      sheetRows.push([]);
+    }
+    if (!sheetRows.length) {
+      sheetRows.push([{ v: 'No reports pinned', t: 's' }]);
+    }
+    const { buildXlsx } = require('../xlsx');
+    const buf = buildXlsx(sheetRows);
+    return {
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `${filenameBase}.xlsx`,
+      body: buf,
+    };
+  }
+
+  if (fmt === 'pdf') {
+    const lines = [];
+    if (!widgets.length) {
+      lines.push('No reports pinned to the dashboard.');
+    }
+    for (const w of widgets) {
+      lines.push(`=== ${w.report.name} ===`);
+      if (w.error) {
+        lines.push(`Error: ${w.error}`);
+        lines.push('');
+        continue;
+      }
+      const rows = w.kind === 'firm' ? (w.rows || []) : customWidgetExportRows(w);
+      if (!rows.length) {
+        lines.push('No rows');
+        lines.push('');
+        continue;
+      }
+      const keys = Object.keys(rows[0]);
+      for (const row of rows) {
+        lines.push('--------------------------------------------------------------------------');
+        for (const key of keys) {
+          const label = String(key).replace(/_cents$/i, '').replace(/_/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase()).padEnd(22);
+          let cell = row[key];
+          if (FIRM_CURRENCY_KEYS.includes(key) && Number.isInteger(cell)) {
+            cell = (cell / 100).toFixed(2);
+          }
+          lines.push(`${label} ${cell == null ? '' : cell}`);
+        }
+      }
+      lines.push('--------------------------------------------------------------------------');
+      lines.push(`Rows: ${rows.length}`);
+      lines.push('');
+    }
+    return {
+      contentType: 'application/pdf',
+      filename: `${filenameBase}.pdf`,
+      body: buildTextPdf({ title: 'Dashboard Reports', lines }),
+    };
+  }
+
+  throw new Error('unsupported format');
 }
 
 module.exports = {
@@ -267,8 +577,18 @@ module.exports = {
   getReport,
   createReport,
   deactivateReport,
+  setShowOnDashboard,
   runReport,
+  runFirmReport,
   dashboard,
+  exportDashboard,
+  pinDashboardReport,
+  unpinDashboardReport,
+  addFirmReportToDashboard,
+  removeFirmReportFromDashboard,
+  getDashboardFirmReportIds,
+  listAvailableDashboardAdds,
+  FIRM_REPORT_CATALOG,
   SOURCES,
   METRICS,
   CHART_TYPES,
