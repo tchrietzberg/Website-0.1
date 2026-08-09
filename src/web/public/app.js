@@ -925,6 +925,21 @@
     renderView();
   }
 
+  /** Inline SVG marks for sidebar nav / quick actions (no icon font deps). */
+  function navIcon(name) {
+    const common = 'class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+    const icons = {
+      matters: `<svg ${common}><rect x="3.5" y="7" width="17" height="13" rx="2"/><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7"/><path d="M3.5 12h17"/></svg>`,
+      time: `<svg ${common}><circle cx="12" cy="12" r="8.25"/><path d="M12 7.5V12l3 2"/></svg>`,
+      billing: `<svg ${common}><rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/><circle cx="16.5" cy="16" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+      reports: `<svg ${common}><path d="M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M14 3.5V9h5.5M9 13h6M9 16.5h4"/></svg>`,
+      dashboard: `<svg ${common}><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="4.5" rx="1.4"/><rect x="13" y="10" width="7.5" height="10.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/></svg>`,
+      settings: `<svg ${common}><circle cx="12" cy="12" r="3.1"/><path d="M12 3.5v2.2M12 18.3v2.2M4.9 6.5l1.6 1.6M17.5 15.9l1.6 1.6M3.5 12h2.2M18.3 12h2.2M4.9 17.5l1.6-1.6M17.5 8.1l1.6-1.6"/></svg>`,
+      plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
+    };
+    return icons[name] || icons.matters;
+  }
+
   function renderShell() {
     if (sidebar) sidebar.hidden = false;
     document.body.classList.remove('login-mode');
@@ -933,12 +948,12 @@
       appEl.classList.add('app-shell');
     }
     const items = [
-      ['matters', 'Matters', 'M', 'Matters & search'],
-      ['time', 'Time Entry', 'T', 'Log & review time'],
-      ['billing', 'Billing', 'B', 'Create bills'],
-      ['reports', 'Reports', 'R', 'Lodestar & custom'],
-      ['dashboard', 'Dashboard', 'D', 'Report visuals'],
-      ['settings', 'Settings', 'S', 'Firm preferences'],
+      ['matters', 'Matters', 'matters', 'Matters & search'],
+      ['time', 'Time Entry', 'time', 'Log & review time'],
+      ['billing', 'Billing', 'billing', 'Create bills'],
+      ['reports', 'Reports', 'reports', 'Lodestar & custom'],
+      ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'],
+      ['settings', 'Settings', 'settings', 'Firm preferences'],
     ];
     // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
     if (['approvals', 'payments', 'audit', 'wip'].includes(state.view)) {
@@ -951,7 +966,7 @@
         <p class="sidebar-label">Quick actions</p>
         ${canCreateMatter(state.user)
           ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">
-              <span class="sidebar-action-mark" aria-hidden="true">+</span>
+              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('plus')}</span>
               <span class="sidebar-action-text">
                 <strong>Create Matter</strong>
                 <small>Open create + search</small>
@@ -959,7 +974,7 @@
             </button>`
           : ''}
         <button type="button" class="sidebar-action secondary" id="sideAddTime">
-          <span class="sidebar-action-mark" aria-hidden="true">T</span>
+          <span class="sidebar-action-mark" aria-hidden="true">${navIcon('time')}</span>
           <span class="sidebar-action-text">
             <strong>Add Time Entry</strong>
             <small>Log time on a matter</small>
@@ -973,10 +988,10 @@
 
     nav.innerHTML = `
       <p class="sidebar-label">Navigate</p>
-      ${items.map(([id, label, mark, hint]) =>
+      ${items.map(([id, label, icon, hint]) =>
         `<button type="button" data-view="${id}"
           class="sidebar-action primary sidebar-nav-btn ${activeView === id ? 'active' : ''}">
-          <span class="sidebar-action-mark" aria-hidden="true">${mark}</span>
+          <span class="sidebar-action-mark" aria-hidden="true">${navIcon(icon)}</span>
           <span class="sidebar-action-text">
             <strong>${label}</strong>
             <small>${hint}</small>
