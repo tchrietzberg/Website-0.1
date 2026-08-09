@@ -121,7 +121,7 @@ function getClient(db, id, actor = null) {
     client.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
     { appliesTo: 'client' }
   );
-  const fieldDefs = customFields.listClientFieldDefs(db, { recordTypeKey })
+  const fieldDefs = customFields.listClientFieldDefs(db, { recordTypeKey, clientId: id })
     .filter((f) => !role || permissions.isFieldVisibleForProfile(db, 'contact', role, `cf:${f.fieldId}`))
     .map((f) => {
       const stored = db.prepare(`
@@ -232,6 +232,7 @@ function updateClient(db, actor, id, patch = {}) {
     const merged = { ...existing, ...patch.customValues };
     customFields.assertRequiredCustomValues(db, {
       appliesTo: 'client',
+      clientId: id,
       recordTypeKey: current.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
       values: merged,
     });
@@ -283,6 +284,11 @@ function deleteClient(db, actor, id) {
   }
 
   db.prepare('DELETE FROM client_custom_field_values WHERE client_id = ?').run(id);
+  // Contact-only field definitions (not type-dependent)
+  db.prepare(`
+    UPDATE custom_fields SET active = 0
+    WHERE IFNULL(applies_to, 'matter') = 'client' AND client_id = ?
+  `).run(id);
   db.prepare('DELETE FROM clients WHERE id = ?').run(id);
 
   audit(db, {

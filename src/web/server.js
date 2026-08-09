@@ -488,6 +488,22 @@ function createServer(db = openDb()) {
           return json(res, 400, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'POST' && pathname.match(/^\/api\/clients\/\d+\/custom-fields$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const clientsSvc = require('../services/clients');
+          const clientId = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          const field = customFields.createCustomField(db, user, {
+            ...body,
+            clientId,
+            appliesTo: 'client',
+          });
+          return json(res, 201, { field, page: clientsSvc.getClient(db, clientId, user) });
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/record-types') {
         const appliesTo = url.searchParams.get('appliesTo') || 'matter';
         return json(res, 200, customFields.listRecordTypes(db, { appliesTo }));
@@ -685,6 +701,8 @@ function createServer(db = openDb()) {
           recordTypeKey: url.searchParams.get('type'),
           matterId: url.searchParams.get('matterId')
             ? Number(url.searchParams.get('matterId')) : null,
+          clientId: url.searchParams.get('clientId')
+            ? Number(url.searchParams.get('clientId')) : null,
           appliesTo: url.searchParams.get('appliesTo') || 'matter',
         }));
       }

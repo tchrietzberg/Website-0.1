@@ -197,4 +197,68 @@ describe('contacts and contact custom fields', () => {
     );
     assert.equal(clientsSvc.listClients(db).length, 1);
   });
+
+  it('supports type-based and contact-only custom fields', () => {
+    const typeField = customFields.createCustomField(db, admin, {
+      label: 'Preferred name',
+      fieldType: 'text',
+      appliesTo: 'client',
+      recordTypeKey: 'person',
+      isDefault: true,
+    });
+    assert.equal(typeField.scope, 'record_type');
+    assert.equal(typeField.isDefault, true);
+
+    const person = clientsSvc.createClient(db, admin, {
+      name: 'Sam Contact',
+      recordTypeKey: 'person',
+      customValues: { [typeField.id]: 'Sammy' },
+    });
+    const other = clientsSvc.createClient(db, admin, {
+      name: 'Other Person',
+      recordTypeKey: 'person',
+      customValues: { [typeField.id]: 'O' },
+    });
+
+    const contactField = customFields.createCustomField(db, admin, {
+      label: 'Private note',
+      fieldType: 'textarea',
+      appliesTo: 'client',
+      clientId: person.client.id,
+    });
+    assert.equal(contactField.scope, 'record');
+    assert.equal(contactField.clientId, person.client.id);
+    assert.equal(contactField.isDefault, false);
+    assert.equal(contactField.record_type_key, null);
+
+    clientsSvc.updateClient(db, admin, person.client.id, {
+      customValues: { [contactField.id]: 'Only on Sam' },
+    });
+
+    const samPage = clientsSvc.getClient(db, person.client.id, admin);
+    assert.ok(samPage.fields.some((f) => f.fieldId === typeField.id && f.scope === 'record_type'));
+    assert.ok(samPage.fields.some((f) => f.fieldId === contactField.id && f.scope === 'record'));
+    assert.equal(samPage.customValues[contactField.id], 'Only on Sam');
+
+    const otherPage = clientsSvc.getClient(db, other.client.id, admin);
+    assert.ok(otherPage.fields.some((f) => f.fieldId === typeField.id));
+    assert.ok(!otherPage.fields.some((f) => f.fieldId === contactField.id));
+
+    // Values for another contact's field are ignored
+    clientsSvc.updateClient(db, admin, other.client.id, {
+      customValues: { [contactField.id]: 'Should not stick' },
+    });
+    assert.equal(
+      clientsSvc.getClient(db, other.client.id, admin).customValues[contactField.id],
+      undefined
+    );
+
+    // Type list (Settings) does not include contact-only fields
+    const typeOnly = customFields.listCustomFields(db, {
+      appliesTo: 'client',
+      recordTypeKey: 'person',
+    });
+    assert.ok(typeOnly.some((f) => f.id === typeField.id));
+    assert.ok(!typeOnly.some((f) => f.id === contactField.id));
+  });
 });

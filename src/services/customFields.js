@@ -130,6 +130,7 @@ function isBlankCustomValue(field, value) {
 function assertRequiredCustomValues(db, {
   appliesTo = 'matter',
   matterId = null,
+  clientId = null,
   recordTypeKey = null,
   values = {},
 } = {}) {
@@ -141,6 +142,7 @@ function assertRequiredCustomValues(db, {
     fields = listCustomFields(db, {
       appliesTo: 'client',
       recordTypeKey: recordTypeKey || DEFAULT_CONTACT_RECORD_TYPE_KEY,
+      clientId: clientId != null ? Number(clientId) : null,
     });
   } else {
     fields = listCustomFields(db, {
@@ -493,30 +495,45 @@ function createCustomField(db, actor, input) {
   let appliesTo = normalizeAppliesTo(input.appliesTo || input.applies_to || 'matter');
   let recordTypeKey = input.recordTypeKey || input.record_type_key || null;
   let matterId = input.matterId != null ? Number(input.matterId) : null;
+  let clientId = input.clientId != null ? Number(input.clientId)
+    : (input.client_id != null ? Number(input.client_id) : null);
 
   if (appliesTo === 'time_entry') {
     // Firm-wide time-entry fields — not tied to a record type layout.
     recordTypeKey = null;
     matterId = null;
-  } else if (appliesTo === 'client') {
+    clientId = null;
+  } else if (clientId || appliesTo === 'client') {
     matterId = null;
-    if (recordTypeKey) {
+    if (clientId) {
+      const c = db.prepare('SELECT id FROM clients WHERE id = ?').get(clientId);
+      if (!c) throw new Error('contact not found');
+      recordTypeKey = null; // contact-only (not type-dependent)
+      appliesTo = 'client';
+    } else if (recordTypeKey) {
       recordTypeKey = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo: 'client' });
+      clientId = null;
+      appliesTo = 'client';
     } else {
       // Firm-wide contact field when type omitted (legacy / shared across types).
       recordTypeKey = null;
+      clientId = null;
+      appliesTo = 'client';
     }
   } else if (matterId) {
     const m = db.prepare('SELECT id FROM matters WHERE id = ?').get(matterId);
     if (!m) throw new Error('matter not found');
     recordTypeKey = null; // record-based
+    clientId = null;
     appliesTo = 'matter';
   } else if (recordTypeKey) {
     recordTypeKey = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo: 'matter' });
+    clientId = null;
     appliesTo = 'matter';
   } else {
     // Default (Billable) type field when scope omitted
     recordTypeKey = normalizeRecordTypeKey(db, DEFAULT_RECORD_TYPE_KEY, { appliesTo: 'matter' });
+    clientId = null;
     appliesTo = 'matter';
   }
 
@@ -532,23 +549,28 @@ function createCustomField(db, actor, input) {
       AND IFNULL(applies_to, 'matter') = ?
       AND IFNULL(record_type_key,'') = IFNULL(?, '')
       AND IFNULL(matter_id,0) = IFNULL(?, 0)
-  `).get(apiName, appliesTo, recordTypeKey, matterId);
+      AND IFNULL(client_id,0) = IFNULL(?, 0)
+  `).get(apiName, appliesTo, recordTypeKey, matterId, clientId);
   if (clash) apiName = `${apiName}_${Date.now().toString(36)}`;
 
   const options = fieldType === 'select'
     ? JSON.stringify(optionList)
     : null;
 
-  const isDefault = input.isDefault === true || input.isDefault === 1 || input.is_default === true || input.is_default === 1
-    || input.isDefault === 'on'
+  // Contact/matter record-only fields are never "default on type"
+  const allowDefault = !matterId && !clientId;
+  const isDefault = allowDefault && (
+    input.isDefault === true || input.isDefault === 1 || input.is_default === true
+    || input.is_default === 1 || input.isDefault === 'on'
+  )
     ? 1
     : 0;
 
   const info = db.prepare(`
     INSERT INTO custom_fields(
       api_name, label, field_type, options_json, applies_to, record_type_key, matter_id,
-      required, is_default, active, created_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      client_id, required, is_default, active, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
   `).run(
     apiName,
     label,
@@ -557,6 +579,7 @@ function createCustomField(db, actor, input) {
     appliesTo,
     recordTypeKey,
     matterId,
+    clientId,
     input.required ? 1 : 0,
     isDefault,
     actor.id
@@ -564,26 +587,22 @@ function createCustomField(db, actor, input) {
   const id = Number(info.lastInsertRowid);
 
   // Auto-add type-scoped fields to the relevant layout(s)
-  if ((appliesTo === 'matter' || appliesTo === 'client') && recordTypeKey) {
+  if ((appliesTo === 'matter' || appliesTo === 'client') && recordTypeKey && !matterId && !clientId) {
     const width = fieldType === 'textarea' ? 'full' : 'half';
     const fieldKey = `cf:${id}`;
-    if (appliesTo === 'matter' && matterId) {
-      // Matter-only custom fields appear via buildMatterDisplayItems; no layout fork required.
-    } else {
-      const layout = ensureTypeLayout(db, recordTypeKey);
-      addFieldToLayout(db, layout.id, fieldKey, width);
-      if (appliesTo === 'matter') {
-        // Also attach to existing matter-specific layouts so the field appears on open matters.
-        const matterLayouts = db.prepare(`
-          SELECT pl.id
-          FROM page_layouts pl
-          JOIN matters m ON m.id = pl.matter_id
-          WHERE pl.matter_id IS NOT NULL
-            AND m.matter_type = ?
-        `).all(recordTypeKey);
-        for (const ml of matterLayouts) {
-          addFieldToLayout(db, ml.id, fieldKey, width);
-        }
+    const layout = ensureTypeLayout(db, recordTypeKey);
+    addFieldToLayout(db, layout.id, fieldKey, width);
+    if (appliesTo === 'matter') {
+      // Also attach to existing matter-specific layouts so the field appears on open matters.
+      const matterLayouts = db.prepare(`
+        SELECT pl.id
+        FROM page_layouts pl
+        JOIN matters m ON m.id = pl.matter_id
+        WHERE pl.matter_id IS NOT NULL
+          AND m.matter_type = ?
+      `).all(recordTypeKey);
+      for (const ml of matterLayouts) {
+        addFieldToLayout(db, ml.id, fieldKey, width);
       }
     }
   }
@@ -598,6 +617,7 @@ function createCustomField(db, actor, input) {
       label,
       recordTypeKey,
       matterId,
+      clientId,
       appliesTo,
       required: !!(input.required ? 1 : 0),
       isDefault: !!isDefault,
@@ -622,15 +642,19 @@ function getCustomField(db, id) {
     is_default: isDefault ? 1 : 0,
     isDefault,
     options: f.options_json ? JSON.parse(f.options_json) : null,
-    scope: appliesTo === 'time_entry' || appliesTo === 'client'
-      ? appliesTo
-      : (f.matter_id ? 'record' : (f.record_type_key ? 'record_type' : 'global')),
+    clientId: f.client_id != null ? Number(f.client_id) : null,
+    scope: appliesTo === 'time_entry'
+      ? 'time_entry'
+      : appliesTo === 'client'
+        ? (f.client_id ? 'record' : (f.record_type_key ? 'record_type' : 'client'))
+        : (f.matter_id ? 'record' : (f.record_type_key ? 'record_type' : 'global')),
   };
 }
 
 function listCustomFields(db, {
   recordTypeKey = null,
   matterId = null,
+  clientId = null,
   appliesTo = 'matter',
 } = {}) {
   const target = normalizeAppliesTo(appliesTo);
@@ -643,23 +667,30 @@ function listCustomFields(db, {
     `).all(target).map((f) => getCustomField(db, f.id));
   }
   if (target === 'client') {
-    // Firm-wide (null type) ∪ selected contact record type.
+    // Firm-wide (null type) ∪ selected contact record type ∪ this contact only.
     return db.prepare(`
       SELECT * FROM custom_fields
       WHERE active = 1
         AND IFNULL(applies_to, 'matter') = 'client'
         AND matter_id IS NULL
         AND (
-          record_type_key IS NULL
-          OR (? IS NOT NULL AND record_type_key = ?)
+          (
+            client_id IS NULL
+            AND (
+              record_type_key IS NULL
+              OR (? IS NOT NULL AND record_type_key = ?)
+            )
+          )
+          OR (? IS NOT NULL AND client_id = ?)
         )
       ORDER BY label, id
-    `).all(recordTypeKey, recordTypeKey).map((f) => getCustomField(db, f.id));
+    `).all(recordTypeKey, recordTypeKey, clientId, clientId).map((f) => getCustomField(db, f.id));
   }
   return db.prepare(`
     SELECT * FROM custom_fields
     WHERE active = 1
       AND IFNULL(applies_to, 'matter') = 'matter'
+      AND client_id IS NULL
       AND (
         (matter_id IS NULL AND record_type_key IS NULL)
         OR (? IS NOT NULL AND record_type_key = ? AND matter_id IS NULL)
@@ -784,10 +815,11 @@ function listTimeEntryFieldDefs(db) {
   }));
 }
 
-function listClientFieldDefs(db, { recordTypeKey = null } = {}) {
+function listClientFieldDefs(db, { recordTypeKey = null, clientId = null } = {}) {
   return listCustomFields(db, {
     appliesTo: 'client',
     recordTypeKey: recordTypeKey || null,
+    clientId: clientId != null ? Number(clientId) : null,
   }).map((f) => ({
     key: `cf:${f.id}`,
     label: f.label,
@@ -795,8 +827,11 @@ function listClientFieldDefs(db, { recordTypeKey = null } = {}) {
     options: f.options,
     required: !!f.required,
     isDefault: !!f.isDefault,
-    scope: f.record_type_key ? 'record_type' : 'client',
+    scope: f.client_id || f.clientId
+      ? 'record'
+      : (f.record_type_key ? 'record_type' : 'client'),
     recordTypeKey: f.record_type_key || null,
+    clientId: f.client_id != null ? Number(f.client_id) : (f.clientId != null ? Number(f.clientId) : null),
     fieldId: f.id,
     kind: 'custom',
     width: f.field_type === 'textarea' ? 'full' : 'half',
@@ -823,7 +858,10 @@ function setClientCustomValues(db, actor, clientId, customValues) {
       WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'client'
     `).get(id);
     if (!field) continue;
-    const ok = !field.record_type_key || field.record_type_key === clientType;
+    const contactOnly = field.client_id != null;
+    const ok = contactOnly
+      ? Number(field.client_id) === Number(clientId)
+      : (!field.record_type_key || field.record_type_key === clientType);
     if (!ok) continue;
     const text = value == null ? null : String(value);
     upsert.run(clientId, id, text, actor?.id || null);

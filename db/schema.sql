@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS record_types (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
--- Custom fields: matter (type/record), time-entry (firm-wide), or client/contact (type or firm-wide)
+-- Custom fields: matter (type/record), time-entry (firm-wide), or client/contact (type/record/firm-wide)
 CREATE TABLE IF NOT EXISTS custom_fields (
   id INTEGER PRIMARY KEY,
   api_name TEXT NOT NULL,
@@ -101,15 +101,19 @@ CREATE TABLE IF NOT EXISTS custom_fields (
     CHECK (applies_to IN ('matter','time_entry','client')),
   record_type_key TEXT REFERENCES record_types(key),
   matter_id INTEGER REFERENCES matters(id),
+  client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
   required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
   is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (
-    (applies_to = 'time_entry' AND matter_id IS NULL AND record_type_key IS NULL)
-    OR (applies_to = 'client' AND matter_id IS NULL)
-    OR (applies_to = 'matter' AND (
+    (applies_to = 'time_entry' AND matter_id IS NULL AND client_id IS NULL AND record_type_key IS NULL)
+    OR (applies_to = 'client' AND matter_id IS NULL AND (
+      (client_id IS NOT NULL AND record_type_key IS NULL)
+      OR (client_id IS NULL)
+    ))
+    OR (applies_to = 'matter' AND client_id IS NULL AND (
       (matter_id IS NOT NULL AND record_type_key IS NULL)
       OR (matter_id IS NULL)
     ))
@@ -121,7 +125,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
     api_name,
     IFNULL(applies_to, 'matter'),
     IFNULL(record_type_key, ''),
-    IFNULL(matter_id, 0)
+    IFNULL(matter_id, 0),
+    IFNULL(client_id, 0)
   );
 
 CREATE TABLE IF NOT EXISTS custom_field_values (

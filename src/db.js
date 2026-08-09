@@ -23,6 +23,7 @@ function migrate(db) {
   migrateCustomFieldAppliesTo(db);
   migrateClientContacts(db);
   migrateContactRecordTypes(db);
+  migrateContactScopedCustomFields(db);
   migrateCustomReports(db);
   migrateCustomReportChartTypes(db);
   const customFields = require('./services/customFields');
@@ -286,6 +287,84 @@ function migrateContactRecordTypes(db) {
     `);
     db.exec('PRAGMA foreign_keys = ON;');
   }
+}
+
+/**
+ * Contact-only custom fields: custom_fields.client_id (mirrors matter_id for matters).
+ * SQLite cannot ALTER CHECK; rebuild when client_id is missing.
+ */
+function migrateContactScopedCustomFields(db) {
+  const tables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='custom_fields'"
+  ).get();
+  if (!tables) return;
+  const cols = new Set(tableColumns(db, 'custom_fields'));
+  if (cols.has('client_id')) {
+    // Ensure unique index includes client_id even if column was added earlier.
+    db.exec('DROP INDEX IF EXISTS idx_custom_fields_scope_name');
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
+        ON custom_fields(
+          api_name,
+          IFNULL(applies_to, 'matter'),
+          IFNULL(record_type_key, ''),
+          IFNULL(matter_id, 0),
+          IFNULL(client_id, 0)
+        )
+    `);
+    return;
+  }
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec(`
+    CREATE TABLE custom_fields_mig (
+      id INTEGER PRIMARY KEY,
+      api_name TEXT NOT NULL,
+      label TEXT NOT NULL,
+      field_type TEXT NOT NULL
+        CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
+      options_json TEXT,
+      applies_to TEXT NOT NULL DEFAULT 'matter'
+        CHECK (applies_to IN ('matter','time_entry','client')),
+      record_type_key TEXT REFERENCES record_types(key),
+      matter_id INTEGER REFERENCES matters(id),
+      client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+      required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
+      is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      CHECK (
+        (applies_to = 'time_entry' AND matter_id IS NULL AND client_id IS NULL AND record_type_key IS NULL)
+        OR (applies_to = 'client' AND matter_id IS NULL AND (
+          (client_id IS NOT NULL AND record_type_key IS NULL)
+          OR (client_id IS NULL)
+        ))
+        OR (applies_to = 'matter' AND client_id IS NULL AND (
+          (matter_id IS NOT NULL AND record_type_key IS NULL)
+          OR (matter_id IS NULL)
+        ))
+      )
+    );
+    INSERT INTO custom_fields_mig (
+      id, api_name, label, field_type, options_json, applies_to, record_type_key,
+      matter_id, client_id, required, is_default, active, created_by, created_at
+    )
+      SELECT id, api_name, label, field_type, options_json, applies_to, record_type_key,
+             matter_id, NULL, required, is_default, active, created_by, created_at
+      FROM custom_fields;
+    DROP TABLE custom_fields;
+    ALTER TABLE custom_fields_mig RENAME TO custom_fields;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
+      ON custom_fields(
+        api_name,
+        IFNULL(applies_to, 'matter'),
+        IFNULL(record_type_key, ''),
+        IFNULL(matter_id, 0),
+        IFNULL(client_id, 0)
+      );
+  `);
+  db.exec('PRAGMA foreign_keys = ON;');
 }
 
 function tableColumns(db, table) {
