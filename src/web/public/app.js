@@ -580,13 +580,28 @@
 
   /** Field formatters available when adding default / custom record fields. */
   const FIELD_FORMATTERS = [
-    { value: 'text', label: 'Text' },
-    { value: 'textarea', label: 'Text area' },
-    { value: 'number', label: 'Number' },
-    { value: 'date', label: 'Date' },
-    { value: 'dropdown', label: 'Dropdown' },
+    { value: 'auto_number', label: 'Auto Number' },
     { value: 'checkbox', label: 'Checkbox' },
+    { value: 'currency', label: 'Currency' },
+    { value: 'date', label: 'Date' },
+    { value: 'datetime', label: 'Date/Time' },
+    { value: 'email', label: 'Email' },
+    { value: 'geolocation', label: 'Geolocation' },
+    { value: 'number', label: 'Number' },
+    { value: 'percent', label: 'Percent' },
+    { value: 'phone', label: 'Phone' },
+    { value: 'dropdown', label: 'Picklist' },
+    { value: 'multiselect', label: 'Picklist (Multi-Select)' },
+    { value: 'text', label: 'Text' },
+    { value: 'textarea', label: 'Text Area' },
+    { value: 'long_text', label: 'Long Text Area' },
+    { value: 'rich_text', label: 'Rich Text Area' },
+    { value: 'url', label: 'URL' },
+    { value: 'formula', label: 'Formula' },
   ];
+
+  const SYSTEM_FIELD_TYPES = new Set(['auto_number', 'formula']);
+  const OPTION_FIELD_TYPES = new Set(['dropdown', 'select', 'multiselect', 'picklist']);
 
   function fieldFormatterOptions(selected = 'text') {
     return FIELD_FORMATTERS.map((f) =>
@@ -596,8 +611,11 @@
 
   function fieldTypeLabel(type) {
     const t = String(type || '');
-    if (t === 'select' || t === 'dropdown') return 'dropdown';
-    return t;
+    const match = FIELD_FORMATTERS.find((f) => f.value === t
+      || (t === 'select' && f.value === 'dropdown'));
+    if (match) return match.label;
+    if (t === 'select' || t === 'dropdown') return 'Picklist';
+    return t.replace(/_/g, ' ');
   }
 
   function parseOptionsInput(raw) {
@@ -607,9 +625,10 @@
       .filter(Boolean);
   }
 
-  /** API stores dropdowns as select; accept either in the UI. */
+  /** API stores picklists as select; accept either in the UI. */
   function apiFieldType(fieldType) {
-    return fieldType === 'dropdown' ? 'select' : fieldType;
+    if (fieldType === 'dropdown' || fieldType === 'picklist') return 'select';
+    return fieldType;
   }
 
   function customFieldPayload(fd) {
@@ -621,9 +640,16 @@
       required: fd.get('required') === 'on',
       isDefault: fd.get('isDefault') === 'on',
     };
-    if (fieldType === 'dropdown' || fieldType === 'select') {
+    if (OPTION_FIELD_TYPES.has(fieldType)) {
       body.options = options;
       body.optionsText = String(fd.get('optionsText') || '');
+    }
+    if (fieldType === 'formula') {
+      body.expression = String(fd.get('expression') || '').trim();
+    }
+    if (fieldType === 'auto_number') {
+      body.prefix = String(fd.get('autoNumberPrefix') || 'AN-');
+      body.pad = Number(fd.get('autoNumberPad') || 4) || 4;
     }
     return { fieldType, options, body };
   }
@@ -631,11 +657,90 @@
   function dropdownOptionsFieldHtml(optionsText = '', { show = false } = {}) {
     return `
       <label class="span-all" data-dropdown-options ${show ? '' : 'hidden'}>
-        Dropdown options
+        Picklist options
         <textarea name="optionsText" rows="3"
           placeholder="One option per line, or comma-separated&#10;e.g. Discovery&#10;Trial&#10;Appeal">${escapeHtml(optionsText)}</textarea>
-        <span class="hint">Enter choices for the dropdown — one per line, or separated by commas</span>
+        <span class="hint">Enter choices for the picklist — one per line, or separated by commas</span>
       </label>`;
+  }
+
+  function formulaConfigFieldHtml(expression = '', { show = false } = {}) {
+    return `
+      <label class="span-all" data-formula-config ${show ? '' : 'hidden'}>
+        Formula expression
+        <textarea name="expression" rows="2"
+          placeholder="e.g. {Amount} * {Rate} / 100">${escapeHtml(expression || '')}</textarea>
+        <span class="hint">Use {'{'}Field label{'}'}, {'{'}api_name{'}'}, or {'{'}cf:id{'}'} with + − × ÷. Read-only for users.</span>
+      </label>`;
+  }
+
+  function autoNumberConfigFieldHtml(prefix = 'AN-', pad = 4, { show = false } = {}) {
+    return `
+      <div class="span-all grid two" data-autonumber-config ${show ? '' : 'hidden'}>
+        <label>Prefix
+          <input name="autoNumberPrefix" value="${escapeHtml(prefix || 'AN-')}" placeholder="AN-" />
+        </label>
+        <label>Digits
+          <input name="autoNumberPad" type="number" min="1" max="12" value="${escapeHtml(String(pad || 4))}" />
+        </label>
+        <p class="hint span-all">Generates values like ${escapeHtml(prefix || 'AN-')}${String(1).padStart(Number(pad) || 4, '0')} automatically.</p>
+      </div>`;
+  }
+
+  /** Collect cf_* values including multiselect, geo, checkbox, and system types. */
+  function collectCustomFieldValues(form, fieldDefs = []) {
+    const values = {};
+    const defs = fieldDefs || [];
+    const byId = new Map(defs.map((f) => [Number(f.fieldId ?? f.id), f]));
+    if (!defs.length) {
+      const fd = new FormData(form);
+      for (const [key, value] of fd.entries()) {
+        if (String(key).startsWith('cf_') && !String(key).includes('_lat') && !String(key).includes('_lng')) {
+          values[key.slice(3)] = value;
+        }
+      }
+      form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
+        values[cb.name.slice(3)] = cb.checked ? '1' : '0';
+      });
+      return values;
+    }
+    for (const f of defs) {
+      const id = Number(f.fieldId ?? f.id);
+      if (!Number.isFinite(id)) continue;
+      const type = String(f.type || f.field_type || f.fieldType || 'text');
+      const name = `cf_${id}`;
+      if (SYSTEM_FIELD_TYPES.has(type)) continue;
+      if (type === 'checkbox') {
+        const el = form.querySelector(`input[type="checkbox"][name="${name}"]`);
+        values[id] = el?.checked ? '1' : '0';
+      } else if (type === 'multiselect') {
+        const sel = form.querySelector(`select[name="${name}"]`);
+        const selected = sel
+          ? [...sel.selectedOptions].map((o) => o.value).filter(Boolean)
+          : [];
+        values[id] = JSON.stringify(selected);
+      } else if (type === 'geolocation') {
+        const lat = form.querySelector(`[name="${name}_lat"]`)?.value ?? '';
+        const lng = form.querySelector(`[name="${name}_lng"]`)?.value ?? '';
+        values[id] = (String(lat).trim() || String(lng).trim())
+          ? `${String(lat).trim()},${String(lng).trim()}`
+          : '';
+      } else {
+        const el = form.elements.namedItem(name);
+        values[id] = el ? el.value : '';
+      }
+    }
+    // Include any leftover cf_ inputs not in defs
+    const fd = new FormData(form);
+    for (const [key, value] of fd.entries()) {
+      if (!String(key).startsWith('cf_')) continue;
+      if (key.endsWith('_lat') || key.endsWith('_lng')) continue;
+      const id = key.slice(3);
+      if (values[id] !== undefined || values[Number(id)] !== undefined) continue;
+      if (byId.has(Number(id)) && SYSTEM_FIELD_TYPES.has(String(byId.get(Number(id)).type))) continue;
+      values[id] = value;
+    }
+    return values;
   }
 
   function createRecordTypeFieldsPanelHtml({
@@ -711,6 +816,9 @@
     const options = Array.isArray(field?.options)
       ? field.options.join('\n')
       : (field?.optionsText || '');
+    const expression = field?.expression || field?.config?.expression || '';
+    const prefix = field?.prefix || field?.config?.prefix || 'AN-';
+    const pad = field?.pad || field?.config?.pad || 4;
     const required = !!(field && field.required);
     const isDefault = !!(field && (field.isDefault || field.is_default));
     const label = field?.label || '';
@@ -737,11 +845,15 @@
             ${fieldFormatterOptions(uiType)}
           </select>
         </label>
-        ${dropdownOptionsFieldHtml(options, { show: uiType === 'dropdown' })}
+        ${dropdownOptionsFieldHtml(options, { show: OPTION_FIELD_TYPES.has(uiType) })}
+        ${formulaConfigFieldHtml(expression, { show: uiType === 'formula' })}
+        ${autoNumberConfigFieldHtml(prefix, pad, { show: uiType === 'auto_number' })}
         <div class="span-all" data-default-field-wrap ${showDefault ? '' : 'hidden'}>
           ${defaultFieldCheckboxHtml(isDefault, defaultLabel)}
         </div>
-        ${requiredFieldCheckboxHtml(required, requiredLabel)}
+        <div data-required-field-wrap>
+          ${requiredFieldCheckboxHtml(required, requiredLabel)}
+        </div>
         <div class="row-actions span-all">
           <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
           ${showCancel ? '<button type="button" data-cancel-field-edit>Cancel</button>' : ''}
@@ -754,14 +866,26 @@
     const typeSelect = form.querySelector('select[name="fieldType"]');
     const optionsRow = form.querySelector('[data-dropdown-options]');
     const optionsInput = form.querySelector('[name="optionsText"]');
-    if (!typeSelect || !optionsRow) return;
+    const formulaRow = form.querySelector('[data-formula-config]');
+    const formulaInput = form.querySelector('[name="expression"]');
+    const autoRow = form.querySelector('[data-autonumber-config]');
+    const requiredWrap = form.querySelector('[data-required-field-wrap]');
+    if (!typeSelect) return;
     const sync = () => {
-      const isDropdown = typeSelect.value === 'dropdown' || typeSelect.value === 'select';
-      optionsRow.hidden = !isDropdown;
+      const t = typeSelect.value;
+      const needsOptions = OPTION_FIELD_TYPES.has(t);
+      if (optionsRow) optionsRow.hidden = !needsOptions;
       if (optionsInput) {
-        optionsInput.required = isDropdown;
-        if (!isDropdown) optionsInput.value = '';
+        optionsInput.required = needsOptions;
+        if (!needsOptions) optionsInput.value = '';
       }
+      if (formulaRow) formulaRow.hidden = t !== 'formula';
+      if (formulaInput) {
+        formulaInput.required = t === 'formula';
+        if (t !== 'formula') formulaInput.value = formulaInput.value; // keep when editing
+      }
+      if (autoRow) autoRow.hidden = t !== 'auto_number';
+      if (requiredWrap) requiredWrap.hidden = SYSTEM_FIELD_TYPES.has(t);
     };
     typeSelect.addEventListener('change', sync);
     sync();
@@ -817,7 +941,7 @@
     const submitFieldForm = async (form, { createBody } = {}) => {
       const fd = new FormData(form);
       const { fieldType, options, body } = customFieldPayload(fd);
-      if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+      if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
         setMsg('<div class="error">Add at least one dropdown option.</div>');
         return;
       }
@@ -2410,11 +2534,15 @@
       label: f.label,
       type: f.field_type,
       options: f.options,
+      config: f.config,
+      expression: f.expression || f.config?.expression,
       required: !!f.required || formulaFieldIds.has(Number(f.id)),
       fieldId: f.id,
       kind: 'custom',
-      width: f.field_type === 'textarea' ? 'full' : 'half',
+      width: ['textarea', 'long_text', 'rich_text', 'formula', 'geolocation', 'multiselect']
+        .includes(f.field_type) ? 'full' : 'half',
       value: null,
+      readonly: SYSTEM_FIELD_TYPES.has(String(f.field_type)),
       inNameFormula: formulaFieldIds.has(Number(f.id)),
     }));
     // Put formula name fields first so they read with the name builder.
@@ -2607,7 +2735,7 @@
           const typeKey = state.createMatterRecordTypeKey || 'billable';
           const fd = new FormData(createFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
-          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+          if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
             state.createMatterFieldsOpen = true;
             $('#createMatterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
             return;
@@ -2642,15 +2770,7 @@
       newMatterForm.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(newMatterForm);
-        const customValues = {};
-        for (const [key, value] of fd.entries()) {
-          if (String(key).startsWith('cf_')) customValues[key.slice(3)] = value;
-        }
-        createFieldDefs.forEach((f) => {
-          if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
-            customValues[f.fieldId] = '0';
-          }
-        });
+        const customValues = collectCustomFieldValues(newMatterForm, createFieldDefs);
         if (formulaActive) {
           for (const part of (nameFormula.parts || [])) {
             if (part.kind !== 'custom_field') continue;
@@ -2772,11 +2892,15 @@
       label: f.label,
       type: f.field_type,
       options: f.options,
+      config: f.config,
+      expression: f.expression || f.config?.expression,
       required: !!f.required,
       fieldId: f.id,
       kind: 'custom',
-      width: f.field_type === 'textarea' ? 'full' : 'half',
+      width: ['textarea', 'long_text', 'rich_text', 'formula', 'geolocation', 'multiselect']
+        .includes(f.field_type) ? 'full' : 'half',
       value: null,
+      readonly: SYSTEM_FIELD_TYPES.has(String(f.field_type)),
     }));
     const createCustomRows = (createFields || []).filter((f) => f.id != null);
 
@@ -2898,7 +3022,7 @@
           const typeKey = state.createContactRecordTypeKey || 'person';
           const fd = new FormData(createFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
-          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+          if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
             state.createContactFieldsOpen = true;
             $('#createContactFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
             return;
@@ -2958,15 +3082,7 @@
         });
         if (!sure) return;
 
-        const customValues = {};
-        for (const [key, value] of fd.entries()) {
-          if (String(key).startsWith('cf_')) customValues[key.slice(3)] = value;
-        }
-        createFieldDefs.forEach((f) => {
-          if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
-            customValues[f.fieldId] = '0';
-          }
-        });
+        const customValues = collectCustomFieldValues(form, createFieldDefs);
         const recordTypeKey = String(
           fd.get('recordTypeKey') || state.createContactRecordTypeKey || 'person'
         ).trim();
@@ -3205,15 +3321,7 @@
       form.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(form);
-        const customValues = {};
-        for (const [key, value] of fd.entries()) {
-          if (String(key).startsWith('cf_')) {
-            customValues[key.slice(3)] = value;
-          }
-        }
-        form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
-          customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
-        });
+        const customValues = collectCustomFieldValues(form, fields || []);
         const payload = {
           name: fd.get('name'),
           customValues,
@@ -3315,7 +3423,7 @@
         ev.preventDefault();
         const fd = new FormData(rf);
         const { fieldType, options, body } = customFieldPayload(fd);
-        if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+        if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
           $('#contactFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
           return;
         }
@@ -3367,8 +3475,11 @@
   function renderFieldInput(field, ctx = {}) {
     const name = field.kind === 'custom' ? `cf_${field.fieldId}` : field.key;
     const val = field.value ?? '';
-    const disabled = field.readonly || !ctx.canEdit ? 'disabled' : '';
-    const req = field.required ? 'required' : '';
+    const type = String(field.type || 'text');
+    const systemManaged = SYSTEM_FIELD_TYPES.has(type);
+    const disabled = field.readonly || systemManaged || !ctx.canEdit ? 'disabled' : '';
+    const req = field.required && !systemManaged ? 'required' : '';
+    const safeVal = escapeHtml(val ?? '');
 
     if (field.key === 'std:client') {
       const opts = (ctx.clients || []).map((c) =>
@@ -3390,10 +3501,24 @@
       </select>`;
     }
 
-    if (field.type === 'textarea') {
-      return `<textarea name="${name}" ${disabled} ${req} rows="3">${val}</textarea>`;
+    if (type === 'auto_number') {
+      return `<input type="text" name="${name}" value="${safeVal}" disabled
+        placeholder="Auto-generated on save" />`;
     }
-    if (field.type === 'select' || field.type === 'dropdown') {
+    if (type === 'formula') {
+      const expr = field.expression || field.config?.expression || '';
+      return `<input type="text" name="${name}" value="${safeVal}" disabled
+        placeholder="Calculated" title="${escapeHtml(expr)}" />
+        ${expr ? `<span class="hint">= ${escapeHtml(expr)}</span>` : ''}`;
+    }
+    if (type === 'textarea' || type === 'long_text' || type === 'rich_text') {
+      const rows = type === 'long_text' || type === 'rich_text' ? 6 : 3;
+      const cls = type === 'rich_text' ? ' class="rich-text-input"' : '';
+      return `<textarea name="${name}" ${disabled} ${req} rows="${rows}"${cls}
+        maxlength="${type === 'textarea' ? 2000 : 131000}">${safeVal}</textarea>
+        ${type === 'rich_text' ? '<span class="hint">Rich text: plain text with line breaks (formatting tools coming later).</span>' : ''}`;
+    }
+    if (type === 'select' || type === 'dropdown') {
       const opts = (field.options || []).map((o) =>
         `<option value="${escapeHtml(o)}" ${String(val) === String(o) ? 'selected' : ''}>${escapeHtml(o)}</option>`
       ).join('');
@@ -3404,11 +3529,63 @@
           : ''}
       </select>`;
     }
-    if (field.type === 'checkbox') {
+    if (type === 'multiselect') {
+      let selected = [];
+      if (Array.isArray(val)) selected = val;
+      else if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          selected = Array.isArray(parsed) ? parsed : String(val).split(/[\n,]+/);
+        } catch {
+          selected = String(val).split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+        }
+      }
+      const selectedSet = new Set(selected.map(String));
+      const opts = (field.options || []).map((o) =>
+        `<option value="${escapeHtml(o)}" ${selectedSet.has(String(o)) ? 'selected' : ''}>${escapeHtml(o)}</option>`
+      ).join('');
+      return `<select name="${name}" multiple size="${Math.min(6, Math.max(3, (field.options || []).length || 3))}"
+        ${disabled} ${req}>${opts}</select>
+        <span class="hint">Hold Ctrl/Cmd to select multiple</span>`;
+    }
+    if (type === 'checkbox') {
       return `<input type="checkbox" name="${name}" value="1" ${disabled} ${req} ${val === '1' || val === 'true' ? 'checked' : ''} />`;
     }
-    const inputType = field.type === 'number' ? 'number' : (field.type === 'date' ? 'date' : 'text');
-    return `<input type="${inputType}" name="${name}" value="${String(val).replace(/"/g, '&quot;')}" ${disabled} ${req} />`;
+    if (type === 'geolocation') {
+      const [lat = '', lng = ''] = String(val || '').split(',').map((p) => p.trim());
+      return `<div class="geo-inputs">
+        <input type="number" step="any" name="${name}_lat" value="${escapeHtml(lat)}"
+          placeholder="Latitude" ${disabled} ${req} />
+        <input type="number" step="any" name="${name}_lng" value="${escapeHtml(lng)}"
+          placeholder="Longitude" ${disabled} ${req} />
+      </div>`;
+    }
+    if (type === 'currency') {
+      return `<div class="input-affix"><span class="affix">$</span>
+        <input type="number" step="0.01" name="${name}" value="${safeVal}" ${disabled} ${req} /></div>`;
+    }
+    if (type === 'percent') {
+      return `<div class="input-affix">
+        <input type="number" step="0.01" name="${name}" value="${safeVal}" ${disabled} ${req} />
+        <span class="affix">%</span></div>`;
+    }
+    if (type === 'url' && (disabled || !ctx.canEdit) && val) {
+      return `<a class="field-link" href="${safeVal}" target="_blank" rel="noopener noreferrer">${safeVal}</a>
+        <input type="hidden" name="${name}" value="${safeVal}" />`;
+    }
+    if (type === 'email' && (disabled || !ctx.canEdit) && val) {
+      return `<a class="field-link" href="mailto:${safeVal}">${safeVal}</a>
+        <input type="hidden" name="${name}" value="${safeVal}" />`;
+    }
+    const inputType = type === 'number' ? 'number'
+      : type === 'date' ? 'date'
+        : type === 'datetime' ? 'datetime-local'
+          : type === 'email' ? 'email'
+            : type === 'url' ? 'url'
+              : type === 'phone' ? 'tel'
+                : 'text';
+    const maxLen = type === 'text' ? ' maxlength="255"' : '';
+    return `<input type="${inputType}" name="${name}" value="${String(val).replace(/"/g, '&quot;')}" ${disabled} ${req}${maxLen} />`;
   }
 
   function wireOneDriveBrowser(matterId, onedriveMeta, canEdit) {
@@ -3680,18 +3857,12 @@
       delete body.rawMinutes;
       delete body.category;
       delete body.subcategory;
-      const customValues = {};
-      for (const [key, value] of Object.entries(body)) {
-        if (key.startsWith('cf_')) {
-          customValues[key.slice(3)] = value;
+      const customValues = collectCustomFieldValues(ev.target, timeFieldDefs || []);
+      for (const key of Object.keys(body)) {
+        if (key.startsWith('cf_') || key.endsWith('_lat') || key.endsWith('_lng')) {
           delete body[key];
         }
       }
-      timeFieldDefs.forEach((f) => {
-        if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
-          customValues[f.fieldId] = '0';
-        }
-      });
       body.customValues = customValues;
       if (!body.matterId) {
         matterPicker?.setInvalid(true);
@@ -4082,11 +4253,9 @@
         ev.preventDefault();
         const fd = new FormData(matterForm);
         const patch = {};
-        const customValues = {};
         for (const [key, value] of fd.entries()) {
-          if (key.startsWith('cf_')) {
-            customValues[key.slice(3)] = value;
-          } else if (key === 'std:name') patch.name = value;
+          if (key.startsWith('cf_') || key.endsWith('_lat') || key.endsWith('_lng')) continue;
+          if (key === 'std:name') patch.name = value;
           else if (key === 'std:client') patch.clientId = Number(value);
           else if (key === 'std:matter_type') { /* fixed */ }
           else if (key === 'std:status') patch.status = value;
@@ -4096,10 +4265,9 @@
             patch.responsibleAttorneyId = value ? Number(value) : null;
           } else if (key === 'std:opened_on') patch.openedOn = value;
         }
-        matterForm.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
-          customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
-        });
-        patch.customValues = customValues;
+        const matterFieldDefs = Object.values(page.sections || {}).flat()
+          .filter((f) => f.kind === 'custom');
+        patch.customValues = collectCustomFieldValues(matterForm, matterFieldDefs);
         try {
           await api(`/api/matters/${m.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
           state.matterFieldFlash = {
@@ -4362,7 +4530,7 @@
         ev.preventDefault();
         const fd = new FormData(rf);
         const { fieldType, options, body } = customFieldPayload(fd);
-        if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+        if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
           $('#matterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
           return;
         }
@@ -6006,7 +6174,7 @@
           ev.preventDefault();
           const fd = new FormData(newFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
-          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+          if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
             $('#mnfMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
             return;
           }
@@ -6910,7 +7078,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Configure type layouts in [[Matter record pages|settings-matter-fields]] or [[Contact record pages|settings-contact-fields]]. On Create Matter / Create Contact, Add record type fields also adds type fields. On a matter or contact, Manage fields can add a field for that record only.',
+      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Configure type layouts in [[Matter record pages|settings-matter-fields]] or [[Contact record pages|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter or contact, Manage fields can add a field for that record only.',
       links: [
         { label: 'Matter record pages', target: 'settings-matter-fields' },
         { label: 'Contact record pages', target: 'settings-contact-fields' },

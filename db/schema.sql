@@ -95,7 +95,11 @@ CREATE TABLE IF NOT EXISTS custom_fields (
   api_name TEXT NOT NULL,
   label TEXT NOT NULL,
   field_type TEXT NOT NULL
-    CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
+    CHECK (field_type IN (
+      'text','textarea','long_text','rich_text','number','currency','percent',
+      'date','datetime','email','phone','url','checkbox','select','multiselect',
+      'auto_number','geolocation','formula'
+    )),
   options_json TEXT,
   applies_to TEXT NOT NULL DEFAULT 'matter'
     CHECK (applies_to IN ('matter','time_entry','client')),

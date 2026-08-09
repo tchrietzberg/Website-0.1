@@ -357,8 +357,9 @@ function createMatter(db, actor, input = {}) {
   );
   const id = Number(info.lastInsertRowid);
 
-  if (Object.keys(customValues).length) {
-    customFields.setCustomValues(db, actor, id, customValues);
+  // Always run so Auto Number fields allocate even when the form omits them.
+  customFields.setCustomValues(db, actor, id, customValues);
+  if (Object.keys(customValues).length || formulaActive) {
     const matterRow = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const statusLabel = currentStatusLabel(db, matterRow) || initialStatus;
     let nextName;

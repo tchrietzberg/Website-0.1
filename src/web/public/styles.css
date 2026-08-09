@@ -1121,6 +1121,37 @@ main {
   animation: view-loading-fade 0.2s ease-out;
 }
 
+.input-affix {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 0.35rem;
+}
+.input-affix .affix {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.input-affix input {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.geo-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+.field-link {
+  color: var(--accent);
+  font-weight: 600;
+  word-break: break-all;
+}
+textarea.rich-text-input {
+  min-height: 8rem;
+}
+
 @keyframes view-loading-fade {
   from { opacity: 0.35; }
   to { opacity: 1; }

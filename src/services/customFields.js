@@ -1,5 +1,6 @@
 const { audit } = require('../db');
 const matterIndex = require('./matterIndex');
+const fieldTypes = require('./fieldTypes');
 
 /** Seeded default matter record types. Firms can add more via createRecordType. */
 const RECORD_TYPES = [
@@ -117,13 +118,7 @@ function describeLayoutFields(db, layoutId) {
 }
 
 function isBlankCustomValue(field, value) {
-  if (value == null) return true;
-  const text = String(value).trim();
-  const type = field.field_type || field.fieldType || field.type;
-  if (type === 'checkbox') {
-    return text !== '1' && text.toLowerCase() !== 'true';
-  }
-  return text === '';
+  return fieldTypes.isBlankCustomValue(field, value);
 }
 
 /** Ensure all required custom fields for the scope have non-blank values. */
@@ -151,7 +146,8 @@ function assertRequiredCustomValues(db, {
       appliesTo: 'matter',
     });
   }
-  const required = fields.filter((f) => !!f.required);
+  const required = fields.filter((f) => !!f.required
+    && !fieldTypes.isSystemManagedFieldType(f.field_type || f.fieldType));
   const missing = [];
   for (const f of required) {
     const raw = values[f.id] !== undefined ? values[f.id] : values[String(f.id)];
@@ -162,6 +158,44 @@ function assertRequiredCustomValues(db, {
       `Required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`
     );
   }
+}
+
+/** Fill auto-numbers (and drop user edits to formula fields) before save. */
+function prepareCustomValuesForSave(db, fields, values = {}) {
+  const out = {};
+  const incoming = values && typeof values === 'object' ? values : {};
+  const readIncoming = (id) => {
+    if (incoming[id] !== undefined) return incoming[id];
+    if (incoming[String(id)] !== undefined) return incoming[String(id)];
+    return undefined;
+  };
+  for (const f of fields || []) {
+    const type = fieldTypes.normalizeFieldType(f.field_type || f.fieldType);
+    const id = Number(f.id);
+    if (!Number.isFinite(id)) continue;
+    if (type === 'formula') continue;
+    if (type === 'auto_number') {
+      const cur = readIncoming(id);
+      if (isBlankCustomValue(f, cur)) {
+        const row = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
+        if (row) out[id] = fieldTypes.allocateAutoNumber(db, row);
+      } else {
+        out[id] = String(cur);
+      }
+      continue;
+    }
+    const raw = readIncoming(id);
+    if (raw === undefined) continue;
+    out[id] = fieldTypes.normalizeCustomValue(
+      {
+        ...f,
+        options_json: f.options_json
+          || (f.options != null ? JSON.stringify(f.options) : null),
+      },
+      raw
+    );
+  }
+  return out;
 }
 
 function upsertRecordTypeRow(db, key, label, appliesTo = 'matter') {
@@ -462,34 +496,25 @@ function normalizeAppliesTo(value) {
 }
 
 function normalizeFieldType(fieldType) {
-  const raw = String(fieldType || 'text').trim().toLowerCase();
-  if (raw === 'dropdown') return 'select';
-  return raw;
+  return fieldTypes.normalizeFieldType(fieldType);
 }
 
 function parseFieldOptions(input) {
-  const split = (raw) => String(raw || '')
-    .split(/[\n,]+/)
-    .map((o) => o.trim())
-    .filter(Boolean);
-  if (Array.isArray(input.options)) {
-    return input.options.map((o) => String(o).trim()).filter(Boolean);
-  }
-  if (typeof input.options === 'string') return split(input.options);
-  if (typeof input.optionsText === 'string') return split(input.optionsText);
-  return [];
+  return fieldTypes.parseFieldOptions(input);
 }
 
 function createCustomField(db, actor, input) {
   const label = String(input.label || '').trim();
   if (!label) throw new Error('label required');
   const fieldType = normalizeFieldType(input.fieldType || input.field_type || 'text');
-  if (!['text', 'textarea', 'number', 'date', 'select', 'checkbox'].includes(fieldType)) {
+  if (!fieldTypes.isAllowedFieldType(fieldType)) {
     throw new Error('invalid fieldType');
   }
-  const optionList = fieldType === 'select' ? parseFieldOptions(input) : [];
-  if (fieldType === 'select' && !optionList.length) {
-    throw new Error('dropdown fields need at least one option');
+  let options;
+  try {
+    options = fieldTypes.encodeFieldOptions(fieldType, input, null);
+  } catch (e) {
+    throw e;
   }
 
   let appliesTo = normalizeAppliesTo(input.appliesTo || input.applies_to || 'matter');
@@ -553,10 +578,6 @@ function createCustomField(db, actor, input) {
   `).get(apiName, appliesTo, recordTypeKey, matterId, clientId);
   if (clash) apiName = `${apiName}_${Date.now().toString(36)}`;
 
-  const options = fieldType === 'select'
-    ? JSON.stringify(optionList)
-    : null;
-
   // Contact/matter record-only fields are never "default on type"
   const allowDefault = !matterId && !clientId;
   const isDefault = allowDefault && (
@@ -565,6 +586,9 @@ function createCustomField(db, actor, input) {
   )
     ? 1
     : 0;
+  const required = fieldTypes.isSystemManagedFieldType(fieldType)
+    ? 0
+    : (input.required ? 1 : 0);
 
   const info = db.prepare(`
     INSERT INTO custom_fields(
@@ -580,7 +604,7 @@ function createCustomField(db, actor, input) {
     recordTypeKey,
     matterId,
     clientId,
-    input.required ? 1 : 0,
+    required,
     isDefault,
     actor.id
   );
@@ -588,7 +612,7 @@ function createCustomField(db, actor, input) {
 
   // Auto-add type-scoped fields to the relevant layout(s)
   if ((appliesTo === 'matter' || appliesTo === 'client') && recordTypeKey && !matterId && !clientId) {
-    const width = fieldType === 'textarea' ? 'full' : 'half';
+    const width = fieldTypes.fieldWidthForType(fieldType);
     const fieldKey = `cf:${id}`;
     const layout = ensureTypeLayout(db, recordTypeKey);
     addFieldToLayout(db, layout.id, fieldKey, width);
@@ -631,8 +655,10 @@ function getCustomField(db, id) {
   const f = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
   if (!f) return null;
   const appliesTo = f.applies_to || 'matter';
-  const fieldType = f.field_type === 'select' ? 'dropdown' : f.field_type;
+  const storedType = f.field_type;
+  const fieldType = fieldTypes.uiFieldType(storedType);
   const isDefault = !!f.is_default;
+  const decoded = fieldTypes.decodeFieldOptions(storedType, f.options_json);
   return {
     ...f,
     field_type: fieldType,
@@ -641,7 +667,13 @@ function getCustomField(db, id) {
     appliesTo,
     is_default: isDefault ? 1 : 0,
     isDefault,
-    options: f.options_json ? JSON.parse(f.options_json) : null,
+    options: fieldTypes.needsOptionList(storedType)
+      ? decoded
+      : (Array.isArray(decoded) ? decoded : null),
+    config: decoded && !Array.isArray(decoded) ? decoded : null,
+    expression: decoded && decoded.expression ? decoded.expression : null,
+    prefix: decoded && decoded.prefix != null ? decoded.prefix : null,
+    pad: decoded && decoded.pad != null ? decoded.pad : null,
     clientId: f.client_id != null ? Number(f.client_id) : null,
     scope: appliesTo === 'time_entry'
       ? 'time_entry'
@@ -735,32 +767,36 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
   let fieldType = existing.field_type;
   if (patch.fieldType !== undefined || patch.field_type !== undefined) {
     fieldType = normalizeFieldType(patch.fieldType || patch.field_type);
-    if (!['text', 'textarea', 'number', 'date', 'select', 'checkbox'].includes(fieldType)) {
+    if (!fieldTypes.isAllowedFieldType(fieldType)) {
       throw new Error('invalid fieldType');
     }
   }
 
   let optionsJson = existing.options_json;
-  if (fieldType === 'select') {
-    const optionsProvided = patch.options !== undefined || patch.optionsText !== undefined;
-    if (optionsProvided || existing.field_type !== 'select') {
-      const optionList = parseFieldOptions(patch);
-      if (!optionList.length) {
-        if (existing.field_type === 'select' && existing.options_json && !optionsProvided) {
-          optionsJson = existing.options_json;
-        } else {
-          throw new Error('dropdown fields need at least one option');
-        }
-      } else {
-        optionsJson = JSON.stringify(optionList);
-      }
-    }
-  } else {
+  const optionsTouched = patch.options !== undefined
+    || patch.optionsText !== undefined
+    || patch.expression !== undefined
+    || patch.formula !== undefined
+    || patch.prefix !== undefined
+    || patch.autoNumberPrefix !== undefined
+    || patch.pad !== undefined
+    || patch.autoNumberPad !== undefined
+    || patch.next !== undefined
+    || fieldType !== existing.field_type;
+  if (optionsTouched) {
+    optionsJson = fieldTypes.encodeFieldOptions(fieldType, patch, existing.options_json);
+  } else if (
+    !fieldTypes.needsOptionList(fieldType)
+    && fieldType !== 'auto_number'
+    && fieldType !== 'formula'
+  ) {
     optionsJson = null;
   }
 
   let required = existing.required ? 1 : 0;
-  if (patch.required !== undefined) {
+  if (fieldTypes.isSystemManagedFieldType(fieldType)) {
+    required = 0;
+  } else if (patch.required !== undefined) {
     required = patch.required === 0 || patch.required === false ? 0 : 1;
   }
 
@@ -777,7 +813,7 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
   `).run(label, fieldType, optionsJson, required, isDefault, fieldId);
 
   if (fieldType !== existing.field_type) {
-    const width = fieldType === 'textarea' ? 'full' : 'half';
+    const width = fieldTypes.fieldWidthForType(fieldType);
     db.prepare(`
       UPDATE page_layout_items SET width = ? WHERE field_key = ?
     `).run(width, `cf:${fieldId}`);
@@ -805,13 +841,16 @@ function listTimeEntryFieldDefs(db) {
     label: f.label,
     type: f.field_type,
     options: f.options,
+    config: f.config,
+    expression: f.expression,
     required: !!f.required,
     isDefault: !!f.isDefault,
     scope: 'time_entry',
     fieldId: f.id,
     kind: 'custom',
-    width: f.field_type === 'textarea' ? 'full' : 'half',
+    width: fieldTypes.fieldWidthForType(f.field_type),
     value: null,
+    readonly: fieldTypes.isSystemManagedFieldType(f.field_type),
   }));
 }
 
@@ -825,6 +864,8 @@ function listClientFieldDefs(db, { recordTypeKey = null, clientId = null } = {})
     label: f.label,
     type: f.field_type,
     options: f.options,
+    config: f.config,
+    expression: f.expression,
     required: !!f.required,
     isDefault: !!f.isDefault,
     scope: f.client_id || f.clientId
@@ -834,8 +875,9 @@ function listClientFieldDefs(db, { recordTypeKey = null, clientId = null } = {})
     clientId: f.client_id != null ? Number(f.client_id) : (f.clientId != null ? Number(f.clientId) : null),
     fieldId: f.id,
     kind: 'custom',
-    width: f.field_type === 'textarea' ? 'full' : 'half',
+    width: fieldTypes.fieldWidthForType(f.field_type),
     value: null,
+    readonly: fieldTypes.isSystemManagedFieldType(f.field_type),
   }));
 }
 
@@ -843,6 +885,12 @@ function setClientCustomValues(db, actor, clientId, customValues) {
   const client = db.prepare('SELECT id, record_type FROM clients WHERE id = ?').get(clientId);
   if (!client) throw new Error('contact not found');
   const clientType = client.record_type || DEFAULT_CONTACT_RECORD_TYPE_KEY;
+  const scoped = listCustomFields(db, {
+    appliesTo: 'client',
+    recordTypeKey: clientType,
+    clientId,
+  });
+  const prepared = prepareCustomValuesForSave(db, scoped, customValues);
   const upsert = db.prepare(`
     INSERT INTO client_custom_field_values(client_id, field_id, value_text, updated_by, updated_at)
     VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -851,7 +899,7 @@ function setClientCustomValues(db, actor, clientId, customValues) {
       updated_by = excluded.updated_by,
       updated_at = excluded.updated_at
   `);
-  for (const [fieldId, value] of Object.entries(customValues || {})) {
+  for (const [fieldId, value] of Object.entries(prepared || {})) {
     const id = Number(fieldId);
     const field = db.prepare(`
       SELECT * FROM custom_fields
@@ -878,6 +926,8 @@ function getClientCustomValues(db, clientId) {
 function setTimeCustomValues(db, actor, timeEntryId, customValues) {
   const entry = db.prepare('SELECT id FROM time_entries WHERE id = ?').get(timeEntryId);
   if (!entry) throw new Error('time entry not found');
+  const scoped = listCustomFields(db, { appliesTo: 'time_entry' });
+  const prepared = prepareCustomValuesForSave(db, scoped, customValues);
   const upsert = db.prepare(`
     INSERT INTO time_entry_custom_field_values(time_entry_id, field_id, value_text, updated_by, updated_at)
     VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -886,7 +936,7 @@ function setTimeCustomValues(db, actor, timeEntryId, customValues) {
       updated_by = excluded.updated_by,
       updated_at = excluded.updated_at
   `);
-  for (const [fieldId, value] of Object.entries(customValues || {})) {
+  for (const [fieldId, value] of Object.entries(prepared || {})) {
     const id = Number(fieldId);
     const field = db.prepare(`
       SELECT * FROM custom_fields
@@ -968,7 +1018,7 @@ function buildMatterDisplayItems(db, matter) {
       field_key: key,
       section: 'details',
       sort_order: order++,
-      width: f.field_type === 'textarea' ? 'full' : 'half',
+      width: fieldTypes.fieldWidthForType(f.field_type),
     });
     present.add(key);
   }
@@ -993,12 +1043,15 @@ function fieldDefsForMatter(db, matter) {
       label: f.label,
       type: f.field_type,
       options: f.options,
+      config: f.config,
+      expression: f.expression,
       required: !!f.required,
       isDefault: !!f.isDefault,
       scope: f.scope,
       fieldId: f.id,
       kind: 'custom',
-      width: f.field_type === 'textarea' ? 'full' : 'half',
+      width: fieldTypes.fieldWidthForType(f.field_type),
+      readonly: fieldTypes.isSystemManagedFieldType(f.field_type),
     });
   }
   return byKey;
@@ -1062,6 +1115,18 @@ function getMatterPage(db, matterId, actor = null) {
       value = map[def.key] ?? null;
     } else {
       value = valueMap[def.fieldId] ?? null;
+      if (fieldTypes.normalizeFieldType(def.type) === 'formula') {
+        const siblings = listCustomFields(db, {
+          recordTypeKey: matter.matter_type,
+          matterId: matter.id,
+          appliesTo: 'matter',
+        }).map((f) => ({
+          id: f.id,
+          api_name: f.api_name,
+          label: f.label,
+        }));
+        value = fieldTypes.evaluateFormula(def.expression || def.config?.expression, siblings, valueMap);
+      }
     }
     const fieldWritable = !role
       || permissions.isFieldWritableForRole(db, 'matter', role, item.field_key);
@@ -1069,7 +1134,9 @@ function getMatterPage(db, matterId, actor = null) {
       ...def,
       width: item.width || def.width || 'half',
       value,
-      readonly: !!(def.readonly || !fieldWritable),
+      readonly: !!(def.readonly
+        || fieldTypes.isSystemManagedFieldType(def.type)
+        || !fieldWritable),
     });
   }
 
@@ -1163,6 +1230,14 @@ function removeFieldFromMatter(db, actor, matterId, fieldKey) {
 }
 
 function setCustomValues(db, actor, matterId, customValues) {
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
+  if (!matter) throw new Error('matter not found');
+  const scoped = listCustomFields(db, {
+    recordTypeKey: matter.matter_type,
+    matterId,
+    appliesTo: 'matter',
+  });
+  const prepared = prepareCustomValuesForSave(db, scoped, customValues);
   const upsert = db.prepare(`
     INSERT INTO custom_field_values(matter_id, field_id, value_text, updated_by, updated_at)
     VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -1171,16 +1246,13 @@ function setCustomValues(db, actor, matterId, customValues) {
       updated_by = excluded.updated_by,
       updated_at = excluded.updated_at
   `);
-  for (const [fieldId, value] of Object.entries(customValues || {})) {
+  for (const [fieldId, value] of Object.entries(prepared || {})) {
     const id = Number(fieldId);
     const field = db.prepare(
       `SELECT * FROM custom_fields
        WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'matter'`
     ).get(id);
     if (!field) continue;
-    // Must be in scope for this matter
-    const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
-    if (!matter) throw new Error('matter not found');
     const ok = (!field.matter_id && !field.record_type_key)
       || (field.record_type_key && field.record_type_key === matter.matter_type)
       || (field.matter_id === matterId);
@@ -1256,6 +1328,7 @@ module.exports = {
   getClientCustomValues,
   assertRequiredCustomValues,
   isBlankCustomValue,
+  prepareCustomValuesForSave,
   getMatterPage,
   getTypeLayout,
   setCustomValues,

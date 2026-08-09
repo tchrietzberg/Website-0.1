@@ -121,15 +121,29 @@ function getClient(db, id, actor = null) {
     client.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
     { appliesTo: 'client' }
   );
+  const fieldTypes = require('./fieldTypes');
+  const valueMap = Object.fromEntries(
+    customFields.getClientCustomValues(db, id).map((v) => [v.field_id, v.value_text])
+  );
+  const allClientFields = customFields.listCustomFields(db, {
+    appliesTo: 'client',
+    recordTypeKey,
+    clientId: id,
+  });
   const fieldDefs = customFields.listClientFieldDefs(db, { recordTypeKey, clientId: id })
     .filter((f) => !role || permissions.isFieldVisibleForProfile(db, 'contact', role, `cf:${f.fieldId}`))
     .map((f) => {
-      const stored = db.prepare(`
-        SELECT value_text FROM client_custom_field_values
-        WHERE client_id = ? AND field_id = ?
-      `).get(id, f.fieldId);
+      let value = valueMap[f.fieldId] ?? null;
+      if (fieldTypes.normalizeFieldType(f.type) === 'formula') {
+        value = fieldTypes.evaluateFormula(
+          f.expression || f.config?.expression,
+          allClientFields.map((x) => ({ id: x.id, api_name: x.api_name, label: x.label })),
+          valueMap
+        );
+      }
       const writable = !role || permissions.isFieldWritableForRole(db, 'contact', role, `cf:${f.fieldId}`);
-      return { ...f, value: stored?.value_text ?? null, readonly: !writable };
+      const system = fieldTypes.isSystemManagedFieldType(f.type);
+      return { ...f, value, readonly: system || !writable };
     });
   const customValues = Object.fromEntries(
     fieldDefs.filter((f) => f.value != null).map((f) => [f.fieldId, f.value])
@@ -179,9 +193,8 @@ function createClient(db, actor, input = {}) {
   `).run(name, email, phone, company, notes, recordTypeKey);
   const id = Number(info.lastInsertRowid);
 
-  if (Object.keys(customValues).length) {
-    customFields.setClientCustomValues(db, actor, id, customValues);
-  }
+  // Always run so Auto Number fields allocate even when the form omits them.
+  customFields.setClientCustomValues(db, actor, id, customValues);
 
   audit(db, {
     actorId: actor?.id || null,
