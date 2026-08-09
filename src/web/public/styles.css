@@ -140,6 +140,8 @@ body {
 .sidebar-actions {
   display: grid;
   gap: 0.55rem;
+  -webkit-align-content: start;
+  align-content: start;
 }
 
 .sidebar-action,
@@ -147,7 +149,9 @@ body {
 .sidebar-nav .sidebar-action,
 .sidebar-nav-btn.sidebar-action {
   width: 100%;
-  min-height: 4.35rem;
+  height: 4.1rem;
+  min-height: 4.1rem;
+  max-height: 4.1rem;
   box-sizing: border-box;
   display: -webkit-flex;
   display: flex;
@@ -157,13 +161,17 @@ body {
   text-align: left;
   border: 1px solid transparent;
   border-radius: 14px;
-  padding: 0.85rem 0.9rem;
+  padding: 0.7rem 0.9rem;
   font: inherit;
   font-weight: 700;
   font-size: inherit;
   line-height: inherit;
   cursor: pointer;
   position: relative;
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  -webkit-align-self: stretch;
+  align-self: stretch;
   -webkit-transform: translateY(0);
   transform: translateY(0);
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
@@ -296,10 +304,34 @@ body {
   gap: 0.55rem;
   -webkit-flex: 1 1 auto;
   flex: 1 1 auto;
+  -webkit-align-content: start;
+  align-content: start;
+  -webkit-align-items: stretch;
+  align-items: stretch;
+  grid-auto-rows: 4.1rem;
   min-height: 0;
   overflow: auto;
   padding-top: 0.65rem;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.sidebar-nav > .sidebar-label {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  grid-row: auto;
+}
+
+.sidebar-actions {
+  grid-auto-rows: 4.1rem;
+  -webkit-align-content: start;
+  align-content: start;
+}
+
+.sidebar-actions > .sidebar-label {
+  height: auto;
+  min-height: 0;
+  max-height: none;
 }
 
 /* Navigate = same size/style as Quick action primary buttons; active only tints the mark */
@@ -1630,7 +1662,13 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   .sidebar-nav .sidebar-action,
   .sidebar-actions .sidebar-action {
     min-width: 0;
-    min-height: 4.35rem;
+    height: 4.1rem;
+    min-height: 4.1rem;
+    max-height: 4.1rem;
+  }
+  .sidebar-nav,
+  .sidebar-actions {
+    grid-auto-rows: 4.1rem;
   }
   .sidebar-nav .sidebar-action-text small {
     display: block;
