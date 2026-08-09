@@ -7,6 +7,15 @@ const { getSetting, setSetting, audit } = require('./db');
 /** In-memory outbox when SMTP/Resend is not configured (tests / local dev). */
 const outbox = [];
 
+/**
+ * Outbound email stays off until a live domain is configured.
+ * Set OUTBOUND_EMAIL=1 (or true/yes) to enable real delivery.
+ */
+function outboundEmailEnabled() {
+  const raw = String(process.env.OUTBOUND_EMAIL || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
 function clearOutbox() {
   outbox.length = 0;
 }
@@ -164,11 +173,24 @@ function mailStatus(db) {
   const savedKey = db ? getSetting(db, 'resend_api_key', '') : '';
   const savedFrom = db ? getSetting(db, 'smtp_from', '') : '';
   const savedFromName = db ? getSetting(db, 'smtp_from_name', '') : '';
+  const outboundEnabled = outboundEmailEnabled();
   const base = {
     hasApiKey: Boolean(savedKey || (cfg.provider === 'resend' && cfg.apiKey)),
     fromName: savedFromName || cfg.fromName || 'Firm Billing',
     fromAddress: savedFrom || cfg.fromEmail || '',
+    outboundEnabled,
   };
+  if (!outboundEnabled) {
+    return {
+      ...base,
+      configured: false,
+      provider: 'deferred',
+      source: 'none',
+      from: cfg.from,
+      setupHint: 'domain',
+      message: 'Outbound email is deferred until a live domain is ready. Use copyable invite and reset links instead.',
+    };
+  }
   if (!cfg.configured) {
     return {
       ...base,
@@ -482,6 +504,26 @@ async function sendMail({ to, subject, text, html = null, db = null, allowLog = 
   if (!msg.to || !msg.to.includes('@')) throw new Error('valid recipient email required');
   if (!msg.subject) throw new Error('subject required');
 
+  if (!outboundEmailEnabled()) {
+    if (!allowLog) {
+      const err = new Error(
+        'Outbound email is deferred until a live domain is ready. Share invite or reset links directly.'
+      );
+      err.code = 'MAIL_DEFERRED';
+      throw err;
+    }
+    outbox.push(msg);
+    appendLogFile(msg);
+    if (process.env.MAIL_LOG !== '0') {
+      console.info(`[mail:deferred] to=${msg.to} subject=${msg.subject}`);
+    }
+    return {
+      ok: false,
+      mode: 'deferred',
+      message: 'Outbound email is deferred until a live domain is ready. Share the link directly.',
+    };
+  }
+
   if (!cfg.configured) {
     if (!allowLog) {
       const err = new Error(
@@ -547,6 +589,7 @@ async function sendMail({ to, subject, text, html = null, db = null, allowLog = 
 
 module.exports = {
   sendMail,
+  outboundEmailEnabled,
   smtpConfigured,
   mailFrom,
   mailStatus,

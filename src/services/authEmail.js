@@ -344,6 +344,30 @@ async function inviteUserAndEmail(db, actor, req, input) {
     purpose: 'invite',
     createdBy: actor.id,
   });
+  const link = authLink(req, token.raw);
+
+  // Until a live domain enables outbound email, return a shareable invite link only.
+  if (!mail.outboundEmailEnabled()) {
+    audit(db, {
+      actorId: actor.id,
+      action: 'auth.email_invite',
+      entityType: 'user',
+      entityId: user.id,
+      detail: { email: user.email, mode: 'deferred', ok: false },
+    });
+    return {
+      user,
+      delivery: {
+        ok: false,
+        mode: 'deferred',
+        message: 'Outbound email is deferred until a live domain is ready. Share the invite link directly.',
+      },
+      warning: 'Share the invite link — email delivery is deferred until go-live.',
+      devToken: token.raw,
+      devLink: link,
+    };
+  }
+
   let mailed;
   try {
     mailed = await sendAuthEmail(db, req, {
@@ -358,7 +382,7 @@ async function inviteUserAndEmail(db, actor, req, input) {
       user,
       delivery: { ok: false, mode: 'error', message: e.message },
       devToken: token.raw,
-      devLink: authLink(req, token.raw),
+      devLink: link,
       warning: e.message,
     };
   }
@@ -367,7 +391,7 @@ async function inviteUserAndEmail(db, actor, req, input) {
     delivery: mailed.delivery,
     warning: mailed.delivery?.ok ? undefined : (mailed.delivery?.message || 'Email was not delivered'),
     devToken: mailed.delivery?.ok && isProduction() ? undefined : token.raw,
-    devLink: mailed.link || authLink(req, token.raw),
+    devLink: mailed.link || link,
   };
 }
 
@@ -437,6 +461,29 @@ async function adminSendPasswordReset(db, actor, req, userId) {
     purpose: 'reset',
     createdBy: actor.id,
   });
+  const link = authLink(req, token.raw);
+
+  if (!mail.outboundEmailEnabled()) {
+    audit(db, {
+      actorId: actor.id,
+      action: 'auth.email_reset',
+      entityType: 'user',
+      entityId: user.id,
+      detail: { email: user.email, mode: 'deferred', ok: false },
+    });
+    return {
+      ok: true,
+      delivery: {
+        ok: false,
+        mode: 'deferred',
+        message: 'Outbound email is deferred until a live domain is ready. Share the reset link directly.',
+      },
+      warning: 'Share the reset link — email delivery is deferred until go-live.',
+      devToken: token.raw,
+      devLink: link,
+    };
+  }
+
   try {
     const mailed = await sendAuthEmail(db, req, {
       user,
@@ -449,7 +496,7 @@ async function adminSendPasswordReset(db, actor, req, userId) {
       delivery: mailed.delivery,
       warning: mailed.delivery?.ok ? undefined : (mailed.delivery?.message || 'Email was not delivered'),
       devToken: mailed.delivery?.ok && isProduction() ? undefined : token.raw,
-      devLink: mailed.link || authLink(req, token.raw),
+      devLink: mailed.link || link,
     };
   } catch (e) {
     return {
@@ -457,7 +504,7 @@ async function adminSendPasswordReset(db, actor, req, userId) {
       delivery: { ok: false, mode: 'error', message: e.message },
       warning: e.message,
       devToken: token.raw,
-      devLink: authLink(req, token.raw),
+      devLink: link,
     };
   }
 }

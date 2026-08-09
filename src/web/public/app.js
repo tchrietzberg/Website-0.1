@@ -2911,34 +2911,10 @@
     setHelpAgentVisible(false);
   }
 
-  function renderLogin(mode = 'password') {
+  function renderLogin(_mode = 'password') {
     enterLoginChrome();
-    const panel = mode === 'forgot'
-      ? `
-          <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">We’ll email you a link to reset your password</p>
-          <label class="login-field">Work email
-            <input id="email" type="email" autocomplete="username" placeholder="you@firm.example" />
-          </label>
-          <button class="primary login-submit" id="resetBtn" type="button">Email reset link</button>
-          <p class="login-hint"><button type="button" class="linkish" id="backToLogin">Back to sign in</button></p>
-          <div id="loginErr"></div>`
-      : mode === 'email'
-        ? `
-          <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Enter your work email — we’ll send a sign-in link</p>
-          <label class="login-field">Work email
-            <input id="email" type="email" autocomplete="username"
-              placeholder="you@firm.example" value="avery@firm.example" />
-          </label>
-          <button class="primary login-submit" id="magicBtn" type="button">Email me a sign-in link</button>
-          <div class="login-alt-links">
-            <button type="button" class="linkish" id="passwordLink">Use password instead</button>
-            <button type="button" class="linkish" id="forgotLink">Forgot password</button>
-          </div>
-          <div id="loginErr"></div>
-          <p class="login-hint">Check your inbox for a one-time link.</p>`
-        : `
+    // Magic-link / forgot-password email flows stay hidden until OUTBOUND_EMAIL is enabled at go-live.
+    const panel = `
           <p class="login-brand">Firm Billing</p>
           <p class="login-lead">Sign in with your work email and password</p>
           <label class="login-field">Work email
@@ -2950,10 +2926,6 @@
               placeholder="Password" value="demo-change-me" />
           </label>
           <button class="primary login-submit" id="loginBtn" type="button">Sign in</button>
-          <div class="login-alt-links">
-            <button type="button" class="linkish" id="magicLink">Email me a sign-in link</button>
-            <button type="button" class="linkish" id="forgotLink">Forgot password</button>
-          </div>
           <div id="loginErr"></div>
           <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
 
@@ -2963,64 +2935,6 @@
       const el = $('#loginErr');
       if (el) el.innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
     };
-    const ok = (msg) => {
-      const el = $('#loginErr');
-      if (el) el.innerHTML = msg ? `<div class="ok-banner">${escapeHtml(msg)}</div>` : '';
-    };
-
-    const back = $('#backToLogin');
-    if (back) back.onclick = () => renderLogin('password');
-    const forgot = $('#forgotLink');
-    if (forgot) forgot.onclick = () => renderLogin('forgot');
-    const magic = $('#magicLink');
-    if (magic) magic.onclick = () => renderLogin('email');
-    const passwordLink = $('#passwordLink');
-    if (passwordLink) passwordLink.onclick = () => renderLogin('password');
-
-    if (mode === 'forgot') {
-      $('#resetBtn').onclick = async () => {
-        try {
-          $('#resetBtn').disabled = true;
-          err('');
-          const data = await api('/api/password-reset/request', {
-            method: 'POST',
-            body: JSON.stringify({ email: $('#email').value.trim() }),
-          });
-          ok(data.message || 'Check your email for a reset link.');
-          $('#resetBtn').disabled = false;
-        } catch (e) {
-          $('#resetBtn').disabled = false;
-          err(e.message);
-        }
-      };
-      return;
-    }
-
-    if (mode === 'email') {
-      const sendMagic = async () => {
-        try {
-          $('#magicBtn').disabled = true;
-          err('');
-          const data = await api('/api/login/magic/request', {
-            method: 'POST',
-            body: JSON.stringify({ email: $('#email').value.trim() }),
-          });
-          ok(data.message || 'Check your email for a sign-in link.');
-          $('#magicBtn').disabled = false;
-        } catch (e) {
-          $('#magicBtn').disabled = false;
-          err(e.message);
-        }
-      };
-      $('#magicBtn').onclick = sendMagic;
-      $('#email').addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') {
-          ev.preventDefault();
-          sendMagic();
-        }
-      });
-      return;
-    }
 
     const submit = async () => {
       try {
@@ -7405,7 +7319,7 @@
               </td>
               ${showReset ? `
               <td>
-                <button type="button" data-send-reset="${t.id}">Email reset</button>
+                <button type="button" data-send-reset="${t.id}">Create reset link</button>
               </td>` : ''}
             </tr>`;
           }).join('') || `<tr data-tk-empty="1"><td colspan="${cols}" class="muted">No timekeepers</td></tr>`}
@@ -7462,12 +7376,15 @@
             body: '{}',
           });
           const delivered = result.delivery?.ok === true;
+          const deferred = result.delivery?.mode === 'deferred';
           const mode = delivered
             ? 'Password reset email sent.'
-            : (result.warning || 'Reset link created, but email was not delivered. Use the link shown instead.');
+            : (deferred
+              ? 'Reset link created. Share it with the user (email delivery is deferred until go-live).'
+              : (result.warning || 'Reset link created. Share it with the user.'));
           const link = localAuthLink(result.devToken) || result.devLink || '';
-          $('#rateMsg').innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
-            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
+          $('#rateMsg').innerHTML = `<div class="ok-banner">${escapeHtml(mode)}${
+            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a> <span class="muted">(copy and share)</span></div>` : ''
           }</div>`;
         } catch (e) {
           btn.disabled = false;
@@ -7524,7 +7441,7 @@
 
         <div class="page-section" id="addUserSection">
           <h2>Add a user</h2>
-          <p class="hint">They get an email with a one-time link to set a password and sign in. No temporary password to share.</p>
+          <p class="hint">Creates a one-time invite link to set a password and sign in. Share the link directly — email delivery waits until a live domain.</p>
           <form id="tkForm" class="grid two">
             <label>Name <input name="name" required placeholder="Alex Associate" /></label>
             <label>Email <input name="email" type="email" required placeholder="alex@firm.example" /></label>
@@ -7543,7 +7460,7 @@
               <input name="rateEffectiveDate" type="date" value="${today}" required />
             </label>
             <div class="row-actions span-all" style="align-items:end">
-              <button class="primary" type="submit">Send invite email</button>
+              <button class="primary" type="submit">Create invite link</button>
             </div>
           </form>
           <div id="tkMsg"></div>
@@ -7576,22 +7493,25 @@
             }),
           });
           const delivered = invited.delivery?.ok === true;
+          const deferred = invited.delivery?.mode === 'deferred';
           const mode = delivered
             ? 'Invite email sent.'
-            : (invited.warning || 'Invite created, but email was not delivered. Use the invite link below.');
+            : (deferred
+              ? 'Invite created. Share the link below (email delivery is deferred until go-live).'
+              : (invited.warning || 'Invite created. Share the link below.'));
           await refreshRefs();
           state.tkSearch = { q: '' };
           const link = localAuthLink(invited.devToken) || invited.devLink || '';
           state.usersFlash = {
-            title: delivered ? 'User invited' : 'Invite created',
+            title: 'Invite created',
             detail: mode,
           };
           await renderUsers();
           const msg = $('#tkMsg');
           if (msg && link) {
-            msg.innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}
+            msg.innerHTML = `<div class="ok-banner">${escapeHtml(mode)}
               <div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a>
-              <span class="muted">(use this if email link fails)</span></div></div>`;
+              <span class="muted">(copy and share)</span></div></div>`;
           }
           $('#addUserSection')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } catch (e) {
@@ -7973,7 +7893,7 @@
       id: 'users',
       label: 'Add a user',
       keywords: ['user', 'invite', 'timekeeper', 'rate', 'add a user', 'hire'],
-      answer: '[[Add a user|users]] invites someone by name, email, role, and default rate — they get a one-time link to set a password. Admin has this by default; turn on <strong>Add users</strong> for other roles under [[Role permissions|settings]]. Billing clerks can still change timekeeper rates under [[Settings|settings]].',
+      answer: '[[Add a user|users]] invites someone by name, email, role, and default rate — you get a one-time link to share so they can set a password. Admin has this by default; turn on <strong>Add users</strong> for other roles under [[Role permissions|settings]]. Billing clerks can still change timekeeper rates under [[Settings|settings]].',
       links: [
         { label: 'Go to Add a user', target: 'users' },
         { label: 'Open Settings', target: 'settings' },
@@ -7983,7 +7903,7 @@
       id: 'login',
       label: 'Sign in',
       keywords: ['login', 'password', 'sign in', 'demo', 'avery'],
-      answer: 'Use your work email and password. Demo: avery@firm.example / demo-change-me. You can also request a magic link or reset password from the login screen. You’re signed in now — open [[Settings|settings]] for firm preferences, or [[Matters|matters]] to get started.',
+      answer: 'Use your work email and password. Demo: avery@firm.example / demo-change-me. Email sign-in and reset links stay off until a live domain; ask an admin for a reset link if needed. You’re signed in now — open [[Settings|settings]] for firm preferences, or [[Matters|matters]] to get started.',
       links: [
         { label: 'Go to Matters', target: 'matters' },
         { label: 'Open Settings', target: 'settings' },

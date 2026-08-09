@@ -23,6 +23,7 @@ const customFields = require('../services/customFields');
 const customReports = require('../services/customReports');
 const authEmail = require('../services/authEmail');
 const permissions = require('../services/permissions');
+const mail = require('../mail');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -127,7 +128,6 @@ function serveStatic(req, res) {
 function readSettings(db) {
   const onedrive = require('../services/onedrive');
   const msAuth = require('../services/msAuth');
-  const mail = require('../mail');
   const clientsSvc = require('../services/clients');
   const permissions = require('../services/permissions');
   return {
@@ -265,6 +265,12 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'POST' && pathname === '/api/password-reset/request') {
+        if (!mail.outboundEmailEnabled()) {
+          return json(res, 503, {
+            error: 'mail_deferred',
+            message: 'Password reset by email is unavailable until a live domain is ready. Ask an admin for a reset link.',
+          }, req);
+        }
         if (rateLimitedAuthEmail()) return;
         const body = await parseBody(req);
         const result = await authEmail.requestPasswordReset(db, req, body.email);
@@ -272,6 +278,12 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'POST' && pathname === '/api/login/magic/request') {
+        if (!mail.outboundEmailEnabled()) {
+          return json(res, 503, {
+            error: 'mail_deferred',
+            message: 'Email sign-in links are unavailable until a live domain is ready. Sign in with your password.',
+          }, req);
+        }
         if (rateLimitedAuthEmail()) return;
         const body = await parseBody(req);
         const result = await authEmail.requestMagicLogin(db, req, body.email);
@@ -976,7 +988,12 @@ function createServer(db = openDb()) {
         }
         if (body.emailConfig) {
           if (!requireRoles(user, res, ['admin'])) return;
-          const mail = require('../mail');
+          if (!mail.outboundEmailEnabled()) {
+            return json(res, 503, {
+              error: 'mail_deferred',
+              message: 'Email settings are unavailable until a live domain is ready.',
+            }, req);
+          }
           mail.saveMailConfig(db, user, body.emailConfig);
         }
         if (body.contactStandardFields !== undefined) {
@@ -1015,7 +1032,12 @@ function createServer(db = openDb()) {
 
       if (req.method === 'POST' && pathname === '/api/settings/email/test') {
         if (!requireRoles(user, res, ['admin'])) return;
-        const mail = require('../mail');
+        if (!mail.outboundEmailEnabled()) {
+          return json(res, 503, {
+            error: 'mail_deferred',
+            message: 'Outbound email is deferred until a live domain is ready.',
+          }, req);
+        }
         const body = await parseBody(req);
         const to = String(body.to || user.email || '').trim().toLowerCase();
         try {

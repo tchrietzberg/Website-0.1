@@ -73,9 +73,12 @@ describe('secure email auth flows', () => {
   let db;
   let server;
   let port;
+  let prevOutbound;
 
   beforeEach(async () => {
     mail.clearOutbox();
+    prevOutbound = process.env.OUTBOUND_EMAIL;
+    delete process.env.OUTBOUND_EMAIL;
     delete process.env.RESEND_API_KEY;
     delete process.env.SMTP_HOST;
     delete process.env.SMTP_FROM;
@@ -93,13 +96,15 @@ describe('secure email auth flows', () => {
 
   afterEach(async () => {
     mail.clearOutbox();
+    if (prevOutbound === undefined) delete process.env.OUTBOUND_EMAIL;
+    else process.env.OUTBOUND_EMAIL = prevOutbound;
     if (server) {
       await new Promise((resolve) => server.close(() => resolve()));
       server = null;
     }
   });
 
-  it('invites a user by email, sets password via token, and signs in', async () => {
+  it('invites a user with a shareable link (email deferred until go-live)', async () => {
     const admin = await loginAdmin(port);
     const invited = await request(port, 'POST', '/api/users', {
       body: {
@@ -119,8 +124,9 @@ describe('secure email auth flows', () => {
     assert.equal(invited.status, 201);
     assert.equal(invited.json.user.email, 'newhire@firm.example');
     assert.ok(invited.json.devToken);
-    assert.equal(mail.getOutbox().length, 1);
-    assert.match(mail.getOutbox()[0].text, /\/auth\?token=/);
+    assert.ok(invited.json.devLink);
+    assert.equal(invited.json.delivery.mode, 'deferred');
+    assert.equal(mail.getOutbox().length, 0);
 
     const info = await request(port, 'GET', `/api/auth/token-info?token=${encodeURIComponent(invited.json.devToken)}`);
     assert.equal(info.status, 200);
@@ -147,65 +153,22 @@ describe('secure email auth flows', () => {
     assert.equal(reuse.status, 400);
   });
 
-  it('password reset does not enumerate emails and completes securely', async () => {
-    const missing = await request(port, 'POST', '/api/password-reset/request', {
-      body: { email: 'nobody@firm.example' },
-    });
-    assert.equal(missing.status, 200);
-    assert.match(missing.json.message, /If that email/i);
-    assert.equal(missing.json.devToken, undefined);
-
+  it('defers public password-reset and magic-link email until outbound is enabled', async () => {
     const reset = await request(port, 'POST', '/api/password-reset/request', {
       body: { email: 'avery@firm.example' },
     });
-    assert.equal(reset.status, 200);
-    assert.match(reset.json.message, /If that email/i);
-    assert.ok(reset.json.devToken);
-
-    const done = await request(port, 'POST', '/api/auth/set-password', {
-      body: { token: reset.json.devToken, password: 'reset-password-ok' },
-    });
-    assert.equal(done.status, 200);
-
-    const oldLogin = await request(port, 'POST', '/api/login', {
-      body: { email: 'avery@firm.example', password: 'demo-change-me' },
-    });
-    assert.equal(oldLogin.status, 401);
-
-    const newLogin = await request(port, 'POST', '/api/login', {
-      body: { email: 'avery@firm.example', password: 'reset-password-ok' },
-    });
-    assert.equal(newLogin.status, 200);
-  });
-
-  it('magic login link signs in without revealing missing accounts', async () => {
-    const missing = await request(port, 'POST', '/api/login/magic/request', {
-      body: { email: 'ghost@firm.example' },
-    });
-    assert.equal(missing.status, 200);
-    assert.match(missing.json.message, /If that email/i);
-    assert.equal(missing.json.devToken, undefined);
+    assert.equal(reset.status, 503);
+    assert.match(reset.json.message, /live domain|admin/i);
 
     const magic = await request(port, 'POST', '/api/login/magic/request', {
       body: { email: 'avery@firm.example' },
     });
-    assert.equal(magic.status, 200);
-    assert.ok(magic.json.devToken);
-
-    const confirm = await request(port, 'POST', '/api/login/magic/confirm', {
-      body: { token: magic.json.devToken },
-    });
-    assert.equal(confirm.status, 200);
-    assert.equal(confirm.json.user.email, 'avery@firm.example');
-    assert.ok(confirm.json.token);
-
-    const reuse = await request(port, 'POST', '/api/login/magic/confirm', {
-      body: { token: magic.json.devToken },
-    });
-    assert.equal(reuse.status, 400);
+    assert.equal(magic.status, 503);
+    assert.match(magic.json.message, /password|live domain/i);
+    assert.equal(mail.getOutbox().length, 0);
   });
 
-  it('admin can email a password reset for a timekeeper', async () => {
+  it('admin can create a password reset link without sending email', async () => {
     db.prepare(
       "INSERT INTO users(email,name,role,password_hash) VALUES ('riley@firm.example','Riley','attorney',?)"
     ).run(hashPassword('demo-change-me'));
@@ -221,6 +184,39 @@ describe('secure email auth flows', () => {
     });
     assert.equal(sent.status, 200);
     assert.ok(sent.json.devToken);
-    assert.equal(mail.getOutbox().at(-1).to, 'riley@firm.example');
+    assert.ok(sent.json.devLink);
+    assert.equal(sent.json.delivery.mode, 'deferred');
+    assert.equal(mail.getOutbox().length, 0);
+
+    const done = await request(port, 'POST', '/api/auth/set-password', {
+      body: { token: sent.json.devToken, password: 'reset-password-ok' },
+    });
+    assert.equal(done.status, 200);
+
+    const newLogin = await request(port, 'POST', '/api/login', {
+      body: { email: 'riley@firm.example', password: 'reset-password-ok' },
+    });
+    assert.equal(newLogin.status, 200);
+  });
+
+  it('when OUTBOUND_EMAIL=1, invite still logs when SMTP/Resend is unset', async () => {
+    process.env.OUTBOUND_EMAIL = '1';
+    const admin = await loginAdmin(port);
+    const invited = await request(port, 'POST', '/api/users', {
+      body: {
+        invite: true,
+        email: 'mailed@firm.example',
+        name: 'Mailed Hire',
+        role: 'paralegal',
+      },
+      cookies: admin.cookie,
+      headers: {
+        'X-CSRF-Token': admin.csrf,
+        Authorization: `Bearer ${admin.token}`,
+      },
+    });
+    assert.equal(invited.status, 201);
+    assert.equal(mail.getOutbox().length, 1);
+    assert.match(mail.getOutbox()[0].text, /\/auth\?token=/);
   });
 });
