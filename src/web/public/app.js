@@ -865,7 +865,8 @@
       ['matters', 'Matters', 'M', 'Matters & search'],
       ['time', 'Time Entry', 'T', 'Log & review time'],
       ['billing', 'Billing', 'B', 'Create bills'],
-      ['reports', 'Reports', 'R', 'Matters & lodestar'],
+      ['reports', 'Reports', 'R', 'Lodestar & custom'],
+      ['dashboard', 'Dashboard', 'D', 'Report visuals'],
       ['settings', 'Settings', 'S', 'Firm preferences'],
     ];
     // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
@@ -939,6 +940,7 @@
       else if (state.view === 'time') await renderTime();
       else if (state.view === 'billing') await renderBilling();
       else if (state.view === 'reports') await renderReports();
+      else if (state.view === 'dashboard') await renderDashboard();
       else if (state.view === 'settings') await renderSettings();
       else if (state.view === 'audit') await renderAudit();
       else await renderMatters();
@@ -1428,11 +1430,10 @@
     ];
     const today = new Date().toISOString().slice(0, 10);
     const retain = state.matterTimeRetain || {};
-    const addAnother = !!retain.addAnother;
     const formDate = retain.serviceDate || today;
     const formTimekeeperId = retain.timekeeperId || state.user.id;
-    const formHours = addAnother ? '' : '';
-    const formDescription = addAnother ? '' : '';
+    const formHours = '';
+    const formDescription = '';
     const flash = state.matterTimeFlash || '';
     state.matterTimeFlash = '';
     state.matterTimeRetain = null;
@@ -2137,9 +2138,174 @@
     }
   }
 
+  function chartPalette(i) {
+    const colors = ['#184e4a', '#2f6f6a', '#c45c26', '#8a6d3b', '#3d5a80', '#6b4f4f', '#4a6741', '#5c4d7a'];
+    return colors[i % colors.length];
+  }
+
+  function formatReportValue(metric, value, row) {
+    if (metric === 'hours') return Number(value || 0).toFixed(2);
+    if (metric === 'amount') return money(Math.round((row?.amount_cents != null ? row.amount_cents : value * 100) || 0));
+    return String(Math.round(value || 0));
+  }
+
+  function renderBarChart(rows, { metric, valueLabel }) {
+    const width = 420;
+    const height = 220;
+    const padL = 44;
+    const padR = 12;
+    const padT = 16;
+    const padB = 56;
+    const data = (rows || []).slice(0, 8);
+    if (!data.length) {
+      return '<p class="muted">No data yet for this report.</p>';
+    }
+    const max = Math.max(...data.map((r) => Number(r.value) || 0), 0.0001);
+    const barW = (width - padL - padR) / data.length;
+    const bars = data.map((r, i) => {
+      const h = ((Number(r.value) || 0) / max) * (height - padT - padB);
+      const x = padL + i * barW + barW * 0.15;
+      const y = height - padB - h;
+      const w = barW * 0.7;
+      const label = String(r.label || '').slice(0, 12);
+      return `
+        <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(h, 0).toFixed(1)}"
+          fill="${chartPalette(i)}" rx="3"></rect>
+        <text x="${(x + w / 2).toFixed(1)}" y="${height - 34}" text-anchor="middle" class="chart-axis">${escapeHtml(label)}</text>
+        <text x="${(x + w / 2).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" class="chart-val">${escapeHtml(formatReportValue(metric, r.value, r))}</text>`;
+    }).join('');
+    return `
+      <svg class="report-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(valueLabel || 'Chart')}">
+        <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${height - padB}" class="chart-grid"></line>
+        <line x1="${padL}" y1="${height - padB}" x2="${width - padR}" y2="${height - padB}" class="chart-grid"></line>
+        ${bars}
+      </svg>`;
+  }
+
+  function renderPieChart(rows, { metric, valueLabel }) {
+    const data = (rows || []).filter((r) => Number(r.value) > 0).slice(0, 8);
+    if (!data.length) {
+      return '<p class="muted">No data yet for this report.</p>';
+    }
+    const total = data.reduce((s, r) => s + (Number(r.value) || 0), 0) || 1;
+    const cx = 110;
+    const cy = 110;
+    const radius = 78;
+    let angle = -Math.PI / 2;
+    const slices = data.map((r, i) => {
+      const portion = (Number(r.value) || 0) / total;
+      const sweep = portion * Math.PI * 2;
+      const x1 = cx + radius * Math.cos(angle);
+      const y1 = cy + radius * Math.sin(angle);
+      angle += sweep;
+      const x2 = cx + radius * Math.cos(angle);
+      const y2 = cy + radius * Math.sin(angle);
+      const large = sweep > Math.PI ? 1 : 0;
+      const d = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${large} 1 ${x2} ${y2} Z`;
+      return `<path d="${d}" fill="${chartPalette(i)}"></path>`;
+    }).join('');
+    const legend = data.map((r, i) => `
+      <div class="chart-legend-item">
+        <span class="chart-swatch" style="background:${chartPalette(i)}"></span>
+        <span>${escapeHtml(r.label)}</span>
+        <strong>${escapeHtml(formatReportValue(metric, r.value, r))}</strong>
+      </div>`).join('');
+    return `
+      <div class="pie-wrap">
+        <svg class="report-chart pie" viewBox="0 0 220 220" role="img" aria-label="${escapeHtml(valueLabel || 'Chart')}">
+          ${slices}
+        </svg>
+        <div class="chart-legend">${legend}</div>
+      </div>`;
+  }
+
+  function renderReportResult(payload) {
+    const { report, rows, totals, valueLabel, error } = payload;
+    if (error) return `<div class="error">${escapeHtml(error)}</div>`;
+    const metric = report.metric;
+    let visual = '';
+    if (report.chartType === 'pie') visual = renderPieChart(rows, { metric, valueLabel });
+    else if (report.chartType === 'bar') visual = renderBarChart(rows, { metric, valueLabel });
+    else visual = '';
+    const totalDisplay = metric === 'hours'
+      ? Number(totals.hours || 0).toFixed(2)
+      : metric === 'amount'
+        ? money(totals.amount_cents || 0)
+        : String(totals.count || 0);
+    return `
+      <div class="custom-report-result">
+        ${visual}
+        <div class="table-wrap"><table>
+          <thead><tr><th>${escapeHtml(report.groupByLabel || 'Group')}</th><th>${escapeHtml(valueLabel || 'Value')}</th><th>Count</th></tr></thead>
+          <tbody>
+            ${(rows || []).map((r) => `
+              <tr>
+                <td>${escapeHtml(r.label)}</td>
+                <td>${escapeHtml(formatReportValue(metric, r.value, r))}</td>
+                <td>${r.count}</td>
+              </tr>`).join('') || '<tr><td colspan="3" class="muted">No rows</td></tr>'}
+          </tbody>
+        </table></div>
+        <p><strong>Total ${escapeHtml(valueLabel || '')}</strong> ${escapeHtml(totalDisplay)}</p>
+      </div>`;
+  }
+
+  async function renderDashboard() {
+    const data = await api('/api/dashboard');
+    const widgets = data.widgets || [];
+    main.innerHTML = `
+      <div class="card stack">
+        <h1>Dashboard</h1>
+        <p class="lead">Visuals for custom reports pinned from Reports.</p>
+        <p class="hint">Create a custom report on the Reports page and keep “Show on dashboard” checked.</p>
+      </div>
+      ${widgets.length ? `
+        <div class="dashboard-grid">
+          ${widgets.map((w) => `
+            <div class="card dashboard-widget" data-report-id="${w.report.id}">
+              <div class="dashboard-widget-head">
+                <div>
+                  <h2>${escapeHtml(w.report.name)}</h2>
+                  <p class="muted">${escapeHtml(w.report.groupByLabel || '')}
+                    · ${escapeHtml(w.valueLabel || '')}
+                    · ${escapeHtml(w.report.source === 'time_entry' ? 'Time' : 'Matters')}</p>
+                </div>
+                <button type="button" data-open-report="${w.report.id}">Open</button>
+              </div>
+              ${renderReportResult(w)}
+            </div>`).join('')}
+        </div>` : `
+        <div class="card">
+          <p class="muted">No dashboard reports yet. Go to <button type="button" id="goReportsFromDash" class="linkish">Reports</button> to create one based on a custom field.</p>
+        </div>`}`;
+
+    const go = $('#goReportsFromDash');
+    if (go) {
+      go.onclick = () => {
+        state.view = 'reports';
+        renderShell();
+        renderView();
+      };
+    }
+    main.querySelectorAll('[data-open-report]').forEach((btn) => {
+      btn.onclick = () => {
+        state.view = 'reports';
+        state.focusCustomReportId = Number(btn.dataset.openReport);
+        renderShell();
+        renderView();
+      };
+    });
+  }
+
   async function renderReports() {
-    const matters = await api('/api/matters');
+    const [matters, customReportList, matterFields, timeFields] = await Promise.all([
+      api('/api/matters'),
+      api('/api/custom-reports').catch(() => []),
+      api('/api/custom-fields?appliesTo=matter&type=default').catch(() => []),
+      api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
+    ]);
     state.matters = matters;
+    const canEditReports = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
     const firmReports = [
       ['matters', 'Matters'],
       ['lodestar-summary', 'Lodestar Summary (all matters)'],
@@ -2149,11 +2315,75 @@
       ['lodestar-matter-detail', 'Lodestar Detail', 'Matter-specific entry detail by timekeeper, with subtotals'],
       ['lodestar-matter-summary', 'Lodestar Summary', 'Matter-specific timekeeper rates, hours, and lodestar totals'],
     ];
+    const fieldOptions = (fields) => (fields || []).map((f) =>
+      `<option value="${f.id}">${escapeHtml(f.label)}</option>`
+    ).join('');
     main.innerHTML = `
       <div class="card stack">
         <h1>Reports</h1>
-        <p class="lead">Run Lodestar Detail and Summary for a specific matter, or firm-wide listings.</p>
+        <p class="lead">Run Lodestar reports, or build custom reports from custom fields for the Dashboard.</p>
 
+        <h2>Custom reports</h2>
+        <p class="hint">Group matters or time by a custom field, then pin the result to the Dashboard.</p>
+        ${canEditReports ? `
+        <form id="customReportForm" class="grid two">
+          <label>Report name
+            <input name="name" required placeholder="e.g. Hours by case stage" />
+          </label>
+          <label>Source
+            <select name="source" id="crSource">
+              <option value="time_entry">Time entries</option>
+              <option value="matter">Matters</option>
+            </select>
+          </label>
+          <label>Group by custom field
+            <select name="groupByFieldId" id="crField" required>
+              ${fieldOptions(timeFields) || '<option value="">No time-entry fields yet</option>'}
+            </select>
+          </label>
+          <label>Metric
+            <select name="metric" id="crMetric">
+              <option value="hours">Hours</option>
+              <option value="amount">Amount</option>
+              <option value="count">Count</option>
+            </select>
+          </label>
+          <label>Chart
+            <select name="chartType">
+              <option value="bar">Bar</option>
+              <option value="pie">Pie</option>
+              <option value="table">Table only</option>
+            </select>
+          </label>
+          <label class="check-inline">
+            <input type="checkbox" name="showOnDashboard" checked />
+            Show on dashboard
+          </label>
+          <label class="span-all">Description
+            <input name="description" placeholder="Optional" />
+          </label>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Create report</button>
+          </div>
+        </form>
+        <div id="customReportMsg"></div>` : '<p class="muted">Ask an admin or attorney to create custom reports.</p>'}
+        <div class="stack" id="customReportList">
+          ${(customReportList || []).map((r) => `
+            <div class="report-row" data-custom-report="${r.id}">
+              <div>
+                <strong>${escapeHtml(r.name)}</strong>
+                <div class="muted">${escapeHtml(r.group_by_label)} · ${escapeHtml(r.metric)}
+                  · ${escapeHtml(r.source === 'time_entry' ? 'Time' : 'Matters')}
+                  ${r.show_on_dashboard ? ' · Dashboard' : ''}</div>
+              </div>
+              <button type="button" data-run-custom="${r.id}">View</button>
+              ${canEditReports ? `<button type="button" data-del-custom="${r.id}">Remove</button>` : ''}
+            </div>`).join('') || '<p class="muted">No custom reports yet.</p>'}
+        </div>
+        <div id="customReportOut" hidden></div>
+      </div>
+
+      <div class="card stack">
         <h2>Lodestar by matter</h2>
         <p class="hint">Select a matter, then run Lodestar Detail or Lodestar Summary for that matter only.</p>
         <div class="field">
@@ -2193,6 +2423,89 @@
       <div id="reportOut" class="card" hidden></div>`;
 
     const matterPicker = matters.length ? wireMatterPicker(main, { matters }) : null;
+
+    const crSource = $('#crSource');
+    const crField = $('#crField');
+    const crMetric = $('#crMetric');
+    const syncCustomReportFields = () => {
+      if (!crSource || !crField) return;
+      const source = crSource.value;
+      const fields = source === 'matter' ? matterFields : timeFields;
+      crField.innerHTML = fields.length
+        ? fields.map((f) => `<option value="${f.id}">${escapeHtml(f.label)}</option>`).join('')
+        : '<option value="">No custom fields for this source</option>';
+      if (crMetric) {
+        [...crMetric.options].forEach((opt) => {
+          opt.hidden = source === 'matter' && opt.value !== 'count';
+        });
+        if (source === 'matter') crMetric.value = 'count';
+      }
+    };
+    if (crSource) {
+      crSource.onchange = syncCustomReportFields;
+      syncCustomReportFields();
+    }
+
+    const customForm = $('#customReportForm');
+    if (customForm) {
+      customForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(customForm);
+        try {
+          await api('/api/custom-reports', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: fd.get('name'),
+              description: fd.get('description'),
+              source: fd.get('source'),
+              groupByFieldId: Number(fd.get('groupByFieldId')),
+              metric: fd.get('metric'),
+              chartType: fd.get('chartType'),
+              showOnDashboard: fd.get('showOnDashboard') === 'on',
+            }),
+          });
+          $('#customReportMsg').innerHTML = '<div class="ok-banner">Custom report created.</div>';
+          await renderReports();
+        } catch (e) {
+          $('#customReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    const showCustomRun = async (id) => {
+      try {
+        const payload = await api(`/api/custom-reports/${id}/run`);
+        const out = $('#customReportOut');
+        out.hidden = false;
+        out.innerHTML = `
+          <h2>${escapeHtml(payload.report.name)}</h2>
+          <p class="muted">${escapeHtml(payload.report.description || '')}</p>
+          ${renderReportResult(payload)}`;
+        out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) {
+        $('#customReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
+    };
+
+    main.querySelectorAll('[data-run-custom]').forEach((b) => {
+      b.onclick = () => showCustomRun(Number(b.dataset.runCustom));
+    });
+    main.querySelectorAll('[data-del-custom]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api(`/api/custom-reports/${b.dataset.delCustom}`, { method: 'DELETE' });
+          await renderReports();
+        } catch (e) {
+          $('#customReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
+
+    if (state.focusCustomReportId) {
+      const focusId = state.focusCustomReportId;
+      state.focusCustomReportId = null;
+      showCustomRun(focusId);
+    }
 
     const selectedMatterId = () => {
       const input = main.querySelector('input[name="reportMatterId"]');

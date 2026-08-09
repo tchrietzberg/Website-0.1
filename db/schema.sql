@@ -398,3 +398,21 @@ BEGIN
   UPDATE time_entries SET status = 'invoiced', invoice_id = NEW.invoice_id
   WHERE id = NEW.time_entry_id;
 END;
+
+-- Custom reports grouped by custom fields; shown on Dashboard
+CREATE TABLE IF NOT EXISTS custom_reports (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  source TEXT NOT NULL CHECK (source IN ('time_entry', 'matter')),
+  group_by_field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+  metric TEXT NOT NULL CHECK (metric IN ('count', 'hours', 'amount')),
+  chart_type TEXT NOT NULL DEFAULT 'bar' CHECK (chart_type IN ('bar', 'pie', 'table')),
+  show_on_dashboard INTEGER NOT NULL DEFAULT 1 CHECK (show_on_dashboard IN (0,1)),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_reports_active
+  ON custom_reports(active, show_on_dashboard);

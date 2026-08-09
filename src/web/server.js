@@ -20,6 +20,7 @@ const reports = require('../services/reports');
 const usersSvc = require('../services/users');
 const ratesAdmin = require('../services/ratesAdmin');
 const customFields = require('../services/customFields');
+const customReports = require('../services/customReports');
 const authEmail = require('../services/authEmail');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -595,6 +596,41 @@ function createServer(db = openDb()) {
         const fieldId = Number(pathname.split('/')[3]);
         return json(res, 200, customFields.deactivateCustomField(db, user, fieldId));
       }
+
+      // Custom reports & dashboard
+      if (req.method === 'GET' && pathname === '/api/custom-reports') {
+        return json(res, 200, customReports.listReports(db));
+      }
+      if (req.method === 'POST' && pathname === '/api/custom-reports') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 201, customReports.createReport(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message });
+        }
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/custom-reports\/\d+\/run$/)) {
+        try {
+          const id = Number(pathname.split('/')[3]);
+          return json(res, 200, customReports.runReport(db, id));
+        } catch (e) {
+          return json(res, 404, { error: e.message });
+        }
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-reports\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        try {
+          const id = Number(pathname.split('/')[3]);
+          return json(res, 200, customReports.deactivateReport(db, user, id));
+        } catch (e) {
+          return json(res, 404, { error: e.message });
+        }
+      }
+      if (req.method === 'GET' && pathname === '/api/dashboard') {
+        return json(res, 200, customReports.dashboard(db));
+      }
+
       if (req.method === 'PUT' && pathname.match(/^\/api\/layouts\/\d+\/items$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const layoutId = Number(pathname.split('/')[3]);
