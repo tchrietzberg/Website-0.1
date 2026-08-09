@@ -434,6 +434,17 @@ function createServer(db = openDb()) {
         const clientsSvc = require('../services/clients');
         return json(res, 200, clientsSvc.getContactFieldConfig(db));
       }
+      if (req.method === 'GET' && pathname === '/api/lookup') {
+        try {
+          const globalSearch = require('../services/globalSearch');
+          const q = url.searchParams.get('q') || '';
+          const limitPerType = Number(url.searchParams.get('limit') || 5);
+          return json(res, 200, globalSearch.lookup(db, user, { q, limitPerType }), req);
+        } catch (e) {
+          const status = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, status, { error: e.message, message: e.message }, req);
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/clients') {
         try {
           const permissions = require('../services/permissions');

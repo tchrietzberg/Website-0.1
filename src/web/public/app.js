@@ -177,6 +177,7 @@
       viewAll: false,
       modifyAll: false,
       delete: false,
+      search: false,
       selectTimekeeper: false,
       viewOthers: false,
       modifyOthers: false,
@@ -188,6 +189,7 @@
         viewAll: true,
         modifyAll: true,
         delete: true,
+        search: true,
         selectTimekeeper: true,
         viewOthers: true,
         modifyOthers: true,
@@ -205,6 +207,7 @@
         viewAll: true,
         modifyAll: full,
         delete: full,
+        search: true,
         selectTimekeeper: proxy,
         viewOthers: full,
         modifyOthers: proxy,
@@ -212,10 +215,12 @@
       };
     }
     const obj = entry.objects?.[objectKey] || entry[objectKey] || {};
+    const viewAll = obj.viewAll !== false;
     const base = {
-      viewAll: obj.viewAll !== false,
+      viewAll,
       modifyAll: obj.modifyAll !== false,
       delete: !!obj.delete,
+      search: viewAll && (obj.search != null ? !!obj.search : true),
     };
     if (objectKey !== 'time') return base;
     return {
@@ -237,6 +242,11 @@
 
   function roleCanDelete(objectKey, settings = state.settings) {
     return !!roleObjectPerms(objectKey, settings).delete;
+  }
+
+  function roleCanSearch(objectKey, settings = state.settings) {
+    const p = roleObjectPerms(objectKey, settings);
+    return !!p.viewAll && !!p.search;
   }
 
   function roleCanSelectTimekeeper(settings = state.settings) {
@@ -277,6 +287,7 @@
   const userbar = $('#userbar');
   const sidebar = $('#sidebar');
   const sidebarActions = $('#sidebarActions');
+  const lookupBar = $('#lookupBar');
   const appEl = $('#app');
 
   try { localStorage.removeItem('billing_token'); } catch { /* ignore */ }
@@ -1365,6 +1376,7 @@
           viewAll: true,
           modifyAll: full,
           delete: full,
+          search: true,
           ...(key === 'time' ? {
             selectTimekeeper: full && proxyDefault,
             viewOthers: full,
@@ -1377,10 +1389,12 @@
     }
     for (const key of Object.keys(objects)) {
       const o = objectsSrc[key] || {};
+      const viewAll = o.viewAll !== false;
       objects[key] = {
-        viewAll: o.viewAll !== false,
+        viewAll,
         modifyAll: o.modifyAll !== false,
         delete: !!o.delete,
+        search: viewAll && (o.search != null ? !!o.search : true),
       };
       if (key === 'time') {
         objects[key].selectTimekeeper = o.selectTimekeeper != null
@@ -1446,17 +1460,21 @@
                   <tr>
                     <th>Record</th>
                     <th>View All</th>
+                    <th>Search</th>
                     <th>Modify All</th>
                     <th>Delete</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${objects.map((obj) => {
-                    const p = objs[obj.key] || { viewAll: true, modifyAll: true, delete: true };
+                    const p = objs[obj.key] || {
+                      viewAll: true, search: true, modifyAll: true, delete: true,
+                    };
                     return `
                     <tr>
                       <td><strong>${escapeHtml(obj.label)}</strong></td>
                       <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="viewAll" ${p.viewAll ? 'checked' : ''} ${locked ? 'disabled' : ''} /></label></td>
+                      <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="search" ${p.search ? 'checked' : ''} ${locked || !p.viewAll ? 'disabled' : ''} title="Include in the top lookup bar" /></label></td>
                       <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="modifyAll" ${p.modifyAll ? 'checked' : ''} ${locked ? 'disabled' : ''} /></label></td>
                       <td><label class="check-inline"><input type="checkbox" data-role-perm="${escapeHtml(role.key)}" data-object="${escapeHtml(obj.key)}" data-flag="delete" ${p.delete ? 'checked' : ''} ${locked ? 'disabled' : ''} /></label></td>
                     </tr>`;
@@ -1494,16 +1512,33 @@
           if (!current[roleKey].objects[objectKey]) {
             current[roleKey].objects[objectKey] = objectKey === 'time'
               ? ensureTimeObject(roleKey)
-              : { viewAll: true, modifyAll: true, delete: false };
+              : { viewAll: true, search: true, modifyAll: true, delete: false };
           }
           current[roleKey].objects[objectKey][flag] = !!box.checked;
-          // Modify/Delete imply View All for usable access.
-          if ((flag === 'modifyAll' || flag === 'delete') && box.checked) {
-            current[roleKey].objects[objectKey].viewAll = true;
+          const objPerms = current[roleKey].objects[objectKey];
+          const searchBox = bodyEl.querySelector(
+            `[data-role-perm="${roleKey}"][data-object="${objectKey}"][data-flag="search"]`
+          );
+          // Modify/Delete/Search imply View All for usable access.
+          if ((flag === 'modifyAll' || flag === 'delete' || flag === 'search') && box.checked) {
+            objPerms.viewAll = true;
             const viewBox = bodyEl.querySelector(
               `[data-role-perm="${roleKey}"][data-object="${objectKey}"][data-flag="viewAll"]`
             );
             if (viewBox) viewBox.checked = true;
+          }
+          // Turning off View All also clears Search.
+          if (flag === 'viewAll' && !box.checked) {
+            objPerms.search = false;
+            if (searchBox) {
+              searchBox.checked = false;
+              searchBox.disabled = true;
+            }
+          } else if (flag === 'viewAll' && box.checked) {
+            if (searchBox) searchBox.disabled = !!locked;
+          }
+          if (searchBox && flag !== 'viewAll') {
+            searchBox.disabled = !!locked || !objPerms.viewAll;
           }
           // Timekeeper extras imply related access.
           if (objectKey === 'time' && box.checked) {
@@ -1555,6 +1590,7 @@
             }
             setMsg('<div class="ok-banner">Role permissions saved.</div>');
             render();
+            ensureLookupBar();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
           }
@@ -1982,6 +2018,10 @@
     if (nav) nav.innerHTML = '';
     if (userbar) userbar.textContent = '';
     if (sidebarActions) sidebarActions.innerHTML = '';
+    if (lookupBar) {
+      lookupBar.hidden = true;
+      lookupBar.innerHTML = '';
+    }
     setHelpAgentVisible(false);
   }
 
@@ -2333,6 +2373,7 @@
     // Fast path: permissions unchanged — only flip the active nav highlight.
     if (!opts.force && state._shellSig === sig && nav?.querySelector('[data-view]')) {
       setActiveNav(state.view);
+      ensureLookupBar();
       return;
     }
     state._shellSig = sig;
@@ -2418,6 +2459,7 @@
       renderLogin();
     };
     ensureHelpAgent();
+    ensureLookupBar();
   }
 
   async function renderView() {
@@ -6333,7 +6375,7 @@
       ${isAdmin ? `
       <div class="card stack" id="rolePermissionsCard">
         <h2>Role permissions</h2>
-        <p class="hint">Set View All, Modify All, and Delete for Matters, Contacts, Time entries, and Reports. For time, also set timekeeper access (select timekeeper; view/edit/delete other timekeepers’ entries). Admin always has full access.</p>
+        <p class="hint">Set View All, Search (top lookup bar), Modify All, and Delete for Matters, Contacts, Time entries, and Reports. Uncheck Search to hide that object from global lookup while still allowing View. For time, also set timekeeper access. Admin always has full access.</p>
         <div id="rolePermissionsBody" class="stack"></div>
         <div id="rolePermissionsMsg"></div>
       </div>
@@ -7257,6 +7299,242 @@
         void goHelpTarget(el.getAttribute('data-help-go'));
       };
     });
+  }
+
+  function lookupScopeHint() {
+    const parts = [];
+    if (roleCanSearch('matter')) parts.push('Matters');
+    if (roleCanSearch('contact')) parts.push('Contacts');
+    if (roleCanSearch('time')) parts.push('Time');
+    if (roleCanSearch('report')) parts.push('Reports');
+    if (['admin', 'billing_clerk'].includes(state.user?.role)) parts.push('Invoices');
+    return parts.length ? parts.join(', ') : 'No search scopes enabled for your role';
+  }
+
+  async function goLookupResult(item) {
+    const target = item?.target || {};
+    const view = target.view;
+    if (!view) return;
+    state.showCreateMatter = false;
+    state.showCreateContact = false;
+    if (view === 'matter' && target.matterId) {
+      await openMatter(target.matterId);
+      return;
+    }
+    if (view === 'contact' && target.contactId) {
+      await openContact(target.contactId);
+      return;
+    }
+    if (view === 'time') {
+      state.view = 'time';
+      state.matterId = target.matterId || null;
+      state.focusTimeEntryId = target.timeEntryId || null;
+      renderShell();
+      await renderView();
+      return;
+    }
+    if (view === 'reports') {
+      state.view = 'reports';
+      if (target.reportKind === 'custom' && target.reportId) {
+        state.editingCustomReportId = target.reportId;
+      }
+      if (target.reportKind === 'firm' && target.reportKey) {
+        state.focusFirmReportKey = target.reportKey;
+      }
+      state.matterId = null;
+      state.contactId = null;
+      renderShell();
+      await renderView();
+      return;
+    }
+    if (view === 'billing') {
+      state.view = 'billing';
+      state.focusInvoiceId = target.invoiceId || null;
+      state.matterId = null;
+      state.contactId = null;
+      renderShell();
+      await renderView();
+    }
+  }
+
+  function ensureLookupBar() {
+    if (!lookupBar) return;
+    if (!state.user) {
+      lookupBar.hidden = true;
+      lookupBar.innerHTML = '';
+      return;
+    }
+    lookupBar.hidden = false;
+    const hint = lookupScopeHint();
+    if (!lookupBar.dataset.ready) {
+      lookupBar.innerHTML = `
+        <form class="lookup-form" id="globalLookupForm" autocomplete="off" role="search">
+          <label class="lookup-label" for="globalLookupInput">Lookup</label>
+          <div class="lookup-input-wrap">
+            <svg class="lookup-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+              stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5"/>
+              <path d="M16.2 16.2 20 20"/>
+            </svg>
+            <input id="globalLookupInput" name="q" type="search"
+              placeholder="Search matters, contacts, time, reports…"
+              aria-label="Global lookup" aria-autocomplete="list" aria-controls="globalLookupResults"
+              aria-expanded="false" />
+            <kbd class="lookup-hotkey" title="Keyboard shortcut">⌘K</kbd>
+          </div>
+          <p class="lookup-scopes muted" id="globalLookupScopes">${escapeHtml(hint)}</p>
+          <div class="lookup-results" id="globalLookupResults" hidden role="listbox" aria-label="Lookup results"></div>
+        </form>`;
+      lookupBar.dataset.ready = '1';
+
+      const form = $('#globalLookupForm', lookupBar);
+      const input = $('#globalLookupInput', lookupBar);
+      const resultsEl = $('#globalLookupResults', lookupBar);
+      let timer = null;
+      let activeIndex = -1;
+      let lastResults = [];
+      let reqSeq = 0;
+
+      const closeResults = () => {
+        resultsEl.hidden = true;
+        resultsEl.innerHTML = '';
+        input.setAttribute('aria-expanded', 'false');
+        activeIndex = -1;
+        lastResults = [];
+      };
+
+      const renderResults = (payload) => {
+        lastResults = payload?.results || [];
+        const scopes = payload?.scopes || {};
+        const enabled = Object.entries(scopes)
+          .filter(([, on]) => on)
+          .map(([k]) => ({
+            matter: 'Matters', contact: 'Contacts', time: 'Time',
+            report: 'Reports', invoice: 'Invoices',
+          }[k] || k));
+        const scopesEl = $('#globalLookupScopes', lookupBar);
+        if (scopesEl) {
+          scopesEl.textContent = enabled.length
+            ? `Searching: ${enabled.join(', ')}`
+            : 'No search scopes enabled for your role';
+        }
+        if (!String(input.value || '').trim()) {
+          closeResults();
+          return;
+        }
+        if (!lastResults.length) {
+          resultsEl.hidden = false;
+          input.setAttribute('aria-expanded', 'true');
+          resultsEl.innerHTML = '<div class="lookup-empty muted">No matches</div>';
+          return;
+        }
+        resultsEl.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+        activeIndex = 0;
+        resultsEl.innerHTML = lastResults.map((item, i) => `
+          <button type="button" class="lookup-result ${i === 0 ? 'is-active' : ''}"
+            role="option" data-lookup-idx="${i}" aria-selected="${i === 0 ? 'true' : 'false'}">
+            <span class="lookup-result-type">${escapeHtml(item.typeLabel || item.type)}</span>
+            <span class="lookup-result-main">
+              <strong>${escapeHtml(item.title || '')}</strong>
+              <small class="muted">${escapeHtml(item.subtitle || '')}</small>
+            </span>
+          </button>`).join('');
+        resultsEl.querySelectorAll('[data-lookup-idx]').forEach((btn) => {
+          btn.onmouseenter = () => {
+            activeIndex = Number(btn.dataset.lookupIdx);
+            resultsEl.querySelectorAll('.lookup-result').forEach((el, i) => {
+              el.classList.toggle('is-active', i === activeIndex);
+              el.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false');
+            });
+          };
+          btn.onclick = async () => {
+            const item = lastResults[Number(btn.dataset.lookupIdx)];
+            closeResults();
+            input.blur();
+            if (item) await goLookupResult(item);
+          };
+        });
+      };
+
+      const runLookup = async () => {
+        const q = String(input.value || '').trim();
+        if (!q) {
+          closeResults();
+          const scopesEl = $('#globalLookupScopes', lookupBar);
+          if (scopesEl) scopesEl.textContent = lookupScopeHint();
+          return;
+        }
+        const seq = ++reqSeq;
+        try {
+          const data = await api(`/api/lookup?q=${encodeURIComponent(q)}&limit=5`, { cache: false });
+          if (seq !== reqSeq) return;
+          renderResults(data);
+        } catch (e) {
+          if (seq !== reqSeq) return;
+          resultsEl.hidden = false;
+          input.setAttribute('aria-expanded', 'true');
+          resultsEl.innerHTML = `<div class="lookup-empty error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+
+      const scheduleLookup = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { void runLookup(); }, 180);
+      };
+
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (activeIndex >= 0 && lastResults[activeIndex]) {
+          const item = lastResults[activeIndex];
+          closeResults();
+          await goLookupResult(item);
+          return;
+        }
+        await runLookup();
+      };
+      input.addEventListener('input', scheduleLookup);
+      input.addEventListener('focus', () => {
+        if (String(input.value || '').trim()) void runLookup();
+      });
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') {
+          closeResults();
+          input.blur();
+          return;
+        }
+        if (!lastResults.length) return;
+        if (ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          activeIndex = (activeIndex + 1) % lastResults.length;
+        } else if (ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          activeIndex = (activeIndex - 1 + lastResults.length) % lastResults.length;
+        } else {
+          return;
+        }
+        resultsEl.querySelectorAll('.lookup-result').forEach((el, i) => {
+          el.classList.toggle('is-active', i === activeIndex);
+          el.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false');
+        });
+        resultsEl.querySelector('.lookup-result.is-active')?.scrollIntoView({ block: 'nearest' });
+      });
+      document.addEventListener('click', (ev) => {
+        if (!lookupBar.contains(ev.target)) closeResults();
+      });
+      document.addEventListener('keydown', (ev) => {
+        if (!(ev.metaKey || ev.ctrlKey) || String(ev.key).toLowerCase() !== 'k') return;
+        if (!state.user || lookupBar.hidden) return;
+        ev.preventDefault();
+        input.focus();
+        input.select();
+      });
+    } else {
+      const scopesEl = $('#globalLookupScopes', lookupBar);
+      if (scopesEl && !String($('#globalLookupInput', lookupBar)?.value || '').trim()) {
+        scopesEl.textContent = lookupScopeHint();
+      }
+    }
   }
 
   function setHelpAgentVisible(visible) {

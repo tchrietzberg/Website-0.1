@@ -40,6 +40,8 @@ function defaultObjectPerms(full = true, objectKey = null, roleKey = null) {
     viewAll: full,
     modifyAll: full,
     delete: full,
+    // Global lookup bar: default follows View All (search ⊆ view).
+    search: full,
   };
   if (objectKey === 'time') {
     const proxyRole = roleKey === 'admin' || roleKey === 'billing_clerk';
@@ -80,6 +82,11 @@ function normalizeObjectPerms(input = {}, fallback = defaultObjectPerms(true), o
     modifyAll: normalizeBool(input.modifyAll ?? input.modify_all, fallback.modifyAll),
     delete: normalizeBool(input.delete, fallback.delete),
   };
+  // Search defaults to viewAll when omitted (backward compatible).
+  const searchFallback = fallback.search != null ? fallback.search : out.viewAll;
+  out.search = normalizeBool(input.search, searchFallback);
+  // Search requires View All.
+  if (!out.viewAll) out.search = false;
   if (objectKey === 'time') {
     out.selectTimekeeper = normalizeBool(
       input.selectTimekeeper ?? input.select_timekeeper,
@@ -239,6 +246,12 @@ function canDelete(db, role, objectKey) {
   return !!getRoleObjectAccess(db, role, objectKey).delete;
 }
 
+/** Global lookup: requires View All and the Search flag. */
+function canSearch(db, role, objectKey) {
+  const access = getRoleObjectAccess(db, role, objectKey);
+  return !!access.viewAll && !!access.search;
+}
+
 function canSelectTimekeeper(db, role) {
   return !!getRoleObjectAccess(db, role, 'time').selectTimekeeper;
 }
@@ -287,6 +300,13 @@ function assertCanDeleteRecords(db, actor, objectKey) {
   const label = OBJECT_LABELS[objectKey] || objectKey;
   if (!canDelete(db, actor?.role, objectKey)) {
     throw forbidden(`You do not have permission to delete ${label.toLowerCase()}`);
+  }
+}
+
+function assertCanSearchRecords(db, actor, objectKey) {
+  const label = OBJECT_LABELS[objectKey] || objectKey;
+  if (!canSearch(db, actor?.role, objectKey)) {
+    throw forbidden(`${label} are not searchable for your role`);
   }
 }
 
@@ -543,6 +563,7 @@ module.exports = {
   canViewAll,
   canModifyAll,
   canDelete,
+  canSearch,
   canSelectTimekeeper,
   canViewOthersTime,
   canModifyOthersTime,
@@ -551,6 +572,7 @@ module.exports = {
   assertCanViewRecords,
   assertCanModifyRecords,
   assertCanDeleteRecords,
+  assertCanSearchRecords,
   assertCanWriteRecords,
   getRecordPageLayout,
   setRecordPageLayout,
