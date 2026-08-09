@@ -321,9 +321,8 @@
     await render();
   }
 
-  function matterSearchText(m, { hideNumber = false } = {}) {
+  function matterSearchText(m) {
     return [
-      hideNumber ? null : m.number,
       m.name,
       m.client_name,
       m.status,
@@ -338,20 +337,16 @@
     name = 'matterId',
     selectedId = null,
     matters = [],
-    hideNumber = false,
   } = {}) {
     const selected = matters.find((m) => Number(m.id) === Number(selectedId)) || null;
-    const placeholder = hideNumber
-      ? 'Search matters by name or client…'
-      : 'Search matters by number, name, or client…';
+    const placeholder = 'Search matters by name or client…';
     return `
-      <div class="matter-picker" data-matter-picker data-hide-number="${hideNumber ? '1' : '0'}">
+      <div class="matter-picker" data-matter-picker>
         <input type="hidden" name="${name}" value="${selected ? selected.id : ''}" data-matter-id />
         <button type="button" class="matter-picker-trigger" data-matter-trigger
           aria-haspopup="listbox" aria-expanded="false">
           <span class="matter-picker-value" data-matter-label>
             ${selected ? `
-              ${hideNumber ? '' : `<strong>${escapeHtml(selected.number)}</strong>`}
               <span>${escapeHtml(selected.name)}</span>
               ${selected.client_name ? `<small>${escapeHtml(selected.client_name)}</small>` : ''}
             ` : `
@@ -386,14 +381,11 @@
     });
   }
 
-  function wireMatterPicker(scopeEl, { matters = [], hideNumber = false } = {}) {
+  function wireMatterPicker(scopeEl, { matters = [] } = {}) {
     const picker = scopeEl.querySelector('[data-matter-picker]');
     if (!picker) return null;
     ensureMatterPickerDocClose();
-    const hideNum = hideNumber || picker.dataset.hideNumber === '1';
-    const placeholder = hideNum
-      ? 'Search matters by name or client…'
-      : 'Search matters by number, name, or client…';
+    const placeholder = 'Search matters by name or client…';
     const trigger = picker.querySelector('[data-matter-trigger]');
     const panel = picker.querySelector('[data-matter-panel]');
     const search = picker.querySelector('[data-matter-search]');
@@ -410,7 +402,6 @@
         label.innerHTML = `<span class="matter-picker-placeholder">${placeholder}</span>`;
       } else {
         label.innerHTML = `
-          ${hideNum ? '' : `<strong>${escapeHtml(m.number)}</strong>`}
           <span>${escapeHtml(m.name)}</span>
           ${m.client_name ? `<small>${escapeHtml(m.client_name)}</small>` : ''}`;
       }
@@ -438,13 +429,12 @@
       const needle = String(q || '').trim().toLowerCase();
       filtered = !needle
         ? matters.slice(0, 80)
-        : matters.filter((m) => matterSearchText(m, { hideNumber: hideNum }).includes(needle)).slice(0, 80);
+        : matters.filter((m) => matterSearchText(m).includes(needle)).slice(0, 80);
       activeIndex = filtered.length ? 0 : -1;
       empty.hidden = filtered.length > 0;
       list.innerHTML = filtered.map((m, i) => `
         <li role="option" class="matter-picker-option ${i === activeIndex ? 'is-active' : ''}"
           data-id="${m.id}" aria-selected="${i === activeIndex ? 'true' : 'false'}">
-          ${hideNum ? '' : `<strong>${escapeHtml(m.number)}</strong>`}
           <span>${escapeHtml(m.name)}</span>
           <small>${escapeHtml(m.client_name || '—')}${m.status ? ` · ${escapeHtml(m.status)}` : ''}</small>
         </li>`).join('');
@@ -1035,17 +1025,16 @@
           ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : `
           <div class="table-wrap"><table>
             <thead>
-              <tr><th>Number</th><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
+              <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
             </thead>
             <tbody>
               ${hits.map((m) => `
                 <tr class="click-row" data-matter="${m.id}">
-                  <td><strong>${m.number}</strong></td>
-                  <td>${m.name}</td>
-                  <td>${m.client_name}</td>
-                  <td><span class="pill" data-status="${m.status}">${m.status}</span></td>
-                  <td>${m.attorney_name || '—'}</td>
-                </tr>`).join('') || '<tr><td colspan="5" class="muted">No indexed matters match</td></tr>'}
+                  <td><strong>${escapeHtml(m.name)}</strong></td>
+                  <td>${escapeHtml(m.client_name || '—')}</td>
+                  <td><span class="pill" data-status="${escapeHtml(m.status)}">${escapeHtml(m.status)}</span></td>
+                  <td>${escapeHtml(m.attorney_name || '—')}</td>
+                </tr>`).join('') || '<tr><td colspan="4" class="muted">No indexed matters match</td></tr>'}
             </tbody>
           </table></div>`}
         </div>
@@ -1095,10 +1084,10 @@
             method: 'POST',
             body: JSON.stringify({ name: fd.get('name') }),
           });
-          $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${page.matter.number}.</div>`;
+          $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${escapeHtml(page.matter.name)}.</div>`;
           await refreshRefs();
           state.showCreateMatter = false;
-          state.matterSearch = { q: page.matter.number };
+          state.matterSearch = { q: page.matter.name };
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
@@ -1702,7 +1691,6 @@
               name: 'matterId',
               selectedId: preferredMatterId,
               matters,
-              hideNumber: true,
             })}
             <span class="hint">Type to filter by matter name or client.</span>
           </div>
@@ -1760,7 +1748,7 @@
         </table></div>
       </div>`;
 
-    const matterPicker = wireMatterPicker($('#timeForm'), { matters, hideNumber: true });
+    const matterPicker = wireMatterPicker($('#timeForm'), { matters });
     $('#timeForm').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
@@ -1872,7 +1860,6 @@
               matters: matters.filter((m) => readyIds.has(Number(m.id))).concat(
                 matters.filter((m) => !readyIds.has(Number(m.id)))
               ),
-              hideNumber: true,
             })}
             <span class="hint">${(ready || []).length
               ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with approved time ready for pre-bill.`
@@ -1918,7 +1905,7 @@
       <div id="invoiceDetail"></div>`;
 
     if (canBill) {
-      const billMatterPicker = wireMatterPicker($('#prebillForm'), { matters, hideNumber: true });
+      const billMatterPicker = wireMatterPicker($('#prebillForm'), { matters });
       $('#prebillForm').onsubmit = async (ev) => {
         ev.preventDefault();
         const matterId = Number(new FormData(ev.target).get('matterId'));
@@ -2082,7 +2069,6 @@
             name: 'reportMatterId',
             selectedId: matters[0]?.id || null,
             matters,
-            hideNumber: true,
           })}
         </div>
         <div id="matterReportMsg"></div>
@@ -2112,7 +2098,7 @@
       </div>
       <div id="reportOut" class="card" hidden></div>`;
 
-    const matterPicker = wireMatterPicker(main, { matters, hideNumber: true });
+    const matterPicker = wireMatterPicker(main, { matters });
 
     const selectedMatterId = () => {
       const input = main.querySelector('input[name="reportMatterId"]');

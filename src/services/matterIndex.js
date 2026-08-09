@@ -46,7 +46,6 @@ function indexMatter(db, matterId) {
     'SELECT folder_name, folder_url FROM matter_onedrive WHERE matter_id = ?'
   ).get(matterId);
   const body = [
-    row.number,
     row.name,
     row.client_name,
     row.court,
