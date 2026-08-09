@@ -55,14 +55,54 @@ function invalidateUnused(db, userId, purpose) {
   `).run(Date.now(), userId, purpose);
 }
 
+function looksLikeLocalOrEphemeralHost(origin) {
+  try {
+    const u = new URL(origin);
+    const host = u.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return true;
+    // Ephemeral Cursor VM hostnames often break when opened from email clients.
+    if (host.endsWith('.cursorvm.com') || host.includes('-pod-')) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Prefer stable public URL for links that leave the browser (email). */
 function appBaseUrl(req) {
-  const env = String(process.env.PUBLIC_ORIGIN || '').trim().replace(/\/$/, '');
+  const env = String(process.env.PUBLIC_ORIGIN || process.env.APP_BASE_URL || '')
+    .trim()
+    .replace(/\/$/, '');
   if (env) return env;
+
+  // Browser Origin on API calls is the URL the admin is actually using.
+  const hdrOrigin = String(req?.headers?.origin || '').trim().replace(/\/$/, '');
+  if (hdrOrigin && /^https?:\/\//i.test(hdrOrigin) && !looksLikeLocalOrEphemeralHost(hdrOrigin)) {
+    return hdrOrigin;
+  }
+
+  const appOrigin = String(req?.headers?.['x-app-origin'] || '').trim().replace(/\/$/, '');
+  if (appOrigin && /^https?:\/\//i.test(appOrigin) && !looksLikeLocalOrEphemeralHost(appOrigin)) {
+    return appOrigin;
+  }
+
+  const referer = req?.headers?.referer || req?.headers?.referrer;
+  if (referer) {
+    try {
+      const refOrigin = new URL(referer).origin;
+      if (!looksLikeLocalOrEphemeralHost(refOrigin)) return refOrigin;
+    } catch { /* ignore */ }
+  }
+
+  if (hdrOrigin && /^https?:\/\//i.test(hdrOrigin)) return hdrOrigin;
+  if (appOrigin && /^https?:\/\//i.test(appOrigin)) return appOrigin;
+
   return publicOrigin(req).replace(/\/$/, '');
 }
 
 function authLink(req, rawToken) {
-  return `${appBaseUrl(req)}/?auth_token=${encodeURIComponent(rawToken)}`;
+  // /auth is a dedicated landing that then opens the set-password / sign-in UI.
+  return `${appBaseUrl(req)}/auth?token=${encodeURIComponent(rawToken)}`;
 }
 
 function createAuthToken(db, {

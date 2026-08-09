@@ -314,6 +314,11 @@ function assertCsrf(req, session) {
 }
 
 function securityHeaders(req, { isHtml = false } = {}) {
+  // Keep production strict. Non-prod allows unsafe-eval so hosted previews/devtools
+  // that inject tooling do not break auth landing pages with CSP eval errors.
+  const scriptSrc = IS_PROD
+    ? "script-src 'self'"
+    : "script-src 'self' 'unsafe-eval'";
   const headers = {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -326,7 +331,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
       "base-uri 'self'",
       "form-action 'self'",
       "frame-ancestors 'none'",
-      "script-src 'self'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       'font-src https://fonts.gstatic.com',
       "img-src 'self' data:",

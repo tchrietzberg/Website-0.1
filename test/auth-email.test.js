@@ -115,7 +115,7 @@ describe('secure email auth flows', () => {
     assert.equal(invited.json.user.email, 'newhire@firm.example');
     assert.ok(invited.json.devToken);
     assert.equal(mail.getOutbox().length, 1);
-    assert.match(mail.getOutbox()[0].text, /auth_token=/);
+    assert.match(mail.getOutbox()[0].text, /\/auth\?token=/);
 
     const info = await request(port, 'GET', `/api/auth/token-info?token=${encodeURIComponent(invited.json.devToken)}`);
     assert.equal(info.status, 200);

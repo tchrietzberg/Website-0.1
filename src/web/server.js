@@ -155,6 +155,17 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+        // SPA routes used by email links (invite / reset / magic login)
+        if (pathname === '/auth' || pathname === '/auth/') {
+          const index = path.join(PUBLIC, 'index.html');
+          const body = fs.readFileSync(index);
+          res.writeHead(200, withSecHeaders(req, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+          }));
+          res.end(body);
+          return;
+        }
         if (serveStatic(req, res) !== false) return;
         return text(res, 404, 'not found', 'text/plain; charset=utf-8', req);
       }

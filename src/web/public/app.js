@@ -60,7 +60,13 @@
 
   async function api(path, opts = {}) {
     const method = String(opts.method || 'GET').toUpperCase();
-    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+    const headers = {
+      'Content-Type': 'application/json',
+      // Helps the server build email links with the URL the user is actually on
+      // (avoids ephemeral pod hostnames that break when opened from email).
+      'X-App-Origin': window.location.origin,
+      ...(opts.headers || {}),
+    };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
     if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !isPublicAuthPath(path)) {
       headers['X-CSRF-Token'] = state.csrf;
@@ -462,10 +468,22 @@
 
   function clearAuthTokenFromUrl() {
     const params = new URLSearchParams(window.location.search);
-    if (!params.has('auth_token')) return;
+    if (!params.has('auth_token') && !params.has('token')) return;
     params.delete('auth_token');
+    params.delete('token');
     const q = params.toString();
-    window.history.replaceState({}, '', `${window.location.pathname}${q ? `?${q}` : ''}${window.location.hash || ''}`);
+    const path = window.location.pathname === '/auth' ? '/' : window.location.pathname;
+    window.history.replaceState({}, '', `${path}${q ? `?${q}` : ''}${window.location.hash || ''}`);
+  }
+
+  function readAuthTokenFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('auth_token') || params.get('token') || '';
+  }
+
+  function localAuthLink(rawToken) {
+    if (!rawToken) return '';
+    return `${window.location.origin}/auth?token=${encodeURIComponent(rawToken)}`;
   }
 
   async function finishAuthSession(data) {
@@ -481,7 +499,7 @@
 
   async function boot() {
     const params = new URLSearchParams(window.location.search);
-    const authToken = params.get('auth_token');
+    const authToken = readAuthTokenFromUrl();
     if (authToken) {
       return renderAuthToken(authToken);
     }
@@ -2254,10 +2272,10 @@
           await renderSettings();
           const msg = $('#tkMsg');
           if (msg) {
-            const link = invited.devLink
-              || (invited.devToken ? `${window.location.origin}/?auth_token=${encodeURIComponent(invited.devToken)}` : '');
+            // Always prefer the current browser origin — email/server links may use a dead pod host.
+            const link = localAuthLink(invited.devToken) || invited.devLink || '';
             msg.innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
-              link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a></div>` : ''
+              link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
             }</div>`;
           }
         } catch (e) {
@@ -2278,10 +2296,9 @@
           const mode = delivered
             ? 'Password reset email sent.'
             : (result.warning || 'Reset link created, but email was not delivered. Configure Email in Settings.');
-          const link = result.devLink
-            || (result.devToken ? `${window.location.origin}/?auth_token=${encodeURIComponent(result.devToken)}` : '');
+          const link = localAuthLink(result.devToken) || result.devLink || '';
           $('#rateMsg').innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
-            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a></div>` : ''
+            link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
           }</div>`;
         } catch (e) {
           btn.disabled = false;
