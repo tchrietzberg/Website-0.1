@@ -22,6 +22,7 @@ function migrate(db) {
   migrateAuthColumns(db);
   migrateCustomFieldAppliesTo(db);
   migrateClientContacts(db);
+  migrateContactRecordTypes(db);
   migrateCustomReports(db);
   migrateCustomReportChartTypes(db);
   const customFields = require('./services/customFields');
@@ -184,7 +185,8 @@ function migrateClientContacts(db) {
         created_by INTEGER REFERENCES users(id),
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         CHECK (
-          (applies_to IN ('time_entry','client') AND matter_id IS NULL AND record_type_key IS NULL)
+          (applies_to = 'time_entry' AND matter_id IS NULL AND record_type_key IS NULL)
+          OR (applies_to = 'client' AND matter_id IS NULL)
           OR (applies_to = 'matter' AND (
             (matter_id IS NOT NULL AND record_type_key IS NULL)
             OR (matter_id IS NULL)
@@ -194,6 +196,83 @@ function migrateClientContacts(db) {
       INSERT INTO custom_fields_mig
         SELECT id, api_name, label, field_type, options_json, applies_to, record_type_key,
                matter_id, required, 0, active, created_by, created_at
+        FROM custom_fields;
+      DROP TABLE custom_fields;
+      ALTER TABLE custom_fields_mig RENAME TO custom_fields;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
+        ON custom_fields(
+          api_name,
+          IFNULL(applies_to, 'matter'),
+          IFNULL(record_type_key, ''),
+          IFNULL(matter_id, 0)
+        );
+    `);
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+
+/**
+ * Contact record types: record_types.applies_to, clients.record_type,
+ * and custom_fields CHECK allowing type-scoped client fields.
+ */
+function migrateContactRecordTypes(db) {
+  const rt = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='record_types'"
+  ).get();
+  if (rt) {
+    const rtCols = new Set(tableColumns(db, 'record_types'));
+    if (!rtCols.has('applies_to')) {
+      db.exec(`ALTER TABLE record_types ADD COLUMN applies_to TEXT NOT NULL DEFAULT 'matter'`);
+    }
+  }
+
+  const clients = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='clients'"
+  ).get();
+  if (clients) {
+    const cols = new Set(tableColumns(db, 'clients'));
+    if (!cols.has('record_type')) {
+      db.exec(`ALTER TABLE clients ADD COLUMN record_type TEXT NOT NULL DEFAULT 'person'`);
+    }
+  }
+
+  const cfSql = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='custom_fields'"
+  ).get()?.sql || '';
+  // Old CHECK forced client fields to have record_type_key IS NULL.
+  if (
+    cfSql.includes("applies_to IN ('time_entry','client') AND matter_id IS NULL AND record_type_key IS NULL")
+  ) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    db.exec(`
+      CREATE TABLE custom_fields_mig (
+        id INTEGER PRIMARY KEY,
+        api_name TEXT NOT NULL,
+        label TEXT NOT NULL,
+        field_type TEXT NOT NULL
+          CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
+        options_json TEXT,
+        applies_to TEXT NOT NULL DEFAULT 'matter'
+          CHECK (applies_to IN ('matter','time_entry','client')),
+        record_type_key TEXT REFERENCES record_types(key),
+        matter_id INTEGER REFERENCES matters(id),
+        required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
+        is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        CHECK (
+          (applies_to = 'time_entry' AND matter_id IS NULL AND record_type_key IS NULL)
+          OR (applies_to = 'client' AND matter_id IS NULL)
+          OR (applies_to = 'matter' AND (
+            (matter_id IS NOT NULL AND record_type_key IS NULL)
+            OR (matter_id IS NULL)
+          ))
+        )
+      );
+      INSERT INTO custom_fields_mig
+        SELECT id, api_name, label, field_type, options_json, applies_to, record_type_key,
+               matter_id, required, is_default, active, created_by, created_at
         FROM custom_fields;
       DROP TABLE custom_fields;
       ALTER TABLE custom_fields_mig RENAME TO custom_fields;

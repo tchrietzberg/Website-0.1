@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS clients (
   phone TEXT,
   company TEXT,
   notes TEXT,
+  record_type TEXT NOT NULL DEFAULT 'person',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -78,15 +79,17 @@ CREATE TABLE IF NOT EXISTS matter_field_history (
   changed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
--- Record types drive type-based layouts/fields (keys align with matters.matter_type)
+-- Record types drive type-based layouts/fields (matter + contact)
 CREATE TABLE IF NOT EXISTS record_types (
   key TEXT PRIMARY KEY,
   label TEXT NOT NULL,
+  applies_to TEXT NOT NULL DEFAULT 'matter'
+    CHECK (applies_to IN ('matter','client')),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
--- Custom fields: matter (type/record), time-entry (firm-wide), or client/contact (firm-wide)
+-- Custom fields: matter (type/record), time-entry (firm-wide), or client/contact (type or firm-wide)
 CREATE TABLE IF NOT EXISTS custom_fields (
   id INTEGER PRIMARY KEY,
   api_name TEXT NOT NULL,
@@ -104,7 +107,8 @@ CREATE TABLE IF NOT EXISTS custom_fields (
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (
-    (applies_to IN ('time_entry','client') AND matter_id IS NULL AND record_type_key IS NULL)
+    (applies_to = 'time_entry' AND matter_id IS NULL AND record_type_key IS NULL)
+    OR (applies_to = 'client' AND matter_id IS NULL)
     OR (applies_to = 'matter' AND (
       (matter_id IS NOT NULL AND record_type_key IS NULL)
       OR (matter_id IS NULL)

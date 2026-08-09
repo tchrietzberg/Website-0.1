@@ -73,14 +73,14 @@ function listClients(db, { q = '' } = {}) {
   const query = String(q || '').trim();
   if (!query) {
     return db.prepare(`
-      SELECT id, name, email, phone, company, notes, created_at, updated_at
+      SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
       FROM clients
       ORDER BY name COLLATE NOCASE, id
     `).all();
   }
   const like = `%${query.replace(/%/g, '')}%`;
   return db.prepare(`
-    SELECT id, name, email, phone, company, notes, created_at, updated_at
+    SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
     FROM clients
     WHERE name LIKE ? COLLATE NOCASE
        OR IFNULL(email,'') LIKE ? COLLATE NOCASE
@@ -92,7 +92,7 @@ function listClients(db, { q = '' } = {}) {
 
 function getClientRow(db, id) {
   return db.prepare(`
-    SELECT id, name, email, phone, company, notes, created_at, updated_at
+    SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
     FROM clients WHERE id = ?
   `).get(id);
 }
@@ -116,7 +116,12 @@ function getClient(db, id, actor = null) {
     }));
     fieldConfig.enabledKeys = visibleStd.map((f) => f.key);
   }
-  const fieldDefs = customFields.listClientFieldDefs(db)
+  const recordTypeKey = customFields.normalizeRecordTypeKey(
+    db,
+    client.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
+    { appliesTo: 'client' }
+  );
+  const fieldDefs = customFields.listClientFieldDefs(db, { recordTypeKey })
     .filter((f) => !role || permissions.isFieldVisibleForProfile(db, 'contact', role, `cf:${f.fieldId}`))
     .map((f) => {
       const stored = db.prepare(`
@@ -129,8 +134,13 @@ function getClient(db, id, actor = null) {
   const customValues = Object.fromEntries(
     fieldDefs.filter((f) => f.value != null).map((f) => [f.fieldId, f.value])
   );
+  const recordTypes = customFields.listRecordTypes(db, { appliesTo: 'client' });
+  const recordTypeLabel = (recordTypes.find((t) => t.key === recordTypeKey) || {}).label
+    || recordTypeKey;
   return {
-    client,
+    client: { ...client, record_type: recordTypeKey },
+    recordTypeKey,
+    recordTypeLabel,
     fields: fieldDefs,
     customValues,
     fieldConfig,
@@ -151,16 +161,22 @@ function createClient(db, actor, input = {}) {
   const customValues = input.customValues && typeof input.customValues === 'object'
     ? input.customValues
     : {};
+  const recordTypeKey = customFields.normalizeRecordTypeKey(
+    db,
+    input.recordTypeKey || input.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
+    { appliesTo: 'client' }
+  );
 
   customFields.assertRequiredCustomValues(db, {
     appliesTo: 'client',
+    recordTypeKey,
     values: customValues,
   });
 
   const info = db.prepare(`
-    INSERT INTO clients(name, email, phone, company, notes)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(name, email, phone, company, notes);
+    INSERT INTO clients(name, email, phone, company, notes, record_type)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(name, email, phone, company, notes, recordTypeKey);
   const id = Number(info.lastInsertRowid);
 
   if (Object.keys(customValues).length) {
@@ -172,7 +188,7 @@ function createClient(db, actor, input = {}) {
     action: 'client.create',
     entityType: 'client',
     entityId: id,
-    detail: { name },
+    detail: { name, recordTypeKey },
   });
   return getClient(db, id, actor);
 }
@@ -182,6 +198,10 @@ function updateClient(db, actor, id, patch = {}) {
   const current = getClientRow(db, id);
   if (!current) throw new Error('contact not found');
   permissions.assertCanWriteContactFields(db, actor, patch);
+
+  // Record type is chosen at create and stays fixed afterward.
+  if (patch.recordTypeKey != null) delete patch.recordTypeKey;
+  if (patch.record_type != null) delete patch.record_type;
 
   const map = {
     name: 'name',
@@ -212,6 +232,7 @@ function updateClient(db, actor, id, patch = {}) {
     const merged = { ...existing, ...patch.customValues };
     customFields.assertRequiredCustomValues(db, {
       appliesTo: 'client',
+      recordTypeKey: current.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
       values: merged,
     });
     customFields.setClientCustomValues(db, actor, id, patch.customValues);

@@ -16,6 +16,7 @@
     createMatterDraftName: '',
     createMatterRecordTypeKey: 'billable',
     settingsMatterRecordTypeKey: 'billable',
+    settingsContactRecordTypeKey: 'person',
     focusTimeEntry: false,
     timeFlash: null,
     matterTimeFlash: null,
@@ -24,6 +25,8 @@
     showPostCreateFields: false,
     matterFieldPanelFlash: null,
     createMatterFieldMsg: null,
+    createContactFieldMsg: null,
+    createContactRecordTypeKey: 'person',
     timeEntryRetain: null,
     matterTimeRetain: null,
     focusCustomReportId: null,
@@ -612,13 +615,16 @@
     onRecordTypeChange = null,
   } = {}) {
     if (!bodyEl) return;
-    let key = recordTypeKey || 'billable';
-    const firmWide = appliesTo === 'time_entry' || appliesTo === 'client';
+    const entityAppliesTo = appliesTo === 'client' ? 'client' : 'matter';
+    let key = recordTypeKey
+      || (entityAppliesTo === 'client' ? 'person' : 'billable');
+    const firmWide = appliesTo === 'time_entry';
     const scopeLabel = appliesTo === 'client'
       ? 'contact'
       : appliesTo === 'time_entry'
         ? 'time entry'
         : 'matter';
+    const entityNoun = appliesTo === 'client' ? 'contact' : 'matter';
     let editingId = null;
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
@@ -812,7 +818,9 @@
         return;
       }
 
-      const types = await api('/api/record-types').catch(() => recordTypes || []);
+      const types = await api(
+        `/api/record-types?appliesTo=${encodeURIComponent(entityAppliesTo)}`
+      ).catch(() => recordTypes || []);
       if (!types.some((t) => t.key === key) && types[0]) key = types[0].key;
       const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
       const editing = editingId
@@ -821,6 +829,7 @@
         : null;
       const typeLabel = typeLayout.label || key;
       const availableStd = typeLayout.availableStandardFields || [];
+      const typeExample = entityAppliesTo === 'client' ? 'Vendor' : 'Contested';
       const typePicker = `
         <div class="row-actions" style="flex-wrap:wrap;align-items:flex-end;gap:.75rem">
           <label class="matter-type-picker">Record page
@@ -834,11 +843,15 @@
           ${isAdminUser() ? `
             <button type="button" id="showAddRecordType">Add record page</button>` : ''}
         </div>
-        <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every matter of this type. For a field on one matter only, open that matter and use Manage fields.</p>
+        <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every ${escapeHtml(entityNoun)} of this type.${
+          entityAppliesTo === 'matter'
+            ? ' For a field on one matter only, open that matter and use Manage fields.'
+            : ''
+        }</p>
         <form id="addRecordTypeForm" class="stack" hidden>
           <div class="grid two">
             <label>Label *
-              <input name="label" required placeholder="e.g. Contested" />
+              <input name="label" required placeholder="e.g. ${escapeHtml(typeExample)}" />
             </label>
             <label>Key
               <input name="key" placeholder="auto from label" />
@@ -873,14 +886,14 @@
             showCancel: true,
             defaultLabel: 'Record type default field',
             requiredLabel: 'Record type required field',
-            formHint: `This field belongs to the <strong>${escapeHtml(typeLabel)}</strong> record type and shows on all matters of that type.`,
+            formHint: `This field belongs to the <strong>${escapeHtml(typeLabel)}</strong> record type and shows on all ${escapeHtml(entityNoun)}s of that type.`,
           })}`
           : customFieldFormHtml({
             formId: 'typeFieldForm',
             submitLabel: 'Add to this record type',
             defaultLabel: 'Record type default field',
             requiredLabel: 'Record type required field',
-            formHint: `New fields are added to the <strong>${escapeHtml(typeLabel)}</strong> record type layout for every matter of this type. Check <strong>Record type default field</strong> to mark it as a default on this record type.`,
+            formHint: `New fields are added to the <strong>${escapeHtml(typeLabel)}</strong> record type layout for every ${escapeHtml(entityNoun)} of this type. Check <strong>Record type default field</strong> to mark it as a default on this record type.`,
           })}`;
 
       const typeSelect = bodyEl.querySelector('#settingsMatterTypeSelect');
@@ -919,7 +932,7 @@
           try {
             const created = await api('/api/record-types', {
               method: 'POST',
-              body: JSON.stringify(payload),
+              body: JSON.stringify({ ...payload, appliesTo: entityAppliesTo }),
             });
             key = created.key;
             editingId = null;
@@ -1023,7 +1036,7 @@
         typeFieldForm.onsubmit = async (ev) => {
           ev.preventDefault();
           await submitFieldForm(typeFieldForm, {
-            createBody: { recordTypeKey: key, appliesTo: 'matter' },
+            createBody: { recordTypeKey: key, appliesTo: entityAppliesTo },
           });
         };
       }
@@ -2499,12 +2512,12 @@
     const canEdit = canCreateMatter(state.user) && roleCanModify('contact');
     const showCreate = canEdit && state.showCreateContact;
     const q = state.contactSearch.q || '';
-    const [contacts, createFields, fieldConfig] = await Promise.all([
+    const [contacts, fieldConfig, recordTypes] = await Promise.all([
       api(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`),
-      showCreate
-        ? api('/api/custom-fields?appliesTo=client').catch(() => [])
-        : Promise.resolve([]),
       api('/api/clients/field-config').catch(() => ({ enabledStandard: [], enabledKeys: [] })),
+      showCreate
+        ? api('/api/record-types?appliesTo=client').catch(() => [])
+        : Promise.resolve([]),
     ]);
     state.clients = contacts || state.clients || [];
     const enabledStd = fieldConfig.enabledStandard || [];
@@ -2512,6 +2525,20 @@
     const searchBits = ['name', ...enabledStd.map((f) => f.label.toLowerCase())];
     const listFlash = state.contactListFlash;
     state.contactListFlash = null;
+    const createFieldMsg = state.createContactFieldMsg;
+    state.createContactFieldMsg = null;
+    let createRecordTypeKey = state.createContactRecordTypeKey || 'person';
+    if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
+      createRecordTypeKey = recordTypes[0].key;
+      state.createContactRecordTypeKey = createRecordTypeKey;
+    }
+    const createTypeLabel = ((recordTypes || []).find((t) => t.key === createRecordTypeKey) || {}).label
+      || createRecordTypeKey;
+    const createFields = showCreate
+      ? await api(
+        `/api/custom-fields?appliesTo=client&type=${encodeURIComponent(createRecordTypeKey)}`
+      ).catch(() => [])
+      : [];
     const createFieldDefs = (createFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -2523,6 +2550,7 @@
       width: f.field_type === 'textarea' ? 'full' : 'half',
       value: null,
     }));
+    const createCustomRows = (createFields || []).filter((f) => f.id != null);
 
     main.innerHTML = `
       <div class="card stack page-card">
@@ -2539,6 +2567,16 @@
             <div class="grid two">
               <label>Name *
                 ${contactStandardInputHtml({ key: 'name', type: 'text', required: true }, { canEdit: true })}
+              </label>
+              <label>Record type
+                <select name="recordTypeKey" id="createContactTypeSelect" required>
+                  ${(recordTypes || []).map((t) => `
+                    <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
+                      ${escapeHtml(t.label || t.key)}
+                    </option>`).join('') || `
+                    <option value="person" selected>Person</option>
+                    <option value="company">Company</option>`}
+                </select>
               </label>
               ${enabledStd.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}">
@@ -2557,6 +2595,28 @@
             </div>
           </form>
           <div id="newContactMsg"></div>
+        </div>
+
+        <div id="createContactFieldsPanel" class="card stack page-section create-matter-fields-panel">
+          <h2>Add record type fields</h2>
+          <p class="hint">Fields added here go on the <strong>${escapeHtml(createTypeLabel)}</strong> record type — every contact of that type gets them.</p>
+          <div class="field-mgmt-list">
+            ${createCustomRows.map((f) => `
+              <div class="field-mgmt-row">
+                <div>
+                  <strong>${escapeHtml(f.label)}</strong>
+                  <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))} · record type${f.required ? ' · required' : ''}</span>
+                </div>
+              </div>`).join('') || `<p class="muted">No custom fields for ${escapeHtml(createTypeLabel)} yet</p>`}
+          </div>
+          ${customFieldFormHtml({
+            formId: 'createContactFieldForm',
+            submitLabel: 'Add to this record type',
+            defaultLabel: 'Record type default field',
+            requiredLabel: 'Record type required field',
+            formHint: `Adds the field to the <strong>${escapeHtml(createTypeLabel)}</strong> record type layout.`,
+          })}
+          <div id="createContactFieldMsg">${createFieldMsg ? successNoticeHtml(createFieldMsg) : ''}</div>
         </div>` : ''}
 
         <div class="page-section">
@@ -2575,6 +2635,7 @@
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Type</th>
                 ${listCols.map((f) => `<th>${escapeHtml(f.label)}</th>`).join('')}
               </tr>
             </thead>
@@ -2582,8 +2643,9 @@
               ${(contacts || []).map((c) => `
                 <tr class="click-row" data-contact="${c.id}">
                   <td><strong>${escapeHtml(c.name)}</strong></td>
+                  <td>${escapeHtml(c.record_type || 'person')}</td>
                   ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
-                </tr>`).join('') || `<tr><td colspan="${1 + listCols.length}" class="muted">No contacts yet</td></tr>`}
+                </tr>`).join('') || `<tr><td colspan="${2 + listCols.length}" class="muted">No contacts yet</td></tr>`}
             </tbody>
           </table></div>
         </div>
@@ -2595,8 +2657,52 @@
     if (cancelCreate) {
       cancelCreate.onclick = async () => {
         state.showCreateContact = false;
+        state.createContactRecordTypeKey = 'person';
+        state.createContactFieldMsg = null;
         await renderContacts();
       };
+    }
+    if (showCreate) {
+      const typeSelect = $('#createContactTypeSelect');
+      if (typeSelect) {
+        typeSelect.onchange = async () => {
+          state.createContactRecordTypeKey = typeSelect.value || 'person';
+          await renderContacts();
+        };
+      }
+      const createFieldForm = $('#createContactFieldForm');
+      wireDropdownOptionsToggle(createFieldForm);
+      if (createFieldForm) {
+        createFieldForm.onsubmit = async (ev) => {
+          ev.preventDefault();
+          const typeKey = state.createContactRecordTypeKey || 'person';
+          const fd = new FormData(createFieldForm);
+          const { fieldType, options, body } = customFieldPayload(fd);
+          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+            $('#createContactFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
+            return;
+          }
+          try {
+            await api('/api/custom-fields', {
+              method: 'POST',
+              body: JSON.stringify({
+                ...body,
+                recordTypeKey: typeKey,
+                appliesTo: 'client',
+              }),
+            });
+            state.createContactFieldMsg = {
+              title: 'Record type field added',
+              detail: `${body.label || 'Field'} added to the ${createTypeLabel} record type.`,
+            };
+            await renderContacts();
+            const panel = $('#createContactFieldsPanel');
+            if (panel?.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          } catch (e) {
+            $('#createContactFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          }
+        };
+      }
     }
     $('#contactSearch').onsubmit = async (ev) => {
       ev.preventDefault();
@@ -2638,7 +2744,10 @@
             customValues[f.fieldId] = '0';
           }
         });
-        const payload = { name, customValues };
+        const recordTypeKey = String(
+          fd.get('recordTypeKey') || state.createContactRecordTypeKey || 'person'
+        ).trim();
+        const payload = { name, recordTypeKey, customValues };
         for (const field of enabledStd) {
           payload[field.key] = fd.get(field.key);
         }
@@ -2648,6 +2757,8 @@
             body: JSON.stringify(payload),
           });
           state.showCreateContact = false;
+          state.createContactRecordTypeKey = 'person';
+          state.createContactFieldMsg = null;
           state.contactCreateFlash = {
             title: 'Contact created',
             detail: page.client.name,
@@ -2689,6 +2800,7 @@
             : ''}
         </div>
         <h1>${escapeHtml(c.name || 'Contact')}</h1>
+        <p class="muted">Record type: ${escapeHtml(page.recordTypeLabel || c.record_type || 'Person')}</p>
         ${createFlash ? successNoticeHtml(createFlash) : ''}
       </div>
 
@@ -5541,8 +5653,8 @@
         <div id="typeFieldMsg"></div>
       </div>
       <div class="card stack" id="contactFieldsCard">
-        <h2>Contact fields</h2>
-        <p class="hint">Name is always shown. Add custom contact fields and check <strong>Default field</strong> to show them on contacts.</p>
+        <h2>Contact record pages</h2>
+        <p class="hint">Each contact record type (Person, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Person.</p>
         <div id="contactFieldsBody" class="stack"></div>
         <div id="contactFieldMsg"></div>
       </div>
@@ -5857,10 +5969,16 @@
           state.settingsMatterRecordTypeKey = key;
         },
       });
+      const contactRecordTypes = await api('/api/record-types?appliesTo=client').catch(() => []);
       await bindDefaultFieldsEditor({
         bodyEl: $('#contactFieldsBody'),
         msgEl: $('#contactFieldMsg'),
+        recordTypeKey: state.settingsContactRecordTypeKey || 'person',
         appliesTo: 'client',
+        recordTypes: contactRecordTypes,
+        onRecordTypeChange: (key) => {
+          state.settingsContactRecordTypeKey = key;
+        },
       });
       await bindDefaultFieldsEditor({
         bodyEl: $('#timeFieldsBody'),
@@ -6279,13 +6397,13 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact'],
-      answer: 'Use Quick action Create Contact, or Contacts → Create contact (also available on a contact’s page). Add name (required) and any contact custom fields from Settings → Contact fields. Confirm to create, then edit the contact record anytime.',
+      answer: 'Use Quick action Create Contact, or Contacts → Create contact. Choose a record type (Person, Company, or ones from Settings → Contact record pages), fill name and type-specific custom fields, then confirm. Add more fields for a type from Create Contact or Settings.',
     },
     {
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter fields can be record-type (shared by every matter of that type) or matter-based (one matter only). Settings → Matter record pages and Create Matter → Add record type fields add record-type fields. On a matter, Manage fields lets you choose “This matter only” or “All [type] matters”. Use Record type default field / required field for type-wide defaults.',
+      answer: 'Matter and contact fields can be record-type (shared by every record of that type). Settings → Matter record pages / Contact record pages and Create Matter/Contact → Add record type fields add type fields. On a matter, Manage fields can also add a field for one matter only.',
     },
     {
       id: 'reports',

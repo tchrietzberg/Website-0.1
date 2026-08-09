@@ -6,8 +6,15 @@ const RECORD_TYPES = [
   { key: 'billable', label: 'Billable' },
   { key: 'non_billable', label: 'Non-Billable' },
 ];
+/** Seeded default contact record types. */
+const CONTACT_RECORD_TYPES = [
+  { key: 'person', label: 'Person' },
+  { key: 'company', label: 'Company' },
+];
 const DEFAULT_RECORD_TYPE_KEY = 'billable';
 const DEFAULT_RECORD_TYPE_LABEL = 'Billable';
+const DEFAULT_CONTACT_RECORD_TYPE_KEY = 'person';
+const DEFAULT_CONTACT_RECORD_TYPE_LABEL = 'Person';
 const KNOWN_RECORD_TYPE_KEYS = RECORD_TYPES.map((t) => t.key);
 /** Old keys remapped onto Billable; firm-added types are preserved. */
 const LEGACY_RECORD_TYPE_KEYS = ['default', 'litigation', 'sw_admin', 'other'];
@@ -25,8 +32,15 @@ const STANDARD_FIELDS = [
   { key: 'std:opened_on', label: 'Opened on', type: 'date', width: 'half' },
 ];
 
+/** Contact type layout built-ins (name only). */
+const CONTACT_LAYOUT_FIELDS = [
+  { key: 'std:name', label: 'Name', type: 'text', width: 'half' },
+];
+
 /** Shown on every new matter / type layout. */
 const CORE_LAYOUT_KEYS = ['std:number', 'std:name'];
+/** Shown on every contact record type layout. */
+const CONTACT_CORE_LAYOUT_KEYS = ['std:name'];
 
 /** Record type is chosen at create; not offered as an addable layout field. */
 const HIDDEN_STANDARD_KEYS = ['std:matter_type'];
@@ -36,7 +50,22 @@ const OPTIONAL_STANDARD_KEYS = STANDARD_FIELDS
   .map((f) => f.key)
   .filter((key) => !CORE_LAYOUT_KEYS.includes(key) && !HIDDEN_STANDARD_KEYS.includes(key));
 
-function fieldLabelForKey(db, fieldKey) {
+function recordTypeAppliesTo(db, recordTypeKey) {
+  if (!recordTypeKey) return 'matter';
+  const row = db.prepare(
+    'SELECT applies_to FROM record_types WHERE key = ?'
+  ).get(recordTypeKey);
+  return row?.applies_to === 'client' ? 'client' : 'matter';
+}
+
+function coreLayoutKeysFor(appliesTo) {
+  return appliesTo === 'client' ? CONTACT_CORE_LAYOUT_KEYS : CORE_LAYOUT_KEYS;
+}
+
+function fieldLabelForKey(db, fieldKey, appliesTo = 'matter') {
+  if (fieldKey === 'std:name' && appliesTo === 'client') return 'Name';
+  const contactStd = CONTACT_LAYOUT_FIELDS.find((f) => f.key === fieldKey);
+  if (appliesTo === 'client' && contactStd) return contactStd.label;
   const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
   if (std) return std.label;
   if (String(fieldKey).startsWith('cf:')) {
@@ -48,6 +77,9 @@ function fieldLabelForKey(db, fieldKey) {
 }
 
 function describeLayoutFields(db, layoutId) {
+  const layout = db.prepare('SELECT * FROM page_layouts WHERE id = ?').get(layoutId);
+  const appliesTo = recordTypeAppliesTo(db, layout?.record_type_key);
+  const coreKeys = coreLayoutKeysFor(appliesTo);
   return layoutItems(db, layoutId).map((item) => {
     const isCustom = String(item.field_key).startsWith('cf:');
     let required = false;
@@ -67,10 +99,10 @@ function describeLayoutFields(db, layoutId) {
     }
     return {
       fieldKey: item.field_key,
-      label: fieldLabelForKey(db, item.field_key),
+      label: fieldLabelForKey(db, item.field_key, appliesTo),
       width: item.width,
       section: item.section,
-      removable: !CORE_LAYOUT_KEYS.includes(item.field_key),
+      removable: !coreKeys.includes(item.field_key),
       kind: isCustom ? 'custom' : 'standard',
       required,
       isDefault,
@@ -103,8 +135,13 @@ function assertRequiredCustomValues(db, {
 } = {}) {
   const target = normalizeAppliesTo(appliesTo);
   let fields;
-  if (target === 'time_entry' || target === 'client') {
+  if (target === 'time_entry') {
     fields = listCustomFields(db, { appliesTo: target });
+  } else if (target === 'client') {
+    fields = listCustomFields(db, {
+      appliesTo: 'client',
+      recordTypeKey: recordTypeKey || DEFAULT_CONTACT_RECORD_TYPE_KEY,
+    });
   } else {
     fields = listCustomFields(db, {
       recordTypeKey: recordTypeKey || DEFAULT_RECORD_TYPE_KEY,
@@ -125,11 +162,15 @@ function assertRequiredCustomValues(db, {
   }
 }
 
-function upsertRecordTypeRow(db, key, label) {
+function upsertRecordTypeRow(db, key, label, appliesTo = 'matter') {
+  const entity = normalizeAppliesTo(appliesTo) === 'client' ? 'client' : 'matter';
   db.prepare(`
-    INSERT INTO record_types(key, label, active) VALUES (?, ?, 1)
-    ON CONFLICT(key) DO UPDATE SET label = excluded.label, active = 1
-  `).run(key, label);
+    INSERT INTO record_types(key, label, applies_to, active) VALUES (?, ?, ?, 1)
+    ON CONFLICT(key) DO UPDATE SET
+      label = excluded.label,
+      active = 1,
+      applies_to = COALESCE(record_types.applies_to, excluded.applies_to)
+  `).run(key, label, entity);
 }
 
 function createTypeLayoutRow(db, recordTypeKey) {
@@ -138,6 +179,8 @@ function createTypeLayoutRow(db, recordTypeKey) {
   ).get(recordTypeKey);
   if (layout) return layout;
 
+  const appliesTo = recordTypeAppliesTo(db, recordTypeKey);
+  const coreKeys = coreLayoutKeysFor(appliesTo);
   const info = db.prepare(`
     INSERT INTO page_layouts(record_type_key, matter_id, name) VALUES (?, NULL, 'Default')
   `).run(recordTypeKey);
@@ -146,8 +189,10 @@ function createTypeLayoutRow(db, recordTypeKey) {
     INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
     VALUES (?, ?, 'details', ?, ?)
   `);
-  CORE_LAYOUT_KEYS.forEach((key, i) => {
-    const std = STANDARD_FIELDS.find((f) => f.key === key);
+  coreKeys.forEach((key, i) => {
+    const std = appliesTo === 'client'
+      ? CONTACT_LAYOUT_FIELDS.find((f) => f.key === key)
+      : STANDARD_FIELDS.find((f) => f.key === key);
     insert.run(layoutId, key, i, std?.width || 'half');
   });
   return db.prepare('SELECT * FROM page_layouts WHERE id = ?').get(layoutId);
@@ -192,7 +237,10 @@ function remapRecordTypeKey(db, fromKey, toKey) {
 
 function ensureRecordTypes(db) {
   for (const t of RECORD_TYPES) {
-    upsertRecordTypeRow(db, t.key, t.label);
+    upsertRecordTypeRow(db, t.key, t.label, 'matter');
+  }
+  for (const t of CONTACT_RECORD_TYPES) {
+    upsertRecordTypeRow(db, t.key, t.label, 'client');
   }
 
   // Remap only known legacy keys onto Billable; keep firm-added types.
@@ -205,13 +253,26 @@ function ensureRecordTypes(db) {
   // Orphaned matter/field keys with no matching type → Billable
   db.prepare(`
     UPDATE matters SET matter_type = ?
-    WHERE matter_type NOT IN (SELECT key FROM record_types)
+    WHERE matter_type NOT IN (SELECT key FROM record_types WHERE IFNULL(applies_to, 'matter') = 'matter')
   `).run(DEFAULT_RECORD_TYPE_KEY);
   db.prepare(`
     UPDATE custom_fields SET record_type_key = ?
     WHERE record_type_key IS NOT NULL
-      AND record_type_key NOT IN (SELECT key FROM record_types)
+      AND IFNULL(applies_to, 'matter') = 'matter'
+      AND record_type_key NOT IN (SELECT key FROM record_types WHERE IFNULL(applies_to, 'matter') = 'matter')
   `).run(DEFAULT_RECORD_TYPE_KEY);
+
+  const clientCols = db.prepare("PRAGMA table_info(clients)").all().map((c) => c.name);
+  if (clientCols.includes('record_type')) {
+    db.prepare(`
+      UPDATE clients SET record_type = ?
+      WHERE record_type IS NULL
+         OR record_type = ''
+         OR record_type NOT IN (
+           SELECT key FROM record_types WHERE IFNULL(applies_to, 'matter') = 'client'
+         )
+    `).run(DEFAULT_CONTACT_RECORD_TYPE_KEY);
+  }
 
   const types = db.prepare('SELECT key FROM record_types WHERE active = 1').all();
   for (const t of types) {
@@ -221,67 +282,86 @@ function ensureRecordTypes(db) {
 
 function createRecordType(db, actor, input = {}) {
   ensureRecordTypes(db);
+  const appliesTo = normalizeAppliesTo(input.appliesTo || input.applies_to || 'matter');
+  if (appliesTo === 'time_entry') throw new Error('record types are for matters or contacts');
   const label = String(input.label || '').trim();
   if (!label) throw new Error('label required');
   let key = String(input.key || slugify(label)).trim().toLowerCase();
   if (!/^[a-z][a-z0-9_]*$/.test(key)) {
     throw new Error('key must be snake_case starting with a letter');
   }
-  if (LEGACY_RECORD_TYPE_KEYS.includes(key)) {
+  if (appliesTo === 'matter' && LEGACY_RECORD_TYPE_KEYS.includes(key)) {
     throw new Error('reserved record type key');
   }
   const existing = db.prepare('SELECT key FROM record_types WHERE key = ?').get(key);
   if (existing) throw new Error('record type already exists');
 
-  upsertRecordTypeRow(db, key, label);
+  upsertRecordTypeRow(db, key, label, appliesTo);
   createTypeLayoutRow(db, key);
   audit(db, {
     actorId: actor?.id || null,
     action: 'record_type.create',
     entityType: 'record_type',
     entityId: null,
-    detail: { key, label },
+    detail: { key, label, appliesTo },
   });
   return db.prepare('SELECT * FROM record_types WHERE key = ?').get(key);
 }
 
-function normalizeRecordTypeKey(db, key, { required = false } = {}) {
+function normalizeRecordTypeKey(db, key, { required = false, appliesTo = 'matter' } = {}) {
   ensureRecordTypes(db);
+  const entity = normalizeAppliesTo(appliesTo) === 'client' ? 'client' : 'matter';
+  const defaultKey = entity === 'client'
+    ? DEFAULT_CONTACT_RECORD_TYPE_KEY
+    : DEFAULT_RECORD_TYPE_KEY;
   let raw = key == null || key === '' ? null : String(key).trim();
   if (!raw) {
     if (required) throw new Error('record type required');
-    return DEFAULT_RECORD_TYPE_KEY;
+    return defaultKey;
   }
-  // Legacy alias from the single-type era
-  if (raw === 'default') raw = DEFAULT_RECORD_TYPE_KEY;
-  const row = db.prepare(
-    'SELECT key FROM record_types WHERE key = ? AND active = 1'
-  ).get(raw);
+  // Legacy alias from the single-type era (matters only)
+  if (entity === 'matter' && raw === 'default') raw = DEFAULT_RECORD_TYPE_KEY;
+  const row = db.prepare(`
+    SELECT key FROM record_types
+    WHERE key = ? AND active = 1 AND IFNULL(applies_to, 'matter') = ?
+  `).get(raw, entity);
   if (!row) throw new Error('unknown record type');
   return row.key;
 }
 
 function ensureTypeLayout(db, recordTypeKey) {
-  const key = normalizeRecordTypeKey(db, recordTypeKey);
+  const appliesTo = recordTypeAppliesTo(db, recordTypeKey);
+  const key = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo });
   return createTypeLayoutRow(db, key);
 }
 
 function getTypeLayout(db, recordTypeKey) {
-  const key = normalizeRecordTypeKey(db, recordTypeKey);
+  ensureRecordTypes(db);
+  const type = db.prepare(
+    'SELECT * FROM record_types WHERE key = ? AND active = 1'
+  ).get(recordTypeKey);
+  if (!type) throw new Error('unknown record type');
+  const appliesTo = type.applies_to === 'client' ? 'client' : 'matter';
+  const key = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo });
   const layout = ensureTypeLayout(db, key);
   const fields = describeLayoutFields(db, layout.id);
   const present = new Set(fields.map((f) => f.fieldKey));
-  const availableStandardFields = STANDARD_FIELDS
-    .filter((f) => OPTIONAL_STANDARD_KEYS.includes(f.key) && !present.has(f.key))
-    .map((f) => ({ ...f, kind: 'standard' }));
-  const type = db.prepare('SELECT * FROM record_types WHERE key = ?').get(key);
+  const availableStandardFields = appliesTo === 'client'
+    ? []
+    : STANDARD_FIELDS
+      .filter((f) => OPTIONAL_STANDARD_KEYS.includes(f.key) && !present.has(f.key))
+      .map((f) => ({ ...f, kind: 'standard' }));
   return {
     recordTypeKey: key,
     label: type?.label || key,
+    appliesTo,
     layout: { id: layout.id, name: layout.name, source: 'record_type' },
     fields,
     availableStandardFields,
-    customFields: listCustomFields(db, { recordTypeKey: key }),
+    customFields: listCustomFields(db, {
+      recordTypeKey: key,
+      appliesTo,
+    }),
   };
 }
 
@@ -301,7 +381,9 @@ function addFieldToLayout(db, layoutId, fieldKey, width = 'half') {
 }
 
 function addStandardFieldToType(db, actor, recordTypeKey, fieldKey) {
-  const key = normalizeRecordTypeKey(db, recordTypeKey);
+  const appliesTo = recordTypeAppliesTo(db, recordTypeKey);
+  if (appliesTo === 'client') throw new Error('field cannot be added');
+  const key = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo });
   if (!OPTIONAL_STANDARD_KEYS.includes(fieldKey)) throw new Error('field cannot be added');
   const std = STANDARD_FIELDS.find((f) => f.key === fieldKey);
   if (!std) throw new Error('unknown field');
@@ -318,8 +400,10 @@ function addStandardFieldToType(db, actor, recordTypeKey, fieldKey) {
 }
 
 function removeFieldFromType(db, actor, recordTypeKey, fieldKey) {
-  const key = normalizeRecordTypeKey(db, recordTypeKey);
-  if (CORE_LAYOUT_KEYS.includes(fieldKey)) throw new Error('core fields cannot be removed');
+  const appliesTo = recordTypeAppliesTo(db, recordTypeKey);
+  const key = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo });
+  const coreKeys = coreLayoutKeysFor(appliesTo);
+  if (coreKeys.includes(fieldKey)) throw new Error('core fields cannot be removed');
   const layout = ensureTypeLayout(db, key);
   db.prepare(
     'DELETE FROM page_layout_items WHERE layout_id = ? AND field_key = ?'
@@ -343,17 +427,20 @@ function removeFieldFromType(db, actor, recordTypeKey, fieldKey) {
   return getTypeLayout(db, key);
 }
 
-function listRecordTypes(db) {
+function listRecordTypes(db, { appliesTo = 'matter' } = {}) {
   ensureRecordTypes(db);
+  const entity = normalizeAppliesTo(appliesTo) === 'client' ? 'client' : 'matter';
   return db.prepare(`
     SELECT * FROM record_types
-    WHERE active = 1
+    WHERE active = 1 AND IFNULL(applies_to, 'matter') = ?
     ORDER BY CASE key
       WHEN 'billable' THEN 0
       WHEN 'non_billable' THEN 1
+      WHEN 'person' THEN 0
+      WHEN 'company' THEN 1
       ELSE 2
     END, label
-  `).all();
+  `).all(entity);
 }
 
 function slugify(label) {
@@ -404,24 +491,32 @@ function createCustomField(db, actor, input) {
   }
 
   let appliesTo = normalizeAppliesTo(input.appliesTo || input.applies_to || 'matter');
-  let recordTypeKey = input.recordTypeKey || null;
+  let recordTypeKey = input.recordTypeKey || input.record_type_key || null;
   let matterId = input.matterId != null ? Number(input.matterId) : null;
 
-  if (appliesTo === 'time_entry' || appliesTo === 'client') {
-    // Firm-wide time-entry / contact fields — not tied to a matter layout.
+  if (appliesTo === 'time_entry') {
+    // Firm-wide time-entry fields — not tied to a record type layout.
     recordTypeKey = null;
     matterId = null;
+  } else if (appliesTo === 'client') {
+    matterId = null;
+    if (recordTypeKey) {
+      recordTypeKey = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo: 'client' });
+    } else {
+      // Firm-wide contact field when type omitted (legacy / shared across types).
+      recordTypeKey = null;
+    }
   } else if (matterId) {
     const m = db.prepare('SELECT id FROM matters WHERE id = ?').get(matterId);
     if (!m) throw new Error('matter not found');
     recordTypeKey = null; // record-based
     appliesTo = 'matter';
   } else if (recordTypeKey) {
-    recordTypeKey = normalizeRecordTypeKey(db, recordTypeKey);
+    recordTypeKey = normalizeRecordTypeKey(db, recordTypeKey, { appliesTo: 'matter' });
     appliesTo = 'matter';
   } else {
     // Default (Billable) type field when scope omitted
-    recordTypeKey = normalizeRecordTypeKey(db, DEFAULT_RECORD_TYPE_KEY);
+    recordTypeKey = normalizeRecordTypeKey(db, DEFAULT_RECORD_TYPE_KEY, { appliesTo: 'matter' });
     appliesTo = 'matter';
   }
 
@@ -468,25 +563,27 @@ function createCustomField(db, actor, input) {
   );
   const id = Number(info.lastInsertRowid);
 
-  // Auto-add matter fields to the relevant layout(s)
-  if (appliesTo === 'matter') {
+  // Auto-add type-scoped fields to the relevant layout(s)
+  if ((appliesTo === 'matter' || appliesTo === 'client') && recordTypeKey) {
     const width = fieldType === 'textarea' ? 'full' : 'half';
     const fieldKey = `cf:${id}`;
-    if (matterId) {
+    if (appliesTo === 'matter' && matterId) {
       // Matter-only custom fields appear via buildMatterDisplayItems; no layout fork required.
-    } else if (recordTypeKey) {
+    } else {
       const layout = ensureTypeLayout(db, recordTypeKey);
       addFieldToLayout(db, layout.id, fieldKey, width);
-      // Also attach to existing matter-specific layouts so the field appears on open matters.
-      const matterLayouts = db.prepare(`
-        SELECT pl.id
-        FROM page_layouts pl
-        JOIN matters m ON m.id = pl.matter_id
-        WHERE pl.matter_id IS NOT NULL
-          AND m.matter_type = ?
-      `).all(recordTypeKey);
-      for (const ml of matterLayouts) {
-        addFieldToLayout(db, ml.id, fieldKey, width);
+      if (appliesTo === 'matter') {
+        // Also attach to existing matter-specific layouts so the field appears on open matters.
+        const matterLayouts = db.prepare(`
+          SELECT pl.id
+          FROM page_layouts pl
+          JOIN matters m ON m.id = pl.matter_id
+          WHERE pl.matter_id IS NOT NULL
+            AND m.matter_type = ?
+        `).all(recordTypeKey);
+        for (const ml of matterLayouts) {
+          addFieldToLayout(db, ml.id, fieldKey, width);
+        }
       }
     }
   }
@@ -537,13 +634,27 @@ function listCustomFields(db, {
   appliesTo = 'matter',
 } = {}) {
   const target = normalizeAppliesTo(appliesTo);
-  if (target === 'time_entry' || target === 'client') {
+  if (target === 'time_entry') {
     return db.prepare(`
       SELECT * FROM custom_fields
       WHERE active = 1
         AND IFNULL(applies_to, 'matter') = ?
       ORDER BY label, id
     `).all(target).map((f) => getCustomField(db, f.id));
+  }
+  if (target === 'client') {
+    // Firm-wide (null type) ∪ selected contact record type.
+    return db.prepare(`
+      SELECT * FROM custom_fields
+      WHERE active = 1
+        AND IFNULL(applies_to, 'matter') = 'client'
+        AND matter_id IS NULL
+        AND (
+          record_type_key IS NULL
+          OR (? IS NOT NULL AND record_type_key = ?)
+        )
+      ORDER BY label, id
+    `).all(recordTypeKey, recordTypeKey).map((f) => getCustomField(db, f.id));
   }
   return db.prepare(`
     SELECT * FROM custom_fields
@@ -562,7 +673,7 @@ function deactivateCustomField(db, actor, fieldId) {
   const field = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(fieldId);
   if (!field) throw new Error('field not found');
   db.prepare('UPDATE custom_fields SET active = 0 WHERE id = ?').run(fieldId);
-  if ((field.applies_to || 'matter') === 'matter') {
+  if ((field.applies_to || 'matter') === 'matter' || field.applies_to === 'client') {
     // Drop from layouts when this definition is retired
     db.prepare(`
       DELETE FROM page_layout_items WHERE field_key = ?
@@ -673,15 +784,19 @@ function listTimeEntryFieldDefs(db) {
   }));
 }
 
-function listClientFieldDefs(db) {
-  return listCustomFields(db, { appliesTo: 'client' }).map((f) => ({
+function listClientFieldDefs(db, { recordTypeKey = null } = {}) {
+  return listCustomFields(db, {
+    appliesTo: 'client',
+    recordTypeKey: recordTypeKey || null,
+  }).map((f) => ({
     key: `cf:${f.id}`,
     label: f.label,
     type: f.field_type,
     options: f.options,
     required: !!f.required,
     isDefault: !!f.isDefault,
-    scope: 'client',
+    scope: f.record_type_key ? 'record_type' : 'client',
+    recordTypeKey: f.record_type_key || null,
     fieldId: f.id,
     kind: 'custom',
     width: f.field_type === 'textarea' ? 'full' : 'half',
@@ -690,8 +805,9 @@ function listClientFieldDefs(db) {
 }
 
 function setClientCustomValues(db, actor, clientId, customValues) {
-  const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(clientId);
+  const client = db.prepare('SELECT id, record_type FROM clients WHERE id = ?').get(clientId);
   if (!client) throw new Error('contact not found');
+  const clientType = client.record_type || DEFAULT_CONTACT_RECORD_TYPE_KEY;
   const upsert = db.prepare(`
     INSERT INTO client_custom_field_values(client_id, field_id, value_text, updated_by, updated_at)
     VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -707,6 +823,8 @@ function setClientCustomValues(db, actor, clientId, customValues) {
       WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'client'
     `).get(id);
     if (!field) continue;
+    const ok = !field.record_type_key || field.record_type_key === clientType;
+    if (!ok) continue;
     const text = value == null ? null : String(value);
     upsert.run(clientId, id, text, actor?.id || null);
   }
@@ -1068,12 +1186,17 @@ function saveLayoutItems(db, actor, layoutId, items) {
 
 module.exports = {
   RECORD_TYPES,
+  CONTACT_RECORD_TYPES,
   KNOWN_RECORD_TYPE_KEYS,
   LEGACY_RECORD_TYPE_KEYS,
   DEFAULT_RECORD_TYPE_KEY,
   DEFAULT_RECORD_TYPE_LABEL,
+  DEFAULT_CONTACT_RECORD_TYPE_KEY,
+  DEFAULT_CONTACT_RECORD_TYPE_LABEL,
   STANDARD_FIELDS,
+  CONTACT_LAYOUT_FIELDS,
   CORE_LAYOUT_KEYS,
+  CONTACT_CORE_LAYOUT_KEYS,
   OPTIONAL_STANDARD_KEYS,
   ensureRecordTypes,
   createRecordType,

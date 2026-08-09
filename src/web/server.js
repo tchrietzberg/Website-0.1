@@ -489,7 +489,8 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'GET' && pathname === '/api/record-types') {
-        return json(res, 200, customFields.listRecordTypes(db));
+        const appliesTo = url.searchParams.get('appliesTo') || 'matter';
+        return json(res, 200, customFields.listRecordTypes(db, { appliesTo }));
       }
       if (req.method === 'POST' && pathname === '/api/record-types') {
         if (!requireRoles(user, res, ['admin'])) return;
