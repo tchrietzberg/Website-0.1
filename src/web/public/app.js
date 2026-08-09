@@ -3420,7 +3420,7 @@
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
             ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type. Matching names cannot be created twice.</p>' : ''}
-            <div class="grid two create-matter-custom">
+            <div class="create-matter-meta">
               <label class="create-matter-client-field">Client
                 ${renderClientTypeahead({
                   name: 'clientId',
@@ -3429,7 +3429,7 @@
                   allowAddNew: roleCanModify('contact'),
                 })}
               </label>
-              <label>Record type
+              <label class="create-matter-type-field">Record type
                 <select name="recordTypeKey" id="createMatterTypeSelect" required>
                   ${(recordTypes || []).map((t) => `
                     <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
@@ -3439,6 +3439,8 @@
                     <option value="non_billable">Non-Billable</option>`}
                 </select>
               </label>
+            </div>
+            <div class="grid two create-matter-custom">
               ${addingNewClient ? `
               <div class="span-all create-matter-new-client" id="createMatterNewClient">
                 <p class="hint">Create a contact for this matter. It is saved when you create the matter.</p>
