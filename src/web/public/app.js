@@ -341,7 +341,9 @@
     if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !isPublicAuthPath(path)) {
       headers['X-CSRF-Token'] = state.csrf;
     }
-    const res = await fetch(path, { ...opts, method, headers, credentials: 'include' });
+    // `cache` is our in-memory flag — strip it so fetch does not see a boolean.
+    const { cache: _appCache, headers: _hdrs, ...fetchOpts } = opts;
+    const res = await fetch(path, { ...fetchOpts, method, headers, credentials: 'include' });
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) {
       const data = await res.json();
