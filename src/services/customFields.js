@@ -212,12 +212,35 @@ function normalizeAppliesTo(value) {
   return 'matter';
 }
 
+function normalizeFieldType(fieldType) {
+  const raw = String(fieldType || 'text').trim().toLowerCase();
+  if (raw === 'dropdown') return 'select';
+  return raw;
+}
+
+function parseFieldOptions(input) {
+  if (Array.isArray(input.options)) {
+    return input.options.map((o) => String(o).trim()).filter(Boolean);
+  }
+  if (typeof input.options === 'string') {
+    return input.options.split(',').map((o) => o.trim()).filter(Boolean);
+  }
+  if (typeof input.optionsText === 'string') {
+    return input.optionsText.split(',').map((o) => o.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 function createCustomField(db, actor, input) {
   const label = String(input.label || '').trim();
   if (!label) throw new Error('label required');
-  const fieldType = input.fieldType || 'text';
+  const fieldType = normalizeFieldType(input.fieldType || input.field_type || 'text');
   if (!['text', 'textarea', 'number', 'date', 'select', 'checkbox'].includes(fieldType)) {
     throw new Error('invalid fieldType');
+  }
+  const optionList = fieldType === 'select' ? parseFieldOptions(input) : [];
+  if (fieldType === 'select' && !optionList.length) {
+    throw new Error('dropdown fields need at least one option');
   }
 
   let appliesTo = normalizeAppliesTo(input.appliesTo || input.applies_to || 'matter');
@@ -260,7 +283,7 @@ function createCustomField(db, actor, input) {
   if (clash) apiName = `${apiName}_${Date.now().toString(36)}`;
 
   const options = fieldType === 'select'
-    ? JSON.stringify(input.options || [])
+    ? JSON.stringify(optionList)
     : null;
 
   const info = db.prepare(`
@@ -320,8 +343,11 @@ function getCustomField(db, id) {
   const f = db.prepare('SELECT * FROM custom_fields WHERE id = ?').get(id);
   if (!f) return null;
   const appliesTo = f.applies_to || 'matter';
+  const fieldType = f.field_type === 'select' ? 'dropdown' : f.field_type;
   return {
     ...f,
+    field_type: fieldType,
+    fieldType,
     applies_to: appliesTo,
     appliesTo,
     options: f.options_json ? JSON.parse(f.options_json) : null,

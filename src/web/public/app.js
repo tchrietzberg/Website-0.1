@@ -155,7 +155,7 @@
     { value: 'textarea', label: 'Text area' },
     { value: 'number', label: 'Number' },
     { value: 'date', label: 'Date' },
-    { value: 'select', label: 'Select' },
+    { value: 'dropdown', label: 'Dropdown' },
     { value: 'checkbox', label: 'Checkbox' },
   ];
 
@@ -163,6 +163,44 @@
     return FIELD_FORMATTERS.map((f) =>
       `<option value="${f.value}" ${f.value === selected ? 'selected' : ''}>${f.label}</option>`
     ).join('');
+  }
+
+  function fieldTypeLabel(type) {
+    const t = String(type || '');
+    if (t === 'select' || t === 'dropdown') return 'dropdown';
+    return t;
+  }
+
+  function parseOptionsInput(raw) {
+    return String(raw || '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+  }
+
+  function dropdownOptionsFieldHtml() {
+    return `
+      <label class="span-all" data-dropdown-options hidden>
+        Dropdown options
+        <input name="optionsText" placeholder="e.g. Discovery, Trial, Appeal" />
+        <span class="hint">Comma-separated list of choices</span>
+      </label>`;
+  }
+
+  function wireDropdownOptionsToggle(form) {
+    if (!form) return;
+    const typeSelect = form.querySelector('select[name="fieldType"]');
+    const optionsRow = form.querySelector('[data-dropdown-options]');
+    const optionsInput = form.querySelector('input[name="optionsText"]');
+    if (!typeSelect || !optionsRow) return;
+    const sync = () => {
+      const isDropdown = typeSelect.value === 'dropdown' || typeSelect.value === 'select';
+      optionsRow.hidden = !isDropdown;
+      if (optionsInput) optionsInput.required = isDropdown;
+      if (!isDropdown && optionsInput) optionsInput.value = '';
+    };
+    typeSelect.addEventListener('change', sync);
+    sync();
   }
 
   /** Manage matter (default layout) or time-entry custom fields on Settings. */
@@ -186,7 +224,7 @@
           <div class="field-mgmt-row">
             <div>
               <strong>${escapeHtml(f.label)}</strong>
-              <div class="muted">${escapeHtml(f.field_type)} · time entry</div>
+              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · time entry</div>
             </div>
             <button type="button" data-del-time-field="${f.id}">Remove</button>
           </div>`).join('') || '<p class="muted">No time-entry fields yet.</p>';
@@ -201,6 +239,7 @@
                 ${fieldFormatterOptions('text')}
               </select>
             </label>
+            ${dropdownOptionsFieldHtml()}
             <div class="row-actions span-all">
               <button class="primary" type="submit">Add time field</button>
             </div>
@@ -217,16 +256,24 @@
           };
         });
         const timeFieldForm = bodyEl.querySelector('#timeFieldForm');
+        wireDropdownOptionsToggle(timeFieldForm);
         if (timeFieldForm) {
           timeFieldForm.onsubmit = async (ev) => {
             ev.preventDefault();
             const fd = new FormData(timeFieldForm);
+            const fieldType = fd.get('fieldType');
+            const options = parseOptionsInput(fd.get('optionsText'));
+            if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+              setMsg('<div class="error">Add at least one dropdown option.</div>');
+              return;
+            }
             try {
               await api('/api/custom-fields', {
                 method: 'POST',
                 body: JSON.stringify({
                   label: fd.get('label'),
-                  fieldType: fd.get('fieldType'),
+                  fieldType,
+                  options,
                   appliesTo: 'time_entry',
                 }),
               });
@@ -254,6 +301,7 @@
               ${fieldFormatterOptions('text')}
             </select>
           </label>
+          ${dropdownOptionsFieldHtml()}
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add field</button>
           </div>
@@ -274,16 +322,24 @@
         };
       });
       const typeFieldForm = bodyEl.querySelector('#typeFieldForm');
+      wireDropdownOptionsToggle(typeFieldForm);
       if (typeFieldForm) {
         typeFieldForm.onsubmit = async (ev) => {
           ev.preventDefault();
           const fd = new FormData(typeFieldForm);
+          const fieldType = fd.get('fieldType');
+          const options = parseOptionsInput(fd.get('optionsText'));
+          if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+            setMsg('<div class="error">Add at least one dropdown option.</div>');
+            return;
+          }
           try {
             await api('/api/custom-fields', {
               method: 'POST',
               body: JSON.stringify({
                 label: fd.get('label'),
-                fieldType: fd.get('fieldType'),
+                fieldType,
+                options,
                 recordTypeKey: key,
                 appliesTo: 'matter',
               }),
@@ -1116,13 +1172,15 @@
     if (field.type === 'textarea') {
       return `<textarea name="${name}" ${disabled} ${req} rows="3">${val}</textarea>`;
     }
-    if (field.type === 'select') {
+    if (field.type === 'select' || field.type === 'dropdown') {
       const opts = (field.options || []).map((o) =>
-        `<option value="${o}" ${String(val) === String(o) ? 'selected' : ''}>${o}</option>`
+        `<option value="${escapeHtml(o)}" ${String(val) === String(o) ? 'selected' : ''}>${escapeHtml(o)}</option>`
       ).join('');
       return `<select name="${name}" ${disabled} ${req}>
         <option value=""></option>${opts}
-        ${val && !(field.options || []).includes(String(val)) ? `<option value="${val}" selected>${val}</option>` : ''}
+        ${val && !(field.options || []).includes(String(val))
+          ? `<option value="${escapeHtml(val)}" selected>${escapeHtml(val)}</option>`
+          : ''}
       </select>`;
     }
     if (field.type === 'checkbox') {
@@ -1513,6 +1571,7 @@
               ${fieldFormatterOptions('text')}
             </select>
           </label>
+          ${dropdownOptionsFieldHtml()}
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add field</button>
             ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Use default layout</button>' : ''}
@@ -1798,16 +1857,24 @@
     });
 
     const rf = $('#recordFieldForm');
+    wireDropdownOptionsToggle(rf);
     if (rf) {
       rf.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(rf);
+        const fieldType = fd.get('fieldType');
+        const options = parseOptionsInput(fd.get('optionsText'));
+        if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+          $('#matterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
+          return;
+        }
         try {
           await api(`/api/matters/${m.id}/custom-fields`, {
             method: 'POST',
             body: JSON.stringify({
               label: fd.get('label'),
-              fieldType: fd.get('fieldType'),
+              fieldType,
+              options,
             }),
           });
           await renderMatterDetail();

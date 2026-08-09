@@ -71,10 +71,17 @@ describe('matter search and record-based fields', () => {
 
     const typeField = customFields.createCustomField(db, admin, {
       label: 'Case stage',
-      fieldType: 'select',
+      fieldType: 'dropdown',
       recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
       options: ['Discovery', 'Trial'],
     });
+    assert.equal(typeField.field_type, 'dropdown');
+    assert.deepEqual(typeField.options, ['Discovery', 'Trial']);
+    assert.throws(() => customFields.createCustomField(db, admin, {
+      label: 'Empty dropdown',
+      fieldType: 'dropdown',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+    }), /at least one option/);
     const recordField = customFields.createCustomField(db, admin, {
       label: 'Special note',
       fieldType: 'textarea',
