@@ -140,7 +140,6 @@
     } else if (view === 'billing') {
       void api('/api/invoices');
       void api('/api/matters');
-      void api('/api/billing/fields');
       if (['admin', 'billing_clerk'].includes(state.user.role)) {
         void api('/api/billing/ready');
       }
@@ -5194,74 +5193,12 @@
     return '<td></td>';
   }
 
-  function billFieldsPanelHtml(fieldConfig, { canEdit = false } = {}) {
-    const enabledHeader = [
-      ...(fieldConfig.coreHeader || []),
-      ...(fieldConfig.enabledHeader || []),
-    ];
-    const enabledLines = fieldConfig.enabledLines || [];
-    const availableHeader = fieldConfig.availableHeader || [];
-    const availableLines = fieldConfig.availableLines || [];
-    const row = (f, group) => `
-      <div class="field-mgmt-row">
-        <div>
-          <strong>${escapeHtml(f.label)}</strong>
-          <div class="muted">${group === 'header' ? 'Bill header' : 'Line column'}${f.removable === false ? ' · always included' : ''}</div>
-        </div>
-        <div class="row-actions">
-          ${canEdit && f.removable !== false
-            ? `<button type="button" data-del-bill-field="${escapeHtml(f.key)}" data-bill-group="${group}">Remove</button>`
-            : ''}
-        </div>
-      </div>`;
-    return `
-      <div class="card stack" id="billFieldsCard">
-        <h2>Fields on bills</h2>
-        <p class="hint">Choose which header details and line columns appear on bills, PDF, and Excel.</p>
-        <h3 style="margin:0;font-family:var(--font);font-size:1rem">Header</h3>
-        <div class="field-mgmt-list">
-          ${enabledHeader.map((f) => row(f, 'header')).join('') || '<p class="muted">No header fields</p>'}
-        </div>
-        ${canEdit && availableHeader.length ? `
-          <div class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:center">
-            <label class="matter-type-picker" style="margin:0">Add header field
-              <select id="addBillHeaderField">
-                <option value="">Choose…</option>
-                ${availableHeader.map((f) => `
-                  <option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
-              </select>
-            </label>
-            <button type="button" id="addBillHeaderFieldBtn">Add</button>
-          </div>` : ''}
-        <h3 style="margin:.75rem 0 0;font-family:var(--font);font-size:1rem">Line columns</h3>
-        <div class="field-mgmt-list">
-          ${enabledLines.map((f) => row(f, 'lines')).join('') || '<p class="muted">No line columns yet</p>'}
-        </div>
-        ${canEdit && availableLines.length ? `
-          <div class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:center">
-            <label class="matter-type-picker" style="margin:0">Add line column
-              <select id="addBillLineField">
-                <option value="">Choose…</option>
-                ${availableLines.map((f) => `
-                  <option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
-              </select>
-            </label>
-            <button type="button" id="addBillLineFieldBtn">Add</button>
-          </div>` : ''}
-        <div id="billFieldsMsg"></div>
-      </div>`;
-  }
-
   async function renderBilling() {
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
-    const [invoices, matters, ready, fieldConfig] = await Promise.all([
+    const [invoices, matters, ready] = await Promise.all([
       api('/api/invoices'),
       api('/api/matters').catch(() => []),
       canBill ? api('/api/billing/ready').catch(() => []) : Promise.resolve([]),
-      api('/api/billing/fields').catch(() => ({
-        coreHeader: [], enabledHeader: [], availableHeader: [],
-        enabledLines: [], availableLines: [], headerKeys: [], lineKeys: [],
-      })),
     ]);
     if (!stillOnView('billing')) return;
     state.matters = matters || [];
@@ -5291,7 +5228,6 @@
         </form>` : '<div class="error">Only admins and billing clerks can create bills.</div>'}
         <div id="billMsg"></div>
       </div>
-      ${billFieldsPanelHtml(fieldConfig, { canEdit: canBill })}
       ${(ready || []).length ? `
       <div class="card">
         <h2>Ready to bill</h2>
@@ -5348,52 +5284,6 @@
           $('#billMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
-
-      const setFieldsMsg = (html) => {
-        const msg = $('#billFieldsMsg');
-        if (msg) msg.innerHTML = html || '';
-      };
-      const refreshFields = async () => {
-        const openId = $('#invoiceDetail')?.dataset?.invoiceId;
-        await renderBilling();
-        if (openId) await showInvoice(Number(openId));
-      };
-      main.querySelectorAll('[data-del-bill-field]').forEach((btn) => {
-        btn.onclick = async () => {
-          try {
-            await api(
-              `/api/billing/fields?group=${encodeURIComponent(btn.dataset.billGroup)}&key=${encodeURIComponent(btn.dataset.delBillField)}`,
-              { method: 'DELETE' }
-            );
-            await refreshFields();
-          } catch (e) {
-            setFieldsMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
-          }
-        };
-      });
-      const wireAdd = (selectId, btnId, group) => {
-        const sel = $(selectId);
-        const btn = $(btnId);
-        if (!sel || !btn) return;
-        btn.onclick = async () => {
-          const key = sel.value;
-          if (!key) {
-            setFieldsMsg('<div class="error">Choose a field to add.</div>');
-            return;
-          }
-          try {
-            await api('/api/billing/fields', {
-              method: 'POST',
-              body: JSON.stringify({ group, key }),
-            });
-            await refreshFields();
-          } catch (e) {
-            setFieldsMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
-          }
-        };
-      };
-      wireAdd('#addBillHeaderField', '#addBillHeaderFieldBtn', 'header');
-      wireAdd('#addBillLineField', '#addBillLineFieldBtn', 'lines');
     }
     main.querySelectorAll('[data-open]').forEach((b) => {
       b.onclick = () => showInvoice(Number(b.dataset.open));
