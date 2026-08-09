@@ -6261,7 +6261,13 @@
       id: 'matter',
       label: 'Create a matter',
       keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case'],
-      answer: 'Go to Matters → Create Matter (or the sidebar Create Matter action). Enter a name, fill any required custom fields, then confirm. The matter opens so you can add time and details.',
+      answer: 'Go to Matters → Create Matter (or the sidebar Create Matter action). Enter a name (or, if Settings → Matter name formula is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. The matter opens so you can add time and details.',
+    },
+    {
+      id: 'matter-name-formula',
+      label: 'Matter name formula',
+      keywords: ['matter name', 'formula', 'concatenate', 'ticker', 'create matter name', 'name parts'],
+      answer: 'Settings → Matter name formula (collapsed section): turn it on, set a separator (e.g. -), add custom fields and Year in order, or create fields there. On Create Matter those fields appear and the matter name is built by concatenating them.',
     },
     {
       id: 'time',
