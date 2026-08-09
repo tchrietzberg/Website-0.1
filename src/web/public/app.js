@@ -340,20 +340,31 @@
     return null;
   }
 
+  function fieldScopeLabel(field) {
+    const scope = field?.scope || (field?.matter_id || field?.matterId ? 'record' : 'record_type');
+    if (scope === 'record') return 'This matter only';
+    if (scope === 'record_type') return 'Record type';
+    return null;
+  }
+
   function fieldMgmtRows(fields, {
     editAttr = 'data-edit-matter-field',
     canDelete = isAdminUser(),
+    showScope = false,
   } = {}) {
     const rows = (fields || []).filter((f) => !isBuiltInField(f));
     if (!rows.length) return '<p class="muted">No custom fields yet</p>';
     return rows.map((f) => {
       const id = fieldIdFromMgmt(f);
       const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
+      const scopeLabel = showScope ? fieldScopeLabel(f) : null;
       return `
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}</span>
+          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}${
+            scopeLabel ? ` · ${escapeHtml(scopeLabel)}` : ''
+          }</span>
         </div>
         <div class="row-actions">
           ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
@@ -393,7 +404,7 @@
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}${isDefault ? ' · default' : ''}${core ? ' · always shown' : ''}</span>
+          <span class="muted"> · ${escapeHtml(typeLabel)} · record type${f.required ? ' · required' : ''}${isDefault ? ' · default on type' : ''}${core ? ' · always shown' : ''}</span>
         </div>
         <div class="row-actions">
           ${id ? `
@@ -416,7 +427,7 @@
     return `
       <label class="check-inline span-all">
         <input type="checkbox" name="required" ${checked ? 'checked' : ''} />
-        ${escapeHtml(label)}
+        <span data-required-label-text>${escapeHtml(label)}</span>
       </label>`;
   }
 
@@ -424,7 +435,7 @@
     return `
       <label class="check-inline span-all">
         <input type="checkbox" name="isDefault" ${checked ? 'checked' : ''} />
-        ${escapeHtml(label)}
+        <span data-default-label-text>${escapeHtml(label)}</span>
       </label>`;
   }
 
@@ -495,6 +506,9 @@
     showCancel = false,
     requiredLabel = 'Required on create',
     defaultLabel = 'Default field',
+    showDefault = true,
+    formHint = '',
+    scopeField = null,
   } = {}) {
     const type = field
       ? (field.field_type || field.fieldType || field.type || 'text')
@@ -506,8 +520,20 @@
     const required = !!(field && field.required);
     const isDefault = !!(field && (field.isDefault || field.is_default));
     const label = field?.label || '';
+    const scopeHtml = scopeField ? `
+      <label class="span-all">Field applies to
+        <select name="fieldScope" id="${escapeHtml(scopeField.selectId || 'fieldScope')}">
+          ${(scopeField.options || []).map((opt) => `
+            <option value="${escapeHtml(opt.value)}" ${opt.value === scopeField.selected ? 'selected' : ''}>
+              ${escapeHtml(opt.label)}
+            </option>`).join('')}
+        </select>
+        <span class="hint">${escapeHtml(scopeField.hint || 'Choose whether this field is for one matter or the whole record type.')}</span>
+      </label>` : '';
     return `
       <form id="${escapeHtml(formId)}" class="grid two">
+        ${formHint ? `<p class="hint span-all">${formHint}</p>` : ''}
+        ${scopeHtml}
         <label>Custom field label
           <input name="label" required value="${escapeHtml(label)}"
             placeholder="e.g. Case stage" />
@@ -518,7 +544,9 @@
           </select>
         </label>
         ${dropdownOptionsFieldHtml(options, { show: uiType === 'dropdown' })}
-        ${defaultFieldCheckboxHtml(isDefault, defaultLabel)}
+        <div class="span-all" data-default-field-wrap ${showDefault ? '' : 'hidden'}>
+          ${defaultFieldCheckboxHtml(isDefault, defaultLabel)}
+        </div>
         ${requiredFieldCheckboxHtml(required, requiredLabel)}
         <div class="row-actions span-all">
           <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
@@ -799,7 +827,7 @@
           ${isAdminUser() ? `
             <button type="button" id="showAddRecordType">Add record page</button>` : ''}
         </div>
-        <p class="hint">Fields on the <strong>${escapeHtml(typeLabel)}</strong> record page layout appear on every matter of this type.</p>
+        <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every matter of this type. For a field on one matter only, open that matter and use Manage fields.</p>
         <form id="addRecordTypeForm" class="stack" hidden>
           <div class="grid two">
             <label>Label *
@@ -831,19 +859,21 @@
             <button type="button" id="addTypeStandardFieldBtn">Add to layout</button>
           </div>` : ''}
         ${editing
-          ? `<h3 class="field-edit-title">Edit matter field</h3>${customFieldFormHtml({
+          ? `<h3 class="field-edit-title">Edit record type field</h3>${customFieldFormHtml({
             formId: 'typeFieldForm',
             submitLabel: 'Save changes',
             field: editing,
             showCancel: true,
             defaultLabel: 'Record type default field',
             requiredLabel: 'Record type required field',
+            formHint: `This field belongs to the <strong>${escapeHtml(typeLabel)}</strong> record type and shows on all matters of that type.`,
           })}`
           : customFieldFormHtml({
             formId: 'typeFieldForm',
-            submitLabel: 'Add custom field',
+            submitLabel: 'Add to this record type',
             defaultLabel: 'Record type default field',
             requiredLabel: 'Record type required field',
+            formHint: `New fields are added to the <strong>${escapeHtml(typeLabel)}</strong> record type layout for every matter of this type. Check <strong>Record type default field</strong> to mark it as a default on this record type.`,
           })}`;
 
       const typeSelect = bodyEl.querySelector('#settingsMatterTypeSelect');
@@ -929,7 +959,7 @@
               method: 'PATCH',
               body: JSON.stringify({ isDefault: !!box.checked }),
             });
-            setMsg('<div class="ok-banner">Record type default field updated.</div>');
+            setMsg('<div class="ok-banner">Record type default field updated for this record type.</div>');
             await render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -2154,21 +2184,23 @@
         </div>
 
         <div id="createMatterFieldsPanel" class="card stack page-section create-matter-fields-panel">
-          <h2>Add custom fields</h2>
-          <p class="hint">Fields added here apply to <strong>${escapeHtml(createTypeLabel)}</strong> matters and appear in the create form above when that record type is selected.</p>
+          <h2>Add record type fields</h2>
+          <p class="hint">Fields added here go on the <strong>${escapeHtml(createTypeLabel)}</strong> record type — every matter of that type gets them. To add a field for one matter only, create the matter first, then use Manage fields on that matter.</p>
           <div class="field-mgmt-list">
             ${createCustomRows.map((f) => `
               <div class="field-mgmt-row">
                 <div>
                   <strong>${escapeHtml(f.label)}</strong>
-                  <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))}${f.required ? ' · required' : ''}</span>
+                  <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))} · record type${f.required ? ' · required' : ''}</span>
                 </div>
               </div>`).join('') || `<p class="muted">No custom fields for ${escapeHtml(createTypeLabel)} yet</p>`}
           </div>
           ${customFieldFormHtml({
             formId: 'createMatterFieldForm',
-            submitLabel: 'Add field',
-            requiredLabel: 'Required field',
+            submitLabel: 'Add to this record type',
+            defaultLabel: 'Record type default field',
+            requiredLabel: 'Record type required field',
+            formHint: `Adds the field to the <strong>${escapeHtml(createTypeLabel)}</strong> record type layout.`,
           })}
           <div id="createMatterFieldMsg">${createFieldMsg ? successNoticeHtml(createFieldMsg) : ''}</div>
         </div>` : ''}
@@ -2270,8 +2302,8 @@
               body: JSON.stringify({ ...body, recordTypeKey: typeKey, appliesTo: 'matter' }),
             });
             state.createMatterFieldMsg = {
-              title: 'Custom field added',
-              detail: `${body.label || 'Field'} added for ${createTypeLabel} matters.`,
+              title: 'Record type field added',
+              detail: `${body.label || 'Field'} added to the ${createTypeLabel} record type.`,
             };
             await renderMatters();
             const panel = $('#createMatterFieldsPanel');
@@ -3041,37 +3073,59 @@
         (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingMatterFieldId)
       )
       : null;
+    const editingFieldScope = editingField
+      ? (editingField.scope === 'record' || editingField.matter_id || editingField.matterId
+        ? 'record'
+        : 'record_type')
+      : null;
     const fieldMgmtPanelHtml = (opts = {}) => {
       const {
         title = 'Manage fields',
-        hint = 'Add fields for this matter only. Shared fields come from the record page layout in Settings.',
+        hint = `Choose whether a new field is for this matter only, or for every <strong>${escapeHtml(matterTypeLabel)}</strong> matter (record type). Record type fields can also be managed in Settings → Matter record pages.`,
         formId = 'recordFieldForm',
         panelId = '',
         showDismiss = false,
         msgHtml = '',
       } = opts;
+      const isEditingMatterOnly = editingFieldScope === 'record';
       return `
       <div class="card stack${showDismiss ? ' post-create-fields-panel' : ''}"${panelId ? ` id="${panelId}"` : ''}>
         <div class="page-head matters-toolbar" style="margin:0">
           <h2 style="margin:0">${escapeHtml(title)}</h2>
           ${showDismiss ? '<button type="button" id="dismissPostCreateFields">Done</button>' : ''}
         </div>
-        <p class="hint">${escapeHtml(hint)}</p>
+        <p class="hint">${hint}</p>
         <div class="field-mgmt-list">
-          ${fieldMgmtRows(page.layoutFields)}
+          ${fieldMgmtRows(page.layoutFields, { showScope: true })}
         </div>
         ${editingField
-          ? `<h3 class="field-edit-title">Edit field</h3>${customFieldFormHtml({
+          ? `<h3 class="field-edit-title">Edit ${isEditingMatterOnly ? 'matter' : 'record type'} field</h3>${customFieldFormHtml({
             formId,
             submitLabel: 'Save changes',
             field: editingField,
             showCancel: true,
-            requiredLabel: 'Required field',
+            showDefault: !isEditingMatterOnly,
+            defaultLabel: 'Record type default field',
+            requiredLabel: isEditingMatterOnly ? 'Required on this matter' : 'Record type required field',
+            formHint: isEditingMatterOnly
+              ? 'This field is for <strong>this matter only</strong>.'
+              : `This field is on the <strong>${escapeHtml(matterTypeLabel)}</strong> record type (all matters of this type).`,
           })}`
           : customFieldFormHtml({
             formId,
             submitLabel: 'Add field',
+            showDefault: false,
+            defaultLabel: 'Record type default field',
             requiredLabel: 'Required field',
+            scopeField: {
+              selectId: `${formId}Scope`,
+              selected: 'record',
+              options: [
+                { value: 'record', label: 'This matter only' },
+                { value: 'record_type', label: `All ${matterTypeLabel} matters (record type)` },
+              ],
+              hint: 'This matter only = one matter. Record type = every matter of this type.',
+            },
           })}
         <div id="matterFieldMsg">${msgHtml}</div>
       </div>`;
@@ -3120,7 +3174,7 @@
 
       ${showPostCreateFields ? fieldMgmtPanelHtml({
         title: 'Add custom fields',
-        hint: 'Optional — add custom fields for this matter here. Keep adding as needed, then press Done.',
+        hint: `Optional — add a field for <strong>this matter only</strong>, or for every <strong>${escapeHtml(matterTypeLabel)}</strong> matter. Keep adding as needed, then press Done.`,
         formId: 'recordFieldForm',
         panelId: 'postCreateFieldsPanel',
         showDismiss: true,
@@ -3586,7 +3640,41 @@
 
     const rf = $('#recordFieldForm');
     wireDropdownOptionsToggle(rf);
+    const syncMatterFieldScopeUi = () => {
+      if (!rf || state.editingMatterFieldId) return;
+      const scopeSelect = rf.querySelector('[name="fieldScope"]');
+      const defaultWrap = rf.querySelector('[data-default-field-wrap]');
+      if (!scopeSelect) return;
+      const isRecordType = scopeSelect.value === 'record_type';
+      if (defaultWrap) {
+        defaultWrap.hidden = !isRecordType;
+        if (!isRecordType) {
+          const box = defaultWrap.querySelector('input[name="isDefault"]');
+          if (box) box.checked = false;
+        } else {
+          const defaultText = defaultWrap.querySelector('[data-default-label-text]');
+          if (defaultText) defaultText.textContent = 'Record type default field';
+        }
+      }
+      const requiredText = rf.querySelector('[data-required-label-text]');
+      if (requiredText) {
+        requiredText.textContent = isRecordType
+          ? 'Record type required field'
+          : 'Required on this matter';
+      }
+      const submitBtn = rf.querySelector('button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.textContent = isRecordType
+          ? 'Add to record type'
+          : 'Add to this matter';
+      }
+    };
     if (rf) {
+      const scopeSelect = rf.querySelector('[name="fieldScope"]');
+      if (scopeSelect) {
+        scopeSelect.onchange = syncMatterFieldScopeUi;
+        syncMatterFieldScopeUi();
+      }
       rf.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(rf);
@@ -3603,14 +3691,30 @@
             });
             state.editingMatterFieldId = null;
           } else {
-            await api(`/api/matters/${m.id}/custom-fields`, {
-              method: 'POST',
-              body: JSON.stringify(body),
-            });
-            state.matterFieldPanelFlash = {
-              title: 'Custom field added',
-              detail: body.label || 'It is available on this matter.',
-            };
+            const scope = String(fd.get('fieldScope') || 'record');
+            if (scope === 'record_type') {
+              await api('/api/custom-fields', {
+                method: 'POST',
+                body: JSON.stringify({
+                  ...body,
+                  recordTypeKey: m.matter_type || 'billable',
+                  appliesTo: 'matter',
+                }),
+              });
+              state.matterFieldPanelFlash = {
+                title: 'Record type field added',
+                detail: `${body.label || 'Field'} added to every ${matterTypeLabel} matter.`,
+              };
+            } else {
+              await api(`/api/matters/${m.id}/custom-fields`, {
+                method: 'POST',
+                body: JSON.stringify(body),
+              });
+              state.matterFieldPanelFlash = {
+                title: 'Matter field added',
+                detail: `${body.label || 'Field'} is available on this matter only.`,
+              };
+            }
           }
           await renderMatterDetail();
         } catch (e) {
@@ -4982,7 +5086,7 @@
       ${canConfigureFields ? `
       <div class="card stack" id="defaultFieldsCard">
         <h2>Matter record pages</h2>
-        <p class="hint">Each record page (Billable, Non-Billable, or ones you add) has its own field layout. Matters show the fields from their record page layout. New matters default to Billable.</p>
+        <p class="hint">Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every matter of that type. For a field on one matter only, open the matter and use Manage fields. New matters default to Billable.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
       </div>
@@ -5708,7 +5812,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matters use record pages (Billable by default, Non-Billable, plus any you add in Settings → Matter record pages). Each record page has its own field layout — those fields appear on every matter of that type. On Create Matter, choose the record page to see its custom fields. For dropdowns, enter options in the options box. Use Record type required field when a value must be filled, and Record type default field to include it by default on that record type.',
+      answer: 'Matter fields can be record-type (shared by every matter of that type) or matter-based (one matter only). Settings → Matter record pages and Create Matter → Add record type fields add record-type fields. On a matter, Manage fields lets you choose “This matter only” or “All [type] matters”. Use Record type default field / required field for type-wide defaults.',
     },
     {
       id: 'reports',

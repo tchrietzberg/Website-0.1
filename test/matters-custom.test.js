@@ -184,6 +184,10 @@ describe('matter search and record-based fields', () => {
     assert.equal(allFields.find((f) => f.fieldId === typeField.id).value, 'Discovery');
     assert.equal(allFields.find((f) => f.fieldId === recordField.id).value, 'Fee petition matter');
     assert.equal(page.layout.source, 'record_type');
+    const typeLayoutField = page.layoutFields.find((f) => Number(f.fieldId) === Number(typeField.id));
+    const matterLayoutField = page.layoutFields.find((f) => Number(f.fieldId) === Number(recordField.id));
+    assert.equal(typeLayoutField.scope, 'record_type');
+    assert.equal(matterLayoutField.scope, 'record');
 
     const byCustom = matterSvc.searchMatters(db, { q: 'petition' });
     assert.equal(byCustom.length, 1);

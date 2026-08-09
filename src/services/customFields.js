@@ -79,6 +79,7 @@ function describeLayoutFields(db, layoutId) {
       fieldType,
       type: fieldType,
       options,
+      scope: 'record_type',
     };
   });
 }
@@ -941,6 +942,7 @@ function getMatterPage(db, matterId, actor = null) {
         fieldType: def?.type || null,
         type: def?.type || null,
         options: def?.options || null,
+        scope: def?.scope || 'record',
       };
     });
 
