@@ -6,6 +6,7 @@ const SCOPES = [
   'openid',
   'profile',
   'User.Read',
+  'Mail.Send',
   'Files.Read.All',
   'Sites.Read.All',
 ].join(' ');
@@ -344,6 +345,53 @@ function isConnected(db) {
   return connectionStatus(db).connected;
 }
 
+/**
+ * Send email via the connected Microsoft account (Graph /me/sendMail).
+ * Requires Mail.Send consent — reconnect Microsoft after this scope was added.
+ */
+async function sendMailGraph(db, { to, subject, text, fromName = 'Firm Billing' } = {}) {
+  const token = await ensureAccessToken(db);
+  if (!token) {
+    const err = new Error('Connect Microsoft under Settings to send email automatically.');
+    err.code = 'MS_NOT_CONNECTED';
+    throw err;
+  }
+  const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: {
+        subject: String(subject || '').replace(/[\r\n]+/g, ' '),
+        body: {
+          contentType: 'Text',
+          content: String(text || ''),
+        },
+        toRecipients: [{
+          emailAddress: { address: String(to || '').trim().toLowerCase() },
+        }],
+      },
+      saveToSentItems: false,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg = body.error?.message || body.error?.code || res.statusText || 'Microsoft mail send failed';
+    // Common when older login lacks Mail.Send
+    if (/Mail\.Send|not granted|Insufficient privileges|ErrorAccessDenied/i.test(msg) || res.status === 403) {
+      const err = new Error('Microsoft needs permission to send email. Disconnect and Sign in with Microsoft again, then retry.');
+      err.code = 'MS_MAIL_SCOPE';
+      throw err;
+    }
+    const err = new Error(msg);
+    err.code = 'MS_MAIL_FAILED';
+    throw err;
+  }
+  return { ok: true, mode: 'microsoft', fromName };
+}
+
 module.exports = {
   SCOPES,
   connectionStatus,
@@ -357,4 +405,6 @@ module.exports = {
   isConnected,
   clientId,
   tenantId,
+  sendMailGraph,
+  fetchAccountLabel,
 };

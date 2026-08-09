@@ -37,7 +37,7 @@ function maskSecret(value) {
   return `${s.slice(0, 2)}••••${s.slice(-2)}`;
 }
 
-/** Resolve delivery config: env wins, then firm_settings. */
+/** Resolve delivery config: product env → Microsoft Graph → optional admin override. */
 function resolveMailConfig(db = null) {
   const envResend = String(process.env.RESEND_API_KEY || '').trim();
   const envFrom = String(process.env.SMTP_FROM || process.env.MAIL_FROM || '').trim();
@@ -46,7 +46,7 @@ function resolveMailConfig(db = null) {
       provider: 'resend',
       source: 'env',
       apiKey: envResend,
-      from: envFrom || 'noreply@firm.example',
+      from: envFrom || 'Firm Billing <onboarding@resend.dev>',
       configured: true,
     };
   }
@@ -67,7 +67,23 @@ function resolveMailConfig(db = null) {
     };
   }
 
+  // Zero firm-admin setup: use the Microsoft account already connected for OneDrive.
   if (db) {
+    try {
+      const msAuth = require('./services/msAuth');
+      if (msAuth.isConnected(db)) {
+        const account = getSetting(db, 'ms_account_label', '') || 'Microsoft account';
+        return {
+          provider: 'microsoft',
+          source: 'microsoft',
+          from: account,
+          configured: true,
+        };
+      }
+    } catch {
+      // msAuth unavailable during early boot — ignore
+    }
+
     const resendKey = getSetting(db, 'resend_api_key', '');
     const from = getSetting(db, 'smtp_from', '') || 'noreply@firm.example';
     if (resendKey) {
@@ -113,7 +129,17 @@ function mailStatus(db) {
       provider: 'log',
       source: 'none',
       from: cfg.from,
-      message: 'Email is not configured — messages are logged locally only.',
+      setupHint: 'microsoft',
+      message: 'Connect Microsoft under OneDrive settings to send invite and login emails automatically — no SMTP setup.',
+    };
+  }
+  if (cfg.provider === 'microsoft') {
+    return {
+      configured: true,
+      provider: 'microsoft',
+      source: 'microsoft',
+      from: cfg.from,
+      message: `Emails send automatically via Microsoft (${cfg.from}).`,
     };
   }
   if (cfg.provider === 'resend') {
@@ -123,7 +149,7 @@ function mailStatus(db) {
       source: cfg.source,
       from: cfg.from,
       apiKeyMasked: maskSecret(cfg.apiKey),
-      message: `Sending via Resend (${cfg.source}).`,
+      message: `Emails send automatically via Resend.`,
     };
   }
   return {
@@ -136,7 +162,7 @@ function mailStatus(db) {
     secure: cfg.secure,
     user: cfg.user || '',
     passConfigured: Boolean(cfg.pass),
-    message: `Sending via SMTP ${cfg.host}:${cfg.port} (${cfg.source}).`,
+    message: `Emails send via SMTP ${cfg.host}:${cfg.port}.`,
   };
 }
 
@@ -348,8 +374,7 @@ async function resendSend({ apiKey, from, to, subject, text }) {
 
 /**
  * Send a plain-text email.
- * Providers: Resend API key, SMTP, or local log (dev/tests).
- * Pass `db` so firm_settings SMTP/Resend config is used when env is unset.
+ * Priority: product Resend/SMTP env → connected Microsoft account → optional settings → local log.
  */
 async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) {
   const cfg = resolveMailConfig(db);
@@ -364,7 +389,9 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
 
   if (!cfg.configured) {
     if (!allowLog) {
-      const err = new Error('Email is not configured. Add Resend or SMTP under Settings → Email.');
+      const err = new Error(
+        'Connect Microsoft under Settings (OneDrive) to send email automatically — no SMTP setup needed.'
+      );
       err.code = 'MAIL_NOT_CONFIGURED';
       throw err;
     }
@@ -376,11 +403,20 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
     return {
       ok: false,
       mode: 'log',
-      message: 'Email not configured — message logged locally only.',
+      message: 'Connect Microsoft under Settings to send email automatically.',
     };
   }
 
   try {
+    if (cfg.provider === 'microsoft') {
+      const msAuth = require('./services/msAuth');
+      await msAuth.sendMailGraph(db, {
+        to: msg.to,
+        subject: msg.subject,
+        text: msg.text,
+      });
+      return { ok: true, mode: 'microsoft', source: 'microsoft' };
+    }
     if (cfg.provider === 'resend') {
       await resendSend({
         apiKey: cfg.apiKey,
@@ -405,7 +441,7 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
     return { ok: true, mode: 'smtp', source: cfg.source };
   } catch (e) {
     const err = new Error(`Email send failed: ${e.message}`);
-    err.code = 'MAIL_SEND_FAILED';
+    err.code = e.code || 'MAIL_SEND_FAILED';
     err.cause = e;
     throw err;
   }

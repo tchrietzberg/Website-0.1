@@ -59,7 +59,7 @@ describe('mail configuration', () => {
         text: 'x',
         allowLog: false,
       }),
-      /not configured/i
+      /Connect Microsoft|not configured/i
     );
   });
 });

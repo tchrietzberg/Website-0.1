@@ -169,34 +169,38 @@ async function sendAuthEmail(db, req, {
   let subject;
   let text;
   if (purpose === 'invite') {
-    subject = 'You are invited to Firm Billing';
+    subject = 'Welcome to Firm Billing — finish signing in';
     text = [
-      `Hello ${user.name},`,
+      `Hi ${user.name},`,
       '',
-      'You have been invited to Firm Billing. Use this secure link to set your password and sign in:',
+      'You have been invited to Firm Billing.',
+      'Open this link to choose a password and sign in (one-time use):',
+      '',
       link,
       '',
-      'This link expires soon and can be used once. If you did not expect this email, ignore it.',
+      'If you were not expecting this, you can ignore this email.',
     ].join('\n');
   } else if (purpose === 'reset') {
     subject = 'Reset your Firm Billing password';
     text = [
-      `Hello ${user.name},`,
+      `Hi ${user.name},`,
       '',
-      'Use this secure link to reset your password:',
+      'Open this link to choose a new password and sign in (one-time use):',
+      '',
       link,
       '',
-      'If you did not request a reset, you can ignore this email. The link expires soon and can be used once.',
+      'If you did not ask for this, you can ignore this email.',
     ].join('\n');
   } else {
     subject = 'Your Firm Billing sign-in link';
     text = [
-      `Hello ${user.name},`,
+      `Hi ${user.name},`,
       '',
-      'Use this secure one-time link to sign in:',
+      'Open this link to sign in (one-time use, expires soon):',
+      '',
       link,
       '',
-      'If you did not request this, ignore the email. The link expires in a few minutes.',
+      'If you did not ask for this, you can ignore this email.',
     ].join('\n');
   }
 
@@ -377,24 +381,25 @@ async function requestMagicLogin(db, req, emailInput) {
   const user = db.prepare(
     'SELECT id, email, name, role, active, password_hash FROM users WHERE lower(email) = ? AND active = 1'
   ).get(email);
-  // Require an established account (password set or prior invite completed)
-  if (!user || !user.password_hash) {
+  if (!user) {
     audit(db, {
       actorId: null,
       action: 'auth.magic_request',
       entityType: 'user',
-      entityId: user?.id || null,
-      detail: { email, found: Boolean(user?.password_hash) },
+      entityId: null,
+      detail: { email, found: false },
     });
     return generic;
   }
 
-  const token = createAuthToken(db, { userId: user.id, purpose: 'magic_login' });
+  // Invited users without a password yet get a set-password link (same friendly inbox flow).
+  const purpose = user.password_hash ? 'magic_login' : 'invite';
+  const token = createAuthToken(db, { userId: user.id, purpose });
   let mailed;
   try {
     mailed = await sendAuthEmail(db, req, {
       user,
-      purpose: 'magic_login',
+      purpose,
       rawToken: token.raw,
       actorId: null,
     });
@@ -404,7 +409,7 @@ async function requestMagicLogin(db, req, emailInput) {
       action: 'auth.magic_request',
       entityType: 'user',
       entityId: user.id,
-      detail: { email, found: true, error: e.message },
+      detail: { email, found: true, purpose, error: e.message },
     });
     return {
       ...generic,
@@ -416,7 +421,7 @@ async function requestMagicLogin(db, req, emailInput) {
     action: 'auth.magic_request',
     entityType: 'user',
     entityId: user.id,
-    detail: { email, found: true, mode: mailed.delivery.mode },
+    detail: { email, found: true, purpose, mode: mailed.delivery.mode },
   });
   return {
     ...generic,

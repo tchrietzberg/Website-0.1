@@ -527,32 +527,23 @@
     if (sidebarActions) sidebarActions.innerHTML = '';
   }
 
-  function renderLogin(mode = 'password') {
+  function renderLogin(mode = 'email') {
     enterLoginChrome();
     const panel = mode === 'forgot'
       ? `
           <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Reset your password by email</p>
-          <label class="login-field">Email
+          <p class="login-lead">We’ll email you a link to reset your password</p>
+          <label class="login-field">Work email
             <input id="email" type="email" autocomplete="username" placeholder="you@firm.example" />
           </label>
-          <button class="primary login-submit" id="resetBtn" type="button">Send reset link</button>
+          <button class="primary login-submit" id="resetBtn" type="button">Email reset link</button>
           <p class="login-hint"><button type="button" class="linkish" id="backToLogin">Back to sign in</button></p>
           <div id="loginErr"></div>`
-      : mode === 'magic'
+      : mode === 'password'
         ? `
           <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Email a one-time sign-in link</p>
-          <label class="login-field">Email
-            <input id="email" type="email" autocomplete="username" placeholder="you@firm.example" />
-          </label>
-          <button class="primary login-submit" id="magicBtn" type="button">Email sign-in link</button>
-          <p class="login-hint"><button type="button" class="linkish" id="backToLogin">Back to sign in</button></p>
-          <div id="loginErr"></div>`
-        : `
-          <p class="login-brand">Firm Billing</p>
-          <p class="login-lead">Sign in with your firm email and password</p>
-          <label class="login-field">Email
+          <p class="login-lead">Sign in with email and password</p>
+          <label class="login-field">Work email
             <input id="email" type="email" autocomplete="username"
               placeholder="avery@firm.example" value="avery@firm.example" />
           </label>
@@ -562,11 +553,25 @@
           </label>
           <button class="primary login-submit" id="loginBtn" type="button">Sign in</button>
           <div class="login-alt-links">
+            <button type="button" class="linkish" id="magicLink">Email me a sign-in link</button>
             <button type="button" class="linkish" id="forgotLink">Forgot password</button>
-            <button type="button" class="linkish" id="magicLink">Email sign-in link</button>
           </div>
           <div id="loginErr"></div>
-          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
+          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`
+        : `
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Enter your work email — we’ll send a sign-in link</p>
+          <label class="login-field">Work email
+            <input id="email" type="email" autocomplete="username"
+              placeholder="you@firm.example" value="avery@firm.example" />
+          </label>
+          <button class="primary login-submit" id="magicBtn" type="button">Email me a sign-in link</button>
+          <div class="login-alt-links">
+            <button type="button" class="linkish" id="passwordLink">Use password instead</button>
+            <button type="button" class="linkish" id="forgotLink">Forgot password</button>
+          </div>
+          <div id="loginErr"></div>
+          <p class="login-hint">Check your inbox for a one-time link. No setup needed on your side.</p>`;
 
     main.innerHTML = `<div class="login-stage"><div class="login-panel">${panel}</div></div>`;
 
@@ -580,11 +585,13 @@
     };
 
     const back = $('#backToLogin');
-    if (back) back.onclick = () => renderLogin('password');
+    if (back) back.onclick = () => renderLogin('email');
     const forgot = $('#forgotLink');
     if (forgot) forgot.onclick = () => renderLogin('forgot');
     const magic = $('#magicLink');
-    if (magic) magic.onclick = () => renderLogin('magic');
+    if (magic) magic.onclick = () => renderLogin('email');
+    const passwordLink = $('#passwordLink');
+    if (passwordLink) passwordLink.onclick = () => renderLogin('password');
 
     if (mode === 'forgot') {
       $('#resetBtn').onclick = async () => {
@@ -595,7 +602,8 @@
             method: 'POST',
             body: JSON.stringify({ email: $('#email').value.trim() }),
           });
-          ok(data.message || 'If that email is on file, a reset link was sent.');
+          ok(data.message || 'Check your email for a reset link.');
+          $('#resetBtn').disabled = false;
         } catch (e) {
           $('#resetBtn').disabled = false;
           err(e.message);
@@ -604,8 +612,8 @@
       return;
     }
 
-    if (mode === 'magic') {
-      $('#magicBtn').onclick = async () => {
+    if (mode === 'email') {
+      const sendMagic = async () => {
         try {
           $('#magicBtn').disabled = true;
           err('');
@@ -613,12 +621,20 @@
             method: 'POST',
             body: JSON.stringify({ email: $('#email').value.trim() }),
           });
-          ok(data.message || 'If that email is on file, a sign-in link was sent.');
+          ok(data.message || 'Check your email for a sign-in link.');
+          $('#magicBtn').disabled = false;
         } catch (e) {
           $('#magicBtn').disabled = false;
           err(e.message);
         }
       };
+      $('#magicBtn').onclick = sendMagic;
+      $('#email').addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          sendMagic();
+        }
+      });
       return;
     }
 
@@ -1868,53 +1884,16 @@
       ${isAdmin ? `
       <div class="card stack" id="emailSettingsCard">
         <h2>Email</h2>
-        <p class="lead">Required to deliver invites, password resets, and sign-in links.</p>
+        <p class="lead">Users receive invite and sign-in links by email — they don’t configure anything.</p>
         ${settings.email?.configured
-          ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email configured.')}</div>`
-          : `<div class="error">${escapeHtml(settings.email?.message || 'Email is not configured — messages are not sent to users.')}</div>`}
-        <form id="emailConfigForm" class="grid two">
-          <label>Provider
-            <select name="provider" id="emailProvider">
-              <option value="resend" ${settings.email?.provider === 'resend' ? 'selected' : ''}>Resend (API)</option>
-              <option value="smtp" ${settings.email?.provider === 'smtp' || !settings.email?.configured ? 'selected' : ''}>SMTP</option>
-            </select>
-          </label>
-          <label>From address
-            <input name="smtpFrom" type="email" required
-              value="${escapeHtml(settings.email?.from || '')}"
-              placeholder="billing@yourfirm.com" />
-          </label>
-          <div class="span-all" id="emailResendFields" ${settings.email?.provider === 'smtp' ? 'hidden' : ''}>
-            <label class="span-all">Resend API key
-              <input name="resendApiKey" type="password" autocomplete="off"
-                placeholder="${settings.email?.provider === 'resend' && settings.email?.apiKeyMasked ? 'Saved — enter a new key to replace' : 're_xxxxxxxx'}" />
-            </label>
-            <p class="hint">Create a key at <a href="https://resend.com" target="_blank" rel="noopener noreferrer">resend.com</a>. From address must be a verified domain/sender.</p>
-          </div>
-          <div class="span-all grid two" id="emailSmtpFields" ${settings.email?.provider === 'resend' ? 'hidden' : ''}>
-            <label>SMTP host
-              <input name="smtpHost" value="${escapeHtml(settings.email?.host || '')}" placeholder="smtp.gmail.com" />
-            </label>
-            <label>Port
-              <input name="smtpPort" type="number" value="${escapeHtml(String(settings.email?.port || 587))}" />
-            </label>
-            <label>Username
-              <input name="smtpUser" value="${escapeHtml(settings.email?.user || '')}" autocomplete="off" />
-            </label>
-            <label>Password
-              <input name="smtpPass" type="password" autocomplete="off"
-                placeholder="${settings.email?.passConfigured ? 'Saved — enter a new password to replace' : 'App password / SMTP password'}" />
-            </label>
-            <label class="span-all"><input type="checkbox" name="smtpSecure" ${settings.email?.secure ? 'checked' : ''} /> Use TLS from connect (port 465)</label>
-            <p class="hint span-all">Gmail: smtp.gmail.com:587 + an app password. Or use SendGrid / SES / Mailgun SMTP.</p>
-          </div>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Save email settings</button>
-            <button type="button" id="emailTestBtn">Send test email</button>
-          </div>
-        </form>
+          ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email is ready.')}</div>
+             <div class="row-actions">
+               <button type="button" class="primary" id="emailTestBtn">Send me a test email</button>
+             </div>`
+          : `<div class="error">${escapeHtml(settings.email?.message || 'Email is not ready yet.')}</div>
+             <p class="hint">Easiest path: connect Microsoft under <strong>OneDrive / SharePoint</strong> below (approve Mail.Send when prompted). Invites and login links then send from that mailbox automatically.</p>
+             <p class="hint">Or set product secrets <code>RESEND_API_KEY</code> + <code>SMTP_FROM</code> once on the server.</p>`}
         <div id="emailSettingsMsg"></div>
-        <p class="hint">Environment variables <code>RESEND_API_KEY</code> / <code>SMTP_*</code> override these settings when set.</p>
       </div>` : ''}
 
       ${(isAdmin || state.user.role === 'billing_clerk') ? `
@@ -1922,8 +1901,8 @@
         <h2>OneDrive / SharePoint</h2>
         <p class="lead">
           ${settings.microsoft?.connected
-            ? `Connected${settings.microsoft.accountLabel ? ` as <strong>${escapeHtml(settings.microsoft.accountLabel)}</strong>` : ' to Microsoft'}`
-            : 'Connect your Microsoft account to sync matter folders'}
+            ? `Connected${settings.microsoft.accountLabel ? ` as <strong>${escapeHtml(settings.microsoft.accountLabel)}</strong>` : ' to Microsoft'} — also used to send invite and sign-in emails`
+            : 'Connect Microsoft once to sync OneDrive and send invite / sign-in emails automatically'}
         </p>
 
         <div class="onedrive-connect-box">
@@ -1968,7 +1947,7 @@
           <ol>
             <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">Azure App registrations</a> → New registration (once for the product).</li>
             <li>Supported accounts: multitenant (or single-tenant). Authentication → allow public client flows; redirect URI <code>${escapeHtml(window.location.origin)}/api/onedrive/oauth/callback</code>.</li>
-            <li>API permissions (delegated): User.Read, Files.Read.All, Sites.Read.All, offline_access → Grant admin consent.</li>
+            <li>API permissions (delegated): User.Read, Mail.Send, Files.Read.All, Sites.Read.All, offline_access → Grant admin consent.</li>
             <li>Set <code>MS_CLIENT_ID=&lt;Application (client) ID&gt;</code> and restart the server.</li>
           </ol>
           <form id="msAppConfigForm" class="grid two" style="margin-top:.75rem">
@@ -2014,9 +1993,9 @@
           <label>Rate effective date
             <input name="rateEffectiveDate" type="date" value="${today}" required />
           </label>
-          <p class="hint span-all">Sends a secure invite email so they set their own password. No temporary password is stored.</p>
+          <p class="hint span-all">They get an email with a one-time link to set a password and sign in. No temporary password to share.</p>
           <div class="row-actions span-all" style="align-items:end">
-            <button class="primary" type="submit">Invite by email</button>
+            <button class="primary" type="submit">Send invite email</button>
           </div>
         </form>
         <div id="tkMsg"></div>
@@ -2229,54 +2208,6 @@
       params.delete('onedrive');
       params.delete('msg');
       window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}#settings`);
-    }
-
-    const emailProvider = $('#emailProvider');
-    const syncEmailProvider = () => {
-      const v = emailProvider?.value || 'smtp';
-      const resend = $('#emailResendFields');
-      const smtp = $('#emailSmtpFields');
-      if (resend) resend.hidden = v !== 'resend';
-      if (smtp) smtp.hidden = v !== 'smtp';
-    };
-    if (emailProvider) {
-      emailProvider.onchange = syncEmailProvider;
-      syncEmailProvider();
-    }
-
-    const emailForm = $('#emailConfigForm');
-    if (emailForm) {
-      emailForm.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(emailForm);
-        const provider = String(fd.get('provider') || 'smtp');
-        const emailConfig = {
-          provider,
-          smtpFrom: fd.get('smtpFrom'),
-          clearSmtp: provider === 'resend',
-          clearResend: provider === 'smtp',
-        };
-        if (provider === 'resend') {
-          emailConfig.resendApiKey = fd.get('resendApiKey');
-        } else {
-          emailConfig.smtpHost = fd.get('smtpHost');
-          emailConfig.smtpPort = fd.get('smtpPort');
-          emailConfig.smtpUser = fd.get('smtpUser');
-          emailConfig.smtpPass = fd.get('smtpPass');
-          emailConfig.smtpSecure = fd.get('smtpSecure') === 'on';
-        }
-        try {
-          await api('/api/settings', {
-            method: 'PATCH',
-            body: JSON.stringify({ emailConfig }),
-          });
-          await renderSettings();
-          const msg = $('#emailSettingsMsg');
-          if (msg) msg.innerHTML = '<div class="ok-banner">Email settings saved.</div>';
-        } catch (e) {
-          $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
     }
 
     const emailTestBtn = $('#emailTestBtn');
