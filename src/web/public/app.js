@@ -821,6 +821,7 @@
     }
     renderShell();
     renderView();
+    ensureHelpAgent();
   }
 
   async function refreshRefs() {
@@ -846,6 +847,7 @@
     if (nav) nav.innerHTML = '';
     if (userbar) userbar.textContent = '';
     if (sidebarActions) sidebarActions.innerHTML = '';
+    setHelpAgentVisible(false);
   }
 
   function renderLogin(mode = 'password') {
@@ -4154,6 +4156,188 @@
           </tbody>
         </table></div>
       </div>`;
+  }
+
+  /** Compact in-app help agent: training & how-to for Firm Billing. */
+  const HELP_TOPICS = [
+    {
+      id: 'matter',
+      label: 'Create a matter',
+      keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case'],
+      answer: 'Go to Matters → Create Matter (or the sidebar Create Matter action). Enter a name, fill any required custom fields, then confirm. The matter opens so you can add time and details.',
+    },
+    {
+      id: 'time',
+      label: 'Log time',
+      keywords: ['time', 'hours', 'log time', 'time entry', 'timesheet', 'billable'],
+      answer: 'Open Time Entry or a matter’s Add time form. Pick the matter, date, hours (0.25 steps), and description, then Save. Saved time is ready for Billing—no approval step.',
+    },
+    {
+      id: 'contact',
+      label: 'Add a contact',
+      keywords: ['contact', 'client', 'company', 'person', 'create contact'],
+      answer: 'Open Contacts → Create contact. Add name (required), plus company, email, phone, notes, and any required contact custom fields. Confirm to create, then edit the contact record anytime.',
+    },
+    {
+      id: 'fields',
+      label: 'Custom fields',
+      keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
+      answer: 'In Settings, use Matter fields, Contact fields, or Time entry fields. Add a label and type (text, dropdown, etc.). Check Required on create when the field must be filled. Use Edit to change type or required later.',
+    },
+    {
+      id: 'reports',
+      label: 'Reports & dashboard',
+      keywords: ['report', 'dashboard', 'lodestar', 'export', 'chart', 'custom report'],
+      answer: 'Reports: run firm Lodestar reports or create custom reports grouped by a custom field. Dashboard: pin firm or custom reports, remove them with Remove, and export everything with Export PDF / CSV / Excel.',
+    },
+    {
+      id: 'billing',
+      label: 'Create a bill',
+      keywords: ['bill', 'billing', 'invoice', 'prebill'],
+      answer: 'Open Billing, choose the matter and approved time to include, then create the bill. Only roles like admin or billing clerk can manage billing settings.',
+    },
+    {
+      id: 'login',
+      label: 'Sign in',
+      keywords: ['login', 'password', 'sign in', 'demo', 'avery'],
+      answer: 'Use your work email and password. Demo: avery@firm.example / demo-change-me. You can also request a magic link or reset password from the login screen.',
+    },
+  ];
+
+  function matchHelpAnswer(question) {
+    const q = String(question || '').trim().toLowerCase();
+    if (!q) return null;
+    let best = null;
+    let bestScore = 0;
+    for (const topic of HELP_TOPICS) {
+      let score = 0;
+      for (const key of topic.keywords) {
+        if (q.includes(key)) score += key.length;
+      }
+      if (topic.label.toLowerCase().split(/\s+/).some((w) => w.length > 3 && q.includes(w))) {
+        score += 2;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = topic;
+      }
+    }
+    return bestScore > 0 ? best : null;
+  }
+
+  function setHelpAgentVisible(visible) {
+    const root = document.getElementById('helpAgent');
+    if (root) root.hidden = !visible;
+  }
+
+  function ensureHelpAgent() {
+    let root = document.getElementById('helpAgent');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'helpAgent';
+      root.className = 'help-agent';
+      root.innerHTML = `
+        <div class="help-agent-panel" id="helpAgentPanel" hidden>
+          <div class="help-agent-head">
+            <div>
+              <strong>Help Agent</strong>
+              <span class="muted">Training & how-to</span>
+            </div>
+            <button type="button" class="help-agent-close" id="helpAgentClose" aria-label="Close help">×</button>
+          </div>
+          <div class="help-agent-body" id="helpAgentBody"></div>
+          <form class="help-agent-form" id="helpAgentForm">
+            <input id="helpAgentInput" name="q" autocomplete="off"
+              placeholder="Ask how to do something…" aria-label="Ask the help agent" />
+            <button class="primary" type="submit">Ask</button>
+          </form>
+        </div>
+        <button type="button" class="help-agent-bubble" id="helpAgentBubble"
+          aria-label="Open help agent" title="Help & training">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+            stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3.8a6.4 6.4 0 0 0-5.5 9.7L5 20l6.7-1.7A6.4 6.4 0 1 0 12 3.8z"/>
+            <path d="M9.2 11.2h.01M12 11.2h.01M14.8 11.2h.01"/>
+          </svg>
+        </button>`;
+      document.body.appendChild(root);
+
+      const panel = $('#helpAgentPanel', root);
+      const body = $('#helpAgentBody', root);
+      const bubble = $('#helpAgentBubble', root);
+      const form = $('#helpAgentForm', root);
+      const input = $('#helpAgentInput', root);
+
+      const renderHome = () => {
+        body.innerHTML = `
+          <p class="help-agent-intro">Need a hand? Pick a topic or ask how to do something in Firm Billing.</p>
+          <div class="help-agent-topics">
+            ${HELP_TOPICS.map((t) => `
+              <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
+            `).join('')}
+          </div>`;
+        body.querySelectorAll('[data-help-topic]').forEach((btn) => {
+          btn.onclick = () => {
+            const topic = HELP_TOPICS.find((t) => t.id === btn.dataset.helpTopic);
+            if (topic) showAnswer(topic.label, topic.answer);
+          };
+        });
+      };
+
+      const showAnswer = (title, answer) => {
+        body.innerHTML = `
+          <div class="help-agent-answer">
+            <strong>${escapeHtml(title)}</strong>
+            <p>${escapeHtml(answer)}</p>
+            <button type="button" class="linkish" id="helpAgentBack">← All topics</button>
+          </div>`;
+        $('#helpAgentBack', body).onclick = renderHome;
+        body.scrollTop = 0;
+      };
+
+      const setOpen = (open) => {
+        root.classList.toggle('is-open', open);
+        panel.hidden = !open;
+        bubble.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) {
+          renderHome();
+          setTimeout(() => input?.focus(), 0);
+        }
+      };
+
+      bubble.onclick = () => setOpen(!root.classList.contains('is-open'));
+      $('#helpAgentClose', root).onclick = () => setOpen(false);
+      form.onsubmit = (ev) => {
+        ev.preventDefault();
+        const q = String(input.value || '').trim();
+        if (!q) return;
+        const match = matchHelpAnswer(q);
+        if (match) {
+          showAnswer(match.label, match.answer);
+        } else {
+          showAnswer('I can help with that',
+            'Try a topic below, or ask about creating matters, logging time, contacts, custom fields, reports, dashboard, or billing.');
+          // After showing fallback, also list topics again under the message
+          const wrap = body.querySelector('.help-agent-answer');
+          if (wrap) {
+            const topics = document.createElement('div');
+            topics.className = 'help-agent-topics';
+            topics.innerHTML = HELP_TOPICS.slice(0, 4).map((t) => `
+              <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
+            `).join('');
+            wrap.appendChild(topics);
+            topics.querySelectorAll('[data-help-topic]').forEach((btn) => {
+              btn.onclick = () => {
+                const topic = HELP_TOPICS.find((t) => t.id === btn.dataset.helpTopic);
+                if (topic) showAnswer(topic.label, topic.answer);
+              };
+            });
+          }
+        }
+        input.value = '';
+      };
+    }
+    setHelpAgentVisible(!!state.user);
   }
 
   boot();
