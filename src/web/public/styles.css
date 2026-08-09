@@ -1114,6 +1114,18 @@ main {
   max-width: 100%;
 }
 
+.view-loading {
+  min-height: 8rem;
+  display: grid;
+  place-content: center;
+  animation: view-loading-fade 0.2s ease-out;
+}
+
+@keyframes view-loading-fade {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
 .page-card {
   min-height: calc(100vh - 7.5rem);
   min-height: calc(100dvh - 7.5rem);

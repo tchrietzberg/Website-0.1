@@ -42,7 +42,111 @@
     contactFlash: null,
     contactCreateFlash: null,
     contactListFlash: null,
+    _apiCache: null,
+    _shellSig: null,
+    _renderToken: 0,
   };
+
+  const API_CACHE_TTL_MS = 12_000;
+
+  function bustApiCache() {
+    state._apiCache = Object.create(null);
+  }
+
+  function cacheGet(key) {
+    const hit = state._apiCache && state._apiCache[key];
+    if (!hit) return undefined;
+    if (Date.now() - hit.at > API_CACHE_TTL_MS) {
+      delete state._apiCache[key];
+      return undefined;
+    }
+    return hit.data;
+  }
+
+  function cacheSet(key, data) {
+    if (!state._apiCache) state._apiCache = Object.create(null);
+    state._apiCache[key] = { at: Date.now(), data };
+  }
+
+  function shellSignature() {
+    return [
+      state.user?.id,
+      state.user?.role,
+      roleCanView('matter') ? 1 : 0,
+      roleCanView('contact') ? 1 : 0,
+      roleCanView('report') ? 1 : 0,
+      roleCanView('time') ? 1 : 0,
+      roleCanModify('matter') ? 1 : 0,
+      roleCanModify('contact') ? 1 : 0,
+      roleCanModify('time') ? 1 : 0,
+    ].join('|');
+  }
+
+  function navActiveId(view = state.view) {
+    if (view === 'matter') return 'matters';
+    if (view === 'contact') return 'contacts';
+    return view;
+  }
+
+  function setActiveNav(view = state.view) {
+    const active = navActiveId(view);
+    if (!nav) return;
+    nav.querySelectorAll('[data-view]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.view === active);
+    });
+  }
+
+  function stillOnView(expected) {
+    if (Array.isArray(expected)) return expected.includes(state.view);
+    return state.view === expected;
+  }
+
+  function showViewLoading() {
+    if (!main) return;
+    main.innerHTML = `
+      <div class="card view-loading" aria-busy="true" aria-live="polite">
+        <p class="muted">Loading…</p>
+      </div>`;
+  }
+
+  /** Warm GET cache for a nav target so toggles often hit memory. */
+  function prefetchView(view) {
+    if (!state.user || !view) return;
+    if (view === 'matters') {
+      void api('/api/matters?search=1');
+      void api('/api/matters');
+      void api('/api/clients');
+    } else if (view === 'contacts') {
+      void api('/api/clients');
+      void api('/api/clients/field-config');
+    } else if (view === 'time') {
+      void api('/api/time-entries');
+      void api('/api/settings');
+      void api('/api/matters');
+      void api('/api/custom-fields?appliesTo=time_entry');
+    } else if (view === 'billing') {
+      void api('/api/invoices');
+      void api('/api/matters');
+      void api('/api/billing/fields');
+      if (['admin', 'billing_clerk'].includes(state.user.role)) {
+        void api('/api/billing/ready');
+      }
+    } else if (view === 'reports') {
+      void api('/api/custom-reports');
+      void api('/api/record-types');
+      void api('/api/custom-fields?appliesTo=time_entry');
+      void api('/api/firm-reports');
+    } else if (view === 'dashboard') {
+      void api('/api/dashboard');
+    } else if (view === 'settings') {
+      void api('/api/settings');
+      void api('/api/record-types');
+      void api('/api/record-types?appliesTo=client');
+      if (['admin', 'billing_clerk'].includes(state.user.role)) {
+        void api('/api/timekeepers');
+      }
+    }
+  }
 
   function canCreateMatter(user) {
     return !!user && ['admin', 'billing_clerk', 'attorney', 'paralegal'].includes(user.role);
@@ -190,6 +294,8 @@
     state.token = null;
     state.csrf = null;
     state.user = null;
+    state._shellSig = null;
+    bustApiCache();
     try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
   }
 
@@ -208,6 +314,11 @@
 
   async function api(path, opts = {}) {
     const method = String(opts.method || 'GET').toUpperCase();
+    const useCache = method === 'GET' && opts.cache !== false && !opts.headers?.['X-No-Cache'];
+    if (useCache) {
+      const cached = cacheGet(`${method} ${path}`);
+      if (cached !== undefined) return cached;
+    }
     const headers = {
       'Content-Type': 'application/json',
       // Helps the server build email links with the URL the user is actually on
@@ -234,9 +345,12 @@
         err.payload = data;
         throw err;
       }
+      if (useCache) cacheSet(`${method} ${path}`, data);
+      else if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) bustApiCache();
       return data;
     }
     if (!res.ok) throw new Error(await res.text());
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) bustApiCache();
     return res;
   }
 
@@ -1687,7 +1801,10 @@
     if (appEl) appEl.classList.remove('login-mode');
     await refreshRefs();
     renderShell();
-    renderView();
+    await renderView();
+    ['matters', 'contacts', 'time', 'billing', 'reports', 'dashboard', 'settings']
+      .filter((v) => v !== state.view)
+      .forEach((v) => prefetchView(v));
   }
 
   async function boot() {
@@ -1710,8 +1827,12 @@
       state.view = 'settings';
     }
     renderShell();
-    renderView();
+    await renderView();
     ensureHelpAgent();
+    // Warm sibling nav targets so the next toggle is usually cache-hit.
+    ['matters', 'contacts', 'time', 'billing', 'reports', 'dashboard', 'settings']
+      .filter((v) => v !== state.view)
+      .forEach((v) => prefetchView(v));
   }
 
   async function refreshRefs() {
@@ -2052,7 +2173,7 @@
     return icons[name] || icons.matters;
   }
 
-  function renderShell() {
+  function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
     document.body.classList.remove('login-mode');
     if (appEl) {
@@ -2083,11 +2204,14 @@
     if ((state.view === 'reports' || state.view === 'dashboard') && !roleCanView('report')) {
       state.view = items[0]?.[0] || 'settings';
     }
-    const activeView = state.view === 'matter'
-      ? 'matters'
-      : state.view === 'contact'
-        ? 'contacts'
-        : state.view;
+    const activeView = navActiveId(state.view);
+    const sig = shellSignature();
+    // Fast path: permissions unchanged — only flip the active nav highlight.
+    if (!opts.force && state._shellSig === sig && nav?.querySelector('[data-view]')) {
+      setActiveNav(state.view);
+      return;
+    }
+    state._shellSig = sig;
 
     if (sidebarActions) {
       sidebarActions.innerHTML = `
@@ -2139,14 +2263,24 @@
         </button>`
       ).join('')}`;
     nav.querySelectorAll('[data-view]').forEach((b) => {
+      b.addEventListener('pointerenter', () => prefetchView(b.dataset.view));
+      b.addEventListener('focus', () => prefetchView(b.dataset.view));
       b.onclick = () => {
-        state.view = b.dataset.view;
+        const next = b.dataset.view;
+        const sameSection = navActiveId(state.view) === next
+          && !state.showCreateMatter
+          && !state.showCreateContact
+          && !state.matterId
+          && !state.contactId;
+        if (sameSection) return;
+        prefetchView(next);
+        state.view = next;
         if (state.view !== 'matter') state.matterId = null;
         if (state.view !== 'matters') state.showCreateMatter = false;
         if (state.view !== 'contact') state.contactId = null;
         if (state.view !== 'contacts') state.showCreateContact = false;
-        renderShell();
-        renderView();
+        setActiveNav(state.view);
+        void renderView();
       };
     });
     userbar.innerHTML = `
@@ -2163,23 +2297,33 @@
   }
 
   async function renderView() {
+    const token = ++state._renderToken;
+    const view = state.view;
+    // Keep prior content visible while warm cache resolves; only flash loading if slow.
+    const loadingTimer = setTimeout(() => {
+      if (token === state._renderToken) showViewLoading();
+    }, 140);
     try {
-      if (state.view === 'matters') await renderMatters();
-      else if (state.view === 'matter') await renderMatterDetail();
-      else if (state.view === 'contacts') await renderContacts();
-      else if (state.view === 'contact') await renderContactDetail();
-      else if (state.view === 'time') await renderTime();
-      else if (state.view === 'billing') await renderBilling();
-      else if (state.view === 'reports') await renderReports();
-      else if (state.view === 'dashboard') await renderDashboard();
-      else if (state.view === 'settings') await renderSettings();
-      else if (state.view === 'audit') await renderAudit();
+      if (view === 'matters') await renderMatters();
+      else if (view === 'matter') await renderMatterDetail();
+      else if (view === 'contacts') await renderContacts();
+      else if (view === 'contact') await renderContactDetail();
+      else if (view === 'time') await renderTime();
+      else if (view === 'billing') await renderBilling();
+      else if (view === 'reports') await renderReports();
+      else if (view === 'dashboard') await renderDashboard();
+      else if (view === 'settings') await renderSettings();
+      else if (view === 'audit') await renderAudit();
       else await renderMatters();
+      if (token !== state._renderToken) return;
     } catch (e) {
+      if (token !== state._renderToken) return;
       const msg = e.message === 'forbidden'
         ? 'You do not have access to this section with your current role.'
         : e.message;
       main.innerHTML = `<div class="card"><div class="error">${escapeHtml(msg)}</div></div>`;
+    } finally {
+      clearTimeout(loadingTimer);
     }
   }
 
@@ -2199,8 +2343,10 @@
     const canEdit = canCreateMatter(state.user) && roleCanModify('matter');
 
     const showCreate = canEdit && state.showCreateMatter;
-    const [hits, clients, allMatters, recordTypes, createSettings] = await Promise.all([
-      api(`/api/matters?${params}`),
+    let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
+    const requestedCreateTypeKey = createRecordTypeKey;
+    const [hits, clients, allMatters, recordTypes, createSettings, createMatterFieldsRaw] = await Promise.all([
+      hasQuery ? api(`/api/matters?${params}`) : Promise.resolve([]),
       api('/api/clients').catch(() => state.clients || []),
       api('/api/matters'), // full list for dropdowns elsewhere; not shown here
       showCreate
@@ -2209,7 +2355,11 @@
       showCreate
         ? api('/api/settings').catch(() => state.settings || {})
         : Promise.resolve(state.settings || {}),
+      showCreate
+        ? api(`/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(createRecordTypeKey)}`).catch(() => [])
+        : Promise.resolve([]),
     ]);
+    if (!stillOnView('matters')) return;
     state.matters = allMatters;
     state.clients = clients || [];
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
@@ -2218,16 +2368,19 @@
     const draftName = state.createMatterDraftName || '';
     const createFieldMsg = state.createMatterFieldMsg;
     state.createMatterFieldMsg = null;
-    let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
     if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
       createRecordTypeKey = recordTypes[0].key;
       state.createMatterRecordTypeKey = createRecordTypeKey;
     }
+    let createMatterFields = createMatterFieldsRaw;
+    if (showCreate && createRecordTypeKey !== requestedCreateTypeKey) {
+      createMatterFields = await api(
+        `/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(createRecordTypeKey)}`
+      ).catch(() => []);
+      if (!stillOnView('matters')) return;
+    }
     const createTypeLabel = ((recordTypes || []).find((t) => t.key === createRecordTypeKey) || {}).label
       || createRecordTypeKey;
-    const createMatterFields = showCreate
-      ? await api(`/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(createRecordTypeKey)}`).catch(() => [])
-      : [];
     const formulaFieldIds = new Set(
       (nameFormula?.parts || [])
         .filter((p) => p.kind === 'custom_field')
@@ -2578,13 +2731,21 @@
     const canEdit = canCreateMatter(state.user) && roleCanModify('contact');
     const showCreate = canEdit && state.showCreateContact;
     const q = state.contactSearch.q || '';
-    const [contacts, fieldConfig, recordTypes] = await Promise.all([
+    let createRecordTypeKey = state.createContactRecordTypeKey || 'person';
+    const requestedCreateTypeKey = createRecordTypeKey;
+    const [contacts, fieldConfig, recordTypes, createFieldsRaw] = await Promise.all([
       api(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`),
       api('/api/clients/field-config').catch(() => ({ enabledStandard: [], enabledKeys: [] })),
       showCreate
         ? api('/api/record-types?appliesTo=client').catch(() => [])
         : Promise.resolve([]),
+      showCreate
+        ? api(
+          `/api/custom-fields?appliesTo=client&type=${encodeURIComponent(createRecordTypeKey)}`
+        ).catch(() => [])
+        : Promise.resolve([]),
     ]);
+    if (!stillOnView('contacts')) return;
     state.clients = contacts || state.clients || [];
     const enabledStd = fieldConfig.enabledStandard || [];
     const listCols = enabledStd.filter((f) => f.key !== 'notes');
@@ -2593,18 +2754,19 @@
     state.contactListFlash = null;
     const createFieldMsg = state.createContactFieldMsg;
     state.createContactFieldMsg = null;
-    let createRecordTypeKey = state.createContactRecordTypeKey || 'person';
     if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
       createRecordTypeKey = recordTypes[0].key;
       state.createContactRecordTypeKey = createRecordTypeKey;
     }
+    let createFields = createFieldsRaw;
+    if (showCreate && createRecordTypeKey !== requestedCreateTypeKey) {
+      createFields = await api(
+        `/api/custom-fields?appliesTo=client&type=${encodeURIComponent(createRecordTypeKey)}`
+      ).catch(() => []);
+      if (!stillOnView('contacts')) return;
+    }
     const createTypeLabel = ((recordTypes || []).find((t) => t.key === createRecordTypeKey) || {}).label
       || createRecordTypeKey;
-    const createFields = showCreate
-      ? await api(
-        `/api/custom-fields?appliesTo=client&type=${encodeURIComponent(createRecordTypeKey)}`
-      ).catch(() => [])
-      : [];
     const createFieldDefs = (createFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -4254,6 +4416,7 @@
       api('/api/matters').catch(() => []),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
     ]);
+    if (!stillOnView('time')) return;
     state.settings = settings;
     state.matters = matters;
     const today = new Date().toISOString().slice(0, 10);
@@ -4623,6 +4786,7 @@
         enabledLines: [], availableLines: [], headerKeys: [], lineKeys: [],
       })),
     ]);
+    if (!stillOnView('billing')) return;
     state.matters = matters || [];
     const readyIds = new Set((ready || []).map((r) => Number(r.id)));
     main.innerHTML = `
@@ -5027,6 +5191,7 @@
 
   async function renderDashboard() {
     const data = await api('/api/dashboard');
+    if (!stillOnView('dashboard')) return;
     const widgets = data.widgets || [];
     const available = data.available || { firm: [], custom: [] };
     const canEdit = roleCanModify('report');
@@ -5160,10 +5325,12 @@
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
       api(`/api/firm-reports${includeDisabledFirm ? '?includeDisabled=1' : ''}`).catch(() => []),
     ]);
+    if (!stillOnView('reports')) return;
     const matterFieldLists = await Promise.all(
       (recordTypes || []).map((t) =>
         api(`/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(t.key)}`).catch(() => []))
     );
+    if (!stillOnView('reports')) return;
     const matterFields = matterFieldLists.flat()
       .filter((f, i, arr) => arr.findIndex((x) => Number(x.id) === Number(f.id)) === i);
     const canEditReports = roleCanModify('report');
@@ -5944,18 +6111,17 @@
   async function renderSettings() {
     const isAdmin = state.user.role === 'admin';
     const canEditBilling = isAdmin || state.user.role === 'billing_clerk';
-    const settings = await api('/api/settings');
+    const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
+    const [settings, timekeepers, matterRecordTypesPrefetch, contactRecordTypesPrefetch] = await Promise.all([
+      api('/api/settings'),
+      canEditBilling ? api('/api/timekeepers').catch(() => []) : Promise.resolve([]),
+      canConfigureFields ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
+      canConfigureFields ? api('/api/record-types?appliesTo=client').catch(() => []) : Promise.resolve([]),
+    ]);
+    if (!stillOnView('settings')) return;
     state.settings = settings;
 
-    let timekeepers = [];
-    if (canEditBilling) {
-      try { timekeepers = await api('/api/timekeepers'); }
-      catch { timekeepers = []; }
-    }
-
     const today = new Date().toISOString().slice(0, 10);
-
-    const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
 
     main.innerHTML = `
       <div class="card stack">
@@ -6277,33 +6443,36 @@
     wireChoiceGroup(main, 'roundMode');
 
     if (canConfigureFields) {
-      const matterRecordTypes = await api('/api/record-types').catch(() => []);
-      await bindDefaultFieldsEditor({
-        bodyEl: $('#defaultFieldsBody'),
-        msgEl: $('#typeFieldMsg'),
-        recordTypeKey: state.settingsMatterRecordTypeKey || 'billable',
-        appliesTo: 'matter',
-        recordTypes: matterRecordTypes,
-        onRecordTypeChange: (key) => {
-          state.settingsMatterRecordTypeKey = key;
-        },
-      });
-      const contactRecordTypes = await api('/api/record-types?appliesTo=client').catch(() => []);
-      await bindDefaultFieldsEditor({
-        bodyEl: $('#contactFieldsBody'),
-        msgEl: $('#contactFieldMsg'),
-        recordTypeKey: state.settingsContactRecordTypeKey || 'person',
-        appliesTo: 'client',
-        recordTypes: contactRecordTypes,
-        onRecordTypeChange: (key) => {
-          state.settingsContactRecordTypeKey = key;
-        },
-      });
-      await bindDefaultFieldsEditor({
-        bodyEl: $('#timeFieldsBody'),
-        msgEl: $('#timeFieldMsg'),
-        appliesTo: 'time_entry',
-      });
+      const matterRecordTypes = matterRecordTypesPrefetch || [];
+      const contactRecordTypes = contactRecordTypesPrefetch || [];
+      await Promise.all([
+        bindDefaultFieldsEditor({
+          bodyEl: $('#defaultFieldsBody'),
+          msgEl: $('#typeFieldMsg'),
+          recordTypeKey: state.settingsMatterRecordTypeKey || 'billable',
+          appliesTo: 'matter',
+          recordTypes: matterRecordTypes,
+          onRecordTypeChange: (key) => {
+            state.settingsMatterRecordTypeKey = key;
+          },
+        }),
+        bindDefaultFieldsEditor({
+          bodyEl: $('#contactFieldsBody'),
+          msgEl: $('#contactFieldMsg'),
+          recordTypeKey: state.settingsContactRecordTypeKey || 'person',
+          appliesTo: 'client',
+          recordTypes: contactRecordTypes,
+          onRecordTypeChange: (key) => {
+            state.settingsContactRecordTypeKey = key;
+          },
+        }),
+        bindDefaultFieldsEditor({
+          bodyEl: $('#timeFieldsBody'),
+          msgEl: $('#timeFieldMsg'),
+          appliesTo: 'time_entry',
+        }),
+      ]);
+      if (!stillOnView('settings')) return;
       await bindMatterNameFormulaEditor({
         bodyEl: $('#matterNameFormulaBody'),
         config: settings.matterNameFormula,
@@ -6312,16 +6481,18 @@
     }
 
     if (isAdmin && settings.permissions) {
-      await bindRolePermissionsEditor({
-        bodyEl: $('#rolePermissionsBody'),
-        msgEl: $('#rolePermissionsMsg'),
-        permissions: settings.permissions,
-      });
-      await bindFieldPermissionsEditor({
-        bodyEl: $('#fieldPermissionsBody'),
-        msgEl: $('#fieldPermissionsMsg'),
-        permissions: settings.permissions,
-      });
+      await Promise.all([
+        bindRolePermissionsEditor({
+          bodyEl: $('#rolePermissionsBody'),
+          msgEl: $('#rolePermissionsMsg'),
+          permissions: settings.permissions,
+        }),
+        bindFieldPermissionsEditor({
+          bodyEl: $('#fieldPermissionsBody'),
+          msgEl: $('#fieldPermissionsMsg'),
+          permissions: settings.permissions,
+        }),
+      ]);
     }
 
     const form = $('#settingsForm');
