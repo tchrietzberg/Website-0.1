@@ -121,8 +121,30 @@
     return state.view === expected;
   }
 
+  /** Clear the delayed “Loading…” arm for the current renderView pass. */
+  function clearViewLoadingArm() {
+    if (state._viewLoadingTimer) {
+      clearTimeout(state._viewLoadingTimer);
+      state._viewLoadingTimer = null;
+    }
+  }
+
+  /**
+   * Paint main content for the active render. Cancels the delayed loading
+   * overlay so a fast (cached) first paint is not stomped ~140ms later —
+   * which previously left Settings stuck on “Loading…”.
+   */
+  function setMainHtml(html) {
+    if (!main) return;
+    clearViewLoadingArm();
+    state._viewPaintToken = state._renderToken;
+    main.innerHTML = html;
+  }
+
   function showViewLoading() {
     if (!main) return;
+    // Real content for this render already committed — do not clobber it.
+    if (state._viewPaintToken === state._renderToken) return;
     main.innerHTML = `
       <div class="card view-loading" aria-busy="true" aria-live="polite">
         <p class="muted">Loading…</p>
@@ -2937,7 +2959,7 @@
           <div id="loginErr"></div>
           <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
 
-    main.innerHTML = `<div class="login-stage"><div class="login-panel">${panel}</div></div>`;
+    setMainHtml(`<div class="login-stage"><div class="login-panel">${panel}</div></div>`);
 
     const err = (msg) => {
       const el = $('#loginErr');
@@ -3036,18 +3058,18 @@
 
   async function renderAuthToken(rawToken) {
     enterLoginChrome();
-    main.innerHTML = `
+    setMainHtml(`
       <div class="login-stage">
         <div class="login-panel">
           <p class="login-brand">Firm Billing</p>
           <p class="login-lead">Checking secure link…</p>
           <div id="loginErr"></div>
         </div>
-      </div>`;
+      </div>`);
     try {
       const info = await api(`/api/auth/token-info?token=${encodeURIComponent(rawToken)}`);
       if (!info.valid) {
-        main.innerHTML = `
+        setMainHtml(`
           <div class="login-stage">
             <div class="login-panel">
               <p class="login-brand">Firm Billing</p>
@@ -3055,21 +3077,21 @@
               <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
               <div id="loginErr"></div>
             </div>
-          </div>`;
+          </div>`);
         clearAuthTokenFromUrl();
         $('#backToLogin').onclick = () => renderLogin('password');
         return;
       }
 
       if (info.purpose === 'magic_login') {
-        main.innerHTML = `
+        setMainHtml(`
           <div class="login-stage">
             <div class="login-panel">
               <p class="login-brand">Firm Billing</p>
               <p class="login-lead">Signing you in…</p>
               <div id="loginErr"></div>
             </div>
-          </div>`;
+          </div>`);
         const data = await api('/api/login/magic/confirm', {
           method: 'POST',
           body: JSON.stringify({ token: rawToken }),
@@ -3081,7 +3103,7 @@
       const title = info.purpose === 'invite'
         ? 'Set your password to finish joining'
         : 'Choose a new password';
-      main.innerHTML = `
+      setMainHtml(`
         <div class="login-stage">
           <div class="login-panel">
             <p class="login-brand">Firm Billing</p>
@@ -3098,7 +3120,7 @@
             <button class="primary login-submit" id="setPwdBtn" type="button">Save and sign in</button>
             <div id="loginErr"></div>
           </div>
-        </div>`;
+        </div>`);
       const err = (msg) => {
         $('#loginErr').innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
       };
@@ -3121,7 +3143,7 @@
         }
       };
     } catch (e) {
-      main.innerHTML = `
+      setMainHtml(`
         <div class="login-stage">
           <div class="login-panel">
             <p class="login-brand">Firm Billing</p>
@@ -3129,7 +3151,7 @@
             <div class="error">${escapeHtml(e.message)}</div>
             <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
           </div>
-        </div>`;
+        </div>`);
       clearAuthTokenFromUrl();
       $('#backToLogin').onclick = () => renderLogin('password');
     }
@@ -3339,8 +3361,11 @@
   async function renderView() {
     const token = ++state._renderToken;
     const view = state.view;
+    clearViewLoadingArm();
     // Keep prior content visible while warm cache resolves; only flash loading if slow.
-    const loadingTimer = setTimeout(() => {
+    // Must not fire after setMainHtml() for this token, or Settings (and other views with
+    // post-paint binds) get replaced with a permanent Loading… screen.
+    state._viewLoadingTimer = setTimeout(() => {
       if (token === state._renderToken) showViewLoading();
     }, 140);
     try {
@@ -3362,9 +3387,9 @@
       const msg = e.message === 'forbidden'
         ? 'You do not have access to this section with your current role.'
         : e.message;
-      main.innerHTML = `<div class="card"><div class="error">${escapeHtml(msg)}</div></div>`;
+      setMainHtml(`<div class="card"><div class="error">${escapeHtml(msg)}</div></div>`);
     } finally {
-      clearTimeout(loadingTimer);
+      clearViewLoadingArm();
     }
   }
 
@@ -3482,7 +3507,7 @@
     // Put formula name fields first so they read with the name builder.
     createFieldDefs.sort((a, b) => Number(b.inNameFormula) - Number(a.inNameFormula));
 
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack page-card">
         <div class="page-head matters-toolbar">
           <h1>${showCreate ? 'Create Matter' : 'Matters'}</h1>
@@ -3580,7 +3605,7 @@
             ${matterSearchResultsHtml(hits, hasQuery ? state.matterSearch.q : '')}
           </div>
         </div>
-      </div>`;
+      </div>`);
 
     wireMatterLiveSearch();
     const clearCreate = $('#clearCreateMatter');
@@ -3910,7 +3935,7 @@
     }));
     const createCustomRows = (createFields || []).filter((f) => f.id != null);
 
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack page-card">
         <div class="page-head matters-toolbar">
           <h1>${showCreate ? 'Create Contact' : 'Contacts'}</h1>
@@ -4004,7 +4029,7 @@
             </table></div>
           </div>
         </div>
-      </div>`;
+      </div>`);
 
     const startCreate = $('#startCreateContact');
     if (startCreate) startCreate.onclick = () => goAddContact();
@@ -4300,7 +4325,7 @@
     };
 
     const canCreate = canCreateMatter(state.user) && roleCanModify('contact');
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card">
         <div class="page-head matters-toolbar" style="margin-bottom:.75rem">
           <div class="row-actions">
@@ -4356,7 +4381,7 @@
 
       ${canEdit && !showPostCreateFields ? contactFieldMgmtPanelHtml({
         msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
-      }) : ''}`;
+      }) : ''}`);
 
     $('#backContacts').onclick = () => {
       state.view = 'contacts';
@@ -5096,7 +5121,7 @@
       .map(([section, fields]) => [section, (fields || []).filter((f) => f.key !== 'std:number')])
       .filter(([, fields]) => fields.length > 0);
 
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card">
         <div class="row-actions" style="margin-bottom:.75rem">
           <button type="button" id="backMatters">← Matters</button>
@@ -5282,7 +5307,7 @@
         </div>
       </details>
 
-      ${canEdit ? matterOnlyFieldsPanelHtml() : ''}`;
+      ${canEdit ? matterOnlyFieldsPanelHtml() : ''}`);
 
     $('#backMatters').onclick = () => {
       state.view = 'matters';
@@ -5649,7 +5674,7 @@
     state.timeFlash = null;
     state.timeEntryRetain = null;
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
-    main.innerHTML = `
+    setMainHtml(`
       ${canEdit ? `<div class="card">
         <h1>Time Entry</h1>
         <form id="timeForm" class="grid two">
@@ -5763,7 +5788,7 @@
           </tbody>
         </table></div>
         <div id="timeListMsg" style="margin-top:.75rem"></div>
-      </div>`;
+      </div>`);
 
     const listMsg = (html) => {
       const el = $('#timeListMsg');
@@ -5950,7 +5975,7 @@
     if (!stillOnView('billing')) return;
     state.matters = matters || [];
     const readyIds = new Set((ready || []).map((r) => Number(r.id)));
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack">
         <h1>Billing</h1>
         <p class="lead">Create a bill from saved time in one step.</p>
@@ -6006,7 +6031,7 @@
           </tbody>
         </table></div>
       </div>
-      <div id="invoiceDetail"></div>`;
+      <div id="invoiceDetail"></div>`);
 
     if (canBill) {
       const billMatterPicker = wireMatterPicker($('#billForm'), { matters });
@@ -6323,7 +6348,7 @@
       }`;
     };
 
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack">
         <h1>Dashboard</h1>
         <p class="lead">Pin firm or custom reports here, then export the full dashboard.</p>
@@ -6364,7 +6389,7 @@
         </div>` : `
         <div class="card">
           <p class="muted">No dashboard reports yet.${canEdit ? ' Use Add report above, or create a custom report on Reports with “Show on dashboard” checked.' : ''}</p>
-        </div>`}`;
+        </div>`}`);
 
     const dashMsg = $('#dashMsg');
     main.querySelectorAll('[data-dash-export]').forEach((btn) => {
@@ -6523,7 +6548,7 @@
           </div>
         </form>`;
     };
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack">
         <h1>Reports</h1>
         <p class="lead">Run firm Lodestar reports, or build custom reports from custom fields for the Dashboard.</p>
@@ -6610,7 +6635,7 @@
           }).join('') || '<p class="muted">No firm reports available.</p>'}
         </div>
       </div>
-      <div id="reportOut" class="card" hidden></div>`;
+      <div id="reportOut" class="card" hidden></div>`);
 
     const wireReportSourceFields = (sourceEl, fieldEl, metricEl, preferredFieldId = null) => {
       if (!sourceEl || !fieldEl) return;
@@ -7363,7 +7388,7 @@
 
   async function renderUsers() {
     if (!canManageUsers()) {
-      main.innerHTML = `<div class="card"><div class="error">You don’t have permission to add users. Ask an admin to invite someone, or grant <strong>Add users</strong> under Settings → Role permissions.</div></div>`;
+      setMainHtml(`<div class="card"><div class="error">You don’t have permission to add users. Ask an admin to invite someone, or grant <strong>Add users</strong> under Settings → Role permissions.</div></div>`);
       return;
     }
     const showRates = canManageRates();
@@ -7375,7 +7400,7 @@
     const flash = state.usersFlash;
     state.usersFlash = null;
 
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack page-card">
         <div class="page-head">
           <h1>Users</h1>
@@ -7416,7 +7441,7 @@
           <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates.</p>
           ${timekeeperRatesTableHtml(timekeepers, { today, showReset: isAdminUser() })}
         </div>` : ''}
-      </div>`;
+      </div>`);
 
     const tkForm = $('#tkForm');
     if (tkForm) {
@@ -7496,7 +7521,7 @@
     state.settings = settings;
     const today = new Date().toISOString().slice(0, 10);
 
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card stack">
         <h1>Settings</h1>
         <p class="lead">Matter, contact, and time fields, plus billing preferences${isAdmin ? ', email, and integrations' : ''}.</p>
@@ -7741,7 +7766,7 @@
           <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates. Invite users from Navigate → Add a user (Admin by default; grant Add users under Role permissions to allow other roles).</p>
           ${timekeeperRatesTableHtml(timekeepers, { today, showReset: false })}
         </div>
-      </details>` : ''}`;
+      </details>` : ''}`);
 
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
@@ -8038,7 +8063,7 @@
 
   async function renderAudit() {
     const rows = await api('/api/audit-log');
-    main.innerHTML = `
+    setMainHtml(`
       <div class="card">
         <h1>Audit Log</h1>
         <div class="table-wrap"><table>
@@ -8054,7 +8079,7 @@
               </tr>`).join('')}
           </tbody>
         </table></div>
-      </div>`;
+      </div>`);
   }
 
   /** Compact in-app help agent: training & how-to for Firm Billing.
@@ -8271,7 +8296,7 @@
         await goAppView('settings');
       } else if (key === 'users' || key === 'add-user') {
         if (!canManageUsers()) {
-          main.innerHTML = `<div class="card"><div class="error">Only admins can add users.</div></div>`;
+          setMainHtml(`<div class="card"><div class="error">Only admins can add users.</div></div>`);
         } else {
           state.focusAddUser = true;
           await goAppView('users');
