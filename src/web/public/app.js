@@ -1722,8 +1722,7 @@
               ${renderFieldInput(field, { canEdit: true })}
             </label>`).join('')}
           <div class="row-actions span-all">
-            <button class="primary" type="submit" data-save-mode="save">Save</button>
-            <button type="submit" data-save-mode="save-another">Save &amp; add another</button>
+            <button class="primary" type="submit">Save</button>
           </div>
         </form>
         <div id="timeMsg" style="margin-top:.75rem">${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}</div>
@@ -1755,16 +1754,8 @@
       </div>`;
 
     const matterPicker = wireMatterPicker($('#timeForm'), { matters });
-    let saveMode = 'save';
-    $('#timeForm').querySelectorAll('[data-save-mode]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        saveMode = btn.dataset.saveMode || 'save';
-      });
-    });
     $('#timeForm').onsubmit = async (ev) => {
       ev.preventDefault();
-      const mode = saveMode;
-      saveMode = 'save';
       const fd = new FormData(ev.target);
       const body = Object.fromEntries(fd.entries());
       body.matterId = Number(body.matterId);
@@ -1795,21 +1786,18 @@
       }
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
-        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing.`;
+        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing. Add another entry below.`;
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
-        if (mode === 'save-another') {
-          msg += ' Add another entry below.';
-          state.matterId = body.matterId;
-          state.timeEntryRetain = {
-            addAnother: true,
-            matterId: body.matterId,
-            serviceDate: body.serviceDate,
-            timekeeperId: body.timekeeperId,
-          };
-          state.focusTimeEntry = true;
-        }
+        state.matterId = body.matterId;
+        state.timeEntryRetain = {
+          addAnother: true,
+          matterId: body.matterId,
+          serviceDate: body.serviceDate,
+          timekeeperId: body.timekeeperId,
+        };
+        state.focusTimeEntry = true;
         state.timeFlash = msg;
         await renderTime();
       } catch (e) {
