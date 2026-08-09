@@ -346,9 +346,28 @@ function createServer(db = openDb()) {
         }
         return json(res, 200, usersSvc.listUsers(db, { includeInactive }));
       }
-      if (req.method === 'POST' && pathname === '/api/users') {
+      if (
+        (req.method === 'POST' && pathname === '/api/users')
+        || (req.method === 'POST' && pathname === '/api/users/invite')
+      ) {
         if (!requireRoles(user, res, ['admin'])) return;
         const body = await parseBody(req);
+        const wantsInvite = pathname === '/api/users/invite'
+          || body.invite === true
+          || body.invite === '1'
+          || !body.password;
+        if (wantsInvite) {
+          const invited = await authEmail.inviteUserAndEmail(db, user, req, body);
+          if (body.defaultRateCents != null) {
+            ratesAdmin.addRate(db, user, {
+              scope: 'timekeeper',
+              scopeId: invited.user.id,
+              amountCents: Number(body.defaultRateCents),
+              effectiveDate: body.rateEffectiveDate || new Date().toISOString().slice(0, 10),
+            });
+          }
+          return json(res, 201, invited);
+        }
         const created = usersSvc.createUser(db, user, body);
         if (body.defaultRateCents != null) {
           ratesAdmin.addRate(db, user, {
@@ -359,20 +378,6 @@ function createServer(db = openDb()) {
           });
         }
         return json(res, 201, created);
-      }
-      if (req.method === 'POST' && pathname === '/api/users/invite') {
-        if (!requireRoles(user, res, ['admin'])) return;
-        const body = await parseBody(req);
-        const invited = await authEmail.inviteUserAndEmail(db, user, req, body);
-        if (body.defaultRateCents != null) {
-          ratesAdmin.addRate(db, user, {
-            scope: 'timekeeper',
-            scopeId: invited.user.id,
-            amountCents: Number(body.defaultRateCents),
-            effectiveDate: body.rateEffectiveDate || new Date().toISOString().slice(0, 10),
-          });
-        }
-        return json(res, 201, invited);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/users\/\d+\/send-reset$/)) {
         if (!requireRoles(user, res, ['admin'])) return;

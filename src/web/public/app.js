@@ -2186,9 +2186,10 @@
         const fd = new FormData(tkForm);
         try {
           const defaultRateCents = dollarsToCents(fd.get('defaultRate'));
-          const invited = await api('/api/users/invite', {
+          const invited = await api('/api/users', {
             method: 'POST',
             body: JSON.stringify({
+              invite: true,
               name: fd.get('name'),
               email: fd.get('email'),
               role: fd.get('role'),
@@ -2198,11 +2199,17 @@
           });
           const mode = invited.delivery?.mode === 'smtp'
             ? 'Invite email sent.'
-            : 'Invite created (email logged locally — configure SMTP for delivery).';
+            : 'Invite created. Configure SMTP for delivery, or use the link below.';
           await refreshRefs();
           await renderSettings();
           const msg = $('#tkMsg');
-          if (msg) msg.innerHTML = `<div class="ok-banner">${escapeHtml(mode)}</div>`;
+          if (msg) {
+            const link = invited.devLink
+              || (invited.devToken ? `${window.location.origin}/?auth_token=${encodeURIComponent(invited.devToken)}` : '');
+            msg.innerHTML = `<div class="ok-banner">${escapeHtml(mode)}${
+              link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open invite link</a></div>` : ''
+            }</div>`;
+          }
         } catch (e) {
           $('#tkMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }

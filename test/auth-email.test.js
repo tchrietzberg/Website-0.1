@@ -96,8 +96,9 @@ describe('secure email auth flows', () => {
 
   it('invites a user by email, sets password via token, and signs in', async () => {
     const admin = await loginAdmin(port);
-    const invited = await request(port, 'POST', '/api/users/invite', {
+    const invited = await request(port, 'POST', '/api/users', {
       body: {
+        invite: true,
         email: 'newhire@firm.example',
         name: 'New Hire',
         role: 'attorney',
