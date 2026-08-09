@@ -23,7 +23,10 @@
     matterFieldFlash: null,
     matterCreateFlash: null,
     showPostCreateFields: false,
+    showPostCreateContactFields: false,
     matterFieldPanelFlash: null,
+    contactFieldPanelFlash: null,
+    editingContactFieldId: null,
     createMatterFieldMsg: null,
     createContactFieldMsg: null,
     createMatterFieldsOpen: false,
@@ -2812,6 +2815,8 @@
             title: 'Contact created',
             detail: page.client.name,
           };
+          state.showPostCreateContactFields = true;
+          state.editingContactFieldId = null;
           await openContact(page.client.id);
         } catch (e) {
           $('#newContactMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -2833,8 +2838,59 @@
     const enabledStd = (page.fieldConfig && page.fieldConfig.enabledStandard) || [];
     const flash = state.contactFlash;
     const createFlash = state.contactCreateFlash;
+    const fieldPanelFlash = state.contactFieldPanelFlash;
+    const showPostCreateFields = canEdit && !!state.showPostCreateContactFields;
+    const typeLabel = page.recordTypeLabel || c.record_type || 'Person';
+    const recordTypeKey = page.recordTypeKey || c.record_type || 'person';
     state.contactFlash = null;
     state.contactCreateFlash = null;
+    state.contactFieldPanelFlash = null;
+
+    const editingField = state.editingContactFieldId
+      ? (fields || []).find(
+        (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingContactFieldId)
+      )
+      : null;
+
+    const contactFieldMgmtPanelHtml = (opts = {}) => {
+      const {
+        title = 'Manage fields',
+        hint = `Fields added here go on the <strong>${escapeHtml(typeLabel)}</strong> record type — every contact of that type gets them. You can also manage them in Settings → Contact record pages.`,
+        formId = 'contactRecordFieldForm',
+        panelId = '',
+        showDismiss = false,
+        msgHtml = '',
+      } = opts;
+      return `
+      <div class="card stack${showDismiss ? ' post-create-fields-panel' : ''}"${panelId ? ` id="${panelId}"` : ''}>
+        <div class="page-head matters-toolbar" style="margin:0">
+          <h2 style="margin:0">${escapeHtml(title)}</h2>
+          ${showDismiss ? '<button type="button" id="dismissPostCreateContactFields">Done</button>' : ''}
+        </div>
+        <p class="hint">${hint}</p>
+        <div class="field-mgmt-list">
+          ${fieldMgmtRows(fields, { editAttr: 'data-edit-contact-field', showScope: false })}
+        </div>
+        ${editingField
+          ? `<h3 class="field-edit-title">Edit record type field</h3>${customFieldFormHtml({
+            formId,
+            submitLabel: 'Save changes',
+            field: editingField,
+            showCancel: true,
+            defaultLabel: 'Record type default field',
+            requiredLabel: 'Record type required field',
+            formHint: `This field belongs to the <strong>${escapeHtml(typeLabel)}</strong> record type.`,
+          })}`
+          : customFieldFormHtml({
+            formId,
+            submitLabel: 'Add field',
+            defaultLabel: 'Record type default field',
+            requiredLabel: 'Record type required field',
+            formHint: `Adds the field to every <strong>${escapeHtml(typeLabel)}</strong> contact.`,
+          })}
+        <div id="contactFieldMsg">${msgHtml}</div>
+      </div>`;
+    };
 
     const canCreate = canCreateMatter(state.user) && roleCanModify('contact');
     main.innerHTML = `
@@ -2849,7 +2905,7 @@
             : ''}
         </div>
         <h1>${escapeHtml(c.name || 'Contact')}</h1>
-        <p class="muted">Record type: ${escapeHtml(page.recordTypeLabel || c.record_type || 'Person')}</p>
+        <p class="muted">Record type: ${escapeHtml(typeLabel)}</p>
         ${createFlash ? successNoticeHtml(createFlash) : ''}
       </div>
 
@@ -2880,17 +2936,49 @@
             <button class="primary" type="submit">Save</button>
           </div>` : ''}
         <div id="contactMsg">${flash ? successNoticeHtml(flash) : ''}</div>
-      </form>`;
+      </form>
+
+      ${showPostCreateFields ? contactFieldMgmtPanelHtml({
+        title: 'Add custom fields',
+        hint: `Optional — add fields for every <strong>${escapeHtml(typeLabel)}</strong> contact. Keep adding as needed, then press Done.`,
+        formId: 'contactRecordFieldForm',
+        panelId: 'postCreateContactFieldsPanel',
+        showDismiss: true,
+        msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
+      }) : ''}
+
+      ${canEdit && !showPostCreateFields ? contactFieldMgmtPanelHtml({
+        msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
+      }) : ''}`;
 
     $('#backContacts').onclick = () => {
       state.view = 'contacts';
       state.contactId = null;
+      state.showPostCreateContactFields = false;
+      state.editingContactFieldId = null;
       renderShell();
       renderView();
     };
 
     const createFromDetail = $('#createContactFromDetail');
     if (createFromDetail) createFromDetail.onclick = () => goAddContact();
+
+    const dismissPostCreate = $('#dismissPostCreateContactFields');
+    if (dismissPostCreate) {
+      dismissPostCreate.onclick = async () => {
+        state.showPostCreateContactFields = false;
+        state.editingContactFieldId = null;
+        await renderContactDetail();
+      };
+    }
+    if (showPostCreateFields) {
+      setTimeout(() => {
+        const panel = $('#postCreateContactFieldsPanel');
+        if (panel?.scrollIntoView) {
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 0);
+    }
 
     const deleteBtn = $('#deleteContact');
     if (deleteBtn && canDelete) {
@@ -2907,6 +2995,8 @@
           state.contactId = null;
           state.view = 'contacts';
           state.contactFlash = null;
+          state.showPostCreateContactFields = false;
+          state.editingContactFieldId = null;
           state.contactListFlash = {
             title: 'Contact deleted',
             detail: c.name || 'The contact was removed.',
@@ -2954,6 +3044,85 @@
           await refreshRefs();
         } catch (e) {
           $('#contactMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
+    main.querySelectorAll('[data-edit-contact-field]').forEach((btn) => {
+      btn.onclick = async () => {
+        state.editingContactFieldId = Number(btn.dataset.editContactField);
+        await renderContactDetail();
+      };
+    });
+    main.querySelectorAll('[data-del-custom-field]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!isAdminUser()) return;
+        const label = fieldLabelFromDeleteBtn(btn);
+        const sure = await confirmDeleteCustomField(label);
+        if (!sure) return;
+        try {
+          const id = Number(btn.dataset.delCustomField);
+          await api(`/api/custom-fields/${id}`, { method: 'DELETE' });
+          if (Number(state.editingContactFieldId) === id) state.editingContactFieldId = null;
+          state.contactFieldPanelFlash = {
+            title: 'Custom field deleted',
+            detail: 'The field was removed for this firm.',
+          };
+          await renderContactDetail();
+        } catch (e) {
+          const msg = $('#contactFieldMsg');
+          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
+
+    const cancelFieldEdit = main.querySelector('[data-cancel-field-edit]');
+    if (cancelFieldEdit) {
+      cancelFieldEdit.onclick = async () => {
+        state.editingContactFieldId = null;
+        await renderContactDetail();
+      };
+    }
+
+    const rf = $('#contactRecordFieldForm');
+    wireDropdownOptionsToggle(rf);
+    if (rf && canEdit) {
+      rf.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(rf);
+        const { fieldType, options, body } = customFieldPayload(fd);
+        if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
+          $('#contactFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
+          return;
+        }
+        try {
+          if (state.editingContactFieldId) {
+            await api(`/api/custom-fields/${state.editingContactFieldId}`, {
+              method: 'PATCH',
+              body: JSON.stringify(body),
+            });
+            state.editingContactFieldId = null;
+            state.contactFieldPanelFlash = {
+              title: 'Custom field updated',
+              detail: `${body.label || 'Field'} saved.`,
+            };
+          } else {
+            await api('/api/custom-fields', {
+              method: 'POST',
+              body: JSON.stringify({
+                ...body,
+                recordTypeKey,
+                appliesTo: 'client',
+              }),
+            });
+            state.contactFieldPanelFlash = {
+              title: 'Record type field added',
+              detail: `${body.label || 'Field'} added to every ${typeLabel} contact.`,
+            };
+          }
+          await renderContactDetail();
+        } catch (e) {
+          $('#contactFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }
@@ -6473,7 +6642,7 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact'],
-      answer: 'Use Quick action Create Contact, or Contacts → Create contact. Choose a record type (Person, Company, or ones from Settings → Contact record pages), fill name and type-specific custom fields, then confirm. Add more fields for a type from Create Contact or Settings.',
+      answer: 'Use Quick action Create Contact, or Contacts → Create contact. Choose a record type (Person, Company, or ones from Settings → Contact record pages), fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more for that record type; Manage fields is also on the contact page. Settings → Contact record pages manages type layouts.',
     },
     {
       id: 'fields',

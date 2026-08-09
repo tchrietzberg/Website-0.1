@@ -689,9 +689,14 @@ function createServer(db = openDb()) {
         }));
       }
       if (req.method === 'POST' && pathname === '/api/custom-fields') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         try {
           const body = await parseBody(req);
+          // Contact creators can add record-type fields after create; matter type fields stay admin/clerk.
+          const appliesTo = String(body.appliesTo || 'matter');
+          const allowed = appliesTo === 'client'
+            ? ['admin', 'billing_clerk', 'attorney', 'paralegal']
+            : ['admin', 'billing_clerk'];
+          if (!requireRoles(user, res, allowed)) return;
           return json(res, 201, customFields.createCustomField(db, user, body));
         } catch (e) {
           return json(res, 400, { error: e.message, message: e.message });
