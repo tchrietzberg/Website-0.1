@@ -466,21 +466,89 @@ function updateEntry(db, actor, id, input = {}) {
   };
 }
 
+/**
+ * Remove a time entry from any bills it appears on so the entry row can be deleted.
+ * Sent-invoice amount immutability is temporarily relaxed by flipping status while
+ * totals are recomputed; empty bills are removed entirely.
+ */
+function detachTimeEntryFromBills(db, timeEntryId) {
+  const lines = db.prepare(
+    'SELECT id, invoice_id FROM invoice_lines WHERE time_entry_id = ?'
+  ).all(timeEntryId);
+  if (!lines.length) return { removedLines: 0, deletedInvoiceIds: [] };
+
+  const invoiceIds = [...new Set(lines.map((l) => Number(l.invoice_id)))];
+  const deletedInvoiceIds = [];
+
+  for (const invoiceId of invoiceIds) {
+    // Status-only update is allowed on sent invoices; amount changes are not.
+    db.prepare(`
+      UPDATE invoices SET status = 'approved'
+      WHERE id = ? AND status = 'sent'
+    `).run(invoiceId);
+  }
+
+  for (const line of lines) {
+    db.prepare('DELETE FROM write_downs WHERE invoice_line_id = ?').run(line.id);
+    db.prepare('DELETE FROM invoice_lines WHERE id = ?').run(line.id);
+  }
+
+  for (const invoiceId of invoiceIds) {
+    const remaining = db.prepare(
+      'SELECT COUNT(*) AS n FROM invoice_lines WHERE invoice_id = ?'
+    ).get(invoiceId).n;
+    if (remaining === 0) {
+      db.prepare('DELETE FROM payment_applications WHERE invoice_id = ?').run(invoiceId);
+      db.prepare('DELETE FROM write_downs WHERE invoice_id = ?').run(invoiceId);
+      db.prepare('DELETE FROM credit_notes WHERE invoice_id = ?').run(invoiceId);
+      db.prepare('DELETE FROM invoices WHERE id = ?').run(invoiceId);
+      deletedInvoiceIds.push(invoiceId);
+      continue;
+    }
+    const totals = db.prepare(`
+      SELECT
+        COALESCE(SUM(amount_cents), 0) AS subtotal,
+        COALESCE(SUM(write_down_cents), 0) AS write_down
+      FROM invoice_lines WHERE invoice_id = ?
+    `).get(invoiceId);
+    const total = totals.subtotal - totals.write_down;
+    db.prepare(`
+      UPDATE invoices
+      SET subtotal_cents = ?, write_down_cents = ?, total_cents = ?, status = 'sent'
+      WHERE id = ?
+    `).run(totals.subtotal, totals.write_down, total, invoiceId);
+  }
+
+  return { removedLines: lines.length, deletedInvoiceIds };
+}
+
 function deleteEntry(db, actor, id) {
   permissions.assertCanDeleteRecords(db, actor, 'time');
   const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
   if (!entry) throw new Error('entry not found');
-  if (entry.status === 'invoiced' || entry.invoice_id) {
-    throw new Error('Cannot delete a time entry that has already been billed');
-  }
   const isOwn = Number(entry.timekeeper_id) === Number(actor.id);
   if (!isOwn && !permissions.canDeleteOthersTime(db, actor.role)) {
     const err = new Error('You can only delete your own time entries');
     err.code = 'FORBIDDEN';
     throw err;
   }
-  db.prepare('DELETE FROM time_entry_custom_field_values WHERE time_entry_id = ?').run(id);
-  db.prepare('DELETE FROM time_entries WHERE id = ?').run(id);
+
+  const wasBilled = entry.status === 'invoiced' || entry.invoice_id != null;
+  let billCleanup = { removedLines: 0, deletedInvoiceIds: [] };
+
+  db.exec('BEGIN');
+  try {
+    if (wasBilled) {
+      billCleanup = detachTimeEntryFromBills(db, id);
+    }
+    db.prepare('DELETE FROM time_entry_custom_field_values WHERE time_entry_id = ?').run(id);
+    db.prepare('DELETE FROM time_entries WHERE id = ?').run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+    throw e;
+  }
+
   audit(db, {
     actorId: actor?.id || null,
     action: 'time_entry.delete',
@@ -490,9 +558,18 @@ function deleteEntry(db, actor, id) {
       matterId: entry.matter_id,
       serviceDate: entry.service_date,
       roundedMinutes: entry.rounded_minutes,
+      wasBilled,
+      removedBillLines: billCleanup.removedLines,
+      deletedInvoiceIds: billCleanup.deletedInvoiceIds,
     },
   });
-  return { ok: true, id: Number(id) };
+  return {
+    ok: true,
+    id: Number(id),
+    wasBilled,
+    removedBillLines: billCleanup.removedLines,
+    deletedInvoiceIds: billCleanup.deletedInvoiceIds,
+  };
 }
 
 module.exports = {

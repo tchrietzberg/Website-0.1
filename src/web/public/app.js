@@ -5057,10 +5057,8 @@
                 : e.status === 'invoiced' ? 'Billed'
                   : e.status;
               const isOwn = Number(e.timekeeper_id) === Number(state.user.id);
-              const deletable = canDeleteTime
-                && e.status !== 'invoiced'
-                && !e.invoice_id
-                && (isOwn || roleCanDeleteOthersTime());
+              const deletable = canDeleteTime && (isOwn || roleCanDeleteOthersTime());
+              const billed = e.status === 'invoiced' || !!e.invoice_id;
               return `
               <tr>
                 <td>${escapeHtml(e.service_date)}</td>
@@ -5069,7 +5067,7 @@
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
-                  ? `<button type="button" class="danger" data-del-time="${e.id}">Delete</button>`
+                  ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
                   : ''}</td>
               </tr>`;
             }).join('') || '<tr><td colspan="5" class="muted">No time on this matter yet</td></tr>'}
@@ -5296,9 +5294,12 @@
           if (el) el.innerHTML = '<div class="error">Could not determine which time entry to delete.</div>';
           return;
         }
+        const billed = btn.getAttribute('data-billed') === '1';
         const sure = await confirmAction({
           title: 'Delete this time entry?',
-          message: 'Are you sure you want to delete this time entry? This cannot be undone.',
+          message: billed
+            ? 'This entry is billed. Deleting it removes the time and its line from the bill (or the whole bill if it was the only line). This cannot be undone.'
+            : 'Are you sure you want to delete this time entry? This cannot be undone.',
           confirmLabel: 'Yes, delete entry',
           cancelLabel: 'Cancel',
         });
@@ -5640,14 +5641,11 @@
                 : e.status === 'invoiced' ? 'Billed'
                   : e.status;
               const isOwn = Number(e.timekeeper_id) === Number(state.user.id);
+              const billed = e.status === 'invoiced' || !!e.invoice_id;
               const editable = canEdit
-                && e.status !== 'invoiced'
-                && !e.invoice_id
+                && !billed
                 && (isOwn || roleCanModifyOthersTime());
-              const deletable = canDelete
-                && e.status !== 'invoiced'
-                && !e.invoice_id
-                && (isOwn || roleCanDeleteOthersTime());
+              const deletable = canDelete && (isOwn || roleCanDeleteOthersTime());
               const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
               if (editable) {
                 const entryId = Number(e.id);
@@ -5687,7 +5685,7 @@
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td class="row-actions">
                   <button type="button" class="primary" data-save-time="${entryId}">Save</button>
-                  ${deletable ? `<button type="button" class="danger" data-del-time="${entryId}">Delete</button>` : ''}
+                  ${deletable ? `<button type="button" class="danger" data-del-time="${entryId}" data-billed="0">Delete</button>` : ''}
                 </td>
               </tr>`;
               }
@@ -5700,7 +5698,7 @@
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
-                  ? `<button type="button" class="danger" data-del-time="${e.id}">Delete</button>`
+                  ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
                   : ''}</td>
               </tr>`;
             }).join('') || '<tr><td colspan="6" class="muted">No entries yet</td></tr>'}
@@ -5771,9 +5769,12 @@
           listMsg('<div class="error">Could not determine which time entry to delete.</div>');
           return;
         }
+        const billed = btn.getAttribute('data-billed') === '1';
         const sure = await confirmAction({
           title: 'Delete this time entry?',
-          message: 'Are you sure you want to delete this time entry? This cannot be undone.',
+          message: billed
+            ? 'This entry is billed. Deleting it removes the time and its line from the bill (or the whole bill if it was the only line). This cannot be undone.'
+            : 'Are you sure you want to delete this time entry? This cannot be undone.',
           confirmLabel: 'Yes, delete entry',
           cancelLabel: 'Cancel',
         });

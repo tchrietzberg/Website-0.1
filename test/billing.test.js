@@ -154,7 +154,7 @@ describe('time entry rules', () => {
     );
   });
 
-  it('deletes recent unbilled time entries and blocks billed ones', () => {
+  it('deletes recent unbilled time entries', () => {
     const e = timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1,
       description: 'to delete', category: 'Discovery', subcategory: 'Review',
@@ -162,16 +162,38 @@ describe('time entry rules', () => {
     const removed = timeSvc.deleteEntry(ctx.db, ctx.para, e.id);
     assert.equal(removed.ok, true);
     assert.equal(ctx.db.prepare('SELECT id FROM time_entries WHERE id = ?').get(e.id), undefined);
+  });
 
-    const billed = timeSvc.createEntry(ctx.db, ctx.para, {
-      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-02', hours: 1,
-      description: 'billed', category: 'Discovery', subcategory: 'Review',
+  it('deletes billed time entries and removes them from the bill', () => {
+    const a = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1,
+      description: 'keep on bill', category: 'Discovery', subcategory: 'Review',
     });
-    invoiceSvc.createBill(ctx.db, ctx.clerk, 1, [billed.id]);
-    assert.throws(
-      () => timeSvc.deleteEntry(ctx.db, ctx.para, billed.id),
-      /already been billed/
-    );
+    const b = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-02', hours: 1,
+      description: 'delete-check', category: 'Discovery', subcategory: 'Review',
+    });
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1, [a.id, b.id]);
+    assert.equal(inv.lines.length, 2);
+
+    const removed = timeSvc.deleteEntry(ctx.db, ctx.para, b.id);
+    assert.equal(removed.ok, true);
+    assert.equal(removed.wasBilled, true);
+    assert.equal(removed.removedBillLines, 1);
+    assert.equal(ctx.db.prepare('SELECT id FROM time_entries WHERE id = ?').get(b.id), undefined);
+
+    const again = invoiceSvc.getInvoice(ctx.db, inv.id);
+    assert.ok(again);
+    assert.equal(again.status, 'sent');
+    assert.equal(again.lines.length, 1);
+    assert.equal(again.lines[0].time_entry_id, a.id);
+    assert.equal(again.total_cents, again.lines[0].amount_cents);
+
+    // Sole remaining billed entry: delete removes entry and empty bill.
+    const removedLast = timeSvc.deleteEntry(ctx.db, ctx.para, a.id);
+    assert.equal(removedLast.ok, true);
+    assert.ok(removedLast.deletedInvoiceIds.includes(inv.id));
+    assert.equal(invoiceSvc.getInvoice(ctx.db, inv.id), null);
   });
 });
 
