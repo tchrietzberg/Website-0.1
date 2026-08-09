@@ -1,6 +1,7 @@
 const { audit, getSetting, setSetting } = require('../db');
 const customFields = require('./customFields');
 const permissions = require('./permissions');
+const matterIndex = require('./matterIndex');
 
 /** Always shown on contacts. */
 const CONTACT_CORE_FIELD = {
@@ -255,6 +256,12 @@ function updateClient(db, actor, id, patch = {}) {
   db.prepare(`
     UPDATE clients SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?
   `).run(id);
+
+  // Keep matter search / global lookup in sync when contact text changes.
+  if (patch.name !== undefined || patch.company !== undefined || patch.email !== undefined) {
+    const linked = db.prepare('SELECT id FROM matters WHERE client_id = ?').all(id);
+    for (const row of linked) matterIndex.indexMatter(db, row.id);
+  }
 
   audit(db, {
     actorId: actor?.id || null,

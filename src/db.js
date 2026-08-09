@@ -32,10 +32,10 @@ function migrate(db) {
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
   matterIndex.ensureMatterIndex(db);
-  // Rebuild index only when matters exist but search index is empty (first boot / upgrade)
+  // Rebuild when matters exist but the index is empty or out of sync (first boot / upgrade)
   const matterCount = db.prepare('SELECT COUNT(*) AS n FROM matters').get().n;
   const idxCount = db.prepare('SELECT COUNT(*) AS n FROM matter_search_index').get().n;
-  if (matterCount > 0 && idxCount === 0) {
+  if (matterCount > 0 && idxCount !== matterCount) {
     matterIndex.reindexAllMatters(db);
   }
 }

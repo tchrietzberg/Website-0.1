@@ -90,4 +90,24 @@ describe('global lookup and search permissions', () => {
     assert.ok(limited.results.every((r) => r.type === 'matter'));
     assert.ok(limited.results.some((r) => r.type === 'matter'));
   });
+
+  it('reindexes linked matters when a contact name changes', () => {
+    const matter = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Rename Search Case',
+      openedOn: '2026-02-01',
+    });
+    assert.ok(globalSearch.lookup(db, admin, { q: 'acme' }).results.some((r) =>
+      r.type === 'matter' && r.id === matter.matter.id
+    ));
+
+    clientsSvc.updateClient(db, admin, 1, { name: 'Renamed Holdings LLC' });
+
+    assert.ok(globalSearch.lookup(db, admin, { q: 'renamed' }).results.some((r) =>
+      r.type === 'matter' && r.id === matter.matter.id
+    ));
+    assert.ok(!globalSearch.lookup(db, admin, { q: 'acme' }).results.some((r) =>
+      r.type === 'matter' && r.id === matter.matter.id
+    ));
+  });
 });

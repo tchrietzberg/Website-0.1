@@ -142,6 +142,26 @@ describe('public security controls', () => {
     assert.equal(me.headers['x-content-type-options'], 'nosniff');
   });
 
+  it('serves firm reports and global lookup without ReferenceError', async () => {
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    assert.equal(login.status, 200);
+    const cookie = sessionCookie(login.setCookie);
+
+    const firm = await request(port, 'GET', '/api/firm-reports', { cookies: cookie });
+    assert.equal(firm.status, 200, firm.raw);
+    assert.ok(Array.isArray(firm.json));
+    assert.ok(!/permissions is not defined/i.test(firm.raw));
+
+    const lookup = await request(port, 'GET', '/api/lookup?q=acme&limit=5', { cookies: cookie });
+    assert.equal(lookup.status, 200, lookup.raw);
+    assert.ok(lookup.json.scopes?.matter);
+    assert.ok(lookup.json.scopes?.contact);
+    assert.ok(Array.isArray(lookup.json.results));
+    assert.ok(lookup.json.results.some((r) => r.type === 'contact' || r.type === 'matter'));
+  });
+
   it('blocks paralegals from creating time for another timekeeper', () => {
     const sam = db.prepare("SELECT * FROM users WHERE email='sam@firm.example'").get();
     const avery = db.prepare("SELECT * FROM users WHERE email='avery@firm.example'").get();

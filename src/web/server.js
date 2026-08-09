@@ -22,6 +22,7 @@ const ratesAdmin = require('../services/ratesAdmin');
 const customFields = require('../services/customFields');
 const customReports = require('../services/customReports');
 const authEmail = require('../services/authEmail');
+const permissions = require('../services/permissions');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
