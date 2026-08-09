@@ -1934,16 +1934,16 @@
       timeFieldDefs,
       fixedMatterId: m.id,
       onSaved: async (entry, body) => {
-        const desc = String(body.description || entry.description || '').trim() || 'Time entry';
-        state.matterTimeFlash = `Saved ${desc} — ${formatDuration(entry.roundedMinutes)} hrs`;
+        const savedDesc = String(body.description || entry.description || '').trim() || 'Time entry';
+        state.matterTimeFlash = `Saved ${savedDesc} — ${formatDuration(entry.roundedMinutes)} hrs`;
         state.matterTimeRetain = {
           addAnother: true,
           serviceDate: body.serviceDate,
           timekeeperId: body.timekeeperId,
         };
         await renderMatterDetail();
-        const desc = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
-        if (desc) setTimeout(() => desc.focus(), 0);
+        const descInput = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
+        if (descInput) setTimeout(() => descInput.focus(), 0);
       },
     });
 
