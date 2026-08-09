@@ -194,6 +194,46 @@ describe('custom reports and dashboard', () => {
     assert.ok(xlsx.body.length > 40);
   });
 
+  it('creates xlsx report type and exports a single custom report as Excel', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Region',
+      fieldType: 'text',
+      appliesTo: 'matter',
+      recordTypeKey: 'billable',
+    });
+    customFields.setCustomValues(db, admin, 1, { [field.id]: 'Northeast corridor offices' });
+    const report = customReports.createReport(db, admin, {
+      name: 'By region',
+      source: 'matter',
+      groupByFieldId: field.id,
+      metric: 'count',
+      chartType: 'xlsx',
+      showOnDashboard: false,
+    });
+    assert.equal(report.chart_type, 'xlsx');
+    const run = customReports.runReport(db, report.id);
+    assert.equal(run.report.chartType, 'xlsx');
+    assert.ok(run.rows.length >= 1);
+
+    const file = customReports.exportCustomReport(db, report.id, 'xlsx', admin);
+    assert.match(file.contentType, /spreadsheetml/);
+    assert.match(file.filename, /\.xlsx$/);
+    assert.ok(file.body.length > 40);
+    assert.equal(file.body[0], 0x50);
+    assert.equal(file.body[1], 0x4b);
+
+    assert.throws(
+      () => customReports.createReport(db, admin, {
+        name: 'Bad type',
+        source: 'matter',
+        groupByFieldId: field.id,
+        metric: 'count',
+        chartType: 'heatmap',
+      }),
+      /chartType must be bar, pie, table, or xlsx/
+    );
+  });
+
   it('deletes and restores firm reports from the firm catalog', () => {
     customReports.pinDashboardReport(db, admin, { kind: 'firm', id: 'matters' });
     assert.ok(customReports.dashboard(db).widgets.some((w) => w.report.id === 'matters'));

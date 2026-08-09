@@ -7,7 +7,7 @@ const permissions = require('./permissions');
 
 const SOURCES = new Set(['time_entry', 'matter']);
 const METRICS = new Set(['count', 'hours', 'amount']);
-const CHART_TYPES = new Set(['bar', 'pie', 'table']);
+const CHART_TYPES = new Set(['bar', 'pie', 'table', 'xlsx']);
 
 /** Firm reports that can be pinned to the dashboard. */
 const FIRM_REPORT_CATALOG = [
@@ -47,7 +47,7 @@ function assertMetric(metric) {
 }
 
 function assertChartType(chartType) {
-  if (!CHART_TYPES.has(chartType)) throw new Error('chartType must be bar, pie, or table');
+  if (!CHART_TYPES.has(chartType)) throw new Error('chartType must be bar, pie, table, or xlsx');
   return chartType;
 }
 
@@ -611,6 +611,86 @@ function customWidgetExportRows(widget) {
   }));
 }
 
+function safeFilename(name, fallback = 'report') {
+  const cleaned = String(name || '')
+    .replace(/[^\w\-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60);
+  return cleaned || fallback;
+}
+
+function exportCustomReport(db, id, format = 'xlsx', actor = null) {
+  if (actor) permissions.assertCanViewRecords(db, actor, 'report');
+  const fmt = String(format || 'xlsx').toLowerCase();
+  const payload = runReport(db, id);
+  const rows = customWidgetExportRows(payload);
+  const filenameBase = safeFilename(payload.report.name, `custom-report-${id}`);
+
+  if (fmt === 'csv') {
+    return {
+      contentType: 'text/csv; charset=utf-8',
+      filename: `${filenameBase}.csv`,
+      body: Buffer.from(rows.length ? reports.toCsv(rows) : 'No rows\n', 'utf8'),
+    };
+  }
+
+  if (fmt === 'xlsx' || fmt === 'excel') {
+    const sheetRows = [];
+    if (!rows.length) {
+      sheetRows.push([{ v: 'No rows', t: 's' }]);
+    } else {
+      const keys = Object.keys(rows[0]);
+      sheetRows.push(keys.map((k) => ({ v: k, t: 's' })));
+      for (const row of rows) {
+        sheetRows.push(keys.map((k) => {
+          if (FIRM_CURRENCY_KEYS.includes(k) && Number.isInteger(row[k])) {
+            return { v: row[k] / 100, t: 'currency' };
+          }
+          if (typeof row[k] === 'number') return { v: row[k], t: 'n' };
+          return { v: row[k] ?? '', t: 's' };
+        }));
+      }
+    }
+    const { buildXlsx } = require('../xlsx');
+    return {
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      filename: `${filenameBase}.xlsx`,
+      body: buildXlsx(sheetRows),
+    };
+  }
+
+  if (fmt === 'pdf') {
+    const lines = [];
+    lines.push(`=== ${payload.report.name} ===`);
+    if (!rows.length) {
+      lines.push('No rows');
+    } else {
+      const keys = Object.keys(rows[0]);
+      for (const row of rows) {
+        lines.push('--------------------------------------------------------------------------');
+        for (const key of keys) {
+          const label = String(key).replace(/_cents$/i, '').replace(/_/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase()).padEnd(22);
+          let cell = row[key];
+          if (FIRM_CURRENCY_KEYS.includes(key) && Number.isInteger(cell)) {
+            cell = (cell / 100).toFixed(2);
+          }
+          lines.push(`${label} ${cell == null ? '' : cell}`);
+        }
+      }
+      lines.push('--------------------------------------------------------------------------');
+      lines.push(`Rows: ${rows.length}`);
+    }
+    return {
+      contentType: 'application/pdf',
+      filename: `${filenameBase}.pdf`,
+      body: buildTextPdf({ title: payload.report.name, lines }),
+    };
+  }
+
+  throw new Error('unsupported format');
+}
+
 function exportDashboard(db, format = 'pdf', actor = null) {
   if (actor) permissions.assertCanViewRecords(db, actor, 'report');
   const fmt = String(format || 'pdf').toLowerCase();
@@ -723,6 +803,7 @@ module.exports = {
   runFirmReport,
   dashboard,
   exportDashboard,
+  exportCustomReport,
   pinDashboardReport,
   unpinDashboardReport,
   addFirmReportToDashboard,

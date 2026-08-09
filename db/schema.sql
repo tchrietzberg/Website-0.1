@@ -422,7 +422,7 @@ CREATE TABLE IF NOT EXISTS custom_reports (
   source TEXT NOT NULL CHECK (source IN ('time_entry', 'matter')),
   group_by_field_id INTEGER NOT NULL REFERENCES custom_fields(id),
   metric TEXT NOT NULL CHECK (metric IN ('count', 'hours', 'amount')),
-  chart_type TEXT NOT NULL DEFAULT 'bar' CHECK (chart_type IN ('bar', 'pie', 'table')),
+  chart_type TEXT NOT NULL DEFAULT 'bar' CHECK (chart_type IN ('bar', 'pie', 'table', 'xlsx')),
   show_on_dashboard INTEGER NOT NULL DEFAULT 1 CHECK (show_on_dashboard IN (0,1)),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   created_by INTEGER REFERENCES users(id),

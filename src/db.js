@@ -23,6 +23,7 @@ function migrate(db) {
   migrateCustomFieldAppliesTo(db);
   migrateClientContacts(db);
   migrateCustomReports(db);
+  migrateCustomReportChartTypes(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -45,7 +46,7 @@ function migrateCustomReports(db) {
       source TEXT NOT NULL CHECK (source IN ('time_entry', 'matter')),
       group_by_field_id INTEGER NOT NULL REFERENCES custom_fields(id),
       metric TEXT NOT NULL CHECK (metric IN ('count', 'hours', 'amount')),
-      chart_type TEXT NOT NULL DEFAULT 'bar' CHECK (chart_type IN ('bar', 'pie', 'table')),
+      chart_type TEXT NOT NULL DEFAULT 'bar' CHECK (chart_type IN ('bar', 'pie', 'table', 'xlsx')),
       show_on_dashboard INTEGER NOT NULL DEFAULT 1 CHECK (show_on_dashboard IN (0,1)),
       active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
       created_by INTEGER REFERENCES users(id),
@@ -54,6 +55,37 @@ function migrateCustomReports(db) {
     CREATE INDEX IF NOT EXISTS idx_custom_reports_active
       ON custom_reports(active, show_on_dashboard);
   `);
+}
+
+/** SQLite cannot ALTER CHECK; rebuild custom_reports when xlsx chart type is missing. */
+function migrateCustomReportChartTypes(db) {
+  const row = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='custom_reports'"
+  ).get();
+  if (!row?.sql || row.sql.includes("'xlsx'")) return;
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec(`
+    CREATE TABLE custom_reports_mig (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      source TEXT NOT NULL CHECK (source IN ('time_entry', 'matter')),
+      group_by_field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+      metric TEXT NOT NULL CHECK (metric IN ('count', 'hours', 'amount')),
+      chart_type TEXT NOT NULL DEFAULT 'bar' CHECK (chart_type IN ('bar', 'pie', 'table', 'xlsx')),
+      show_on_dashboard INTEGER NOT NULL DEFAULT 1 CHECK (show_on_dashboard IN (0,1)),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO custom_reports_mig SELECT * FROM custom_reports;
+    DROP TABLE custom_reports;
+    ALTER TABLE custom_reports_mig RENAME TO custom_reports;
+    CREATE INDEX IF NOT EXISTS idx_custom_reports_active
+      ON custom_reports(active, show_on_dashboard);
+  `);
+  db.exec('PRAGMA foreign_keys = ON;');
 }
 
 function migrateAuthColumns(db) {

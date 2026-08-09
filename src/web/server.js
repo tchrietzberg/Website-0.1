@@ -768,6 +768,23 @@ function createServer(db = openDb()) {
           return json(res, code, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'GET' && pathname.match(/^\/api\/custom-reports\/\d+\/export$/)) {
+        try {
+          const id = Number(pathname.split('/')[3]);
+          const fmt = url.searchParams.get('format') || 'xlsx';
+          const file = customReports.exportCustomReport(db, id, fmt, user);
+          res.writeHead(200, {
+            'Content-Type': file.contentType,
+            'Content-Disposition': `attachment; filename="${file.filename}"`,
+            'Content-Length': file.body.length,
+          });
+          res.end(file.body);
+          return;
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 404;
+          return json(res, code, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/custom-reports\/\d+$/)) {
         try {
           const id = Number(pathname.split('/')[3]);

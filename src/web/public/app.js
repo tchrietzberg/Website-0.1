@@ -247,6 +247,13 @@
       .replace(/"/g, '&quot;');
   }
 
+  /** Report cells wrap when text exceeds 30 characters so full values stay readable. */
+  function reportCellTag(tag, text) {
+    const s = text == null ? '' : String(text);
+    const wrap = s.length > 30 ? ' class="cell-wrap"' : '';
+    return `<${tag}${wrap}>${escapeHtml(s)}</${tag}>`;
+  }
+
   /** Modern success notice: title + optional detail line. */
   function successNoticeHtml(notice) {
     if (!notice) return '';
@@ -4409,11 +4416,11 @@
       .replace(/\b\w/g, (c) => c.toUpperCase());
     return `
       <div class="custom-report-result">
-        <div class="table-wrap"><table>
-          <thead><tr>${cols.map((c) => `<th>${escapeHtml(label(c))}</th>`).join('')}</tr></thead>
+        <div class="table-wrap report-table-wrap"><table class="report-table">
+          <thead><tr>${cols.map((c) => reportCellTag('th', label(c))).join('')}</tr></thead>
           <tbody>
             ${(rows || []).map((r) => `
-              <tr>${cols.map((c) => `<td>${escapeHtml(fmtCell(c, r[c]))}</td>`).join('')}</tr>
+              <tr>${cols.map((c) => reportCellTag('td', fmtCell(c, r[c]))).join('')}</tr>
             `).join('') || `<tr><td colspan="${cols.length}" class="muted">No rows</td></tr>`}
           </tbody>
         </table></div>
@@ -4440,14 +4447,14 @@
     return `
       <div class="custom-report-result">
         ${visual}
-        <div class="table-wrap"><table>
-          <thead><tr><th>${escapeHtml(report.groupByLabel || 'Group')}</th><th>${escapeHtml(valueLabel || 'Value')}</th><th>Count</th></tr></thead>
+        <div class="table-wrap report-table-wrap"><table class="report-table">
+          <thead><tr>${reportCellTag('th', report.groupByLabel || 'Group')}${reportCellTag('th', valueLabel || 'Value')}${reportCellTag('th', 'Count')}</tr></thead>
           <tbody>
             ${(rows || []).map((r) => `
               <tr>
-                <td>${escapeHtml(r.label)}</td>
-                <td>${escapeHtml(formatReportValue(metric, r.value, r))}</td>
-                <td>${r.count}</td>
+                ${reportCellTag('td', r.label)}
+                ${reportCellTag('td', formatReportValue(metric, r.value, r))}
+                ${reportCellTag('td', r.count)}
               </tr>`).join('') || '<tr><td colspan="3" class="muted">No rows</td></tr>'}
           </tbody>
         </table></div>
@@ -4484,7 +4491,7 @@
     const canEdit = roleCanModify('report');
     const addOptions = [
       ...(available.firm || []).map((r) =>
-        `<option value="firm:${escapeHtml(r.id)}">${escapeHtml(r.name)} (firm)</option>`),
+        `<option value="firm:${escapeHtml(r.id)}">${escapeHtml(r.name)}</option>`),
       ...(available.custom || []).map((r) =>
         `<option value="custom:${r.id}">${escapeHtml(r.name)} (custom)</option>`),
     ].join('');
@@ -4671,11 +4678,12 @@
               <option value="count" ${report?.metric === 'count' ? 'selected' : ''}>Count</option>
             </select>
           </label>
-          <label>Chart
+          <label>Report type
             <select name="chartType">
               <option value="bar" ${!report || report?.chart_type === 'bar' ? 'selected' : ''}>Bar</option>
               <option value="pie" ${report?.chart_type === 'pie' ? 'selected' : ''}>Pie</option>
               <option value="table" ${report?.chart_type === 'table' ? 'selected' : ''}>Table only</option>
+              <option value="xlsx" ${report?.chart_type === 'xlsx' ? 'selected' : ''}>Excel (xlsx)</option>
             </select>
           </label>
           <label class="check-inline">
@@ -4726,10 +4734,14 @@
                 <strong>${escapeHtml(r.name)}</strong>
                 <div class="muted">${escapeHtml(r.group_by_label)} · ${escapeHtml(r.metric)}
                   · ${escapeHtml(r.source === 'time_entry' ? 'Time' : 'Matters')}
+                  · ${escapeHtml(r.chart_type === 'xlsx' ? 'Excel' : r.chart_type || 'table')}
                   ${r.show_on_dashboard ? ' · Dashboard' : ''}</div>
               </div>
               <div class="row-actions">
                 <button type="button" data-run-custom="${r.id}">View</button>
+                ${r.chart_type === 'xlsx'
+                  ? `<a class="btn" href="/api/custom-reports/${r.id}/export?format=xlsx">Excel</a>`
+                  : ''}
                 ${canEditReports ? `<button type="button" data-edit-custom="${r.id}">Edit</button>` : ''}
                 ${canDeleteReports ? `<button type="button" data-del-custom="${r.id}">Delete</button>` : ''}
               </div>
@@ -4866,10 +4878,42 @@
         const payload = await api(`/api/custom-reports/${id}/run`);
         const out = $('#customReportOut');
         out.hidden = false;
+        const isXlsx = payload.report?.chartType === 'xlsx';
         out.innerHTML = `
-          <h2>${escapeHtml(payload.report.name)}</h2>
-          <p class="muted">${escapeHtml(payload.report.description || '')}</p>
+          <div class="row-actions" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.75rem">
+            <div>
+              <h2>${escapeHtml(payload.report.name)}</h2>
+              <p class="muted">${escapeHtml(payload.report.description || '')}</p>
+            </div>
+            ${isXlsx ? `<a class="btn primary" href="/api/custom-reports/${id}/export?format=xlsx">Download Excel</a>` : ''}
+          </div>
           ${renderReportResult(payload)}`;
+        out.querySelectorAll('a.btn').forEach((a) => {
+          a.onclick = async (ev) => {
+            ev.preventDefault();
+            const href = a.getAttribute('href') || '';
+            const res = await fetch(href, {
+              headers: { Authorization: `Bearer ${state.token}` },
+              credentials: 'include',
+            });
+            if (!res.ok) {
+              let message = res.statusText;
+              try {
+                const data = await res.json();
+                message = data.message || data.error || message;
+              } catch { /* ignore */ }
+              out.insertAdjacentHTML('afterbegin', `<div class="error">${escapeHtml(message)}</div>`);
+              return;
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const tmp = document.createElement('a');
+            tmp.href = url;
+            tmp.download = `${payload.report.name || 'report'}.xlsx`;
+            tmp.click();
+            URL.revokeObjectURL(url);
+          };
+        });
         out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } catch (e) {
         const msg = $('#customReportMsg');
@@ -4947,8 +4991,12 @@
         const ext = href.includes('format=pdf') ? 'pdf'
           : href.includes('xlsx') ? 'xlsx'
             : 'csv';
-        const nameMatch = href.match(/\/api\/reports\/([^?]+)/);
-        tmp.download = `${nameMatch?.[1] || 'report'}.${ext}`;
+        const firmMatch = href.match(/\/api\/reports\/([^/?]+)/);
+        const customMatch = href.match(/\/api\/custom-reports\/(\d+)\/export/);
+        const customMeta = customMatch
+          ? (customReportList || []).find((r) => Number(r.id) === Number(customMatch[1]))
+          : null;
+        tmp.download = `${customMeta?.name || firmMatch?.[1] || 'report'}.${ext}`;
         tmp.click();
         URL.revokeObjectURL(url);
       };
@@ -4958,24 +5006,11 @@
       const rows = await api(`/api/reports/${reportId}`);
       const out = $('#reportOut');
       out.hidden = false;
-      const title = firmReports.find(([id]) => id === reportId)?.[1] || reportId;
-      if (!rows.length) {
-        out.innerHTML = `<h2>${escapeHtml(title)}</h2><p class="muted">No rows</p>`;
-        return;
-      }
-      const keys = Object.keys(rows[0]);
+      const title = firmReports.find((r) => r.id === reportId)?.name || reportId;
+      const columns = rows.length ? Object.keys(rows[0]) : [];
       out.innerHTML = `
         <h2>${escapeHtml(title)}</h2>
-        <div class="table-wrap"><table>
-          <thead><tr>${keys.map((k) => `<th>${escapeHtml(k)}</th>`).join('')}</tr></thead>
-          <tbody>
-            ${rows.map((r) => `<tr>${keys.map((k) => {
-              const v = r[k];
-              if (String(k).endsWith('_cents') && Number.isInteger(v)) return `<td>${money(v)}</td>`;
-              return `<td>${escapeHtml(v == null ? '' : String(v))}</td>`;
-            }).join('')}</tr>`).join('')}
-          </tbody>
-        </table></div>`;
+        ${renderFirmTable({ rows, columns })}`;
       out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
 
