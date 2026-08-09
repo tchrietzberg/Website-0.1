@@ -890,11 +890,12 @@
     const items = [
       ['matters', 'Matters', 'M', 'Matters & search'],
       ['time', 'Time Entry', 'T', 'Log & review time'],
+      ['billing', 'Billing', 'B', 'Pre-bill → bill'],
       ['reports', 'Reports', 'R', 'Matters & lodestar'],
       ['settings', 'Settings', 'S', 'Firm preferences'],
     ];
-    // WIP / pre-bill / approvals / payments UI paused for now
-    if (['approvals', 'payments', 'audit', 'billing'].includes(state.view)) {
+    // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
+    if (['approvals', 'payments', 'audit', 'wip'].includes(state.view)) {
       state.view = 'matters';
     }
     const activeView = state.view === 'matter' ? 'matters' : state.view;
@@ -962,6 +963,7 @@
       if (state.view === 'matters') await renderMatters();
       else if (state.view === 'matter') await renderMatterDetail();
       else if (state.view === 'time') await renderTime();
+      else if (state.view === 'billing') await renderBilling();
       else if (state.view === 'reports') await renderReports();
       else if (state.view === 'settings') await renderSettings();
       else if (state.view === 'audit') await renderAudit();
@@ -1749,6 +1751,8 @@
                 <td class="row-actions">
                   ${e.status === 'draft' || e.status === 'rejected'
                     ? `<button data-submit="${e.id}">Submit</button>` : ''}
+                  ${e.status === 'submitted' && ['admin', 'billing_clerk', 'attorney'].includes(state.user.role)
+                    ? `<button class="primary" data-approve="${e.id}">Approve</button>` : ''}
                 </td>
               </tr>`;
             }).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>'}
@@ -1800,8 +1804,23 @@
     };
     main.querySelectorAll('[data-submit]').forEach((b) => {
       b.onclick = async () => {
-        await api(`/api/time-entries/${b.dataset.submit}/submit`, { method: 'POST', body: '{}' });
-        await renderTime();
+        try {
+          await api(`/api/time-entries/${b.dataset.submit}/submit`, { method: 'POST', body: '{}' });
+          await renderTime();
+        } catch (e) {
+          $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
+    main.querySelectorAll('[data-approve]').forEach((b) => {
+      b.onclick = async () => {
+        try {
+          await api(`/api/time-entries/${b.dataset.approve}/approve`, { method: 'POST', body: '{}' });
+          $('#timeMsg').innerHTML = '<div class="ok-banner">Entry approved — ready for Billing → Pre-bill.</div>';
+          await renderTime();
+        } catch (e) {
+          $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
       };
     });
 
@@ -1817,6 +1836,202 @@
         }
       }, 0);
     }
+  }
+
+  function invoiceStageLabel(status) {
+    const map = {
+      prebill: 'Pre-bill',
+      in_review: 'In review',
+      approved: 'Ready to bill',
+      sent: 'Billed',
+      void: 'Void',
+    };
+    return map[status] || status;
+  }
+
+  async function renderBilling() {
+    const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
+    const [invoices, matters, ready] = await Promise.all([
+      api('/api/invoices'),
+      api('/api/matters'),
+      canBill ? api('/api/billing/ready').catch(() => []) : Promise.resolve([]),
+    ]);
+    state.matters = matters;
+    const readyIds = new Set((ready || []).map((r) => Number(r.id)));
+    main.innerHTML = `
+      <div class="card stack">
+        <h1>Billing</h1>
+        <p class="lead">Move approved time into a pre-bill, then issue the bill.</p>
+        ${canBill ? `
+        <form id="prebillForm" class="grid two">
+          <div class="field span-all">
+            <span class="field-label">Matter</span>
+            ${renderMatterPicker({
+              name: 'matterId',
+              selectedId: ready?.[0]?.id || null,
+              matters: matters.filter((m) => readyIds.has(Number(m.id))).concat(
+                matters.filter((m) => !readyIds.has(Number(m.id)))
+              ),
+              hideNumber: true,
+            })}
+            <span class="hint">${(ready || []).length
+              ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with approved time ready for pre-bill.`
+              : 'Approve submitted time on Time Entry first, then generate a pre-bill here.'}</span>
+          </div>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit" ${(ready || []).length ? '' : 'disabled'}>Generate pre-bill</button>
+          </div>
+        </form>` : '<div class="error">Only admins and billing clerks can generate pre-bills.</div>'}
+        <div id="billMsg"></div>
+      </div>
+      ${(ready || []).length ? `
+      <div class="card">
+        <h2>Ready for pre-bill</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Matter</th><th>Entries</th><th>Time</th></tr></thead>
+          <tbody>
+            ${ready.map((r) => `
+              <tr>
+                <td>${escapeHtml(r.name)}<div class="muted">${escapeHtml(r.client_name || '')}</div></td>
+                <td>${r.entry_count}</td>
+                <td>${escapeHtml(formatDuration(r.minutes))} <span class="muted">(${r.minutes} min)</span></td>
+              </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>` : ''}
+      <div class="card">
+        <h2>Invoices</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Number</th><th>Matter</th><th>Stage</th><th>Total</th><th></th></tr></thead>
+          <tbody>
+            ${invoices.map((i) => `
+              <tr>
+                <td>${escapeHtml(i.number)}</td>
+                <td>${escapeHtml(i.matter_name || i.matter_number)}<div class="muted">${escapeHtml(i.client_name || '')}</div></td>
+                <td><span class="pill" data-status="${escapeHtml(i.status)}">${escapeHtml(invoiceStageLabel(i.status))}</span></td>
+                <td>${money(i.total_cents)}</td>
+                <td><button data-open="${i.id}">Open</button></td>
+              </tr>`).join('') || '<tr><td colspan="5" class="muted">No invoices yet</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+      <div id="invoiceDetail"></div>`;
+
+    if (canBill) {
+      const billMatterPicker = wireMatterPicker($('#prebillForm'), { matters, hideNumber: true });
+      $('#prebillForm').onsubmit = async (ev) => {
+        ev.preventDefault();
+        const matterId = Number(new FormData(ev.target).get('matterId'));
+        if (!matterId) {
+          billMatterPicker?.setInvalid(true);
+          $('#billMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
+          billMatterPicker?.focus();
+          return;
+        }
+        try {
+          const inv = await api('/api/invoices/prebill', {
+            method: 'POST',
+            body: JSON.stringify({ matterId }),
+          });
+          $('#billMsg').innerHTML = `<div class="ok-banner">Pre-bill ${escapeHtml(inv.number)} created.</div>`;
+          await renderBilling();
+          await showInvoice(inv.id);
+        } catch (e) {
+          $('#billMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+    main.querySelectorAll('[data-open]').forEach((b) => {
+      b.onclick = () => showInvoice(Number(b.dataset.open));
+    });
+  }
+
+  async function showInvoice(id) {
+    const inv = await api(`/api/invoices/${id}`);
+    const el = $('#invoiceDetail');
+    if (!el) return;
+    const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
+    el.innerHTML = `
+      <div class="card stack">
+        <h2>${escapeHtml(inv.number)}
+          <span class="pill" data-status="${escapeHtml(inv.status)}">${escapeHtml(invoiceStageLabel(inv.status))}</span>
+        </h2>
+        <p class="muted">${escapeHtml(inv.client_name || '')} · ${escapeHtml(inv.matter_name || inv.matter_number || '')}
+          · Subtotal ${money(inv.subtotal_cents)}
+          · Write-down ${money(inv.write_down_cents)}
+          · Total ${money(inv.total_cents)}</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Rate</th><th>Amount</th><th>WD</th><th></th></tr></thead>
+          <tbody>
+            ${(inv.lines || []).map((l) => `
+              <tr>
+                <td>${escapeHtml(l.service_date)}<div class="muted">${escapeHtml(l.description || '')}</div></td>
+                <td>${escapeHtml(l.timekeeper_name || '')}</td>
+                <td>${escapeHtml(formatDuration(l.minutes))}</td>
+                <td>${money(l.rate_cents)}</td>
+                <td>${money(l.amount_cents)}</td>
+                <td>${money(l.write_down_cents)}</td>
+                <td>${canBill && ['prebill', 'in_review'].includes(inv.status)
+                  ? `<button data-wd="${l.id}">Write-down</button>` : ''}</td>
+              </tr>`).join('') || '<tr><td colspan="7" class="muted">No lines</td></tr>'}
+          </tbody>
+        </table></div>
+        <div class="row-actions" id="invActions"></div>
+        <div id="invMsg"></div>
+      </div>`;
+
+    const actions = $('#invActions');
+    const btn = (label, status, primary) => {
+      if (!canBill || !actions) return;
+      const b = document.createElement('button');
+      b.textContent = label;
+      if (primary) b.className = 'primary';
+      b.onclick = async () => {
+        try {
+          await api(`/api/invoices/${id}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status }),
+          });
+          await renderBilling();
+          await showInvoice(id);
+        } catch (e) {
+          $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+      actions.appendChild(b);
+    };
+    if (inv.status === 'prebill') {
+      btn('Continue to review', 'in_review', true);
+      btn('Void', 'void');
+    }
+    if (inv.status === 'in_review') {
+      btn('Approve', 'approved', true);
+      btn('Back to pre-bill', 'prebill');
+      btn('Void', 'void');
+    }
+    if (inv.status === 'approved') {
+      btn('Issue bill', 'sent', true);
+      btn('Void', 'void');
+    }
+
+    el.querySelectorAll('[data-wd]').forEach((b) => {
+      b.onclick = async () => {
+        const dollars = prompt('Write-down amount in dollars (e.g. 25.00)?');
+        if (!dollars) return;
+        const reason = prompt('Reason?') || 'adjustment';
+        const parts = String(dollars).replace('$', '').split('.');
+        const deltaCents = Number(parts[0]) * 100 + Number((parts[1] || '0').padEnd(2, '0').slice(0, 2));
+        try {
+          await api(`/api/invoice-lines/${b.dataset.wd}/write-down`, {
+            method: 'POST',
+            body: JSON.stringify({ deltaCents, reason }),
+          });
+          await showInvoice(id);
+        } catch (e) {
+          $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
   }
 
   async function renderReports() {

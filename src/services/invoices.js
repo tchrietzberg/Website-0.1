@@ -22,7 +22,9 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
       ORDER BY service_date, id
     `).all(matterId);
   }
-  if (!entries.length) throw new Error('no approved WIP entries for pre-bill');
+  if (!entries.length) {
+    throw new Error('No approved time entries ready for pre-bill on this matter');
+  }
 
   const year = new Date().getUTCFullYear();
   const number = allocateNumber(db, 'invoice', year, 'INV-');
@@ -35,6 +37,9 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
 
   let subtotal = 0;
   let order = 0;
+  const markEntry = db.prepare(`
+    UPDATE time_entries SET status = 'invoiced', invoice_id = ? WHERE id = ?
+  `);
   for (const e of entries) {
     const rate = resolveRate(db, {
       matterId: matter.id,
@@ -54,6 +59,7 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
       invoiceId, e.id, e.service_date, e.description, e.timekeeper_id,
       e.rounded_minutes, rate.amountCents, amount, order++
     );
+    markEntry.run(invoiceId, e.id);
   }
 
   db.prepare(`
@@ -68,6 +74,21 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
     detail: { number, entryCount: entries.length, subtotal },
   });
   return getInvoice(db, invoiceId);
+}
+
+/** Matters with approved, unbilled time ready to pre-bill. */
+function listMattersReadyForBilling(db) {
+  return db.prepare(`
+    SELECT m.id, m.number, m.name, c.name AS client_name,
+      COUNT(te.id) AS entry_count,
+      COALESCE(SUM(te.rounded_minutes), 0) AS minutes
+    FROM matters m
+    JOIN clients c ON c.id = m.client_id
+    JOIN time_entries te ON te.matter_id = m.id
+    WHERE te.status = 'approved' AND te.invoice_id IS NULL AND te.rounded_minutes > 0
+    GROUP BY m.id
+    ORDER BY m.name
+  `).all();
 }
 
 function recomputeTotals(db, invoiceId) {
@@ -203,12 +224,23 @@ function getInvoice(db, id) {
 
 function listInvoices(db) {
   return db.prepare(`
-    SELECT i.*, m.number AS matter_number, c.name AS client_name
+    SELECT i.*, m.number AS matter_number, m.name AS matter_name, c.name AS client_name
     FROM invoices i
     JOIN matters m ON m.id = i.matter_id
     JOIN clients c ON c.id = m.client_id
     ORDER BY i.created_at DESC
   `).all();
+}
+
+function invoiceStageLabel(status) {
+  const map = {
+    prebill: 'Pre-bill',
+    in_review: 'In review',
+    approved: 'Ready to bill',
+    sent: 'Billed',
+    void: 'Void',
+  };
+  return map[status] || status;
 }
 
 module.exports = {
@@ -218,4 +250,6 @@ module.exports = {
   createCreditNote,
   getInvoice,
   listInvoices,
+  listMattersReadyForBilling,
+  invoiceStageLabel,
 };

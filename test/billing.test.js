@@ -125,12 +125,16 @@ describe('invoice lifecycle', () => {
     assert.equal(updated.writeDowns[0].created_by, ctx.clerk.id);
   });
 
-  it('sent invoices are immutable; corrections via credit notes; void releases WIP pre-send', () => {
+  it('pre-bill marks entries invoiced; void before bill releases them; sent bills are immutable', () => {
     approvedEntry(60);
     const inv = invoiceSvc.generatePrebill(ctx.db, ctx.clerk, 1);
+    const linked = ctx.db.prepare('SELECT status, invoice_id FROM time_entries LIMIT 1').get();
+    assert.equal(linked.status, 'invoiced');
+    assert.equal(linked.invoice_id, inv.id);
+
     invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'in_review');
     invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'approved');
-    // void before send releases entries
+    // void before bill releases entries back to approved
     invoiceSvc.setStatus(ctx.db, ctx.clerk, inv.id, 'void');
     const entry = ctx.db.prepare('SELECT status, invoice_id FROM time_entries LIMIT 1').get();
     assert.equal(entry.status, 'approved');

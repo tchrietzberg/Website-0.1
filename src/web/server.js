@@ -796,6 +796,10 @@ function createServer(db = openDb()) {
       if (req.method === 'GET' && pathname === '/api/invoices') {
         return json(res, 200, invoiceSvc.listInvoices(db));
       }
+      if (req.method === 'GET' && pathname === '/api/billing/ready') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        return json(res, 200, invoiceSvc.listMattersReadyForBilling(db));
+      }
       if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+$/)) {
         const id = Number(pathname.split('/')[3]);
         const inv = invoiceSvc.getInvoice(db, id);
