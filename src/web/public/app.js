@@ -1549,7 +1549,6 @@
       </div>
 
       <form id="matterForm" class="card stack">
-        <h2>Matter fields</h2>
         ${sections.map(([section, fields]) => `
           <div class="grid two">
             ${fields.map((f) => `
