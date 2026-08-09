@@ -145,6 +145,15 @@ function createMatter(db, actor, input = {}) {
   const initialStatus = formatBuiltInStatus(input.status || 'open');
   const displayName = composeMatterName(name, initialStatus, openedOn);
 
+  const customValues = input.customValues && typeof input.customValues === 'object'
+    ? input.customValues
+    : {};
+  customFields.assertRequiredCustomValues(db, {
+    appliesTo: 'matter',
+    recordTypeKey: matterType,
+    values: customValues,
+  });
+
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
       responsible_attorney_id, opened_on)
@@ -162,8 +171,8 @@ function createMatter(db, actor, input = {}) {
   );
   const id = Number(info.lastInsertRowid);
 
-  if (input.customValues) {
-    customFields.setCustomValues(db, actor, id, input.customValues);
+  if (Object.keys(customValues).length) {
+    customFields.setCustomValues(db, actor, id, customValues);
     const matterRow = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const statusLabel = currentStatusLabel(db, matterRow) || initialStatus;
     const nextName = composeMatterName(name, statusLabel, openedOn);
@@ -230,6 +239,18 @@ function updateMatter(db, actor, id, patch) {
   }
 
   if (patch.customValues) {
+    const existing = Object.fromEntries(
+      db.prepare('SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?')
+        .all(id)
+        .map((v) => [v.field_id, v.value_text])
+    );
+    const merged = { ...existing, ...patch.customValues };
+    customFields.assertRequiredCustomValues(db, {
+      appliesTo: 'matter',
+      recordTypeKey: current.matter_type,
+      matterId: id,
+      values: merged,
+    });
     customFields.setCustomValues(db, actor, id, patch.customValues);
   }
 

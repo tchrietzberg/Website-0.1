@@ -486,6 +486,10 @@ body {
   color: var(--ink);
 }
 
+.create-matter-custom {
+  margin-top: 0.85rem;
+  width: 100%;
+}
 .create-matter-row {
   display: -webkit-flex;
   display: flex;

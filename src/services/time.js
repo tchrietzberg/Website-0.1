@@ -108,6 +108,14 @@ function createEntry(db, actor, input) {
   }
 
   const dupes = detectDuplicates(db, candidate);
+  const customValues = input.customValues && typeof input.customValues === 'object'
+    ? input.customValues
+    : {};
+  customFields.assertRequiredCustomValues(db, {
+    appliesTo: 'time_entry',
+    values: customValues,
+  });
+
   // No approval workflow — saved time is immediately ready to bill.
   const info = db.prepare(`
     INSERT INTO time_entries(
@@ -127,8 +135,8 @@ function createEntry(db, actor, input) {
   );
 
   const entryId = Number(info.lastInsertRowid);
-  if (input.customValues && typeof input.customValues === 'object') {
-    customFields.setTimeCustomValues(db, actor, entryId, input.customValues);
+  if (Object.keys(customValues).length) {
+    customFields.setTimeCustomValues(db, actor, entryId, customValues);
   }
 
   audit(db, {

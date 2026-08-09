@@ -41,14 +41,64 @@ function fieldLabelForKey(db, fieldKey) {
 }
 
 function describeLayoutFields(db, layoutId) {
-  return layoutItems(db, layoutId).map((item) => ({
-    fieldKey: item.field_key,
-    label: fieldLabelForKey(db, item.field_key),
-    width: item.width,
-    section: item.section,
-    removable: !CORE_LAYOUT_KEYS.includes(item.field_key),
-    kind: String(item.field_key).startsWith('cf:') ? 'custom' : 'standard',
-  }));
+  return layoutItems(db, layoutId).map((item) => {
+    const isCustom = String(item.field_key).startsWith('cf:');
+    let required = false;
+    if (isCustom) {
+      const fieldId = Number(String(item.field_key).slice(3));
+      const row = db.prepare(
+        'SELECT required FROM custom_fields WHERE id = ? AND active = 1'
+      ).get(fieldId);
+      required = !!row?.required;
+    }
+    return {
+      fieldKey: item.field_key,
+      label: fieldLabelForKey(db, item.field_key),
+      width: item.width,
+      section: item.section,
+      removable: !CORE_LAYOUT_KEYS.includes(item.field_key),
+      kind: isCustom ? 'custom' : 'standard',
+      required,
+    };
+  });
+}
+
+function isBlankCustomValue(field, value) {
+  if (value == null) return true;
+  const text = String(value).trim();
+  const type = field.field_type || field.fieldType || field.type;
+  if (type === 'checkbox') {
+    return text !== '1' && text.toLowerCase() !== 'true';
+  }
+  return text === '';
+}
+
+/** Ensure all required custom fields for the scope have non-blank values. */
+function assertRequiredCustomValues(db, {
+  appliesTo = 'matter',
+  matterId = null,
+  recordTypeKey = null,
+  values = {},
+} = {}) {
+  const target = normalizeAppliesTo(appliesTo);
+  const fields = target === 'time_entry'
+    ? listCustomFields(db, { appliesTo: 'time_entry' })
+    : listCustomFields(db, {
+      recordTypeKey: recordTypeKey || DEFAULT_RECORD_TYPE_KEY,
+      matterId: matterId != null ? Number(matterId) : null,
+      appliesTo: 'matter',
+    });
+  const required = fields.filter((f) => !!f.required);
+  const missing = [];
+  for (const f of required) {
+    const raw = values[f.id] !== undefined ? values[f.id] : values[String(f.id)];
+    if (isBlankCustomValue(f, raw)) missing.push(f.label);
+  }
+  if (missing.length) {
+    throw new Error(
+      `Required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`
+    );
+  }
 }
 
 function ensureDefaultRecordTypeRow(db) {
@@ -334,7 +384,14 @@ function createCustomField(db, actor, input) {
     action: 'custom_field.create',
     entityType: 'custom_field',
     entityId: id,
-    detail: { apiName, label, recordTypeKey, matterId, appliesTo },
+    detail: {
+      apiName,
+      label,
+      recordTypeKey,
+      matterId,
+      appliesTo,
+      required: !!(input.required ? 1 : 0),
+    },
   });
 
   return getCustomField(db, id);
@@ -725,6 +782,8 @@ module.exports = {
   listTimeEntryFieldDefs,
   setTimeCustomValues,
   getTimeCustomValues,
+  assertRequiredCustomValues,
+  isBlankCustomValue,
   getMatterPage,
   getTypeLayout,
   setCustomValues,

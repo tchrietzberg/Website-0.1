@@ -72,6 +72,9 @@ function migrateCustomFieldAppliesTo(db) {
   if (!cols.has('applies_to')) {
     db.exec(`ALTER TABLE custom_fields ADD COLUMN applies_to TEXT NOT NULL DEFAULT 'matter'`);
   }
+  if (!cols.has('required')) {
+    db.exec('ALTER TABLE custom_fields ADD COLUMN required INTEGER NOT NULL DEFAULT 0');
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS time_entry_custom_field_values (
       time_entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,

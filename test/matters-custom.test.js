@@ -201,6 +201,62 @@ describe('matter search and record-based fields', () => {
     assert.deepEqual(found.options, ['Open', 'On hold', 'Closed']);
   });
 
+  it('requires custom fields on matter and time entry creation', () => {
+    const timeSvc = require('../src/services/time');
+    const matterReq = customFields.createCustomField(db, admin, {
+      label: 'Lead counsel',
+      fieldType: 'text',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+      required: true,
+    });
+    assert.equal(matterReq.required, 1);
+
+    assert.throws(() => matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Needs lead',
+      openedOn: '2026-03-01',
+    }), /Lead counsel/);
+
+    const page = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Has lead',
+      openedOn: '2026-03-01',
+      customValues: { [matterReq.id]: 'Jordan Lee' },
+    });
+    assert.match(page.matter.name, /Has lead/);
+    const stored = db.prepare(
+      'SELECT value_text FROM custom_field_values WHERE matter_id = ? AND field_id = ?'
+    ).get(page.matter.id, matterReq.id);
+    assert.equal(stored.value_text, 'Jordan Lee');
+
+    const timeReq = customFields.createCustomField(db, admin, {
+      label: 'Activity code',
+      fieldType: 'text',
+      appliesTo: 'time_entry',
+      required: true,
+    });
+    assert.throws(() => timeSvc.createEntry(db, admin, {
+      matterId: page.matter.id,
+      timekeeperId: admin.id,
+      serviceDate: '2026-03-02',
+      hours: 0.25,
+      description: 'Call',
+    }), /Activity code/);
+
+    const entry = timeSvc.createEntry(db, admin, {
+      matterId: page.matter.id,
+      timekeeperId: admin.id,
+      serviceDate: '2026-03-02',
+      hours: 0.25,
+      description: 'Call',
+      customValues: { [timeReq.id]: 'A101' },
+    });
+    assert.equal(entry.customValues[timeReq.id], 'A101');
+    const defs = customFields.listTimeEntryFieldDefs(db);
+    assert.ok(defs.some((d) => d.fieldId === timeReq.id && d.required === true));
+  });
+
   it('supports time-entry custom fields separate from matter fields', () => {
     const timeSvc = require('../src/services/time');
     const matter = matterSvc.createMatter(db, admin, {

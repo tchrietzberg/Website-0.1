@@ -127,7 +127,7 @@
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(f.kind)}${f.removable ? '' : ' · required'}</span>
+          <span class="muted"> · ${escapeHtml(f.kind)}${f.required ? ' · required' : ''}</span>
         </div>
         ${f.removable
           ? `<button type="button" data-del-matter-field="${escapeHtml(f.fieldKey)}">Delete</button>`
@@ -142,12 +142,20 @@
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(f.kind)}${f.removable ? '' : ' · required'}</span>
+          <span class="muted"> · ${escapeHtml(f.kind)}${f.required ? ' · required' : ''}</span>
         </div>
         ${f.removable
           ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
           : ''}
       </div>`).join('');
+  }
+
+  function requiredFieldCheckboxHtml() {
+    return `
+      <label class="check-inline span-all">
+        <input type="checkbox" name="required" />
+        Required on create
+      </label>`;
   }
 
   /** Field formatters available when adding default / custom record fields. */
@@ -190,6 +198,7 @@
     const body = {
       label: fd.get('label'),
       fieldType: apiFieldType(fieldType),
+      required: fd.get('required') === 'on',
     };
     if (fieldType === 'dropdown' || fieldType === 'select') {
       body.options = options;
@@ -244,7 +253,7 @@
           <div class="field-mgmt-row">
             <div>
               <strong>${escapeHtml(f.label)}</strong>
-              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · time entry</div>
+              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · time entry${f.required ? ' · required' : ''}</div>
             </div>
             <button type="button" data-del-time-field="${f.id}">Remove</button>
           </div>`).join('') || '<p class="muted">No time-entry fields yet.</p>';
@@ -260,6 +269,7 @@
               </select>
             </label>
             ${dropdownOptionsFieldHtml()}
+            ${requiredFieldCheckboxHtml()}
             <div class="row-actions span-all">
               <button class="primary" type="submit">Add time field</button>
             </div>
@@ -319,6 +329,7 @@
             </select>
           </label>
           ${dropdownOptionsFieldHtml()}
+          ${requiredFieldCheckboxHtml()}
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add field</button>
           </div>
@@ -1053,14 +1064,28 @@
     const hasQuery = !!state.matterSearch.q;
     const canEdit = canCreateMatter(state.user);
 
-    const [hits, clients, allMatters] = await Promise.all([
+    const showCreate = canEdit && state.showCreateMatter;
+    const [hits, clients, allMatters, createMatterFields] = await Promise.all([
       api(`/api/matters?${params}`),
       api('/api/clients'),
       api('/api/matters'), // full list for dropdowns elsewhere; not shown here
+      showCreate
+        ? api('/api/custom-fields?appliesTo=matter&type=default').catch(() => [])
+        : Promise.resolve([]),
     ]);
     state.matters = allMatters;
     state.clients = clients;
-    const showCreate = canEdit && state.showCreateMatter;
+    const createFieldDefs = (createMatterFields || []).map((f) => ({
+      key: `cf:${f.id}`,
+      label: f.label,
+      type: f.field_type,
+      options: f.options,
+      required: !!f.required,
+      fieldId: f.id,
+      kind: 'custom',
+      width: f.field_type === 'textarea' ? 'full' : 'half',
+      value: null,
+    }));
 
     main.innerHTML = `
       <div class="card stack page-card">
@@ -1078,6 +1103,14 @@
               <button class="primary" type="submit">Create</button>
               <button type="button" id="cancelCreateMatter">Cancel</button>
             </div>
+            ${createFieldDefs.length ? `
+            <div class="grid two create-matter-custom">
+              ${createFieldDefs.map((field) => `
+                <label class="${field.width === 'full' ? 'span-all' : ''}">
+                  ${escapeHtml(field.label)}${field.required ? ' *' : ''}
+                  ${renderFieldInput(field, { canEdit: true })}
+                </label>`).join('')}
+            </div>` : ''}
           </form>
           <div id="newMatterMsg"></div>
         </div>` : ''}
@@ -1155,10 +1188,22 @@
       newMatterForm.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(newMatterForm);
+        const customValues = {};
+        for (const [key, value] of fd.entries()) {
+          if (String(key).startsWith('cf_')) customValues[key.slice(3)] = value;
+        }
+        createFieldDefs.forEach((f) => {
+          if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
+            customValues[f.fieldId] = '0';
+          }
+        });
         try {
           const page = await api('/api/matters', {
             method: 'POST',
-            body: JSON.stringify({ name: fd.get('name') }),
+            body: JSON.stringify({
+              name: fd.get('name'),
+              customValues,
+            }),
           });
           $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${escapeHtml(page.matter.name)}.</div>`;
           await refreshRefs();
@@ -1166,7 +1211,7 @@
           state.matterSearch = { q: page.matter.name };
           await openMatter(page.matter.id);
         } catch (e) {
-          $('#newMatterMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }
@@ -1213,7 +1258,7 @@
       </select>`;
     }
     if (field.type === 'checkbox') {
-      return `<input type="checkbox" name="${name}" ${disabled} ${val === '1' || val === 'true' ? 'checked' : ''} />`;
+      return `<input type="checkbox" name="${name}" value="1" ${disabled} ${req} ${val === '1' || val === 'true' ? 'checked' : ''} />`;
     }
     const inputType = field.type === 'number' ? 'number' : (field.type === 'date' ? 'date' : 'text');
     return `<input type="${inputType}" name="${name}" value="${String(val).replace(/"/g, '&quot;')}" ${disabled} ${req} />`;
@@ -1439,7 +1484,7 @@
           placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
       </label>
       ${timeFieldDefs.map((field) => `
-        <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}
+        <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}${field.required ? ' *' : ''}
           ${renderFieldInput(field, { canEdit: true })}
         </label>`).join('')}
       <div class="row-actions span-all">
@@ -1553,7 +1598,7 @@
           <div class="grid two">
             ${fields.map((f) => `
               <label class="${f.width === 'full' ? 'span-all' : ''}">
-                ${escapeHtml(f.label)}
+                ${escapeHtml(f.label)}${f.required ? ' *' : ''}
                 ${renderFieldInput(f, fieldCtx)}
               </label>`).join('')}
           </div>
@@ -1635,6 +1680,7 @@
             </select>
           </label>
           ${dropdownOptionsFieldHtml()}
+          ${requiredFieldCheckboxHtml()}
           <div class="row-actions span-all">
             <button class="primary" type="submit">Add field</button>
             ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Use default layout</button>' : ''}
