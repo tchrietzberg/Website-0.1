@@ -2022,6 +2022,297 @@
       .toLowerCase();
   }
 
+  function clientSearchText(c) {
+    return [c?.name, c?.record_type, c?.recordType, c?.email]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+  }
+
+  function rankClientMatches(clients, query) {
+    const needle = String(query || '').trim().toLowerCase();
+    if (!needle) return [];
+    const scored = [];
+    for (const c of clients || []) {
+      const name = String(c.name || '').toLowerCase();
+      const hay = clientSearchText(c);
+      let score = 0;
+      if (name.startsWith(needle)) score = 3;
+      else if (name.split(/\s+/).some((w) => w.startsWith(needle))) score = 2;
+      else if (hay.includes(needle)) score = 1;
+      if (score) scored.push({ c, score, name });
+    }
+    scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    return scored.map((row) => row.c);
+  }
+
+  function renderClientTypeahead({
+    name = 'clientId',
+    selectedId = '',
+    clients = [],
+    allowAddNew = false,
+  } = {}) {
+    const selected = (clients || []).find((c) => String(c.id) === String(selectedId)) || null;
+    const isNew = selectedId === '__new__';
+    const display = isNew ? '' : (selected?.name || '');
+    const placeholder = 'Type a few letters to find a client…';
+    return `
+      <div class="client-typeahead" data-client-typeahead>
+        <div class="client-typeahead-input-wrap">
+          <input type="search" class="client-typeahead-input" data-client-search
+            value="${escapeHtml(display)}"
+            placeholder="${escapeHtml(placeholder)}"
+            autocomplete="off" aria-autocomplete="list" aria-expanded="false"
+            aria-label="Client" />
+          <button type="button" class="client-typeahead-clear" data-client-clear
+            title="Clear client" aria-label="Clear client"
+            ${selectedId && !isNew ? '' : 'hidden'}>×</button>
+          <ul class="client-typeahead-list" data-client-list role="listbox" hidden></ul>
+        </div>
+        <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(String(selectedId || ''))}"
+          data-client-id />
+        <p class="hint">Optional — suggestions appear as you type. Leave blank for none.</p>
+        ${allowAddNew ? `
+          <button type="button" class="linkish client-typeahead-add" data-client-add-new>
+            + Add new client…
+          </button>` : ''}
+      </div>`;
+  }
+
+  let clientTypeaheadDocBound = false;
+  function ensureClientTypeaheadDocClose() {
+    if (clientTypeaheadDocBound) return;
+    clientTypeaheadDocBound = true;
+    document.addEventListener('click', (ev) => {
+      document.querySelectorAll('[data-client-typeahead].is-open').forEach((el) => {
+        if (!el.contains(ev.target)) {
+          const list = el.querySelector('[data-client-list]');
+          const search = el.querySelector('[data-client-search]');
+          if (list) list.hidden = true;
+          if (search) search.setAttribute('aria-expanded', 'false');
+          el.classList.remove('is-open');
+        }
+      });
+    });
+  }
+
+  function wireClientTypeahead(scopeEl, {
+    clients = [],
+    selectedId = '',
+    allowAddNew = false,
+    onChange = null,
+  } = {}) {
+    const root = scopeEl.querySelector('[data-client-typeahead]');
+    if (!root) return null;
+    ensureClientTypeaheadDocClose();
+    const hidden = root.querySelector('[data-client-id]');
+    const search = root.querySelector('[data-client-search]');
+    const list = root.querySelector('[data-client-list]');
+    const clearBtn = root.querySelector('[data-client-clear]');
+    const addNewBtn = root.querySelector('[data-client-add-new]');
+    let activeIndex = -1;
+    let suggestions = [];
+
+    function emit(value) {
+      if (typeof onChange === 'function') onChange(value);
+    }
+
+    function setValue(value, { announce = true } = {}) {
+      const next = value == null ? '' : String(value);
+      hidden.value = next;
+      if (next === '__new__') {
+        search.value = '';
+        search.placeholder = 'Creating a new client below…';
+        if (clearBtn) clearBtn.hidden = true;
+      } else if (next) {
+        const c = clients.find((x) => String(x.id) === next);
+        search.value = c?.name || '';
+        search.placeholder = 'Type a few letters to find a client…';
+        if (clearBtn) clearBtn.hidden = false;
+      } else {
+        search.value = '';
+        search.placeholder = 'Type a few letters to find a client…';
+        if (clearBtn) clearBtn.hidden = true;
+      }
+      root.classList.toggle('has-value', !!next && next !== '__new__');
+      root.classList.toggle('is-new', next === '__new__');
+      if (announce) emit(next);
+    }
+
+    function closeList() {
+      list.hidden = true;
+      search.setAttribute('aria-expanded', 'false');
+      root.classList.remove('is-open');
+      activeIndex = -1;
+    }
+
+    function renderSuggestions(q) {
+      const needle = String(q || '').trim();
+      const rows = [];
+      if (!needle) {
+        rows.push({
+          id: '',
+          label: 'None — optional',
+          detail: 'No client on this matter',
+          kind: 'none',
+        });
+        suggestions = [];
+      } else {
+        suggestions = rankClientMatches(clients, needle).slice(0, 8);
+        for (const c of suggestions) {
+          rows.push({
+            id: String(c.id),
+            label: c.name || `Client ${c.id}`,
+            detail: [c.record_type || c.recordType, c.email].filter(Boolean).join(' · '),
+            kind: 'client',
+          });
+        }
+        if (!rows.length) {
+          rows.push({
+            id: '',
+            label: 'No clients match',
+            detail: 'Try different letters, or add a new client',
+            kind: 'empty',
+          });
+        }
+      }
+      if (allowAddNew) {
+        rows.push({
+          id: '__new__',
+          label: '+ Add new client…',
+          detail: needle ? `Use “${needle}” as a starting name` : 'Create a contact for this matter',
+          kind: 'new',
+        });
+      }
+      activeIndex = rows.findIndex((r) => r.kind === 'client' || r.kind === 'none');
+      if (activeIndex < 0) activeIndex = rows.findIndex((r) => r.kind === 'new');
+      list.innerHTML = rows.map((r, i) => `
+        <li role="option"
+          class="client-typeahead-option ${i === activeIndex ? 'is-active' : ''} ${
+            r.kind === 'empty' ? 'is-muted' : ''
+          }"
+          data-client-option="${escapeHtml(r.id)}"
+          data-kind="${escapeHtml(r.kind)}"
+          aria-selected="${i === activeIndex ? 'true' : 'false'}"
+          ${r.kind === 'empty' ? 'aria-disabled="true"' : ''}>
+          <span>${escapeHtml(r.label)}</span>
+          ${r.detail ? `<small>${escapeHtml(r.detail)}</small>` : ''}
+        </li>`).join('');
+      list.hidden = false;
+      search.setAttribute('aria-expanded', 'true');
+      root.classList.add('is-open');
+      list.querySelectorAll('[data-kind]').forEach((el) => {
+        if (el.dataset.kind === 'empty') return;
+        el.onmousedown = (ev) => {
+          ev.preventDefault();
+          pick(el.dataset.clientOption, el.dataset.kind);
+        };
+      });
+    }
+
+    function pick(id, kind) {
+      if (kind === 'empty') return;
+      if (kind === 'new' || id === '__new__') {
+        const typed = String(search.value || '').trim();
+        if (typed && state.createMatterNewClient) {
+          state.createMatterNewClient = {
+            ...state.createMatterNewClient,
+            name: state.createMatterNewClient.name || typed,
+          };
+        } else if (typed) {
+          state.createMatterNewClient = {
+            name: typed,
+            recordTypeKey: 'client',
+            email: '',
+          };
+        }
+        setValue('__new__');
+      } else {
+        setValue(id || '');
+      }
+      closeList();
+    }
+
+    function moveActive(delta) {
+      const opts = [...list.querySelectorAll('.client-typeahead-option:not(.is-muted)')];
+      if (!opts.length) return;
+      const cur = opts.findIndex((el) => el.classList.contains('is-active'));
+      const next = (cur + delta + opts.length) % opts.length;
+      list.querySelectorAll('.client-typeahead-option').forEach((el) => {
+        el.classList.remove('is-active');
+        el.setAttribute('aria-selected', 'false');
+      });
+      opts[next].classList.add('is-active');
+      opts[next].setAttribute('aria-selected', 'true');
+      opts[next].scrollIntoView({ block: 'nearest' });
+      activeIndex = [...list.children].indexOf(opts[next]);
+    }
+
+    search.addEventListener('focus', () => {
+      renderSuggestions(search.value);
+    });
+    search.addEventListener('input', () => {
+      // Typing replaces a prior selection until the user picks again.
+      if (hidden.value && hidden.value !== '__new__') {
+        const selected = clients.find((c) => String(c.id) === String(hidden.value));
+        if (!selected || search.value !== selected.name) {
+          hidden.value = '';
+          if (clearBtn) clearBtn.hidden = true;
+          root.classList.remove('has-value');
+        }
+      }
+      if (hidden.value === '__new__') {
+        hidden.value = '';
+        root.classList.remove('is-new');
+        emit('');
+        return; // emit re-renders create form; skip local list paint
+      }
+      renderSuggestions(search.value);
+    });
+    search.addEventListener('keydown', (ev) => {
+      if (ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        if (list.hidden) renderSuggestions(search.value);
+        else moveActive(1);
+      } else if (ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        if (!list.hidden) moveActive(-1);
+      } else if (ev.key === 'Enter') {
+        if (!list.hidden) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const active = list.querySelector('.client-typeahead-option.is-active:not(.is-muted)');
+          if (active) pick(active.dataset.clientOption, active.dataset.kind);
+        }
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        closeList();
+      }
+    });
+    if (clearBtn) {
+      clearBtn.onclick = (ev) => {
+        ev.preventDefault();
+        setValue('');
+        closeList();
+        search.focus();
+      };
+    }
+    if (addNewBtn) {
+      addNewBtn.onclick = (ev) => {
+        ev.preventDefault();
+        pick('__new__', 'new');
+      };
+    }
+
+    // Sync initial selectedId without re-emitting (caller owns state).
+    if (selectedId) setValue(selectedId, { announce: false });
+
+    return {
+      getValue: () => String(hidden.value || ''),
+      focus: () => search.focus(),
+    };
+  }
+
   function renderMatterPicker({
     name = 'matterId',
     selectedId = null,
@@ -2932,16 +3223,13 @@
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
             <div class="grid two create-matter-custom">
-              <label>Client
-                <select name="clientId" id="createMatterClientSelect">
-                  <option value="" ${!selectedClientId ? 'selected' : ''}>None — optional</option>
-                  ${clientList.map((c) => `
-                    <option value="${c.id}" ${selectedClientId === String(c.id) ? 'selected' : ''}>
-                      ${escapeHtml(c.name)}${c.record_type ? ` (${escapeHtml(c.record_type)})` : ''}
-                    </option>`).join('')}
-                  ${roleCanModify('contact') ? `
-                    <option value="__new__" ${addingNewClient ? 'selected' : ''}>+ Add new client…</option>` : ''}
-                </select>
+              <label class="create-matter-client-field">Client
+                ${renderClientTypeahead({
+                  name: 'clientId',
+                  selectedId: selectedClientId,
+                  clients: clientList,
+                  allowAddNew: roleCanModify('contact'),
+                })}
               </label>
               <label>Record type
                 <select name="recordTypeKey" id="createMatterTypeSelect" required>
@@ -3109,18 +3397,24 @@
           }
         }, 0);
       }
-      const clientSelect = $('#createMatterClientSelect');
-      if (clientSelect) {
-        clientSelect.onchange = async () => {
+      wireClientTypeahead($('#createMatterSection') || main, {
+        clients: clientList,
+        selectedId: selectedClientId,
+        allowAddNew: roleCanModify('contact'),
+        onChange: async (value) => {
           const nameEl = $('#createMatterName');
           if (nameEl && !formulaActive) state.createMatterDraftName = String(nameEl.value || '');
-          if (state.createMatterClientId === '__new__' || clientSelect.value === '__new__') {
+          const prev = state.createMatterClientId;
+          if (prev === '__new__' || value === '__new__') {
             persistNewClientDraft();
           }
-          state.createMatterClientId = clientSelect.value || '';
-          await renderMatters();
-        };
-      }
+          state.createMatterClientId = value || '';
+          // Only re-render when the inline “new client” panel should toggle.
+          if ((prev === '__new__') !== (value === '__new__')) {
+            await renderMatters();
+          }
+        },
+      });
       ['newClientName', 'newClientRecordTypeKey', 'newClientEmail'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', persistNewClientDraft);
@@ -3199,8 +3493,8 @@
         } else if (clientChoice) {
           clientId = Number(clientChoice);
           if (!Number.isFinite(clientId) || clientId <= 0) {
-            $('#newMatterMsg').innerHTML = '<div class="error">Select a valid client, or leave Client as None.</div>';
-            $('#createMatterClientSelect')?.focus();
+            $('#newMatterMsg').innerHTML = '<div class="error">Pick a client from the suggestions, or leave Client blank.</div>';
+            document.querySelector('[data-client-search]')?.focus();
             return;
           }
         }
