@@ -7447,7 +7447,7 @@
           const delivered = result.delivery?.ok === true;
           const mode = delivered
             ? 'Password reset email sent.'
-            : (result.warning || 'Reset link created, but email was not delivered. Configure Email in Settings.');
+            : (result.warning || 'Reset link created, but email was not delivered. Use the link shown instead.');
           const link = localAuthLink(result.devToken) || result.devLink || '';
           $('#rateMsg').innerHTML = `<div class="${delivered ? 'ok-banner' : 'error'}">${escapeHtml(mode)}${
             link ? `<div style="margin-top:.5rem"><a href="${escapeHtml(link)}">Open reset link</a> <span class="muted">(use this if email link fails)</span></div>` : ''
@@ -7561,7 +7561,7 @@
           const delivered = invited.delivery?.ok === true;
           const mode = delivered
             ? 'Invite email sent.'
-            : (invited.warning || 'Invite created, but email was not delivered. Configure Email in Settings, or use the link below.');
+            : (invited.warning || 'Invite created, but email was not delivered. Use the invite link below.');
           await refreshRefs();
           state.tkSearch = { q: '' };
           const link = localAuthLink(invited.devToken) || invited.devLink || '';
@@ -7621,7 +7621,7 @@
     setMainHtml(`
       <div class="card stack">
         <h1>Settings</h1>
-        <p class="lead">Matter, contact, and time fields, plus billing preferences${isAdmin ? ', email, and integrations' : ''}.</p>
+        <p class="lead">Matter, contact, and time fields, plus billing preferences.</p>
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
       </div>
 
@@ -7685,7 +7685,7 @@
             <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Duration Format</h3>
               <p class="hint">How timers and time entries are shown.</p>
-              ${settings.durationFormats.map((f) => `
+              ${(settings.durationFormats || []).map((f) => `
                 <div class="choice ${settings.durationFormat === f.id ? 'is-selected' : ''}"
                      data-name="durationFormat" data-disabled="${canEditBilling ? '0' : '1'}">
                   <input type="radio" name="durationFormat" value="${f.id}"
@@ -7702,7 +7702,7 @@
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Time Rounding</h3>
               <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
                 Nearest rounds up if the duration is exactly in the middle of the interval.</p>
-              ${settings.roundingModes.map((m) => `
+              ${(settings.roundingModes || []).map((m) => `
                 <div class="choice ${settings.roundMode === m.id ? 'is-selected' : ''}"
                      data-name="roundMode" data-disabled="${canEditBilling ? '0' : '1'}">
                   <input type="radio" name="roundMode" value="${m.id}"
@@ -7716,7 +7716,7 @@
 
               <label class="interval-label">Interval (X minutes)
                 <select name="roundIncrementMinutes" id="roundIncrementMinutes" ${canEditBilling ? '' : 'disabled'}>
-                  ${settings.roundingIncrements.map((r) => `
+                  ${(settings.roundingIncrements || []).map((r) => `
                     <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
                       ${r.label}
                     </option>`).join('')}
@@ -7731,127 +7731,6 @@
         </details>
         <div id="settingsMsg"></div>
       </form>
-
-      ${isAdmin ? `
-      <details class="onedrive-collapse settings-collapse" id="emailSettingsCard">
-        <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">Email</span>
-          <span class="onedrive-collapse-meta muted">${settings.email?.configured ? 'Ready' : 'Not configured'}</span>
-        </summary>
-        <div class="onedrive-collapse-body stack">
-        <p class="lead">Deliver invite, reset, and sign-in messages to Gmail, Outlook, and other inboxes.</p>
-        ${settings.email?.configured
-          ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email is ready.')}</div>`
-          : `<div class="error">${escapeHtml(settings.email?.message || 'Email is not ready yet — messages only show on-screen links until you configure a provider.')}</div>`}
-        <form id="emailResendForm" class="grid two">
-          <label class="span-all">Resend API key
-            <input name="apiKey" type="password" autocomplete="off"
-              placeholder="${settings.email?.hasApiKey ? 'API key saved — paste a new key to replace' : 're_…'}" />
-          </label>
-          <label>From address
-            <input name="from" type="email" autocomplete="off"
-              value="${escapeHtml(settings.email?.fromAddress || '')}"
-              placeholder="onboarding@resend.dev" />
-          </label>
-          <label>From name
-            <input name="fromName" type="text" autocomplete="organization"
-              value="${escapeHtml(settings.email?.fromName || 'Firm Billing')}"
-              placeholder="Firm Billing" />
-          </label>
-          <p class="hint span-all">
-            Get a free key at <a href="https://resend.com" target="_blank" rel="noopener noreferrer">resend.com</a>.
-            Use <code>onboarding@resend.dev</code> for first tests; verify your domain in Resend for a firm from-address.
-            Or connect Microsoft under OneDrive below (approve Mail.Send).
-          </p>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Save email settings</button>
-            <button type="button" id="emailTestBtn">Send me a test email</button>
-          </div>
-        </form>
-        <div id="emailSettingsMsg"></div>
-        </div>
-      </details>` : ''}
-
-      ${(isAdmin || state.user.role === 'billing_clerk') ? `
-      <details class="onedrive-collapse settings-collapse" id="onedriveSettingsCard">
-        <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">OneDrive / SharePoint</span>
-          <span class="onedrive-collapse-meta muted">${settings.microsoft?.connected
-            ? (settings.microsoft.accountLabel ? escapeHtml(settings.microsoft.accountLabel) : 'Connected')
-            : 'Not connected'}</span>
-        </summary>
-        <div class="onedrive-collapse-body stack">
-        <p class="lead">
-          ${settings.microsoft?.connected
-            ? `Connected${settings.microsoft.accountLabel ? ` as <strong>${escapeHtml(settings.microsoft.accountLabel)}</strong>` : ' to Microsoft'} — also used to send invite and sign-in emails`
-            : 'Connect Microsoft once to sync OneDrive and send invite / sign-in emails automatically'}
-        </p>
-
-        <div class="onedrive-connect-box">
-          ${settings.microsoft?.connected ? `
-            <div class="ok-banner">You're connected. Matter pages can refresh live OneDrive / SharePoint files.</div>
-            <div class="row-actions">
-              <button type="button" class="primary" id="msConnectQuick">Switch Microsoft account</button>
-              ${isAdmin ? '<button type="button" id="msDisconnect">Disconnect</button>' : ''}
-            </div>
-          ` : `
-            <button type="button" class="primary ms-connect-main" id="msConnectQuick"
-              ${settings.microsoft?.clientConfigured ? '' : 'disabled'}>
-              Sign in with Microsoft
-            </button>
-            <p class="hint">Opens Microsoft login — approve access, then you're done.</p>
-            ${settings.microsoft?.clientConfigured ? '' : `
-              <div class="error" id="msNotConfigured">
-                Microsoft sign-in isn’t configured on this server yet.
-                ${isAdmin
-                  ? 'An admin sets <code>MS_CLIENT_ID</code> once in the server environment (one Azure app for the product). Users never enter an app ID.'
-                  : 'Ask a firm admin to finish server setup, then try again.'}
-              </div>`}
-            <div id="msDevicePanel" class="onedrive-device-panel" hidden></div>
-            ${settings.microsoft?.clientConfigured
-              ? '<p class="hint"><button type="button" class="linkish" id="msConnectDevice">Use a device code instead</button></p>'
-              : ''}
-          `}
-        </div>
-
-        ${isAdmin ? `
-        <details class="onedrive-setup-help">
-          <summary>Server setup (admins)</summary>
-          <p class="hint" style="margin-top:.65rem">
-            Prefer <code>MS_CLIENT_ID</code> in the environment / <code>.env</code> so everyone only clicks
-            <strong>Sign in with Microsoft</strong>. Optional fallback fields below if you cannot set env vars.
-            ${settings.microsoft?.clientIdSource === 'env'
-              ? ` Currently using env (<code>${escapeHtml(settings.microsoft.clientIdMasked || '')}</code>).`
-              : settings.microsoft?.clientConfigured
-                ? ` Currently using saved settings (<code>${escapeHtml(settings.microsoft.clientIdMasked || '')}</code>).`
-                : ''}
-          </p>
-          <ol>
-            <li><a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">Azure App registrations</a> → New registration (once for the product).</li>
-            <li>Supported accounts: multitenant (or single-tenant). Authentication → allow public client flows; redirect URI <code>${escapeHtml(window.location.origin)}/api/onedrive/oauth/callback</code>.</li>
-            <li>API permissions (delegated): User.Read, Mail.Send, Files.Read.All, Sites.Read.All, offline_access → Grant admin consent.</li>
-            <li>Set <code>MS_CLIENT_ID=&lt;Application (client) ID&gt;</code> and restart the server.</li>
-          </ol>
-          <form id="msAppConfigForm" class="grid two" style="margin-top:.75rem">
-            <label class="span-all">Application (client) ID <span class="muted">(fallback if env not set)</span>
-              <input name="msClientId" value="${escapeHtml(settings.microsoft?.clientId || '')}"
-                placeholder="${settings.microsoft?.clientIdSource === 'env' ? 'Using MS_CLIENT_ID from environment' : 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'}"
-                ${settings.microsoft?.clientIdSource === 'env' ? 'disabled' : ''} />
-            </label>
-            <label>Tenant
-              <input name="msTenantId" value="${escapeHtml(settings.microsoft?.tenantId || 'common')}" placeholder="common" />
-            </label>
-            <label>Client secret <span class="muted">(optional)</span>
-              <input name="msClientSecret" type="password" autocomplete="off" placeholder="Optional" />
-            </label>
-            <div class="row-actions span-all">
-              <button type="submit" ${settings.microsoft?.clientIdSource === 'env' ? 'disabled' : ''}>Save app settings</button>
-            </div>
-          </form>
-        </details>` : ''}
-        <div id="onedriveSettingsMsg"></div>
-        </div>
-      </details>` : ''}
 
       ${showClerkRates ? `
       <details class="onedrive-collapse settings-collapse" id="tkRatesSection" ${state.tkSearch.q ? 'open' : ''}>
@@ -7960,187 +7839,6 @@
         } catch (e) {
           const msg = $('#settingsMsg');
           if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    const msAppForm = $('#msAppConfigForm');
-    if (msAppForm) {
-      msAppForm.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(msAppForm);
-        const payload = {
-          msClientId: fd.get('msClientId'),
-          msTenantId: fd.get('msTenantId') || 'common',
-        };
-        const secret = String(fd.get('msClientSecret') || '').trim();
-        if (secret) payload.msClientSecret = secret;
-        try {
-          await api('/api/settings', { method: 'PATCH', body: JSON.stringify(payload) });
-          $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Microsoft app saved. You can connect an account next.</div>';
-          await renderSettings();
-        } catch (e) {
-          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    const quickBtn = $('#msConnectQuick');
-    const connectBtn = $('#msConnectDevice');
-    const devicePanel = $('#msDevicePanel');
-    let pollTimer = null;
-    const stopPoll = () => {
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-      }
-    };
-
-    const startMicrosoftLogin = async () => {
-      const started = await api('/api/onedrive/connect/quick', {
-        method: 'POST',
-        body: '{}',
-      });
-      if (!started.authUrl) throw new Error('Microsoft did not return a sign-in URL');
-      window.location.href = started.authUrl;
-    };
-
-    if (quickBtn) {
-      quickBtn.onclick = async () => {
-        stopPoll();
-        try {
-          quickBtn.disabled = true;
-          $('#onedriveSettingsMsg').innerHTML = '';
-          await startMicrosoftLogin();
-        } catch (e) {
-          quickBtn.disabled = false;
-          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    if (connectBtn && devicePanel) {
-      connectBtn.onclick = async () => {
-        stopPoll();
-        try {
-          connectBtn.disabled = true;
-          const started = await api('/api/onedrive/connect/start', { method: 'POST', body: '{}' });
-          devicePanel.hidden = false;
-          devicePanel.innerHTML = `
-            <div class="onedrive-device-card">
-              <p><strong>Sign in to Microsoft</strong></p>
-              <p class="hint">1. Open <a href="${escapeHtml(started.verificationUriComplete || started.verificationUri)}" target="_blank" rel="noopener noreferrer">${escapeHtml(started.verificationUri)}</a></p>
-              <p class="hint">2. Enter this code:</p>
-              <div class="onedrive-user-code">${escapeHtml(started.userCode)}</div>
-              <p class="muted" id="msDeviceStatus">Waiting for approval…</p>
-            </div>`;
-          const deviceCode = started.deviceCode;
-          let intervalMs = Math.max(3, Number(started.interval || 5)) * 1000;
-
-          const tick = async () => {
-            try {
-              const result = await api('/api/onedrive/connect/poll', {
-                method: 'POST',
-                body: JSON.stringify({ deviceCode }),
-              });
-              if (result.status === 'connected') {
-                stopPoll();
-                $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Microsoft account connected.</div>';
-                await renderSettings();
-                return;
-              }
-              if (result.slowDown) intervalMs += 2000;
-              const st = $('#msDeviceStatus');
-              if (st) st.textContent = 'Waiting for approval…';
-              pollTimer = setTimeout(tick, intervalMs);
-            } catch (e) {
-              stopPoll();
-              const st = $('#msDeviceStatus');
-              if (st) st.textContent = e.message;
-              $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-              connectBtn.disabled = false;
-            }
-          };
-          pollTimer = setTimeout(tick, intervalMs);
-        } catch (e) {
-          connectBtn.disabled = false;
-          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    const disconnectBtn = $('#msDisconnect');
-    if (disconnectBtn) {
-      disconnectBtn.onclick = async () => {
-        try {
-          await api('/api/onedrive/disconnect', { method: 'POST', body: '{}' });
-          await renderSettings();
-        } catch (e) {
-          $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const odMsg = $('#onedriveSettingsMsg');
-    if (params.get('onedrive') === 'connected') {
-      if (odMsg) odMsg.innerHTML = '<div class="ok-banner">Microsoft account connected.</div>';
-      params.delete('onedrive');
-      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash || '#settings'}`;
-      window.history.replaceState({}, '', next);
-    } else if (params.get('onedrive') === 'error') {
-      if (odMsg) {
-        odMsg.innerHTML = `<div class="error">${escapeHtml(params.get('msg') || 'Microsoft sign-in failed')}</div>`;
-      }
-      params.delete('onedrive');
-      params.delete('msg');
-      window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}#settings`);
-    }
-
-    const emailResendForm = $('#emailResendForm');
-    if (emailResendForm) {
-      emailResendForm.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(emailResendForm);
-        const apiKey = String(fd.get('apiKey') || '').trim();
-        const from = String(fd.get('from') || '').trim();
-        const fromName = String(fd.get('fromName') || '').trim();
-        try {
-          const emailConfig = { provider: 'resend', from, fromName, clearSmtp: true };
-          if (apiKey) emailConfig.apiKey = apiKey;
-          if (!apiKey && !settings.email?.hasApiKey) {
-            throw new Error('Paste a Resend API key to enable inbox delivery.');
-          }
-          if (!from) throw new Error('From address is required (use onboarding@resend.dev for tests).');
-          await api('/api/settings', {
-            method: 'PATCH',
-            body: JSON.stringify({ emailConfig }),
-          });
-          await renderSettings();
-          const msg = $('#emailSettingsMsg');
-          if (msg) {
-            msg.innerHTML = '<div class="ok-banner">Email settings saved. Send a test email to confirm Gmail delivery.</div>';
-          }
-        } catch (e) {
-          $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    }
-
-    const emailTestBtn = $('#emailTestBtn');
-    if (emailTestBtn) {
-      emailTestBtn.onclick = async () => {
-        try {
-          emailTestBtn.disabled = true;
-          const result = await api('/api/settings/email/test', {
-            method: 'POST',
-            body: JSON.stringify({ to: state.user.email }),
-          });
-          $('#emailSettingsMsg').innerHTML = `<div class="ok-banner">Test email sent via ${escapeHtml(result.delivery?.mode || 'ok')}. Check Gmail (and spam/promotions).</div>`;
-        } catch (e) {
-          $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        } finally {
-          emailTestBtn.disabled = false;
         }
       };
     }
