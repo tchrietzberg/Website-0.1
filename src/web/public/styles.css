@@ -432,15 +432,15 @@ body {
   top: 0;
   z-index: 30;
   padding: 0.75rem clamp(1rem, 2.5vw, 1.75rem) 0.55rem;
+  /* Opaque wash — avoid backdrop-filter on this node (blurs result text inside). */
   background:
-    linear-gradient(180deg, rgba(238, 241, 245, 0.96) 0%, rgba(238, 241, 245, 0.88) 70%, rgba(238, 241, 245, 0) 100%);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+    linear-gradient(180deg, #eef1f5 0%, rgba(238, 241, 245, 0.97) 72%, rgba(238, 241, 245, 0) 100%);
 }
 .lookup-bar[hidden] { display: none !important; }
 .lookup-form {
   position: relative;
   max-width: 46rem;
+  z-index: 1;
 }
 .lookup-label {
   position: absolute;
@@ -511,17 +511,21 @@ body {
   z-index: 40;
   max-height: min(22rem, 55vh);
   overflow: auto;
-  background: var(--panel);
+  background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 12px 28px rgba(20, 32, 51, 0.16);
   padding: 0.35rem;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .lookup-results[hidden] { display: none !important; }
 .lookup-empty {
   padding: 0.75rem 0.85rem;
   font-size: 0.88rem;
 }
+/* Results are <button>s — strip shared button chrome so hover doesn't lift/blur names. */
+button.lookup-result,
 .lookup-result {
   width: 100%;
   display: -webkit-flex;
@@ -535,10 +539,25 @@ body {
   border-radius: 8px;
   padding: 0.55rem 0.65rem;
   cursor: pointer;
+  box-shadow: none;
+  text-shadow: none;
+  font-weight: 500;
+  -webkit-transform: none;
+  transform: none;
+  transition: background 120ms ease;
 }
+button.lookup-result:hover,
+button.lookup-result:active,
+button.lookup-result.is-active,
 .lookup-result:hover,
+.lookup-result:active,
 .lookup-result.is-active {
+  border: 0;
   background: var(--accent-soft);
+  box-shadow: none;
+  text-shadow: none;
+  -webkit-transform: none;
+  transform: none;
 }
 .lookup-result-type {
   -webkit-flex: 0 0 5.5rem;
@@ -562,6 +581,7 @@ body {
   font-size: 0.92rem;
   color: var(--ink);
   font-weight: 600;
+  -webkit-font-smoothing: antialiased;
 }
 .lookup-result-main small {
   font-size: 0.8rem;
@@ -1661,6 +1681,16 @@ input:focus, select:focus, textarea:focus {
   z-index: 5;
 }
 
+/* Trigger is a <button> — don't lift it on hover (causes soft/blurry matter names). */
+button.matter-picker-trigger,
+button.matter-picker-trigger:hover,
+button.matter-picker-trigger:active,
+button.matter-picker-trigger:focus-visible {
+  -webkit-transform: none;
+  transform: none;
+  text-shadow: none;
+}
+
 .matter-picker-trigger {
   width: 100%;
   display: -webkit-flex;
@@ -1750,6 +1780,9 @@ input:focus, select:focus, textarea:focus {
   padding: 0.55rem;
   display: grid;
   gap: 0.4rem;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  isolation: isolate;
 }
 
 .matter-picker-panel[hidden] {
@@ -1777,6 +1810,9 @@ input:focus, select:focus, textarea:focus {
   border-radius: 8px;
   cursor: pointer;
   border: 1px solid transparent;
+  background: #fff;
+  -webkit-transform: none;
+  transform: none;
 }
 
 .matter-picker-option strong {
@@ -1790,12 +1826,15 @@ input:focus, select:focus, textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
 }
 
 .matter-picker-option:hover,
 .matter-picker-option.is-active {
   background: var(--accent-soft);
   border-color: rgba(26, 58, 107, 0.14);
+  -webkit-transform: none;
+  transform: none;
 }
 
 .matter-picker-empty {
