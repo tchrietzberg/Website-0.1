@@ -1956,10 +1956,9 @@
         </h2>
         <p class="muted">${escapeHtml(inv.client_name || '')} · ${escapeHtml(inv.matter_name || inv.matter_number || '')}
           · Subtotal ${money(inv.subtotal_cents)}
-          · Write-down ${money(inv.write_down_cents)}
           · Total ${money(inv.total_cents)}</p>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Rate</th><th>Amount</th><th>WD</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Rate</th><th>Amount</th></tr></thead>
           <tbody>
             ${(inv.lines || []).map((l) => `
               <tr>
@@ -1968,10 +1967,7 @@
                 <td>${escapeHtml(formatDuration(l.minutes))}</td>
                 <td>${money(l.rate_cents)}</td>
                 <td>${money(l.amount_cents)}</td>
-                <td>${money(l.write_down_cents)}</td>
-                <td>${canBill && ['prebill', 'in_review'].includes(inv.status)
-                  ? `<button data-wd="${l.id}">Write-down</button>` : ''}</td>
-              </tr>`).join('') || '<tr><td colspan="7" class="muted">No lines</td></tr>'}
+              </tr>`).join('') || '<tr><td colspan="5" class="muted">No lines</td></tr>'}
           </tbody>
         </table></div>
         <div class="row-actions">
@@ -2034,25 +2030,6 @@
       btn('Issue bill', 'sent', true);
       btn('Void', 'void');
     }
-
-    el.querySelectorAll('[data-wd]').forEach((b) => {
-      b.onclick = async () => {
-        const dollars = prompt('Write-down amount in dollars (e.g. 25.00)?');
-        if (!dollars) return;
-        const reason = prompt('Reason?') || 'adjustment';
-        const parts = String(dollars).replace('$', '').split('.');
-        const deltaCents = Number(parts[0]) * 100 + Number((parts[1] || '0').padEnd(2, '0').slice(0, 2));
-        try {
-          await api(`/api/invoice-lines/${b.dataset.wd}/write-down`, {
-            method: 'POST',
-            body: JSON.stringify({ deltaCents, reason }),
-          });
-          await showInvoice(id);
-        } catch (e) {
-          $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    });
   }
 
   async function renderReports() {
