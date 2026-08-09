@@ -2007,8 +2007,7 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 .help-agent-panel {
   width: min(20.5rem, calc(100vw - 1.5rem));
   max-height: min(26rem, calc(100vh - 5.5rem));
-  display: -webkit-flex;
-  display: flex;
+  display: none;
   -webkit-flex-direction: column;
   flex-direction: column;
   background: var(--panel);
@@ -2016,8 +2015,16 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   border-radius: 12px;
   box-shadow: var(--shadow);
   overflow: hidden;
+}
+.help-agent.is-open .help-agent-panel,
+.help-agent-panel:not([hidden]) {
+  display: -webkit-flex;
+  display: flex;
   -webkit-animation: help-rise 0.2s ease-out;
   animation: help-rise 0.2s ease-out;
+}
+.help-agent-panel[hidden] {
+  display: none !important;
 }
 .help-agent-head {
   display: -webkit-flex;

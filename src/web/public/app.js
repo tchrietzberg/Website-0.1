@@ -4297,17 +4297,30 @@
       };
 
       const setOpen = (open) => {
-        root.classList.toggle('is-open', open);
-        panel.hidden = !open;
+        root.classList.toggle('is-open', !!open);
+        if (open) panel.removeAttribute('hidden');
+        else panel.setAttribute('hidden', '');
         bubble.setAttribute('aria-expanded', open ? 'true' : 'false');
+        bubble.setAttribute('aria-label', open ? 'Close help agent' : 'Open help agent');
         if (open) {
           renderHome();
           setTimeout(() => input?.focus(), 0);
         }
       };
 
-      bubble.onclick = () => setOpen(!root.classList.contains('is-open'));
-      $('#helpAgentClose', root).onclick = () => setOpen(false);
+      bubble.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setOpen(!root.classList.contains('is-open'));
+      };
+      $('#helpAgentClose', root).onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setOpen(false);
+      };
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && root.classList.contains('is-open')) setOpen(false);
+      });
       form.onsubmit = (ev) => {
         ev.preventDefault();
         const q = String(input.value || '').trim();
