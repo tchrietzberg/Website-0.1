@@ -3017,7 +3017,10 @@
     }
 
     main.querySelectorAll('[data-matter]').forEach((row) => {
-      row.onclick = () => openMatter(Number(row.dataset.matter));
+      row.onclick = () => {
+        state.matterSearch = { q: '' };
+        openMatter(Number(row.dataset.matter));
+      };
     });
 
     const newMatterForm = $('#newMatterForm');
@@ -3130,7 +3133,7 @@
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterClientId = '';
           state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
-          state.matterSearch = { q: page.matter.name };
+          state.matterSearch = { q: '' };
           state.matterCreateFlash = {
             title: 'Matter created',
             detail: page.matter.name,
