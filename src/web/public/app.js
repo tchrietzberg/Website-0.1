@@ -1517,7 +1517,11 @@
       { flag: 'viewAll', label: 'View', hint: 'See these records in the app' },
       { flag: 'search', label: 'Find', hint: 'Include in the top search bar' },
       { flag: 'modifyAll', label: 'Edit', hint: 'Create and change records' },
-      { flag: 'delete', label: 'Delete', hint: 'Remove records' },
+      {
+        flag: 'delete',
+        label: 'Delete',
+        hint: 'Remove records (Contacts: delete on the contact page; linked matters become client-less)',
+      },
     ];
     const timeExtraFlags = [
       {
@@ -3847,7 +3851,8 @@
     }
     const page = await api(`/api/clients/${state.contactId}`);
     const canEdit = canCreateMatter(state.user) && page.canEdit !== false && roleCanModify('contact');
-    const canDelete = canCreateMatter(state.user) && page.canDelete !== false && roleCanDelete('contact');
+    // Delete contact: Admin always; other roles via Settings → Role permissions → Contacts → Delete.
+    const canDelete = page.canDelete !== false && roleCanDelete('contact');
     const c = page.client;
     const fields = page.fields || [];
     const enabledStd = (page.fieldConfig && page.fieldConfig.enabledStandard) || [];
@@ -4020,21 +4025,24 @@
       deleteBtn.onclick = async () => {
         const sure = await confirmAction({
           title: 'Delete this contact?',
-          message: `Are you sure you want to delete “${c.name || 'this contact'}”? This cannot be undone.`,
+          message: `Are you sure you want to delete “${c.name || 'this contact'}”? Linked matters keep their data and become client-less. This cannot be undone.`,
           confirmLabel: 'Yes, delete contact',
           cancelLabel: 'Cancel',
         });
         if (!sure) return;
         try {
-          await api(`/api/clients/${c.id}`, { method: 'DELETE' });
+          const result = await api(`/api/clients/${c.id}`, { method: 'DELETE' });
           state.contactId = null;
           state.view = 'contacts';
           state.contactFlash = null;
           state.showPostCreateContactFields = false;
           state.editingContactFieldId = null;
+          const unlinked = Number(result?.unlinkedMatters) || 0;
           state.contactListFlash = {
             title: 'Contact deleted',
-            detail: c.name || 'The contact was removed.',
+            detail: unlinked
+              ? `${c.name || 'Contact'} removed · ${unlinked} matter${unlinked === 1 ? '' : 's'} unlinked`
+              : (c.name || 'The contact was removed.'),
           };
           await refreshRefs();
           renderShell();
@@ -7706,11 +7714,12 @@
     {
       id: 'contact',
       label: 'Add a contact',
-      keywords: ['contact', 'client', 'company', 'person', 'create contact'],
-      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. [[Contact record pages|settings-contact-fields]] in Settings manages type layouts.',
+      keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
+      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. Roles with Contacts → Delete (Admin always) can use Delete contact on the contact page — linked matters become client-less. [[Contact record pages|settings-contact-fields]] in Settings manages type layouts.',
       links: [
         { label: 'Go to Create Contact', target: 'create-contact' },
         { label: 'Contact record pages', target: 'settings-contact-fields' },
+        { label: 'Role permissions', target: 'settings' },
       ],
     },
     {

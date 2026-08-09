@@ -277,22 +277,32 @@ function deleteClient(db, actor, id) {
   const current = getClientRow(db, id);
   if (!current) throw new Error('contact not found');
 
-  const matterCount = db.prepare(
-    'SELECT COUNT(*) AS n FROM matters WHERE client_id = ?'
-  ).get(id)?.n || 0;
-  if (matterCount > 0) {
-    throw new Error(
-      `Cannot delete “${current.name}” while ${matterCount} matter${matterCount === 1 ? '' : 's'} still reference this contact`
-    );
+  // Payments keep a firm billing history link — block until reassigned/removed.
+  let paymentCount = 0;
+  try {
+    paymentCount = db.prepare(
+      'SELECT COUNT(*) AS n FROM payments WHERE client_id = ?'
+    ).get(id)?.n || 0;
+  } catch (_) {
+    paymentCount = 0;
   }
-
-  const paymentCount = db.prepare(
-    'SELECT COUNT(*) AS n FROM payments WHERE client_id = ?'
-  ).get(id)?.n || 0;
   if (paymentCount > 0) {
     throw new Error(
       `Cannot delete “${current.name}” while ${paymentCount} payment${paymentCount === 1 ? '' : 's'} still reference this contact`
     );
+  }
+
+  const linkedMatters = db.prepare(
+    'SELECT id FROM matters WHERE client_id = ?'
+  ).all(id);
+  const matterCount = linkedMatters.length;
+  // Matters may exist without a client — unlink before removing the contact.
+  if (matterCount > 0) {
+    db.prepare('UPDATE matters SET client_id = NULL WHERE client_id = ?').run(id);
+    const matterIndex = require('./matterIndex');
+    for (const row of linkedMatters) {
+      matterIndex.indexMatter(db, row.id);
+    }
   }
 
   const rateCount = db.prepare(`
@@ -316,9 +326,14 @@ function deleteClient(db, actor, id) {
     action: 'client.delete',
     entityType: 'client',
     entityId: id,
-    detail: { name: current.name },
+    detail: { name: current.name, unlinkedMatters: matterCount },
   });
-  return { ok: true, id: Number(id), name: current.name };
+  return {
+    ok: true,
+    id: Number(id),
+    name: current.name,
+    unlinkedMatters: matterCount,
+  };
 }
 
 module.exports = {

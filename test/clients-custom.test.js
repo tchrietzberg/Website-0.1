@@ -185,16 +185,37 @@ describe('contacts and contact custom fields', () => {
     );
   });
 
-  it('blocks deleting contacts referenced by matters', () => {
+  it('unlinks matters when deleting a referenced contact', () => {
     const page = clientsSvc.createClient(db, admin, { name: 'Linked Contact' });
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, opened_on, status)
       VALUES (?, 'M-1', 'Matter One', 'billable', date('now'), 'open')
     `).run(page.client.id);
 
+    const result = clientsSvc.deleteClient(db, admin, page.client.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.unlinkedMatters, 1);
+    assert.equal(clientsSvc.listClients(db).length, 0);
+    const matter = db.prepare("SELECT client_id, name FROM matters WHERE number = 'M-1'").get();
+    assert.equal(matter.client_id, null);
+    assert.equal(matter.name, 'Matter One');
+  });
+
+  it('blocks contact delete without Delete permission', () => {
+    const permissions = require('../src/services/permissions');
+    db.prepare("INSERT INTO users(email,name,role) VALUES ('para@x.com','Para','paralegal')").run();
+    const paralegal = db.prepare("SELECT * FROM users WHERE email = 'para@x.com'").get();
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          contact: { viewAll: true, modifyAll: true, delete: false },
+        },
+      },
+    });
+    const page = clientsSvc.createClient(db, admin, { name: 'Keep Me' });
     assert.throws(
-      () => clientsSvc.deleteClient(db, admin, page.client.id),
-      /matter/
+      () => clientsSvc.deleteClient(db, paralegal, page.client.id),
+      /permission to delete/i
     );
     assert.equal(clientsSvc.listClients(db).length, 1);
   });
