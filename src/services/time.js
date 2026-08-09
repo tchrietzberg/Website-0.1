@@ -36,6 +36,16 @@ function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinu
   return rows.map((r) => r.id);
 }
 
+/** Billable matters default billable=1; Non-Billable record type defaults to 0. */
+function defaultBillableFromMatter(matter) {
+  const key = String(matter?.matter_type || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  if (key === 'non_billable' || key.startsWith('non_billable')) return 0;
+  return 1;
+}
+
 function resolveMinutes(input) {
   const hoursValue = input.hours;
   const hasHours = hoursValue != null && hoursValue !== ''
@@ -82,8 +92,10 @@ function createEntry(db, actor, input) {
   }
 
   let billable = input.billable;
-  if (billable == null) {
-    billable = 1;
+  if (billable == null || billable === '') {
+    billable = defaultBillableFromMatter(matter);
+  } else {
+    billable = (billable === true || billable === 1 || billable === '1' || billable === 'on') ? 1 : 0;
   }
 
   const candidate = {
@@ -496,4 +508,5 @@ module.exports = {
   evaluateRules,
   detectDuplicates,
   canApprove,
+  defaultBillableFromMatter,
 };

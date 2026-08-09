@@ -1960,7 +1960,16 @@
     });
   }
 
-  function wireMatterPicker(scopeEl, { matters = [] } = {}) {
+  function defaultBillableFromMatterType(matterType) {
+    const key = String(matterType || '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_');
+    if (key === 'non_billable' || key.startsWith('non_billable')) return false;
+    return true;
+  }
+
+  function wireMatterPicker(scopeEl, { matters = [], onChange = null } = {}) {
     const picker = scopeEl.querySelector('[data-matter-picker]');
     if (!picker) return null;
     ensureMatterPickerDocClose();
@@ -1986,6 +1995,7 @@
       }
       picker.classList.toggle('has-value', !!m);
       trigger.classList.remove('is-invalid');
+      if (typeof onChange === 'function') onChange(m || null);
     }
 
     function close() {
@@ -4094,6 +4104,7 @@
     formHours,
     formDescription,
     formTimekeeperId,
+    formBillable = true,
     timeFieldDefs,
   }) {
     const canSelectTk = roleCanSelectTimekeeper();
@@ -4126,6 +4137,12 @@
         <input type="hidden" name="timekeeperId" value="${lockedId}" />
         <input type="text" value="${escapeHtml(selfName)}" disabled aria-label="Timekeeper" />`}
       </label>
+      <label class="check-inline span-all" style="align-self:center">
+        <input type="checkbox" name="billable" value="1" id="timeEntryBillable"
+          ${formBillable ? 'checked' : ''} />
+        <span>Billable</span>
+        <span class="muted" style="font-weight:400"> · uncheck for non-billable</span>
+      </label>
       <label class="span-all">Description
         <textarea name="description" rows="2" required
           placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
@@ -4154,6 +4171,8 @@
       body.timekeeperId = roleCanSelectTimekeeper()
         ? Number(body.timekeeperId || state.user.id)
         : Number(state.user.id);
+      // Checkbox omitted when unchecked — send an explicit 0/1.
+      body.billable = (fd.get('billable') === '1' || fd.get('billable') === 'on') ? 1 : 0;
       const hoursRaw = String(body.hours ?? '').trim();
       body.hours = Number(hoursRaw);
       if (!Number.isFinite(body.hours) || body.hours <= 0) {
@@ -4220,6 +4239,9 @@
       : state.user.id;
     const formHours = '';
     const formDescription = '';
+    const formBillable = retain.billable != null
+      ? !!retain.billable
+      : defaultBillableFromMatterType(m.matter_type);
     const flash = state.matterTimeFlash;
     const matterFlash = state.matterFieldFlash;
     const createFlash = state.matterCreateFlash;
@@ -4345,7 +4367,7 @@
 
       ${canLogTime ? `<div class="card">
         <h2>Add time</h2>
-        <p class="hint">Log time on this matter. Time-entry custom fields appear here when added in Settings.</p>
+        <p class="hint">Log time on this matter. Billable defaults from the matter’s ${escapeHtml(matterTypeLabel)} record type; you can override with the checkbox.</p>
         <form id="matterTimeForm" class="grid two">
           <input type="hidden" name="matterId" value="${Number(m.id)}" />
           ${timeEntryFormFieldsHtml({
@@ -4353,6 +4375,7 @@
             formHours,
             formDescription,
             formTimekeeperId,
+            formBillable,
             timeFieldDefs,
           })}
         </form>
@@ -4606,6 +4629,7 @@
             addAnother: true,
             serviceDate: body.serviceDate,
             timekeeperId: body.timekeeperId,
+            billable: body.billable ? 1 : 0,
           };
           await renderMatterDetail();
           const descInput = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
@@ -4907,6 +4931,10 @@
       : state.user.id;
     const formHours = addAnother ? '' : '1.00';
     const formDescription = addAnother ? '' : 'Reviewed production set';
+    const preferredMatter = matters.find((m) => Number(m.id) === Number(preferredMatterId)) || null;
+    const formBillable = retain.billable != null
+      ? !!Number(retain.billable)
+      : defaultBillableFromMatterType(preferredMatter?.matter_type);
     const flash = state.timeFlash;
     state.timeFlash = null;
     state.timeEntryRetain = null;
@@ -4922,13 +4950,14 @@
               selectedId: preferredMatterId,
               matters,
             })}
-            <span class="hint">Type to filter by matter name or client.</span>
+            <span class="hint">Type to filter by matter name or client. Billable defaults from the matter record type.</span>
           </div>
           ${timeEntryFormFieldsHtml({
             formDate,
             formHours,
             formDescription,
             formTimekeeperId,
+            formBillable,
             timeFieldDefs,
           })}
         </form>
@@ -5108,7 +5137,14 @@
     let matterPicker = null;
     const timeForm = $('#timeForm');
     if (timeForm) {
-      matterPicker = wireMatterPicker(timeForm, { matters });
+      const syncBillableFromMatter = (m) => {
+        const cb = timeForm.querySelector('input[name="billable"]');
+        if (cb) cb.checked = defaultBillableFromMatterType(m?.matter_type);
+      };
+      matterPicker = wireMatterPicker(timeForm, {
+        matters,
+        onChange: syncBillableFromMatter,
+      });
       wireTimeEntrySubmit(timeForm, {
         msgEl: $('#timeMsg'),
         timeFieldDefs,
@@ -5121,6 +5157,7 @@
             matterId: body.matterId,
             serviceDate: body.serviceDate,
             timekeeperId: body.timekeeperId,
+            billable: body.billable ? 1 : 0,
           };
           state.focusTimeEntry = true;
           state.timeFlash = {

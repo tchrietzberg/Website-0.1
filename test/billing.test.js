@@ -68,6 +68,29 @@ describe('time entry rules', () => {
     assert.equal(e.billable, 1);
   });
 
+  it('defaults billable from matter record type and allows override', () => {
+    ctx.db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
+      VALUES (1, '2026-0003', 'Pro Bono', 'non_billable', 2, '2026-01-01')
+    `).run();
+    const nb = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 3, timekeeperId: 3, serviceDate: '2026-03-02', rawMinutes: 15, description: 'clinic',
+    });
+    assert.equal(nb.billable, 0);
+
+    const forced = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 3, timekeeperId: 3, serviceDate: '2026-03-03', rawMinutes: 15,
+      description: 'exception', billable: 1,
+    });
+    assert.equal(forced.billable, 1);
+
+    const onBillableMatter = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 2, timekeeperId: 3, serviceDate: '2026-03-04', rawMinutes: 15,
+      description: 'nonbill override', billable: 0,
+    });
+    assert.equal(onBillableMatter.billable, 0);
+  });
+
   it('accepts quarter-hour decimal hours without re-rounding', () => {
     const e = timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1.25, description: 'review',
