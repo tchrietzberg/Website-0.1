@@ -1743,8 +1743,9 @@
   }
 
   function goAddContact() {
-    if (!canCreateMatter(state.user)) {
+    if (!canCreateMatter(state.user) || !roleCanModify('contact')) {
       state.view = 'contacts';
+      state.contactId = null;
       renderShell();
       renderView();
       return;
@@ -1830,6 +1831,15 @@
               </span>
             </button>`
           : ''}
+        ${canCreateMatter(state.user) && roleCanModify('contact')
+          ? `<button type="button" class="sidebar-action primary" id="sideAddContact">
+              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('contacts')}</span>
+              <span class="sidebar-action-text">
+                <strong>Create Contact</strong>
+                <small>Add a person or company</small>
+              </span>
+            </button>`
+          : ''}
         ${roleCanModify('time') ? `
         <button type="button" class="sidebar-action secondary" id="sideAddTime">
           <span class="sidebar-action-mark" aria-hidden="true">${navIcon('time')}</span>
@@ -1840,6 +1850,8 @@
         </button>` : ''}`;
       const sideAddMatter = $('#sideAddMatter');
       if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
+      const sideAddContact = $('#sideAddContact');
+      if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
     }
@@ -2365,11 +2377,17 @@
     state.contactFlash = null;
     state.contactCreateFlash = null;
 
+    const canCreate = canCreateMatter(state.user) && roleCanModify('contact');
     main.innerHTML = `
       <div class="card">
-        <div class="row-actions" style="margin-bottom:.75rem">
-          <button type="button" id="backContacts">← Contacts</button>
-          ${canDelete ? '<button type="button" id="deleteContact">Delete contact</button>' : ''}
+        <div class="page-head matters-toolbar" style="margin-bottom:.75rem">
+          <div class="row-actions">
+            <button type="button" id="backContacts">← Contacts</button>
+            ${canDelete ? '<button type="button" id="deleteContact">Delete contact</button>' : ''}
+          </div>
+          ${canCreate
+            ? '<button type="button" class="primary" id="createContactFromDetail">Create contact</button>'
+            : ''}
         </div>
         <h1>${escapeHtml(c.name || 'Contact')}</h1>
         ${createFlash ? successNoticeHtml(createFlash) : ''}
@@ -2410,6 +2428,9 @@
       renderShell();
       renderView();
     };
+
+    const createFromDetail = $('#createContactFromDetail');
+    if (createFromDetail) createFromDetail.onclick = () => goAddContact();
 
     const deleteBtn = $('#deleteContact');
     if (deleteBtn && canDelete) {
