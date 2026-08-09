@@ -366,11 +366,11 @@
       appEl.classList.add('app-shell');
     }
     const items = [
-      ['matters', 'Matters'],
-      ['time', 'Time Entry'],
-      ['billing', 'Billing'],
-      ['reports', 'Reports'],
-      ['settings', 'Settings'],
+      ['matters', 'Matters', 'M', 'Matters & search'],
+      ['time', 'Time Entry', 'T', 'Log & review time'],
+      ['billing', 'Billing', 'B', 'Invoices & payments'],
+      ['reports', 'Reports', 'R', 'Lodestar & exports'],
+      ['settings', 'Settings', 'S', 'Firm preferences'],
     ];
     if (state.view === 'approvals' || state.view === 'payments' || state.view === 'audit') {
       state.view = 'matters';
@@ -404,8 +404,15 @@
 
     nav.innerHTML = `
       <p class="sidebar-label">Navigate</p>
-      ${items.map(([id, label]) =>
-        `<button type="button" data-view="${id}" class="sidebar-nav-btn ${activeView === id ? 'active' : ''}">${label}</button>`
+      ${items.map(([id, label, mark, hint]) =>
+        `<button type="button" data-view="${id}"
+          class="sidebar-action primary sidebar-nav-btn ${activeView === id ? 'active' : ''}">
+          <span class="sidebar-action-mark" aria-hidden="true">${mark}</span>
+          <span class="sidebar-action-text">
+            <strong>${label}</strong>
+            <small>${hint}</small>
+          </span>
+        </button>`
       ).join('')}`;
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.onclick = () => {
