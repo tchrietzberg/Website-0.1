@@ -466,6 +466,16 @@ function createServer(db = openDb()) {
           return json(res, 400, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/clients\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const clientsSvc = require('../services/clients');
+          const id = Number(pathname.split('/')[3]);
+          return json(res, 200, clientsSvc.deleteClient(db, user, id));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/record-types') {
         return json(res, 200, customFields.listRecordTypes(db));
       }

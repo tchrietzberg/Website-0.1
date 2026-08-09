@@ -33,6 +33,7 @@
     contactSearch: { q: '' },
     contactFlash: null,
     contactCreateFlash: null,
+    contactListFlash: null,
   };
 
   function canCreateMatter(user) {
@@ -1986,6 +1987,8 @@
     const enabledStd = fieldConfig.enabledStandard || [];
     const listCols = enabledStd.filter((f) => f.key !== 'notes');
     const searchBits = ['name', ...enabledStd.map((f) => f.label.toLowerCase())];
+    const listFlash = state.contactListFlash;
+    state.contactListFlash = null;
     const createFieldDefs = (createFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -2005,6 +2008,7 @@
           ${canEdit && !showCreate ? `
             <button type="button" class="primary" id="startCreateContact">Create contact</button>` : ''}
         </div>
+        ${listFlash ? successNoticeHtml(listFlash) : ''}
 
         ${showCreate ? `
         <div id="createContactSection" class="create-matter-panel page-section">
@@ -2152,6 +2156,7 @@
       <div class="card">
         <div class="row-actions" style="margin-bottom:.75rem">
           <button type="button" id="backContacts">← Contacts</button>
+          ${canEdit ? '<button type="button" id="deleteContact">Delete contact</button>' : ''}
         </div>
         <h1>${escapeHtml(c.name || 'Contact')}</h1>
         ${createFlash ? successNoticeHtml(createFlash) : ''}
@@ -2189,6 +2194,34 @@
       renderShell();
       renderView();
     };
+
+    const deleteBtn = $('#deleteContact');
+    if (deleteBtn && canEdit) {
+      deleteBtn.onclick = async () => {
+        const sure = await confirmAction({
+          title: 'Delete this contact?',
+          message: `Are you sure you want to delete “${c.name || 'this contact'}”? This cannot be undone.`,
+          confirmLabel: 'Yes, delete contact',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
+        try {
+          await api(`/api/clients/${c.id}`, { method: 'DELETE' });
+          state.contactId = null;
+          state.view = 'contacts';
+          state.contactFlash = null;
+          state.contactListFlash = {
+            title: 'Contact deleted',
+            detail: c.name || 'The contact was removed.',
+          };
+          await refreshRefs();
+          renderShell();
+          await renderContacts();
+        } catch (e) {
+          $('#contactMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
 
     const form = $('#contactForm');
     if (form && canEdit) {

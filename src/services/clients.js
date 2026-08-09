@@ -223,6 +223,50 @@ function updateClient(db, actor, id, patch = {}) {
   return getClient(db, id, actor);
 }
 
+function deleteClient(db, actor, id) {
+  permissions.assertCanWriteRecords(db, actor, 'Contacts');
+  const current = getClientRow(db, id);
+  if (!current) throw new Error('contact not found');
+
+  const matterCount = db.prepare(
+    'SELECT COUNT(*) AS n FROM matters WHERE client_id = ?'
+  ).get(id)?.n || 0;
+  if (matterCount > 0) {
+    throw new Error(
+      `Cannot delete “${current.name}” while ${matterCount} matter${matterCount === 1 ? '' : 's'} still reference this contact`
+    );
+  }
+
+  const paymentCount = db.prepare(
+    'SELECT COUNT(*) AS n FROM payments WHERE client_id = ?'
+  ).get(id)?.n || 0;
+  if (paymentCount > 0) {
+    throw new Error(
+      `Cannot delete “${current.name}” while ${paymentCount} payment${paymentCount === 1 ? '' : 's'} still reference this contact`
+    );
+  }
+
+  const rateCount = db.prepare(`
+    SELECT COUNT(*) AS n FROM rates
+    WHERE scope = 'client' AND scope_id = ?
+  `).get(id)?.n || 0;
+  if (rateCount > 0) {
+    db.prepare(`DELETE FROM rates WHERE scope = 'client' AND scope_id = ?`).run(id);
+  }
+
+  db.prepare('DELETE FROM client_custom_field_values WHERE client_id = ?').run(id);
+  db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'client.delete',
+    entityType: 'client',
+    entityId: id,
+    detail: { name: current.name },
+  });
+  return { ok: true, id: Number(id), name: current.name };
+}
+
 module.exports = {
   CONTACT_OPTIONAL_STANDARD_FIELDS,
   CONTACT_OPTIONAL_KEYS,
@@ -230,6 +274,7 @@ module.exports = {
   getClient,
   createClient,
   updateClient,
+  deleteClient,
   getContactFieldConfig,
   getEnabledContactStandardKeys,
   setEnabledContactStandardKeys,

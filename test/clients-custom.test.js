@@ -99,4 +99,39 @@ describe('contacts and contact custom fields', () => {
     assert.equal(customFields.listCustomFields(db, { appliesTo: 'matter' }).length, 0);
     assert.equal(customFields.listCustomFields(db, { appliesTo: 'time_entry' }).length, 0);
   });
+
+  it('deletes contacts that have no matters or payments', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Source',
+      fieldType: 'text',
+      appliesTo: 'client',
+    });
+    const page = clientsSvc.createClient(db, admin, {
+      name: 'Temp Contact',
+      email: 'temp@example.com',
+      customValues: { [field.id]: 'Web' },
+    });
+    const result = clientsSvc.deleteClient(db, admin, page.client.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.name, 'Temp Contact');
+    assert.equal(clientsSvc.listClients(db).length, 0);
+    assert.equal(
+      db.prepare('SELECT COUNT(*) AS n FROM client_custom_field_values').get().n,
+      0
+    );
+  });
+
+  it('blocks deleting contacts referenced by matters', () => {
+    const page = clientsSvc.createClient(db, admin, { name: 'Linked Contact' });
+    db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, opened_on, status)
+      VALUES (?, 'M-1', 'Matter One', 'billable', date('now'), 'open')
+    `).run(page.client.id);
+
+    assert.throws(
+      () => clientsSvc.deleteClient(db, admin, page.client.id),
+      /matter/
+    );
+    assert.equal(clientsSvc.listClients(db).length, 1);
+  });
 });
