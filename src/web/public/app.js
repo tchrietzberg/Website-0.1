@@ -259,7 +259,8 @@
     const base = {
       viewAll,
       modifyAll: obj.modifyAll !== false,
-      delete: !!obj.delete,
+      // Match server defaults: delete is on unless explicitly turned off.
+      delete: obj.delete !== false,
       search: viewAll && (obj.search != null ? !!obj.search : true),
     };
     if (objectKey !== 'time') return base;
@@ -4920,6 +4921,7 @@
     const canEdit = canCreateMatter(state.user) && page.canEdit !== false && roleCanModify('matter');
     const canDelete = canCreateMatter(state.user) && page.canDelete !== false && roleCanDelete('matter');
     const canLogTime = roleCanModify('time');
+    const canDeleteTime = roleCanDelete('time');
     const matterReports = [
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
       ['lodestar-matter-summary', 'Lodestar Summary', 'Hours and amounts by timekeeper'],
@@ -5048,12 +5050,17 @@
         <div id="matterTimeMsg" style="margin-top:.75rem">${flash ? successNoticeHtml(flash) : ''}</div>
         <h2 style="margin-top:1.25rem">Recent on this matter</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Status</th></tr></thead>
+          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Status</th><th></th></tr></thead>
           <tbody>
             ${(matterEntries || []).slice(0, 20).map((e) => {
               const statusLabel = e.status === 'approved' ? 'Ready to bill'
                 : e.status === 'invoiced' ? 'Billed'
                   : e.status;
+              const isOwn = Number(e.timekeeper_id) === Number(state.user.id);
+              const deletable = canDeleteTime
+                && e.status !== 'invoiced'
+                && !e.invoice_id
+                && (isOwn || roleCanDeleteOthersTime());
               return `
               <tr>
                 <td>${escapeHtml(e.service_date)}</td>
@@ -5061,10 +5068,14 @@
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
+                <td>${deletable
+                  ? `<button type="button" class="danger" data-del-time="${e.id}">Delete</button>`
+                  : ''}</td>
               </tr>`;
-            }).join('') || '<tr><td colspan="4" class="muted">No time on this matter yet</td></tr>'}
+            }).join('') || '<tr><td colspan="5" class="muted">No time on this matter yet</td></tr>'}
           </tbody>
         </table></div>
+        <div id="matterTimeListMsg" style="margin-top:.75rem"></div>
       </div>` : ''}
 
       <div class="card stack">
@@ -5276,6 +5287,32 @@
         }
       };
     }
+
+    main.querySelectorAll('[data-del-time]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.getAttribute('data-del-time'));
+        if (!Number.isFinite(id) || id <= 0) {
+          const el = $('#matterTimeListMsg');
+          if (el) el.innerHTML = '<div class="error">Could not determine which time entry to delete.</div>';
+          return;
+        }
+        const sure = await confirmAction({
+          title: 'Delete this time entry?',
+          message: 'Are you sure you want to delete this time entry? This cannot be undone.',
+          confirmLabel: 'Yes, delete entry',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
+        try {
+          await api(`/api/time-entries/${id}`, { method: 'DELETE' });
+          state.matterTimeFlash = { title: 'Time entry deleted' };
+          await renderMatterDetail();
+        } catch (e) {
+          const el = $('#matterTimeListMsg');
+          if (el) el.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
 
     const matterTimeForm = $('#matterTimeForm');
     if (matterTimeForm) {
@@ -5650,7 +5687,7 @@
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td class="row-actions">
                   <button type="button" class="primary" data-save-time="${entryId}">Save</button>
-                  ${deletable ? `<button type="button" data-del-time="${entryId}">Delete</button>` : ''}
+                  ${deletable ? `<button type="button" class="danger" data-del-time="${entryId}">Delete</button>` : ''}
                 </td>
               </tr>`;
               }
@@ -5663,7 +5700,7 @@
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
-                  ? `<button type="button" data-del-time="${e.id}">Delete</button>`
+                  ? `<button type="button" class="danger" data-del-time="${e.id}">Delete</button>`
                   : ''}</td>
               </tr>`;
             }).join('') || '<tr><td colspan="6" class="muted">No entries yet</td></tr>'}
@@ -7841,7 +7878,7 @@
       id: 'time',
       label: 'Log time',
       keywords: ['time', 'hours', 'log time', 'time entry', 'timesheet', 'billable'],
-      answer: 'Open [[Time Entry|time]] (or a matter’s Add time form). Pick the matter, date, hours (0.25 steps), and description, then Save. Saved time is ready for [[Billing|billing]]—no approval step.',
+      answer: 'Open [[Time Entry|time]] (or a matter’s Add time form). Pick the matter, date, hours (0.25 steps), and description, then Save. Recent unbilled entries can be deleted from the list on Time Entry or the matter page. Saved time is ready for [[Billing|billing]]—no approval step.',
       links: [
         { label: 'Go to Time Entry', target: 'time' },
         { label: 'Open Billing', target: 'billing' },

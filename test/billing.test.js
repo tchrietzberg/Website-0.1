@@ -153,6 +153,26 @@ describe('time entry rules', () => {
       /already been billed/
     );
   });
+
+  it('deletes recent unbilled time entries and blocks billed ones', () => {
+    const e = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1,
+      description: 'to delete', category: 'Discovery', subcategory: 'Review',
+    });
+    const removed = timeSvc.deleteEntry(ctx.db, ctx.para, e.id);
+    assert.equal(removed.ok, true);
+    assert.equal(ctx.db.prepare('SELECT id FROM time_entries WHERE id = ?').get(e.id), undefined);
+
+    const billed = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-02', hours: 1,
+      description: 'billed', category: 'Discovery', subcategory: 'Review',
+    });
+    invoiceSvc.createBill(ctx.db, ctx.clerk, 1, [billed.id]);
+    assert.throws(
+      () => timeSvc.deleteEntry(ctx.db, ctx.para, billed.id),
+      /already been billed/
+    );
+  });
 });
 
 describe('invoice lifecycle', () => {
