@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS matters (
   client_id INTEGER NOT NULL REFERENCES clients(id),
   number TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
-  matter_type TEXT NOT NULL DEFAULT 'default',
+  matter_type TEXT NOT NULL DEFAULT 'billable',
   jurisdiction TEXT,
   court TEXT,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),

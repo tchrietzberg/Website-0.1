@@ -21,11 +21,11 @@ describe('custom reports and dashboard', () => {
     db.prepare("INSERT INTO clients(name) VALUES ('Client A')").run();
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, opened_on, status)
-      VALUES (1, '2026-0001', 'Alpha', 'default', '2026-01-15', 'open')
+      VALUES (1, '2026-0001', 'Alpha', 'billable', '2026-01-15', 'open')
     `).run();
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, opened_on, status)
-      VALUES (1, '2026-0002', 'Beta', 'default', '2026-02-01', 'open')
+      VALUES (1, '2026-0002', 'Beta', 'billable', '2026-02-01', 'open')
     `).run();
     db.prepare("INSERT INTO rates(scope,scope_id,amount_cents,effective_date) VALUES ('timekeeper',2,20000,'2020-01-01')").run();
     admin = db.prepare('SELECT * FROM users WHERE id=1').get();
@@ -38,7 +38,7 @@ describe('custom reports and dashboard', () => {
       fieldType: 'select',
       options: ['Discovery', 'Trial'],
       appliesTo: 'matter',
-      recordTypeKey: 'default',
+      recordTypeKey: 'billable',
     });
     customFields.setCustomValues(db, admin, 1, { [field.id]: 'Discovery' });
     customFields.setCustomValues(db, admin, 2, { [field.id]: 'Trial' });
@@ -115,7 +115,7 @@ describe('custom reports and dashboard', () => {
       label: 'Lead',
       fieldType: 'text',
       appliesTo: 'matter',
-      recordTypeKey: 'default',
+      recordTypeKey: 'billable',
     });
     assert.throws(() => customReports.createReport(db, admin, {
       name: 'Bad',
@@ -159,7 +159,7 @@ describe('custom reports and dashboard', () => {
       label: 'Region',
       fieldType: 'text',
       appliesTo: 'matter',
-      recordTypeKey: 'default',
+      recordTypeKey: 'billable',
     });
     const report = customReports.createReport(db, admin, {
       name: 'By region',

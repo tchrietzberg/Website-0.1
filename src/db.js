@@ -191,7 +191,7 @@ function migrateOneDriveColumns(db) {
   }
 }
 
-/** SQLite cannot ALTER CHECK; drop matters.matter_type enum so Default (and remaps) work. */
+/** SQLite cannot ALTER CHECK; drop matters.matter_type enum so Billable remaps work. */
 function migrateMatterTypeCheck(db) {
   const row = db.prepare(
     "SELECT sql FROM sqlite_master WHERE type='table' AND name='matters'"
@@ -205,7 +205,7 @@ function migrateMatterTypeCheck(db) {
       client_id INTEGER NOT NULL REFERENCES clients(id),
       number TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
-      matter_type TEXT NOT NULL DEFAULT 'default',
+      matter_type TEXT NOT NULL DEFAULT 'billable',
       jurisdiction TEXT,
       court TEXT,
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
@@ -220,7 +220,7 @@ function migrateMatterTypeCheck(db) {
     SELECT
       id, client_id, number, name,
       CASE
-        WHEN matter_type IN ('litigation','sw_admin','other') THEN 'default'
+        WHEN matter_type IN ('litigation','sw_admin','other','default') THEN 'billable'
         ELSE matter_type
       END,
       jurisdiction, court, status,

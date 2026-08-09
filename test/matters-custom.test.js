@@ -54,11 +54,70 @@ describe('matter search and record-based fields', () => {
     assert.equal(matterSvc.listMatters(db).length, 2);
   });
 
-  it('only seeds the Default record type', () => {
+  it('seeds Billable and Non-Billable record types; Billable is default', () => {
     const types = customFields.listRecordTypes(db);
-    assert.equal(types.length, 1);
-    assert.equal(types[0].key, customFields.DEFAULT_RECORD_TYPE_KEY);
-    assert.equal(types[0].label, customFields.DEFAULT_RECORD_TYPE_LABEL);
+    assert.equal(types.length, 2);
+    assert.equal(types[0].key, 'billable');
+    assert.equal(types[0].label, 'Billable');
+    assert.equal(types[1].key, 'non_billable');
+    assert.equal(types[1].label, 'Non-Billable');
+    assert.equal(customFields.DEFAULT_RECORD_TYPE_KEY, 'billable');
+
+    const page = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Default Type Matter', openedOn: '2026-01-01',
+    });
+    assert.equal(page.matter.matter_type, 'billable');
+  });
+
+  it('custom fields depend on the chosen matter record type', () => {
+    const billableField = customFields.createCustomField(db, admin, {
+      label: 'Fee arrangement',
+      fieldType: 'text',
+      recordTypeKey: 'billable',
+      required: true,
+    });
+    const nonBillableField = customFields.createCustomField(db, admin, {
+      label: 'Pro bono reason',
+      fieldType: 'textarea',
+      recordTypeKey: 'non_billable',
+      required: true,
+    });
+
+    assert.throws(() => matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Needs fee', openedOn: '2026-02-01',
+      recordTypeKey: 'billable',
+    }), /Fee arrangement/);
+
+    const billable = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Needs fee', openedOn: '2026-02-01',
+      recordTypeKey: 'billable',
+      customValues: { [billableField.id]: 'Hourly' },
+    });
+    assert.equal(billable.matter.matter_type, 'billable');
+    const billableKeys = Object.values(billable.sections).flat().map((f) => f.fieldId);
+    assert.ok(billableKeys.includes(billableField.id));
+    assert.ok(!billableKeys.includes(nonBillableField.id));
+
+    assert.throws(() => matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Needs reason', openedOn: '2026-02-02',
+      recordTypeKey: 'non_billable',
+    }), /Pro bono reason/);
+
+    const nonBillable = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Needs reason', openedOn: '2026-02-02',
+      recordTypeKey: 'non_billable',
+      customValues: { [nonBillableField.id]: 'Clinic' },
+    });
+    assert.equal(nonBillable.matter.matter_type, 'non_billable');
+    const nbKeys = Object.values(nonBillable.sections).flat().map((f) => f.fieldId);
+    assert.ok(nbKeys.includes(nonBillableField.id));
+    assert.ok(!nbKeys.includes(billableField.id));
+
+    const billableLayout = customFields.getTypeLayout(db, 'billable');
+    const nbLayout = customFields.getTypeLayout(db, 'non_billable');
+    assert.ok(billableLayout.customFields.some((f) => f.id === billableField.id));
+    assert.ok(!billableLayout.customFields.some((f) => f.id === nonBillableField.id));
+    assert.ok(nbLayout.customFields.some((f) => f.id === nonBillableField.id));
   });
 
   it('supports type-based and record-based custom fields; values are searchable', () => {

@@ -75,7 +75,7 @@ describe('public security controls', () => {
     db.prepare("INSERT INTO clients(name) VALUES ('Acme')").run();
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
-      VALUES (1, '2026-0099', 'Case', 'default', 1, '2026-01-01')
+      VALUES (1, '2026-0099', 'Case', 'billable', 1, '2026-01-01')
     `).run();
     server = createServer(db);
     port = await listen(server);

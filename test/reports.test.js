@@ -20,11 +20,11 @@ describe('matters report', () => {
     db.prepare("INSERT INTO clients(name) VALUES ('Client A')").run();
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, court, responsible_attorney_id, opened_on, status)
-      VALUES (1, '2026-0001', 'Alpha Matter', 'default', 'S.D.N.Y.', 1, '2026-01-15', 'open')
+      VALUES (1, '2026-0001', 'Alpha Matter', 'billable', 'S.D.N.Y.', 1, '2026-01-15', 'open')
     `).run();
     db.prepare(`
       INSERT INTO matters(client_id, number, name, matter_type, opened_on, status)
-      VALUES (1, '2026-0002', 'Beta Matter', 'default', '2026-02-01', 'closed')
+      VALUES (1, '2026-0002', 'Beta Matter', 'billable', '2026-02-01', 'closed')
     `).run();
     db.prepare("INSERT INTO rates(scope,scope_id,amount_cents,effective_date) VALUES ('timekeeper',2,20000,'2020-01-01')").run();
     admin = db.prepare('SELECT * FROM users WHERE id=1').get();

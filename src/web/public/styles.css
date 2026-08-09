@@ -523,6 +523,9 @@ body {
   display: none;
 }
 
+.matter-type-picker {
+  max-width: 18rem;
+}
 .create-matter-fields-panel,
 .post-create-fields-panel {
   margin-top: 0.25rem;

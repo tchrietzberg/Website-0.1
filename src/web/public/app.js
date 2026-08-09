@@ -14,6 +14,8 @@
     tkSearch: { q: '' },
     showCreateMatter: false,
     createMatterDraftName: '',
+    createMatterRecordTypeKey: 'billable',
+    settingsMatterRecordTypeKey: 'billable',
     focusTimeEntry: false,
     timeFlash: null,
     matterTimeFlash: null,
@@ -412,11 +414,13 @@
   async function bindDefaultFieldsEditor({
     bodyEl,
     msgEl,
-    recordTypeKey = 'default',
+    recordTypeKey = 'billable',
     appliesTo = 'matter',
+    recordTypes = null,
+    onRecordTypeChange = null,
   } = {}) {
     if (!bodyEl) return;
-    const key = recordTypeKey || 'default';
+    let key = recordTypeKey || 'billable';
     const firmWide = appliesTo === 'time_entry' || appliesTo === 'client';
     const scopeLabel = appliesTo === 'client'
       ? 'contact'
@@ -607,12 +611,27 @@
         return;
       }
 
+      const types = recordTypes || await api('/api/record-types').catch(() => []);
+      if (!types.some((t) => t.key === key) && types[0]) key = types[0].key;
       const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
       const editing = editingId
         ? (typeLayout.fields || []).find((f) => Number(fieldIdFromMgmt(f)) === Number(editingId))
           || (typeLayout.customFields || []).find((f) => Number(f.id) === Number(editingId))
         : null;
+      const typeLabel = typeLayout.label || key;
+      const typePicker = (types || []).length > 1 ? `
+        <label class="matter-type-picker">Record type
+          <select id="settingsMatterTypeSelect" name="recordTypeKey">
+            ${(types || []).map((t) => `
+              <option value="${escapeHtml(t.key)}" ${t.key === key ? 'selected' : ''}>
+                ${escapeHtml(t.label || t.key)}
+              </option>`).join('')}
+          </select>
+        </label>
+        <p class="hint">Custom fields for <strong>${escapeHtml(typeLabel)}</strong> matters. Switching types shows that type’s fields.</p>`
+        : `<p class="hint">Custom fields for ${escapeHtml(typeLabel)} matters.</p>`;
       bodyEl.innerHTML = `
+        ${typePicker}
         <div class="field-mgmt-list">
           ${typeFieldMgmtRows(typeLayout.fields)}
         </div>
@@ -630,6 +649,16 @@
             requiredLabel: 'Required field',
           })}`;
 
+      const typeSelect = bodyEl.querySelector('#settingsMatterTypeSelect');
+      if (typeSelect) {
+        typeSelect.onchange = () => {
+          key = typeSelect.value;
+          editingId = null;
+          setMsg('');
+          if (typeof onRecordTypeChange === 'function') onRecordTypeChange(key);
+          render();
+        };
+      }
       bodyEl.querySelectorAll('[data-edit-type-field]').forEach((btn) => {
         btn.onclick = () => {
           editingId = Number(btn.dataset.editTypeField);
@@ -1218,6 +1247,8 @@
       return;
     }
     state.showCreateMatter = true;
+    state.createMatterRecordTypeKey = 'billable';
+    state.createMatterDraftName = '';
     state.showCreateContact = false;
     state.view = 'matters';
     state.matterId = null;
@@ -1398,12 +1429,12 @@
     const canEdit = canCreateMatter(state.user);
 
     const showCreate = canEdit && state.showCreateMatter;
-    const [hits, clients, allMatters, createMatterFields] = await Promise.all([
+    const [hits, clients, allMatters, recordTypes] = await Promise.all([
       api(`/api/matters?${params}`),
       api('/api/clients'),
       api('/api/matters'), // full list for dropdowns elsewhere; not shown here
       showCreate
-        ? api('/api/custom-fields?appliesTo=matter&type=default').catch(() => [])
+        ? api('/api/record-types').catch(() => [])
         : Promise.resolve([]),
     ]);
     state.matters = allMatters;
@@ -1411,6 +1442,16 @@
     const draftName = state.createMatterDraftName || '';
     const createFieldMsg = state.createMatterFieldMsg;
     state.createMatterFieldMsg = null;
+    let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
+    if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
+      createRecordTypeKey = recordTypes[0].key;
+      state.createMatterRecordTypeKey = createRecordTypeKey;
+    }
+    const createTypeLabel = ((recordTypes || []).find((t) => t.key === createRecordTypeKey) || {}).label
+      || createRecordTypeKey;
+    const createMatterFields = showCreate
+      ? await api(`/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(createRecordTypeKey)}`).catch(() => [])
+      : [];
     const createFieldDefs = (createMatterFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -1441,21 +1482,30 @@
               <button class="primary" type="submit">Create</button>
               <button type="button" id="cancelCreateMatter">Cancel</button>
             </div>
-            ${createFieldDefs.length ? `
             <div class="grid two create-matter-custom">
+              <label>Record type
+                <select name="recordTypeKey" id="createMatterTypeSelect" required>
+                  ${(recordTypes || []).map((t) => `
+                    <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
+                      ${escapeHtml(t.label || t.key)}
+                    </option>`).join('') || `
+                    <option value="billable" selected>Billable</option>
+                    <option value="non_billable">Non-Billable</option>`}
+                </select>
+              </label>
               ${createFieldDefs.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}">
                   ${escapeHtml(field.label)}${field.required ? ' *' : ''}
                   ${renderFieldInput(field, { canEdit: true })}
                 </label>`).join('')}
-            </div>` : ''}
+            </div>
           </form>
           <div id="newMatterMsg"></div>
         </div>
 
         <div id="createMatterFieldsPanel" class="card stack page-section create-matter-fields-panel">
           <h2>Add custom fields</h2>
-          <p class="hint">Add fields for new matters in this separate panel. New fields appear in the create form above.</p>
+          <p class="hint">Fields added here apply to <strong>${escapeHtml(createTypeLabel)}</strong> matters and appear in the create form above when that record type is selected.</p>
           <div class="field-mgmt-list">
             ${createCustomRows.map((f) => `
               <div class="field-mgmt-row">
@@ -1463,7 +1513,7 @@
                   <strong>${escapeHtml(f.label)}</strong>
                   <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type))}${f.required ? ' · required' : ''}</span>
                 </div>
-              </div>`).join('') || '<p class="muted">No custom fields yet</p>'}
+              </div>`).join('') || `<p class="muted">No custom fields for ${escapeHtml(createTypeLabel)} yet</p>`}
           </div>
           ${customFieldFormHtml({
             formId: 'createMatterFieldForm',
@@ -1522,6 +1572,7 @@
       cancelCreate.onclick = async () => {
         state.showCreateMatter = false;
         state.createMatterDraftName = '';
+        state.createMatterRecordTypeKey = 'billable';
         state.createMatterFieldMsg = null;
         await renderMatters();
       };
@@ -1540,6 +1591,15 @@
           }
         }, 0);
       }
+      const typeSelect = $('#createMatterTypeSelect');
+      if (typeSelect) {
+        typeSelect.onchange = async () => {
+          const nameEl = $('#createMatterName');
+          if (nameEl) state.createMatterDraftName = String(nameEl.value || '');
+          state.createMatterRecordTypeKey = typeSelect.value || 'billable';
+          await renderMatters();
+        };
+      }
       const createFieldForm = $('#createMatterFieldForm');
       wireDropdownOptionsToggle(createFieldForm);
       if (createFieldForm) {
@@ -1547,6 +1607,7 @@
           ev.preventDefault();
           const nameEl = $('#createMatterName');
           if (nameEl) state.createMatterDraftName = String(nameEl.value || '');
+          const typeKey = state.createMatterRecordTypeKey || 'billable';
           const fd = new FormData(createFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
           if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
@@ -1556,11 +1617,11 @@
           try {
             await api('/api/custom-fields', {
               method: 'POST',
-              body: JSON.stringify({ ...body, recordTypeKey: 'default', appliesTo: 'matter' }),
+              body: JSON.stringify({ ...body, recordTypeKey: typeKey, appliesTo: 'matter' }),
             });
             state.createMatterFieldMsg = {
               title: 'Custom field added',
-              detail: body.label || 'It now appears in the create form above.',
+              detail: `${body.label || 'Field'} added for ${createTypeLabel} matters.`,
             };
             await renderMatters();
             const panel = $('#createMatterFieldsPanel');
@@ -1603,17 +1664,22 @@
             customValues[f.fieldId] = '0';
           }
         });
+        const recordTypeKey = String(
+          fd.get('recordTypeKey') || state.createMatterRecordTypeKey || 'billable'
+        ).trim();
         try {
           const page = await api('/api/matters', {
             method: 'POST',
             body: JSON.stringify({
               name,
+              recordTypeKey,
               customValues,
             }),
           });
           await refreshRefs();
           state.showCreateMatter = false;
           state.createMatterDraftName = '';
+          state.createMatterRecordTypeKey = 'billable';
           state.createMatterFieldMsg = null;
           state.matterSearch = { q: page.matter.name };
           state.matterCreateFlash = {
@@ -1901,8 +1967,8 @@
       return `<select name="${name}" ${disabled} required>${opts}</select>`;
     }
     if (field.key === 'std:matter_type') {
-      const label = (ctx.recordTypes || []).find((t) => t.key === val)?.label || val || 'Default';
-      return `<input name="${name}" value="${label}" disabled />`;
+      const label = (ctx.recordTypes || []).find((t) => t.key === val)?.label || val || 'Billable';
+      return `<input name="${name}" value="${escapeHtml(label)}" disabled />`;
     }
     if (field.key === 'std:responsible_attorney') {
       const attorneys = (ctx.users || []).filter((u) => u.role === 'attorney' || u.role === 'admin');
@@ -2221,14 +2287,18 @@
       return renderMatters();
     }
     const matterId = state.matterId;
-    const [page, timeFields, matterEntries, clients] = await Promise.all([
+    const [page, timeFields, matterEntries, clients, recordTypes] = await Promise.all([
       api(`/api/matters/${matterId}`),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
       api(`/api/time-entries?matterId=${matterId}`).catch(() => []),
       api('/api/clients').catch(() => state.clients || []),
+      api('/api/record-types').catch(() => []),
     ]);
     state.clients = clients || state.clients || [];
     const m = page.matter;
+    const matterTypeLabel = ((recordTypes || []).find((t) => t.key === m.matter_type) || {}).label
+      || m.matter_type
+      || 'Billable';
     const canEdit = canCreateMatter(state.user);
     const matterReports = [
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
@@ -2296,7 +2366,10 @@
     const fieldCtx = {
       canEdit,
       clients: state.clients,
-      recordTypes: [{ key: 'default', label: 'Default' }],
+      recordTypes: recordTypes || [
+        { key: 'billable', label: 'Billable' },
+        { key: 'non_billable', label: 'Non-Billable' },
+      ],
       users: state.users,
     };
     const sections = Object.entries(page.sections || {})
@@ -2309,6 +2382,7 @@
           <button type="button" id="backMatters">← Matters</button>
         </div>
         <h1>${escapeHtml(m.name || 'Matter')}</h1>
+        <p class="muted" style="margin:.25rem 0 0">Record type · ${escapeHtml(matterTypeLabel)}</p>
         ${createFlash ? successNoticeHtml(createFlash) : ''}
       </div>
 
@@ -3403,11 +3477,14 @@
   }
 
   async function renderReports() {
-    const [customReportList, matterFields, timeFields] = await Promise.all([
+    const [customReportList, billableFields, nonBillableFields, timeFields] = await Promise.all([
       api('/api/custom-reports').catch(() => []),
-      api('/api/custom-fields?appliesTo=matter&type=default').catch(() => []),
+      api('/api/custom-fields?appliesTo=matter&type=billable').catch(() => []),
+      api('/api/custom-fields?appliesTo=matter&type=non_billable').catch(() => []),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
     ]);
+    const matterFields = [...(billableFields || []), ...(nonBillableFields || [])]
+      .filter((f, i, arr) => arr.findIndex((x) => Number(x.id) === Number(f.id)) === i);
     const canEditReports = ['admin', 'billing_clerk', 'attorney'].includes(state.user.role);
     const firmReports = [
       ['matters', 'Matters'],
@@ -3710,7 +3787,7 @@
       ${canConfigureFields ? `
       <div class="card stack" id="defaultFieldsCard">
         <h2>Matter fields</h2>
-        <p class="hint">Shown on every matter. Add a custom field with a label and type.</p>
+        <p class="hint">Custom fields depend on record type (Billable or Non-Billable). New matters default to Billable.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
       </div>
@@ -3994,11 +4071,16 @@
     wireChoiceGroup(main, 'roundMode');
 
     if (canConfigureFields) {
+      const matterRecordTypes = await api('/api/record-types').catch(() => []);
       await bindDefaultFieldsEditor({
         bodyEl: $('#defaultFieldsBody'),
         msgEl: $('#typeFieldMsg'),
-        recordTypeKey: 'default',
+        recordTypeKey: state.settingsMatterRecordTypeKey || 'billable',
         appliesTo: 'matter',
+        recordTypes: matterRecordTypes,
+        onRecordTypeChange: (key) => {
+          state.settingsMatterRecordTypeKey = key;
+        },
       });
       await bindDefaultFieldsEditor({
         bodyEl: $('#contactFieldsBody'),
@@ -4404,7 +4486,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'In Settings, use Matter fields, Contact fields, or Time entry fields. Add a label and type (text, dropdown, etc.). For dropdowns, enter options in the options box that appears. Matter fields use Required field when they must be filled; contact and time fields use Required on create. Use Edit to change type or required later.',
+      answer: 'Matters use record types Billable (default) and Non-Billable. In Settings → Matter fields, pick a record type and add fields for that type. On Create Matter, choose the record type to see its custom fields. For dropdowns, enter options in the options box that appears. Matter fields use Required field when they must be filled.',
     },
     {
       id: 'reports',
