@@ -43,6 +43,21 @@
     return !!user && user.role === 'admin';
   }
 
+  function fieldLabelFromDeleteBtn(btn) {
+    const row = btn?.closest?.('.field-mgmt-row');
+    const label = row?.querySelector('strong')?.textContent?.trim();
+    return label || 'this custom field';
+  }
+
+  async function confirmDeleteCustomField(label) {
+    return confirmAction({
+      title: 'Delete this custom field?',
+      message: `Are you sure you want to delete “${label}”? This removes it from forms and layouts. Existing values are kept but hidden.`,
+      confirmLabel: 'Yes, delete field',
+      cancelLabel: 'Cancel',
+    });
+  }
+
   function profileCanWrite(settings = state.settings) {
     const role = state.user?.role;
     if (!role) return false;
@@ -605,10 +620,13 @@
         });
         bodyEl.querySelectorAll('[data-del-firm-field]').forEach((btn) => {
           btn.onclick = async () => {
+            const label = fieldLabelFromDeleteBtn(btn);
+            const sure = await confirmDeleteCustomField(label);
+            if (!sure) return;
             try {
               await api(`/api/custom-fields/${btn.dataset.delFirmField}`, { method: 'DELETE' });
               if (Number(editingId) === Number(btn.dataset.delFirmField)) editingId = null;
-              setMsg(`<div class="ok-banner">${scopeLabel.charAt(0).toUpperCase()}${scopeLabel.slice(1)} field removed.</div>`);
+              setMsg(`<div class="ok-banner">${scopeLabel.charAt(0).toUpperCase()}${scopeLabel.slice(1)} field deleted.</div>`);
               await render();
             } catch (e) {
               setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -691,6 +709,9 @@
       });
       bodyEl.querySelectorAll('[data-del-type-field]').forEach((btn) => {
         btn.onclick = async () => {
+          const label = fieldLabelFromDeleteBtn(btn);
+          const sure = await confirmDeleteCustomField(label);
+          if (!sure) return;
           try {
             const fieldKey = btn.dataset.delTypeField;
             await api(
@@ -707,6 +728,9 @@
       });
       bodyEl.querySelectorAll('[data-del-custom-field]').forEach((btn) => {
         btn.onclick = async () => {
+          const label = fieldLabelFromDeleteBtn(btn);
+          const sure = await confirmDeleteCustomField(label);
+          if (!sure) return;
           try {
             const id = Number(btn.dataset.delCustomField);
             await api(`/api/custom-fields/${id}`, { method: 'DELETE' });
@@ -3011,6 +3035,9 @@
     });
     main.querySelectorAll('[data-del-matter-field]').forEach((btn) => {
       btn.onclick = async () => {
+        const label = fieldLabelFromDeleteBtn(btn);
+        const sure = await confirmDeleteCustomField(label);
+        if (!sure) return;
         try {
           await api(
             `/api/matters/${m.id}/layout-fields?fieldKey=${encodeURIComponent(btn.dataset.delMatterField)}`,
@@ -3028,6 +3055,9 @@
     main.querySelectorAll('[data-del-custom-field]').forEach((btn) => {
       btn.onclick = async () => {
         if (!isAdminUser()) return;
+        const label = fieldLabelFromDeleteBtn(btn);
+        const sure = await confirmDeleteCustomField(label);
+        if (!sure) return;
         try {
           const id = Number(btn.dataset.delCustomField);
           await api(`/api/custom-fields/${id}`, { method: 'DELETE' });
