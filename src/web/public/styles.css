@@ -2344,6 +2344,43 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   color: var(--muted);
   line-height: 1.45;
 }
+.help-agent-answer a.help-go {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+  cursor: pointer;
+}
+.help-agent-answer a.help-go:hover {
+  color: var(--accent-hover);
+}
+.help-agent-links {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.75rem;
+}
+.help-agent-links .help-go-btn {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid #d3deec;
+  background: var(--accent-soft);
+  cursor: pointer;
+}
+.help-agent-links .help-go-btn:hover {
+  background: #dce7f4;
+  color: var(--accent-hover);
+}
+.help-agent-answer .help-agent-topics {
+  margin: 0 0 0.75rem;
+}
 .help-agent-form {
   display: -webkit-flex;
   display: flex;

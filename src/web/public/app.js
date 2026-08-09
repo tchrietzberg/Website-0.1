@@ -6863,55 +6863,89 @@
       </div>`;
   }
 
-  /** Compact in-app help agent: training & how-to for Firm Billing. */
+  /** Compact in-app help agent: training & how-to for Firm Billing.
+   *  Answer text may include [[Label|target]] deep links; see goHelpTarget(). */
   const HELP_TOPICS = [
     {
       id: 'matter',
       label: 'Create a matter',
       keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case'],
-      answer: 'Go to Matters → Create Matter (or the sidebar Create Matter action). Enter a name (or, if Settings → Matter name formula is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. The matter opens so you can add time and details.',
+      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name (or, if [[Matter name formula|settings-name-formula]] is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. The matter opens so you can add time and details.',
+      links: [
+        { label: 'Go to Create Matter', target: 'create-matter' },
+        { label: 'Matter name formula', target: 'settings-name-formula' },
+      ],
     },
     {
       id: 'matter-name-formula',
       label: 'Matter name formula',
       keywords: ['matter name', 'formula', 'concatenate', 'ticker', 'create matter name', 'name parts'],
-      answer: 'Settings → Matter name formula (collapsed section): turn it on, set a separator (e.g. -), add custom fields and Year in order, or create fields there. On Create Matter those fields appear and the matter name is built by concatenating them.',
+      answer: 'Open [[Matter name formula|settings-name-formula]] in Settings: turn it on, set a separator (e.g. -), add custom fields and Year in order, or create fields there. On [[Create Matter|create-matter]] those fields appear and the matter name is built by concatenating them.',
+      links: [
+        { label: 'Open Matter name formula', target: 'settings-name-formula' },
+        { label: 'Create Matter', target: 'create-matter' },
+      ],
     },
     {
       id: 'time',
       label: 'Log time',
       keywords: ['time', 'hours', 'log time', 'time entry', 'timesheet', 'billable'],
-      answer: 'Open Time Entry or a matter’s Add time form. Pick the matter, date, hours (0.25 steps), and description, then Save. Saved time is ready for Billing—no approval step.',
+      answer: 'Open [[Time Entry|time]] (or a matter’s Add time form). Pick the matter, date, hours (0.25 steps), and description, then Save. Saved time is ready for [[Billing|billing]]—no approval step.',
+      links: [
+        { label: 'Go to Time Entry', target: 'time' },
+        { label: 'Open Billing', target: 'billing' },
+      ],
     },
     {
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact'],
-      answer: 'Use Quick action Create Contact, or Contacts → Create contact. Choose a record type (Person, Company, or ones from Settings → Contact record pages), fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more for that record type; Manage fields is also on the contact page. Settings → Contact record pages manages type layouts.',
+      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. [[Contact record pages|settings-contact-fields]] in Settings manages type layouts.',
+      links: [
+        { label: 'Go to Create Contact', target: 'create-contact' },
+        { label: 'Contact record pages', target: 'settings-contact-fields' },
+      ],
     },
     {
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults for every record of that type) or record-only. Settings → Matter/Contact record pages and Create → Add record type fields add type fields. On a matter or contact, Manage fields can add a field for that record only (not type-dependent).',
+      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Configure type layouts in [[Matter record pages|settings-matter-fields]] or [[Contact record pages|settings-contact-fields]]. On Create Matter / Create Contact, Add record type fields also adds type fields. On a matter or contact, Manage fields can add a field for that record only.',
+      links: [
+        { label: 'Matter record pages', target: 'settings-matter-fields' },
+        { label: 'Contact record pages', target: 'settings-contact-fields' },
+        { label: 'Time entry fields', target: 'settings-time-fields' },
+      ],
     },
     {
       id: 'reports',
       label: 'Reports & dashboard',
       keywords: ['report', 'dashboard', 'lodestar', 'export', 'chart', 'custom report'],
-      answer: 'Reports: run firm Lodestar reports or create custom reports grouped by a custom field. Dashboard: pin firm or custom reports, remove them with Remove, and export everything with Export PDF / CSV / Excel.',
+      answer: 'Open [[Reports|reports]] to run firm Lodestar reports or create custom reports grouped by a custom field. Open [[Dashboard|dashboard]] to pin firm or custom reports, remove them with Remove, and export everything with Export PDF / CSV / Excel.',
+      links: [
+        { label: 'Go to Reports', target: 'reports' },
+        { label: 'Go to Dashboard', target: 'dashboard' },
+      ],
     },
     {
       id: 'billing',
       label: 'Create a bill',
       keywords: ['bill', 'billing', 'invoice', 'prebill'],
-      answer: 'Open Billing, choose the matter and approved time to include, then create the bill. Only roles like admin or billing clerk can manage billing settings.',
+      answer: 'Open [[Billing|billing]], choose the matter and approved time to include, then create the bill. Time & billing preferences live in [[Settings|settings]]. Only roles like admin or billing clerk can manage billing settings.',
+      links: [
+        { label: 'Go to Billing', target: 'billing' },
+        { label: 'Open Settings', target: 'settings' },
+      ],
     },
     {
       id: 'login',
       label: 'Sign in',
       keywords: ['login', 'password', 'sign in', 'demo', 'avery'],
-      answer: 'Use your work email and password. Demo: avery@firm.example / demo-change-me. You can also request a magic link or reset password from the login screen.',
+      answer: 'Use your work email and password. Demo: avery@firm.example / demo-change-me. You can also request a magic link or reset password from the login screen. You’re signed in now — open [[Settings|settings]] for firm preferences, or [[Matters|matters]] to get started.',
+      links: [
+        { label: 'Go to Matters', target: 'matters' },
+        { label: 'Open Settings', target: 'settings' },
+      ],
     },
   ];
 
@@ -6934,6 +6968,127 @@
       }
     }
     return bestScore > 0 ? best : null;
+  }
+
+  /** Turn [[Label|target]] markers into help deep-link anchors. */
+  function formatHelpAnswerHtml(text) {
+    const raw = String(text || '');
+    let html = '';
+    let i = 0;
+    while (i < raw.length) {
+      const start = raw.indexOf('[[', i);
+      if (start < 0) {
+        html += escapeHtml(raw.slice(i));
+        break;
+      }
+      html += escapeHtml(raw.slice(i, start));
+      const end = raw.indexOf(']]', start + 2);
+      if (end < 0) {
+        html += escapeHtml(raw.slice(start));
+        break;
+      }
+      const inner = raw.slice(start + 2, end);
+      const bar = inner.indexOf('|');
+      if (bar < 0) {
+        html += escapeHtml(raw.slice(start, end + 2));
+      } else {
+        const label = inner.slice(0, bar).trim();
+        const target = inner.slice(bar + 1).trim();
+        if (label && target) {
+          html += `<a href="#${escapeHtml(target)}" class="help-go" data-help-go="${escapeHtml(target)}">${escapeHtml(label)}</a>`;
+        } else {
+          html += escapeHtml(raw.slice(start, end + 2));
+        }
+      }
+      i = end + 2;
+    }
+    return html;
+  }
+
+  function closeHelpAgentPanel() {
+    const root = document.getElementById('helpAgent');
+    if (!root) return;
+    root.classList.remove('is-open');
+    const panel = $('#helpAgentPanel', root);
+    if (panel) panel.setAttribute('hidden', '');
+    const bubble = $('#helpAgentBubble', root);
+    if (bubble) {
+      bubble.setAttribute('aria-expanded', 'false');
+      bubble.setAttribute('aria-label', 'Open help agent');
+    }
+  }
+
+  async function goAppView(view, { clearDetail = true } = {}) {
+    state.view = view;
+    if (clearDetail) {
+      state.matterId = null;
+      state.contactId = null;
+      if (view !== 'matters') state.showCreateMatter = false;
+      if (view !== 'contacts') state.showCreateContact = false;
+    }
+    renderShell();
+    await renderView();
+  }
+
+  /** Navigate from a Help Agent deep link, then close the panel. */
+  async function goHelpTarget(target) {
+    const key = String(target || '').trim();
+    if (!key || !state.user) return;
+
+    const focusSettings = async (selector, { openDetails = false } = {}) => {
+      await goAppView('settings');
+      const el = typeof selector === 'string' ? $(selector) : selector;
+      if (!el) return;
+      if (openDetails && 'open' in el) el.open = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    try {
+      if (key === 'create-matter') {
+        goAddMatter();
+      } else if (key === 'create-contact') {
+        goAddContact();
+      } else if (key === 'time') {
+        goAddTimeEntry();
+      } else if (key === 'matters') {
+        state.showCreateMatter = false;
+        await goAppView('matters');
+      } else if (key === 'contacts') {
+        state.showCreateContact = false;
+        await goAppView('contacts');
+      } else if (key === 'billing') {
+        await goAppView('billing');
+      } else if (key === 'reports') {
+        await goAppView('reports');
+      } else if (key === 'dashboard') {
+        await goAppView('dashboard');
+      } else if (key === 'settings') {
+        await goAppView('settings');
+      } else if (key === 'settings-matter-fields') {
+        await focusSettings('#defaultFieldsCard');
+      } else if (key === 'settings-contact-fields') {
+        await focusSettings('#contactFieldsCard');
+      } else if (key === 'settings-time-fields') {
+        await focusSettings('#timeFieldsCard');
+      } else if (key === 'settings-name-formula') {
+        await focusSettings('#matterNameFormulaCard', { openDetails: true });
+      } else {
+        return;
+      }
+    } finally {
+      closeHelpAgentPanel();
+    }
+  }
+
+  function wireHelpGoLinks(rootEl) {
+    if (!rootEl) return;
+    rootEl.querySelectorAll('[data-help-go]').forEach((el) => {
+      el.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void goHelpTarget(el.getAttribute('data-help-go'));
+      };
+    });
   }
 
   function setHelpAgentVisible(visible) {
@@ -6981,7 +7136,7 @@
 
       const renderHome = () => {
         body.innerHTML = `
-          <p class="help-agent-intro">Need a hand? Pick a topic or ask how to do something in Firm Billing.</p>
+          <p class="help-agent-intro">Need a hand? Pick a topic or ask how to do something in Firm Billing. Answers include links that take you there.</p>
           <div class="help-agent-topics">
             ${HELP_TOPICS.map((t) => `
               <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
@@ -6990,18 +7145,30 @@
         body.querySelectorAll('[data-help-topic]').forEach((btn) => {
           btn.onclick = () => {
             const topic = HELP_TOPICS.find((t) => t.id === btn.dataset.helpTopic);
-            if (topic) showAnswer(topic.label, topic.answer);
+            if (topic) showAnswer(topic);
           };
         });
       };
 
-      const showAnswer = (title, answer) => {
+      const showAnswer = (topicOrTitle, maybeAnswer) => {
+        const topic = typeof topicOrTitle === 'object' && topicOrTitle
+          ? topicOrTitle
+          : { label: topicOrTitle, answer: maybeAnswer, links: [] };
+        const links = Array.isArray(topic.links) ? topic.links : [];
         body.innerHTML = `
           <div class="help-agent-answer">
-            <strong>${escapeHtml(title)}</strong>
-            <p>${escapeHtml(answer)}</p>
+            <strong>${escapeHtml(topic.label || 'Help')}</strong>
+            <p>${formatHelpAnswerHtml(topic.answer || '')}</p>
+            ${links.length ? `
+              <div class="help-agent-links">
+                ${links.map((l) => `
+                  <a href="#${escapeHtml(l.target)}" class="help-go-btn" data-help-go="${escapeHtml(l.target)}">
+                    ${escapeHtml(l.label)} →
+                  </a>`).join('')}
+              </div>` : ''}
             <button type="button" class="linkish" id="helpAgentBack">← All topics</button>
           </div>`;
+        wireHelpGoLinks(body);
         $('#helpAgentBack', body).onclick = renderHome;
         body.scrollTop = 0;
       };
@@ -7037,11 +7204,17 @@
         if (!q) return;
         const match = matchHelpAnswer(q);
         if (match) {
-          showAnswer(match.label, match.answer);
+          showAnswer(match);
         } else {
-          showAnswer('I can help with that',
-            'Try a topic below, or ask about creating matters, logging time, contacts, custom fields, reports, dashboard, or billing.');
-          // After showing fallback, also list topics again under the message
+          showAnswer({
+            label: 'I can help with that',
+            answer: 'Try a topic below, or ask about creating matters, logging time, contacts, custom fields, reports, dashboard, or billing. Each answer includes links that take you there.',
+            links: [
+              { label: 'Create a matter', target: 'create-matter' },
+              { label: 'Log time', target: 'time' },
+              { label: 'Billing', target: 'billing' },
+            ],
+          });
           const wrap = body.querySelector('.help-agent-answer');
           if (wrap) {
             const topics = document.createElement('div');
@@ -7049,11 +7222,12 @@
             topics.innerHTML = HELP_TOPICS.slice(0, 4).map((t) => `
               <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
             `).join('');
-            wrap.appendChild(topics);
+            const back = wrap.querySelector('#helpAgentBack');
+            wrap.insertBefore(topics, back);
             topics.querySelectorAll('[data-help-topic]').forEach((btn) => {
               btn.onclick = () => {
                 const topic = HELP_TOPICS.find((t) => t.id === btn.dataset.helpTopic);
-                if (topic) showAnswer(topic.label, topic.answer);
+                if (topic) showAnswer(topic);
               };
             });
           }
