@@ -503,6 +503,31 @@ describe('matter search and record-based fields', () => {
     assert.equal(stored[0].value_text, 'A101');
   });
 
+  it('rejects duplicate matter names (case-insensitive, ignoring status/year suffix)', () => {
+    matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Unique Widget Case',
+      openedOn: '2026-01-01',
+      responsibleAttorneyId: 2,
+    });
+    assert.throws(
+      () => matterSvc.createMatter(db, admin, {
+        clientId: 1,
+        name: 'unique widget case',
+        openedOn: '2026-02-01',
+      }),
+      /already exists/i
+    );
+    assert.throws(
+      () => matterSvc.createMatter(db, admin, {
+        clientId: 1,
+        name: 'Unique Widget Case - Open - 2026',
+        openedOn: '2026-03-01',
+      }),
+      /already exists/i
+    );
+  });
+
   it('only admins can add default matter fields; editors can add matter-only fields', () => {
     const attorney = db.prepare('SELECT * FROM users WHERE id=2').get();
     const page = matterSvc.createMatter(db, attorney, {

@@ -34,6 +34,29 @@ describe('contacts and contact custom fields', () => {
     assert.equal(clientsSvc.listClients(db, { q: 'acme' }).length, 1);
   });
 
+  it('rejects duplicate contact names and emails', () => {
+    clientsSvc.createClient(db, admin, {
+      name: 'Jordan Lee',
+      email: 'jordan@example.com',
+    });
+    assert.throws(
+      () => clientsSvc.createClient(db, admin, { name: 'jordan lee' }),
+      /already exists/i
+    );
+    assert.throws(
+      () => clientsSvc.createClient(db, admin, {
+        name: 'Someone Else',
+        email: 'Jordan@Example.com',
+      }),
+      /email/i
+    );
+    const other = clientsSvc.createClient(db, admin, { name: 'Pat Kim' });
+    assert.throws(
+      () => clientsSvc.updateClient(db, admin, other.client.id, { name: 'JORDAN LEE' }),
+      /already exists/i
+    );
+  });
+
   it('has name as the only built-in contact field', () => {
     let config = clientsSvc.getContactFieldConfig(db);
     assert.deepEqual(config.enabledKeys, []);

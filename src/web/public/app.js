@@ -2031,6 +2031,18 @@
       .toLowerCase();
   }
 
+  /** Undecorated matter name for duplicate checks (strips " - Status - Year"). */
+  function matterBaseName(name) {
+    let base = String(name || '').trim();
+    let m = base.match(/^(.*?)(?:\s+[—-]\s+.+?\s+[—-]\s+\d{4})$/);
+    if (m) return m[1].trim();
+    m = base.match(/^(.*?)\s+[—-]\s+(\d{4})$/);
+    if (m) return m[1].trim();
+    m = base.match(/^(.*?)\s+[—-]\s+(.+)$/);
+    if (m && !/^\d{4}$/.test(m[2].trim())) return m[1].trim();
+    return base;
+  }
+
   function clientSearchText(c) {
     return [c?.name, c?.record_type, c?.recordType, c?.email]
       .filter(Boolean)
@@ -2053,6 +2065,260 @@
     }
     scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
     return scored.map((row) => row.c);
+  }
+
+  function rankMatterMatches(matters, query) {
+    const needle = String(query || '').trim().toLowerCase();
+    if (!needle) return [];
+    const scored = [];
+    for (const m of matters || []) {
+      const full = String(m.name || '').toLowerCase();
+      const base = matterBaseName(m.name).toLowerCase();
+      const hay = matterSearchText(m);
+      let score = 0;
+      if (base.startsWith(needle) || full.startsWith(needle)) score = 3;
+      else if (base.split(/\s+/).some((w) => w.startsWith(needle))
+        || full.split(/\s+/).some((w) => w.startsWith(needle))) score = 2;
+      else if (hay.includes(needle)) score = 1;
+      if (score) scored.push({ m, score, name: base || full });
+    }
+    scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    return scored.map((row) => row.m);
+  }
+
+  function findExactMatterMatch(matters, name) {
+    const needle = matterBaseName(name).toLowerCase();
+    if (!needle) return null;
+    return (matters || []).find((m) => matterBaseName(m.name).toLowerCase() === needle) || null;
+  }
+
+  function findExactClientMatch(clients, name, email = '') {
+    const needle = String(name || '').trim().toLowerCase();
+    const emailNeedle = String(email || '').trim().toLowerCase();
+    if (needle) {
+      const byName = (clients || []).find((c) => String(c.name || '').trim().toLowerCase() === needle);
+      if (byName) return byName;
+    }
+    if (emailNeedle) {
+      return (clients || []).find((c) => String(c.email || '').trim().toLowerCase() === emailNeedle) || null;
+    }
+    return null;
+  }
+
+  function matterSearchResultsHtml(hits, q) {
+    const query = String(q || '').trim();
+    if (!query) {
+      return '<p class="muted">Type a few characters to search the matter index.</p>';
+    }
+    if (query.length < 2) {
+      return '<p class="muted">Keep typing — results appear after 2 characters.</p>';
+    }
+    const shown = (hits || []).slice(0, 5);
+    return `
+      ${(hits || []).length > 5
+        ? `<p class="muted">Showing 5 of ${hits.length} — refine your search to narrow results.</p>`
+        : (hits || []).length
+          ? `<p class="muted">${hits.length} match${hits.length === 1 ? '' : 'es'} for “${escapeHtml(query)}”</p>`
+          : `<p class="muted">No indexed matters match “${escapeHtml(query)}”</p>`}
+      <div class="table-wrap"><table>
+        <thead>
+          <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
+        </thead>
+        <tbody>
+          ${shown.map((m) => `
+            <tr class="click-row" data-matter="${m.id}">
+              <td><strong>${escapeHtml(m.name)}</strong></td>
+              <td>${escapeHtml(m.client_name || '—')}</td>
+              <td><span class="pill" data-status="${escapeHtml(m.status)}">${escapeHtml(m.status)}</span></td>
+              <td>${escapeHtml(m.attorney_name || '—')}</td>
+            </tr>`).join('') || '<tr><td colspan="4" class="muted">No indexed matters match</td></tr>'}
+        </tbody>
+      </table></div>`;
+  }
+
+  let matterLiveSearchTimer = null;
+  let matterLiveSearchSeq = 0;
+  /** Latest live-search runner for Create Matter name → Search matters sync. */
+  let runMatterLiveSearch = null;
+  let scheduleMatterLiveSearch = null;
+
+  function wireMatterLiveSearch() {
+    const form = $('#matterSearch');
+    const input = form?.querySelector('input[name="q"]');
+    const resultsEl = $('#matterSearchResults');
+    if (!form || !input || !resultsEl) {
+      runMatterLiveSearch = null;
+      scheduleMatterLiveSearch = null;
+      return;
+    }
+
+    const paintRows = () => {
+      resultsEl.querySelectorAll('[data-matter]').forEach((row) => {
+        row.onclick = () => {
+          state.matterSearch = { q: '' };
+          openMatter(Number(row.dataset.matter));
+        };
+      });
+    };
+
+    const runSearch = async (raw, { syncInput = false } = {}) => {
+      const q = String(raw || '').trim();
+      state.matterSearch = { q };
+      if (syncInput) input.value = q;
+      const seq = ++matterLiveSearchSeq;
+      if (!q) {
+        resultsEl.innerHTML = matterSearchResultsHtml([], '');
+        return;
+      }
+      if (q.length < 2) {
+        resultsEl.innerHTML = matterSearchResultsHtml([], q);
+        return;
+      }
+      resultsEl.innerHTML = '<p class="muted">Searching…</p>';
+      try {
+        const hits = await api(`/api/matters?search=1&q=${encodeURIComponent(q)}`);
+        if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
+        resultsEl.innerHTML = matterSearchResultsHtml(hits, q);
+        paintRows();
+      } catch (e) {
+        if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
+        resultsEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
+    };
+
+    const schedule = (value, opts) => {
+      if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
+      matterLiveSearchTimer = setTimeout(() => {
+        matterLiveSearchTimer = null;
+        void runSearch(value, opts);
+      }, 180);
+    };
+
+    runMatterLiveSearch = runSearch;
+    scheduleMatterLiveSearch = schedule;
+
+    input.addEventListener('input', () => {
+      schedule(input.value);
+    });
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
+      matterLiveSearchTimer = null;
+      await runSearch(input.value);
+    };
+    const clearBtn = $('#clearSearch');
+    if (clearBtn) {
+      clearBtn.onclick = async () => {
+        if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
+        matterLiveSearchTimer = null;
+        input.value = '';
+        await runSearch('');
+      };
+    }
+    paintRows();
+  }
+
+  let matterNameTypeaheadDocBound = false;
+  function ensureMatterNameTypeaheadDocClose() {
+    if (matterNameTypeaheadDocBound) return;
+    matterNameTypeaheadDocBound = true;
+    document.addEventListener('click', (ev) => {
+      document.querySelectorAll('[data-matter-name-typeahead].is-open').forEach((el) => {
+        if (!el.contains(ev.target)) {
+          const list = el.querySelector('[data-matter-name-list]');
+          const input = el.querySelector('input');
+          if (list) list.hidden = true;
+          if (input) input.setAttribute('aria-expanded', 'false');
+          el.classList.remove('is-open');
+        }
+      });
+    });
+  }
+
+  function wireCreateMatterNameTypeahead(nameInput, matters) {
+    if (!nameInput) return;
+    const wrap = nameInput.closest('[data-matter-name-typeahead]');
+    const list = wrap?.querySelector('[data-matter-name-list]');
+    if (!wrap || !list) return;
+    ensureMatterNameTypeaheadDocClose();
+
+    const close = () => {
+      list.hidden = true;
+      nameInput.setAttribute('aria-expanded', 'false');
+      wrap.classList.remove('is-open');
+    };
+
+    const syncSearchBox = (q) => {
+      if (typeof scheduleMatterLiveSearch === 'function') {
+        scheduleMatterLiveSearch(q, { syncInput: true });
+      } else {
+        const searchInput = $('#matterSearch input[name="q"]');
+        if (searchInput) searchInput.value = q;
+        state.matterSearch = { q };
+      }
+    };
+
+    const renderList = (q) => {
+      const needle = String(q || '').trim();
+      if (needle.length < 2) {
+        close();
+        return;
+      }
+      const matches = rankMatterMatches(matters, needle).slice(0, 6);
+      const exact = findExactMatterMatch(matters, needle);
+      if (!matches.length) {
+        list.innerHTML = `
+          <li class="client-typeahead-option is-muted" aria-disabled="true">
+            <span>No existing matters match</span>
+            <small>Safe to create a new one</small>
+          </li>`;
+        list.hidden = false;
+        nameInput.setAttribute('aria-expanded', 'true');
+        wrap.classList.add('is-open');
+        return;
+      }
+      list.innerHTML = `
+        ${exact ? `
+          <li class="client-typeahead-option is-muted" aria-disabled="true">
+            <span>Duplicate name</span>
+            <small>A matter with this name already exists — open it instead</small>
+          </li>` : `
+          <li class="client-typeahead-option is-muted" aria-disabled="true">
+            <span>Existing matters</span>
+            <small>Select one to open, or keep typing a unique name</small>
+          </li>`}
+        ${matches.map((m) => `
+          <li role="option" class="client-typeahead-option" data-matter-pick="${m.id}">
+            <span>${escapeHtml(m.name)}</span>
+            <small>${escapeHtml([m.client_name, m.status].filter(Boolean).join(' · ') || 'Matter')}</small>
+          </li>`).join('')}`;
+      list.hidden = false;
+      nameInput.setAttribute('aria-expanded', 'true');
+      wrap.classList.add('is-open');
+      list.querySelectorAll('[data-matter-pick]').forEach((el) => {
+        el.onmousedown = (ev) => {
+          ev.preventDefault();
+          state.matterSearch = { q: '' };
+          state.showCreateMatter = false;
+          openMatter(Number(el.dataset.matterPick));
+        };
+      });
+    };
+
+    nameInput.setAttribute('autocomplete', 'off');
+    nameInput.setAttribute('aria-autocomplete', 'list');
+    nameInput.addEventListener('input', () => {
+      const q = String(nameInput.value || '');
+      state.createMatterDraftName = q;
+      syncSearchBox(q.trim());
+      renderList(q);
+    });
+    nameInput.addEventListener('focus', () => {
+      renderList(nameInput.value);
+    });
+    nameInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') close();
+    });
   }
 
   function renderClientTypeahead({
@@ -2223,6 +2489,13 @@
       if (kind === 'empty') return;
       if (kind === 'new' || id === '__new__') {
         const typed = String(search.value || '').trim();
+        const exact = findExactClientMatch(clients, typed);
+        if (exact) {
+          // Prefer the existing contact over creating a duplicate.
+          setValue(String(exact.id));
+          closeList();
+          return;
+        }
         if (typed && state.createMatterNewClient) {
           state.createMatterNewClient = {
             ...state.createMatterNewClient,
@@ -3224,13 +3497,19 @@
                 ${escapeHtml((nameFormula.parts || []).map((p) => p.label || (p.kind === 'token' ? 'Year' : 'Field')).join(nameFormula.separator || '-'))}</p>
             ` : ''}
             <div class="create-matter-row">
-              <input id="createMatterName" name="name" ${formulaActive ? 'readonly' : 'required'}
-                value="${escapeHtml(draftName)}"
-                placeholder="${formulaActive ? 'Fills from name fields below' : 'Create Matter'}"
-                aria-label="Create Matter" />
+              <div class="create-matter-name-typeahead" data-matter-name-typeahead>
+                <input id="createMatterName" name="name" ${formulaActive ? 'readonly' : 'required'}
+                  value="${escapeHtml(draftName)}"
+                  placeholder="${formulaActive ? 'Fills from name fields below' : 'Type a matter name…'}"
+                  aria-label="Create Matter" autocomplete="off" aria-autocomplete="list"
+                  aria-expanded="false" />
+                <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
+                  role="listbox" hidden></ul>
+              </div>
               <button class="primary" type="submit">Create</button>
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
+            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions fill Search matters as you type. Matching names cannot be created twice.</p>' : ''}
             <div class="grid two create-matter-custom">
               <label class="create-matter-client-field">Client
                 ${renderClientTypeahead({
@@ -3287,8 +3566,9 @@
         <div class="page-section">
           <h2>Search matters</h2>
           <form id="matterSearch" class="matter-search-bar">
-            <input name="q" value="${state.matterSearch.q || ''}"
-              placeholder="Search matters…" aria-label="Search matters" />
+            <input name="q" value="${escapeHtml(state.matterSearch.q || '')}"
+              placeholder="Type a few characters…" aria-label="Search matters"
+              autocomplete="off" />
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearSearch">Clear</button>
           </form>
@@ -3296,38 +3576,13 @@
 
         <div class="page-section">
           <h2>Results</h2>
-          ${!hasQuery ? '<p class="muted">Enter a search term to query the matter index.</p>' : (() => {
-            const shown = hits.slice(0, 5);
-            return `
-          ${hits.length > 5 ? `<p class="muted">Showing 5 of ${hits.length} — refine your search to narrow results.</p>` : ''}
-          <div class="table-wrap"><table>
-            <thead>
-              <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
-            </thead>
-            <tbody>
-              ${shown.map((m) => `
-                <tr class="click-row" data-matter="${m.id}">
-                  <td><strong>${escapeHtml(m.name)}</strong></td>
-                  <td>${escapeHtml(m.client_name || '—')}</td>
-                  <td><span class="pill" data-status="${escapeHtml(m.status)}">${escapeHtml(m.status)}</span></td>
-                  <td>${escapeHtml(m.attorney_name || '—')}</td>
-                </tr>`).join('') || '<tr><td colspan="4" class="muted">No indexed matters match</td></tr>'}
-            </tbody>
-          </table></div>`;
-          })()}
+          <div id="matterSearchResults">
+            ${matterSearchResultsHtml(hits, hasQuery ? state.matterSearch.q : '')}
+          </div>
         </div>
       </div>`;
 
-    $('#matterSearch').onsubmit = async (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(ev.target);
-      state.matterSearch = { q: String(fd.get('q') || '').trim() };
-      await renderMatters();
-    };
-    $('#clearSearch').onclick = async () => {
-      state.matterSearch = { q: '' };
-      await renderMatters();
-    };
+    wireMatterLiveSearch();
     const clearCreate = $('#clearCreateMatter');
     if (clearCreate) {
       clearCreate.onclick = async () => {
@@ -3388,9 +3643,7 @@
           }
           syncFormulaName();
         } else {
-          nameInput.addEventListener('input', () => {
-            state.createMatterDraftName = String(nameInput.value || '');
-          });
+          wireCreateMatterNameTypeahead(nameInput, allMatters || state.matters || []);
         }
         setTimeout(() => {
           const focusEl = addingNewClient
@@ -3489,6 +3742,19 @@
           }</div>`;
           return;
         }
+        const existingMatter = findExactMatterMatch(allMatters || state.matters || [], name);
+        if (existingMatter) {
+          $('#newMatterMsg').innerHTML = `<div class="error">A matter named “${
+            escapeHtml(matterBaseName(existingMatter.name) || existingMatter.name)
+          }” already exists. <button type="button" class="linkish" data-open-dup-matter="${
+            existingMatter.id
+          }">Open existing matter</button></div>`;
+          $('#newMatterMsg [data-open-dup-matter]')?.addEventListener('click', () => {
+            state.showCreateMatter = false;
+            openMatter(Number(existingMatter.id));
+          });
+          return;
+        }
         const clientChoice = String(fd.get('clientId') || state.createMatterClientId || '').trim();
         let clientId = null;
         let newClientName = '';
@@ -3497,6 +3763,14 @@
           if (!newClientName) {
             $('#newMatterMsg').innerHTML = '<div class="error">Enter a client name to continue.</div>';
             $('#newClientName')?.focus();
+            return;
+          }
+          const dupClient = findExactClientMatch(clientList, newClientName, fd.get('newClientEmail'));
+          if (dupClient) {
+            $('#newMatterMsg').innerHTML = `<div class="error">A contact named “${
+              escapeHtml(dupClient.name)
+            }” already exists. Pick them from Client suggestions instead of adding a new one.</div>`;
+            document.querySelector('[data-client-search]')?.focus();
             return;
           }
         } else if (clientChoice) {
@@ -3698,34 +3972,37 @@
           <h2>Contacts</h2>
           <form id="contactSearch" class="matter-search-bar">
             <input name="q" value="${escapeHtml(q)}"
-              placeholder="Search by ${escapeHtml(searchBits.join(', '))}…" aria-label="Search contacts" />
+              placeholder="Type a few characters to search by ${escapeHtml(searchBits.join(', '))}…"
+              aria-label="Search contacts" autocomplete="off" />
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearContactSearch">Clear</button>
           </form>
-          ${q ? `<p class="muted" style="margin:.55rem 0 0">${
-            (contacts || []).length
-              ? `${(contacts || []).length} match${(contacts || []).length === 1 ? '' : 'es'} for “${escapeHtml(q)}”`
-              : `No contacts match “${escapeHtml(q)}”`
-          }</p>` : ''}
-          <div class="table-wrap" style="margin-top:.65rem"><table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                ${listCols.map((f) => `<th>${escapeHtml(f.label)}</th>`).join('')}
-              </tr>
-            </thead>
-            <tbody>
-              ${(contacts || []).map((c) => `
-                <tr class="click-row" data-contact="${c.id}">
-                  <td><strong>${escapeHtml(c.name)}</strong></td>
-                  <td>${escapeHtml(contactTypeLabel(c.record_type))}</td>
-                  ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
-                </tr>`).join('') || `<tr><td colspan="${2 + listCols.length}" class="muted">${
-                  q ? 'No contacts match this search' : 'No contacts yet'
-                }</td></tr>`}
-            </tbody>
-          </table></div>
+          <div id="contactSearchResults">
+            ${q ? `<p class="muted" style="margin:.55rem 0 0">${
+              (contacts || []).length
+                ? `${(contacts || []).length} match${(contacts || []).length === 1 ? '' : 'es'} for “${escapeHtml(q)}”`
+                : `No contacts match “${escapeHtml(q)}”`
+            }</p>` : '<p class="muted" style="margin:.55rem 0 0">Type a few characters to filter contacts.</p>'}
+            <div class="table-wrap" style="margin-top:.65rem"><table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  ${listCols.map((f) => `<th>${escapeHtml(f.label)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody id="contactSearchBody">
+                ${(contacts || []).map((c) => `
+                  <tr class="click-row" data-contact="${c.id}">
+                    <td><strong>${escapeHtml(c.name)}</strong></td>
+                    <td>${escapeHtml(contactTypeLabel(c.record_type))}</td>
+                    ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
+                  </tr>`).join('') || `<tr><td colspan="${2 + listCols.length}" class="muted">${
+                    q ? 'No contacts match this search' : 'No contacts yet'
+                  }</td></tr>`}
+              </tbody>
+            </table></div>
+          </div>
         </div>
       </div>`;
 
@@ -3787,18 +4064,89 @@
         };
       }
     }
-    $('#contactSearch').onsubmit = async (ev) => {
-      ev.preventDefault();
-      state.contactSearch = { q: String(new FormData(ev.target).get('q') || '').trim() };
-      await renderContacts();
+    let contactLiveTimer = null;
+    let contactLiveSeq = 0;
+    const paintContactRows = () => {
+      main.querySelectorAll('[data-contact]').forEach((row) => {
+        row.onclick = () => openContact(Number(row.dataset.contact));
+      });
     };
-    $('#clearContactSearch').onclick = async () => {
-      state.contactSearch = { q: '' };
-      await renderContacts();
+    const contactSearchForm = $('#contactSearch');
+    const contactSearchInput = contactSearchForm?.querySelector('input[name="q"]');
+    const contactResults = $('#contactSearchResults');
+    const runContactLiveSearch = async (raw) => {
+      const nextQ = String(raw || '').trim();
+      state.contactSearch = { q: nextQ };
+      if (!contactResults) return;
+      const seq = ++contactLiveSeq;
+      const colCount = 2 + listCols.length;
+      const paintTable = (rows, status, emptyLabel) => {
+        contactResults.innerHTML = `
+          <p class="muted" style="margin:.55rem 0 0">${escapeHtml(status)}</p>
+          <div class="table-wrap" style="margin-top:.65rem"><table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                ${listCols.map((f) => `<th>${escapeHtml(f.label)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${(rows || []).map((c) => `
+                <tr class="click-row" data-contact="${c.id}">
+                  <td><strong>${escapeHtml(c.name)}</strong></td>
+                  <td>${escapeHtml(contactTypeLabel(c.record_type))}</td>
+                  ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
+                </tr>`).join('') || `<tr><td colspan="${colCount}" class="muted">${
+                  escapeHtml(emptyLabel)
+                }</td></tr>`}
+            </tbody>
+          </table></div>`;
+        paintContactRows();
+      };
+      if (nextQ && nextQ.length < 2) {
+        paintTable([], 'Keep typing — results appear after 2 characters.', 'Keep typing to search');
+        return;
+      }
+      try {
+        const rows = await api(`/api/clients${nextQ ? `?q=${encodeURIComponent(nextQ)}` : ''}`);
+        if (seq !== contactLiveSeq || !stillOnView('contacts')) return;
+        const status = nextQ
+          ? ((rows || []).length
+            ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${nextQ}”`
+            : `No contacts match “${nextQ}”`)
+          : 'Type a few characters to filter contacts.';
+        paintTable(rows, status, nextQ ? 'No contacts match this search' : 'No contacts yet');
+      } catch (e) {
+        if (seq !== contactLiveSeq || !stillOnView('contacts')) return;
+        contactResults.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
     };
-    main.querySelectorAll('[data-contact]').forEach((row) => {
-      row.onclick = () => openContact(Number(row.dataset.contact));
-    });
+    if (contactSearchForm && contactSearchInput) {
+      contactSearchInput.addEventListener('input', () => {
+        if (contactLiveTimer) clearTimeout(contactLiveTimer);
+        contactLiveTimer = setTimeout(() => {
+          contactLiveTimer = null;
+          void runContactLiveSearch(contactSearchInput.value);
+        }, 180);
+      });
+      contactSearchForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (contactLiveTimer) clearTimeout(contactLiveTimer);
+        contactLiveTimer = null;
+        await runContactLiveSearch(contactSearchInput.value);
+      };
+    }
+    const clearContactSearch = $('#clearContactSearch');
+    if (clearContactSearch) {
+      clearContactSearch.onclick = async () => {
+        if (contactLiveTimer) clearTimeout(contactLiveTimer);
+        contactLiveTimer = null;
+        if (contactSearchInput) contactSearchInput.value = '';
+        await runContactLiveSearch('');
+      };
+    }
+    paintContactRows();
 
     const form = $('#newContactForm');
     if (form) {
@@ -3808,6 +4156,20 @@
         const name = String(fd.get('name') || '').trim();
         if (!name) {
           $('#newContactMsg').innerHTML = '<div class="error">Enter a contact name to continue.</div>';
+          return;
+        }
+        const email = String(fd.get('email') || '').trim();
+        const dup = findExactClientMatch(contacts || state.clients || [], name, email);
+        if (dup) {
+          $('#newContactMsg').innerHTML = `<div class="error">A contact named “${
+            escapeHtml(dup.name)
+          }” already exists. <button type="button" class="linkish" data-open-dup-contact="${
+            dup.id
+          }">Open existing contact</button></div>`;
+          $('#newContactMsg [data-open-dup-contact]')?.addEventListener('click', () => {
+            state.showCreateContact = false;
+            openContact(Number(dup.id));
+          });
           return;
         }
         const sure = await confirmAction({

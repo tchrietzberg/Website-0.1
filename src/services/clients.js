@@ -165,6 +165,50 @@ function getClient(db, id, actor = null) {
   };
 }
 
+/** Case-insensitive duplicate contact by name and/or email. */
+function findDuplicateClient(db, { name = null, email = null, excludeId = null } = {}) {
+  const trimmedName = name != null ? String(name).trim() : '';
+  const trimmedEmail = email != null ? String(email).trim() : '';
+  if (trimmedName) {
+    const row = excludeId != null
+      ? db.prepare(`
+          SELECT id, name, email FROM clients
+          WHERE lower(trim(name)) = lower(?) AND id != ?
+        `).get(trimmedName, excludeId)
+      : db.prepare(`
+          SELECT id, name, email FROM clients
+          WHERE lower(trim(name)) = lower(?)
+        `).get(trimmedName);
+    if (row) return { reason: 'name', client: row };
+  }
+  if (trimmedEmail) {
+    const row = excludeId != null
+      ? db.prepare(`
+          SELECT id, name, email FROM clients
+          WHERE email IS NOT NULL AND trim(email) != ''
+            AND lower(email) = lower(?) AND id != ?
+        `).get(trimmedEmail, excludeId)
+      : db.prepare(`
+          SELECT id, name, email FROM clients
+          WHERE email IS NOT NULL AND trim(email) != ''
+            AND lower(email) = lower(?)
+        `).get(trimmedEmail);
+    if (row) return { reason: 'email', client: row };
+  }
+  return null;
+}
+
+function assertUniqueClient(db, { name = null, email = null, excludeId = null } = {}) {
+  const dup = findDuplicateClient(db, { name, email, excludeId });
+  if (!dup) return;
+  if (dup.reason === 'email') {
+    throw new Error(
+      `A contact with email “${String(email).trim()}” already exists (${dup.client.name})`
+    );
+  }
+  throw new Error(`A contact named “${dup.client.name}” already exists`);
+}
+
 function createClient(db, actor, input = {}) {
   permissions.assertCanModifyRecords(db, actor, 'contact');
   const name = String(input.name || '').trim();
@@ -187,6 +231,8 @@ function createClient(db, actor, input = {}) {
     recordTypeKey,
     values: customValues,
   });
+
+  assertUniqueClient(db, { name, email });
 
   const info = db.prepare(`
     INSERT INTO clients(name, email, phone, company, notes, record_type)
@@ -224,6 +270,20 @@ function updateClient(db, actor, id, patch = {}) {
     company: 'company',
     notes: 'notes',
   };
+  const nextName = patch.name !== undefined
+    ? String(patch.name || '').trim()
+    : current.name;
+  const nextEmail = patch.email !== undefined
+    ? (patch.email == null || patch.email === '' ? null : String(patch.email).trim())
+    : current.email;
+  if (patch.name !== undefined || patch.email !== undefined) {
+    assertUniqueClient(db, {
+      name: patch.name !== undefined ? nextName : null,
+      email: patch.email !== undefined ? nextEmail : null,
+      excludeId: id,
+    });
+  }
+
   for (const [key, col] of Object.entries(map)) {
     if (patch[key] === undefined) continue;
     let newVal = patch[key];
@@ -347,4 +407,5 @@ module.exports = {
   getContactFieldConfig,
   getEnabledContactStandardKeys,
   setEnabledContactStandardKeys,
+  findDuplicateClient,
 };

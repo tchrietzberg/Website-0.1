@@ -227,6 +227,27 @@ function composeMatterName(baseName, statusLabel, openedOn) {
   return parts.filter(Boolean).join(NAME_SEP);
 }
 
+/** Case-insensitive match on the undecorated matter name (ignores Status - Year suffix). */
+function findDuplicateMatter(db, name, { excludeId = null } = {}) {
+  const base = stripNameDecorations(name).toLowerCase();
+  if (!base) return null;
+  const rows = db.prepare('SELECT id, name, number FROM matters').all();
+  for (const row of rows) {
+    if (excludeId != null && Number(row.id) === Number(excludeId)) continue;
+    if (stripNameDecorations(row.name).toLowerCase() === base) return row;
+  }
+  return null;
+}
+
+function assertUniqueMatterName(db, name, { excludeId = null } = {}) {
+  const dup = findDuplicateMatter(db, name, { excludeId });
+  if (!dup) return;
+  const label = stripNameDecorations(dup.name) || dup.name;
+  throw new Error(
+    `A matter named “${label}” already exists${dup.number ? ` (${dup.number})` : ''}`
+  );
+}
+
 function customStatusValue(db, matterId, fieldId) {
   const row = db.prepare(`
     SELECT value_text FROM custom_field_values
@@ -339,6 +360,8 @@ function createMatter(db, actor, input = {}) {
   } else if (!baseName) {
     throw new Error('name required');
   }
+
+  assertUniqueMatterName(db, baseName);
 
   const displayName = formulaActive && !formula.appendStatusYear
     ? baseName
@@ -467,6 +490,7 @@ function updateMatter(db, actor, id, patch) {
   if (statusForName != null || openedOnChanging || nameChanging) {
     const after = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const baseName = patch.name !== undefined ? String(patch.name) : after.name;
+    if (nameChanging) assertUniqueMatterName(db, baseName, { excludeId: id });
     const statusLabel = statusForName != null
       ? statusForName
       : currentStatusLabel(db, after);
@@ -579,5 +603,7 @@ module.exports = {
   setMatterNameFormula,
   getMatterNameFormulaConfig,
   buildNameFromFormula,
+  stripNameDecorations,
+  findDuplicateMatter,
   MATTER_NAME_FORMULA_SETTING,
 };

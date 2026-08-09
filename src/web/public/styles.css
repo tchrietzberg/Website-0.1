@@ -665,6 +665,26 @@ button.lookup-result.is-active,
   z-index: 4;
 }
 
+.create-matter-name-typeahead {
+  position: relative;
+  -webkit-flex: 1 1 14rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+  z-index: 5;
+}
+
+.create-matter-name-typeahead input {
+  width: 100%;
+}
+
+.create-matter-name-list {
+  width: 100%;
+}
+
+.create-matter-dup-hint {
+  margin: 0.15rem 0 0;
+}
+
 .client-typeahead {
   position: relative;
   width: 100%;
@@ -800,9 +820,11 @@ button.client-typeahead-add,
 .create-matter-row {
   display: -webkit-flex;
   display: flex;
-  -webkit-align-items: center;
-  align-items: center;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
   gap: 0.45rem;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
   width: 100%;
   min-width: 0;
 }
