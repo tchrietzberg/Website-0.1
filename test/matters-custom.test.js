@@ -147,6 +147,34 @@ describe('matter search and record-based fields', () => {
     );
   });
 
+  it('appends status to the matter name when status changes', () => {
+    const page = matterSvc.createMatter(db, admin, { name: 'Alpha Matter' });
+    const id = page.matter.id;
+
+    const closed = matterSvc.updateMatter(db, admin, id, { status: 'closed' });
+    assert.equal(closed.matter.name, 'Alpha Matter — Closed');
+
+    const reopened = matterSvc.updateMatter(db, admin, id, { status: 'open' });
+    assert.equal(reopened.matter.name, 'Alpha Matter — Open');
+
+    const stage = customFields.createCustomField(db, admin, {
+      label: 'Status',
+      fieldType: 'dropdown',
+      options: ['Discovery', 'Trial'],
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+    });
+    const withCustom = matterSvc.updateMatter(db, admin, id, {
+      customValues: { [stage.id]: 'Discovery' },
+    });
+    assert.equal(withCustom.matter.name, 'Alpha Matter — Discovery');
+
+    const next = matterSvc.updateMatter(db, admin, id, {
+      customValues: { [stage.id]: 'Trial' },
+    });
+    assert.equal(next.matter.name, 'Alpha Matter — Trial');
+  });
+
   it('shows type dropdown fields on matter pages even after record layout exists', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Status Matter' });
     // Force a matter-specific layout (freeze clone of type layout)
