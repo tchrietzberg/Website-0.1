@@ -31,31 +31,11 @@ describe('matters report', () => {
     para = db.prepare('SELECT * FROM users WHERE id=2').get();
   });
 
-  it('lists matters with client, status, attorney, and time totals', () => {
-    const entry = timeSvc.createEntry(db, para, {
-      matterId: 1,
-      timekeeperId: 2,
-      serviceDate: '2026-03-01',
-      rawMinutes: 60,
-      description: 'Research',
-    });
-    timeSvc.submitEntry(db, para, entry.id);
-    timeSvc.approveEntry(db, admin, entry.id);
-
+  it('lists matter names only', () => {
     const rows = reports.mattersReport(db);
     assert.equal(rows.length, 2);
-    assert.equal(rows[0].matter_number, '2026-0002');
-    assert.equal(rows[1].matter_number, '2026-0001');
-    assert.equal(rows[1].matter_name, 'Alpha Matter');
-    assert.equal(rows[1].client_name, 'Client A');
-    assert.equal(rows[1].status, 'open');
-    assert.equal(rows[1].attorney_name, 'Admin');
-    assert.equal(rows[1].time_entry_count, 1);
-    assert.equal(rows[1].billable_minutes, 60);
-    assert.equal(rows[1].billable_hours, 1);
-    assert.equal(rows[1].approved_minutes, 60);
-    assert.equal(rows[0].time_entry_count, 0);
-    assert.equal(rows[0].status, 'closed');
+    assert.deepEqual(rows.map((r) => r.matter_name).sort(), ['Alpha Matter', 'Beta Matter']);
+    assert.deepEqual(Object.keys(rows[0]), ['matter_name']);
   });
 
   it('builds lodestar matter detail and summary PDF/Excel with matter name', () => {
