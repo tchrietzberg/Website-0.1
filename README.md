@@ -43,7 +43,7 @@ Password for all seeded users (override with `DEMO_PASSWORD` when seeding): **`d
 1. Sign in as **avery** / `demo-change-me` → **Matters** → create a matter → Matter Search → open record → add fields.
 2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked).
 3. Reports → **Matters** (list/export) or Lodestar Summary/Detail → CSV/Excel.
-4. Navigate → Add a user to invite timekeepers; Settings → Time & Billing and Default fields.
+4. Admin: Navigate → Add a user to invite people. Settings → Time & Billing and Default fields (billing clerks manage rates in Settings).
 
 WIP / pre-bill / invoice approval UI is paused for now (APIs remain for later).
 
