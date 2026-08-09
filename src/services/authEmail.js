@@ -199,6 +199,32 @@ function maskEmail(email) {
   return `${keep}***@${domain}`;
 }
 
+function authEmailHtml({ name, intro, ctaLabel, link, footer }) {
+  const safeName = String(name || '').replace(/[<>&"]/g, '');
+  const safeIntro = String(intro || '').replace(/[<>&"]/g, '');
+  const safeCta = String(ctaLabel || 'Continue').replace(/[<>&"]/g, '');
+  const safeFooter = String(footer || '').replace(/[<>&"]/g, '');
+  const safeLink = String(link || '').replace(/"/g, '%22');
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f4f6f8;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#1a1a1a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:28px 24px;">
+        <tr><td style="font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#64748b;padding-bottom:8px;">Firm Billing</td></tr>
+        <tr><td style="font-size:22px;font-weight:600;padding-bottom:12px;">Hi ${safeName},</td></tr>
+        <tr><td style="font-size:15px;line-height:1.55;padding-bottom:20px;">${safeIntro}</td></tr>
+        <tr><td style="padding-bottom:20px;">
+          <a href="${safeLink}" style="display:inline-block;background:#0b5fff;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 18px;border-radius:6px;">${safeCta}</a>
+        </td></tr>
+        <tr><td style="font-size:13px;line-height:1.5;color:#64748b;padding-bottom:8px;">Or paste this link into your browser:</td></tr>
+        <tr><td style="font-size:13px;line-height:1.5;word-break:break-all;"><a href="${safeLink}" style="color:#0b5fff;">${safeLink}</a></td></tr>
+        <tr><td style="font-size:12px;line-height:1.5;color:#94a3b8;padding-top:20px;">${safeFooter}</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
 async function sendAuthEmail(db, req, {
   user,
   purpose,
@@ -208,6 +234,8 @@ async function sendAuthEmail(db, req, {
   const link = authLink(req, rawToken);
   let subject;
   let text;
+  let html;
+  const footer = 'If you were not expecting this, you can ignore this email.';
   if (purpose === 'invite') {
     subject = 'Welcome to Firm Billing — finish signing in';
     text = [
@@ -218,8 +246,15 @@ async function sendAuthEmail(db, req, {
       '',
       link,
       '',
-      'If you were not expecting this, you can ignore this email.',
+      footer,
     ].join('\n');
+    html = authEmailHtml({
+      name: user.name,
+      intro: 'You have been invited to Firm Billing. Use the button below to choose a password and sign in (one-time use).',
+      ctaLabel: 'Finish signing in',
+      link,
+      footer,
+    });
   } else if (purpose === 'reset') {
     subject = 'Reset your Firm Billing password';
     text = [
@@ -229,8 +264,15 @@ async function sendAuthEmail(db, req, {
       '',
       link,
       '',
-      'If you did not ask for this, you can ignore this email.',
+      footer,
     ].join('\n');
+    html = authEmailHtml({
+      name: user.name,
+      intro: 'Use the button below to choose a new password and sign in (one-time use).',
+      ctaLabel: 'Reset password',
+      link,
+      footer,
+    });
   } else {
     subject = 'Your Firm Billing sign-in link';
     text = [
@@ -240,11 +282,18 @@ async function sendAuthEmail(db, req, {
       '',
       link,
       '',
-      'If you did not ask for this, you can ignore this email.',
+      footer,
     ].join('\n');
+    html = authEmailHtml({
+      name: user.name,
+      intro: 'Use the button below to sign in (one-time use, expires soon).',
+      ctaLabel: 'Sign in',
+      link,
+      footer,
+    });
   }
 
-  const delivery = await mail.sendMail({ to: user.email, subject, text, db });
+  const delivery = await mail.sendMail({ to: user.email, subject, text, html, db });
   audit(db, {
     actorId,
     action: `auth.email_${purpose}`,

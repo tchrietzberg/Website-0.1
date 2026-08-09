@@ -1902,15 +1902,35 @@
       ${isAdmin ? `
       <div class="card stack" id="emailSettingsCard">
         <h2>Email</h2>
-        <p class="lead">Users receive invite and sign-in links by email — they don’t configure anything.</p>
+        <p class="lead">Deliver invite, reset, and sign-in messages to Gmail, Outlook, and other inboxes.</p>
         ${settings.email?.configured
-          ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email is ready.')}</div>
-             <div class="row-actions">
-               <button type="button" class="primary" id="emailTestBtn">Send me a test email</button>
-             </div>`
-          : `<div class="error">${escapeHtml(settings.email?.message || 'Email is not ready yet.')}</div>
-             <p class="hint">Easiest path: connect Microsoft under <strong>OneDrive / SharePoint</strong> below (approve Mail.Send when prompted). Invites and login links then send from that mailbox automatically.</p>
-             <p class="hint">Or set product secrets <code>RESEND_API_KEY</code> + <code>SMTP_FROM</code> once on the server.</p>`}
+          ? `<div class="ok-banner">${escapeHtml(settings.email.message || 'Email is ready.')}</div>`
+          : `<div class="error">${escapeHtml(settings.email?.message || 'Email is not ready yet — messages only show on-screen links until you configure a provider.')}</div>`}
+        <form id="emailResendForm" class="grid two">
+          <label class="span-all">Resend API key
+            <input name="apiKey" type="password" autocomplete="off"
+              placeholder="${settings.email?.hasApiKey ? 'API key saved — paste a new key to replace' : 're_…'}" />
+          </label>
+          <label>From address
+            <input name="from" type="email" autocomplete="off"
+              value="${escapeHtml(settings.email?.fromAddress || '')}"
+              placeholder="onboarding@resend.dev" />
+          </label>
+          <label>From name
+            <input name="fromName" type="text" autocomplete="organization"
+              value="${escapeHtml(settings.email?.fromName || 'Firm Billing')}"
+              placeholder="Firm Billing" />
+          </label>
+          <p class="hint span-all">
+            Get a free key at <a href="https://resend.com" target="_blank" rel="noopener noreferrer">resend.com</a>.
+            Use <code>onboarding@resend.dev</code> for first tests; verify your domain in Resend for a firm from-address.
+            Or connect Microsoft under OneDrive below (approve Mail.Send).
+          </p>
+          <div class="row-actions span-all">
+            <button class="primary" type="submit">Save email settings</button>
+            <button type="button" id="emailTestBtn">Send me a test email</button>
+          </div>
+        </form>
         <div id="emailSettingsMsg"></div>
       </div>` : ''}
 
@@ -2228,6 +2248,36 @@
       window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}#settings`);
     }
 
+    const emailResendForm = $('#emailResendForm');
+    if (emailResendForm) {
+      emailResendForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(emailResendForm);
+        const apiKey = String(fd.get('apiKey') || '').trim();
+        const from = String(fd.get('from') || '').trim();
+        const fromName = String(fd.get('fromName') || '').trim();
+        try {
+          const emailConfig = { provider: 'resend', from, fromName, clearSmtp: true };
+          if (apiKey) emailConfig.apiKey = apiKey;
+          if (!apiKey && !settings.email?.hasApiKey) {
+            throw new Error('Paste a Resend API key to enable inbox delivery.');
+          }
+          if (!from) throw new Error('From address is required (use onboarding@resend.dev for tests).');
+          await api('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ emailConfig }),
+          });
+          await renderSettings();
+          const msg = $('#emailSettingsMsg');
+          if (msg) {
+            msg.innerHTML = '<div class="ok-banner">Email settings saved. Send a test email to confirm Gmail delivery.</div>';
+          }
+        } catch (e) {
+          $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+
     const emailTestBtn = $('#emailTestBtn');
     if (emailTestBtn) {
       emailTestBtn.onclick = async () => {
@@ -2237,7 +2287,7 @@
             method: 'POST',
             body: JSON.stringify({ to: state.user.email }),
           });
-          $('#emailSettingsMsg').innerHTML = `<div class="ok-banner">Test email sent (${escapeHtml(result.delivery?.mode || 'ok')}).</div>`;
+          $('#emailSettingsMsg').innerHTML = `<div class="ok-banner">Test email sent via ${escapeHtml(result.delivery?.mode || 'ok')}. Check Gmail (and spam/promotions).</div>`;
         } catch (e) {
           $('#emailSettingsMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         } finally {

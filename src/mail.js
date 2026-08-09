@@ -37,16 +37,42 @@ function maskSecret(value) {
   return `${s.slice(0, 2)}••••${s.slice(-2)}`;
 }
 
+function extractEmailAddress(from) {
+  const s = String(from || '').trim();
+  const angled = s.match(/<([^>]+)>/);
+  if (angled) return angled[1].trim();
+  return s;
+}
+
+function formatFromAddress(email, name) {
+  const addr = String(email || '').trim();
+  const display = String(name || '').trim();
+  if (!addr) return display || 'noreply@firm.example';
+  if (!display) return addr;
+  if (addr.includes('<')) return addr;
+  return `${display} <${addr}>`;
+}
+
+function storedFrom(db, fallback = 'noreply@firm.example') {
+  const email = (db && getSetting(db, 'smtp_from', '')) || '';
+  const name = (db && getSetting(db, 'smtp_from_name', '')) || '';
+  if (!email && !name) return fallback;
+  return formatFromAddress(email || fallback, name || 'Firm Billing');
+}
+
 /** Resolve delivery config: product env → Microsoft Graph → optional admin override. */
 function resolveMailConfig(db = null) {
   const envResend = String(process.env.RESEND_API_KEY || '').trim();
   const envFrom = String(process.env.SMTP_FROM || process.env.MAIL_FROM || '').trim();
+  const envFromName = String(process.env.SMTP_FROM_NAME || process.env.MAIL_FROM_NAME || '').trim();
   if (envResend) {
     return {
       provider: 'resend',
       source: 'env',
       apiKey: envResend,
-      from: envFrom || 'Firm Billing <onboarding@resend.dev>',
+      from: formatFromAddress(envFrom || 'onboarding@resend.dev', envFromName || 'Firm Billing'),
+      fromEmail: extractEmailAddress(envFrom || 'onboarding@resend.dev'),
+      fromName: envFromName || 'Firm Billing',
       configured: true,
     };
   }
@@ -54,6 +80,7 @@ function resolveMailConfig(db = null) {
   const envHost = String(process.env.SMTP_HOST || '').trim();
   if (envHost) {
     const port = Number(process.env.SMTP_PORT || 587);
+    const from = formatFromAddress(envFrom || 'noreply@firm.example', envFromName || 'Firm Billing');
     return {
       provider: 'smtp',
       source: 'env',
@@ -62,7 +89,9 @@ function resolveMailConfig(db = null) {
       secure: process.env.SMTP_SECURE === '1' || port === 465,
       user: String(process.env.SMTP_USER || '').trim() || null,
       pass: String(process.env.SMTP_PASS || ''),
-      from: envFrom || 'noreply@firm.example',
+      from,
+      fromEmail: extractEmailAddress(from),
+      fromName: envFromName || 'Firm Billing',
       configured: true,
     };
   }
@@ -77,6 +106,8 @@ function resolveMailConfig(db = null) {
           provider: 'microsoft',
           source: 'microsoft',
           from: account,
+          fromEmail: account,
+          fromName: 'Firm Billing',
           configured: true,
         };
       }
@@ -85,13 +116,15 @@ function resolveMailConfig(db = null) {
     }
 
     const resendKey = getSetting(db, 'resend_api_key', '');
-    const from = getSetting(db, 'smtp_from', '') || 'noreply@firm.example';
+    const from = storedFrom(db, 'onboarding@resend.dev');
     if (resendKey) {
       return {
         provider: 'resend',
         source: 'settings',
         apiKey: resendKey,
         from,
+        fromEmail: extractEmailAddress(from),
+        fromName: getSetting(db, 'smtp_from_name', '') || 'Firm Billing',
         configured: true,
       };
     }
@@ -99,6 +132,7 @@ function resolveMailConfig(db = null) {
     if (host) {
       const port = Number(getSetting(db, 'smtp_port', '587') || 587);
       const secureSetting = getSetting(db, 'smtp_secure', '');
+      const smtpFrom = storedFrom(db, 'noreply@firm.example');
       return {
         provider: 'smtp',
         source: 'settings',
@@ -107,7 +141,9 @@ function resolveMailConfig(db = null) {
         secure: secureSetting === '1' || port === 465,
         user: getSetting(db, 'smtp_user', '') || null,
         pass: getSetting(db, 'smtp_pass', '') || '',
-        from,
+        from: smtpFrom,
+        fromEmail: extractEmailAddress(smtpFrom),
+        fromName: getSetting(db, 'smtp_from_name', '') || 'Firm Billing',
         configured: true,
       };
     }
@@ -117,42 +153,56 @@ function resolveMailConfig(db = null) {
     provider: 'log',
     source: 'none',
     from: envFrom || 'noreply@firm.example',
+    fromEmail: extractEmailAddress(envFrom || 'noreply@firm.example'),
+    fromName: envFromName || 'Firm Billing',
     configured: false,
   };
 }
 
 function mailStatus(db) {
   const cfg = resolveMailConfig(db);
+  const savedKey = db ? getSetting(db, 'resend_api_key', '') : '';
+  const savedFrom = db ? getSetting(db, 'smtp_from', '') : '';
+  const savedFromName = db ? getSetting(db, 'smtp_from_name', '') : '';
+  const base = {
+    hasApiKey: Boolean(savedKey || (cfg.provider === 'resend' && cfg.apiKey)),
+    fromName: savedFromName || cfg.fromName || 'Firm Billing',
+    fromAddress: savedFrom || cfg.fromEmail || '',
+  };
   if (!cfg.configured) {
     return {
+      ...base,
       configured: false,
       provider: 'log',
       source: 'none',
       from: cfg.from,
-      setupHint: 'microsoft',
-      message: 'Connect Microsoft under OneDrive settings to send invite and login emails automatically — no SMTP setup.',
+      setupHint: 'resend',
+      message: 'Paste a Resend API key below (or connect Microsoft) so invite and login emails reach Gmail and other inboxes.',
     };
   }
   if (cfg.provider === 'microsoft') {
     return {
+      ...base,
       configured: true,
       provider: 'microsoft',
       source: 'microsoft',
       from: cfg.from,
-      message: `Emails send automatically via Microsoft (${cfg.from}).`,
+      message: `Emails send via Microsoft (${cfg.from}) to Gmail and other inboxes.`,
     };
   }
   if (cfg.provider === 'resend') {
     return {
+      ...base,
       configured: true,
       provider: 'resend',
       source: cfg.source,
       from: cfg.from,
       apiKeyMasked: maskSecret(cfg.apiKey),
-      message: `Emails send automatically via Resend.`,
+      message: 'Emails send via Resend to Gmail, Outlook, and other inboxes.',
     };
   }
   return {
+    ...base,
     configured: true,
     provider: 'smtp',
     source: cfg.source,
@@ -168,13 +218,17 @@ function mailStatus(db) {
 
 function saveMailConfig(db, actor, input = {}) {
   const provider = String(input.provider || 'smtp').trim();
+  const apiKey = input.resendApiKey ?? input.apiKey;
+  const from = input.smtpFrom ?? input.from;
+  const fromName = input.fromName ?? input.smtpFromName;
   if (provider === 'resend') {
-    if (input.resendApiKey != null && String(input.resendApiKey).trim()) {
-      setSetting(db, 'resend_api_key', String(input.resendApiKey).trim());
+    if (apiKey != null && String(apiKey).trim()) {
+      setSetting(db, 'resend_api_key', String(apiKey).trim());
     }
-    if (input.smtpFrom != null) setSetting(db, 'smtp_from', String(input.smtpFrom || '').trim());
+    if (from != null) setSetting(db, 'smtp_from', String(from || '').trim());
+    if (fromName != null) setSetting(db, 'smtp_from_name', String(fromName || '').trim());
     // Clear SMTP host so Resend wins when reading settings
-    if (input.clearSmtp) {
+    if (input.clearSmtp !== false) {
       setSetting(db, 'smtp_host', '');
       setSetting(db, 'smtp_user', '');
       setSetting(db, 'smtp_pass', '');
@@ -187,7 +241,8 @@ function saveMailConfig(db, actor, input = {}) {
     if (input.smtpPass != null && String(input.smtpPass).trim()) {
       setSetting(db, 'smtp_pass', String(input.smtpPass));
     }
-    if (input.smtpFrom != null) setSetting(db, 'smtp_from', String(input.smtpFrom || '').trim());
+    if (from != null) setSetting(db, 'smtp_from', String(from || '').trim());
+    if (fromName != null) setSetting(db, 'smtp_from_name', String(fromName || '').trim());
     if (input.clearResend) setSetting(db, 'resend_api_key', '');
   }
 
@@ -300,9 +355,35 @@ function startTls(socket, host) {
   });
 }
 
-async function smtpSend({ host, port, secure, user, pass, from, to, subject, text }) {
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Build simple multipart-friendly HTML from plain text (links become clickable). */
+function textToHtml(text) {
+  const escaped = escapeHtml(text);
+  const withLinks = escaped.replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" style="color:#0b5fff;text-decoration:underline">$1</a>'
+  );
+  const body = withLinks.replace(/\r?\n/g, '<br>\n');
+  return [
+    '<!DOCTYPE html><html><body style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;">',
+    `<p style="margin:0 0 1rem 0">${body}</p>`,
+    '</body></html>',
+  ].join('');
+}
+
+async function smtpSend({ host, port, secure, user, pass, from, to, subject, text, html }) {
   let socket = await connectSocket({ host, port: Number(port), secure: !!secure });
   let session = new SmtpSession(socket);
+  const envelopeFrom = extractEmailAddress(from);
+  const htmlBody = html || textToHtml(text);
+  const boundary = `firmbilling_${Date.now().toString(36)}`;
   try {
     await session.expect(220);
     session.write('EHLO localhost');
@@ -326,7 +407,7 @@ async function smtpSend({ host, port, secure, user, pass, from, to, subject, tex
       await session.expect(235);
     }
 
-    session.write(`MAIL FROM:<${from}>`);
+    session.write(`MAIL FROM:<${envelopeFrom}>`);
     await session.expect(250);
     session.write(`RCPT TO:<${to}>`);
     await session.expect([250, 251]);
@@ -337,9 +418,19 @@ async function smtpSend({ host, port, secure, user, pass, from, to, subject, tex
       `To: ${to}`,
       `Subject: ${subject.replace(/[\r\n]+/g, ' ')}`,
       'MIME-Version: 1.0',
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
       'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: 8bit',
       '',
       text.replace(/\r?\n/g, '\r\n'),
+      `--${boundary}`,
+      'Content-Type: text/html; charset=utf-8',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      htmlBody.replace(/\r?\n/g, '\r\n'),
+      `--${boundary}--`,
       '.',
     ].join('\r\n');
     socket.write(`${payload}\r\n`);
@@ -350,7 +441,7 @@ async function smtpSend({ host, port, secure, user, pass, from, to, subject, tex
   }
 }
 
-async function resendSend({ apiKey, from, to, subject, text }) {
+async function resendSend({ apiKey, from, to, subject, text, html }) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -362,6 +453,7 @@ async function resendSend({ apiKey, from, to, subject, text }) {
       to: [to],
       subject,
       text,
+      html: html || textToHtml(text),
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -373,16 +465,19 @@ async function resendSend({ apiKey, from, to, subject, text }) {
 }
 
 /**
- * Send a plain-text email.
+ * Send email (text + HTML) to any inbox (Gmail, Outlook, etc.).
  * Priority: product Resend/SMTP env → connected Microsoft account → optional settings → local log.
  */
-async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) {
+async function sendMail({ to, subject, text, html = null, db = null, allowLog = true } = {}) {
   const cfg = resolveMailConfig(db);
+  const plain = String(text || '');
+  const htmlBody = html || (plain ? textToHtml(plain) : null);
   const msg = {
     to: String(to || '').trim().toLowerCase(),
     from: cfg.from,
     subject: String(subject || '').trim(),
-    text: String(text || ''),
+    text: plain,
+    html: htmlBody,
   };
   if (!msg.to || !msg.to.includes('@')) throw new Error('valid recipient email required');
   if (!msg.subject) throw new Error('subject required');
@@ -390,7 +485,7 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
   if (!cfg.configured) {
     if (!allowLog) {
       const err = new Error(
-        'Connect Microsoft under Settings (OneDrive) to send email automatically — no SMTP setup needed.'
+        'Email is not configured. Save a Resend API key in Settings → Email, or connect Microsoft under OneDrive.'
       );
       err.code = 'MAIL_NOT_CONFIGURED';
       throw err;
@@ -403,7 +498,7 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
     return {
       ok: false,
       mode: 'log',
-      message: 'Connect Microsoft under Settings to send email automatically.',
+      message: 'Save a Resend API key in Settings → Email (or connect Microsoft) to deliver to inboxes.',
     };
   }
 
@@ -414,6 +509,7 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
         to: msg.to,
         subject: msg.subject,
         text: msg.text,
+        html: msg.html,
       });
       return { ok: true, mode: 'microsoft', source: 'microsoft' };
     }
@@ -424,6 +520,7 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
         to: msg.to,
         subject: msg.subject,
         text: msg.text,
+        html: msg.html,
       });
       return { ok: true, mode: 'resend', source: cfg.source };
     }
@@ -437,6 +534,7 @@ async function sendMail({ to, subject, text, db = null, allowLog = true } = {}) 
       to: msg.to,
       subject: msg.subject,
       text: msg.text,
+      html: msg.html,
     });
     return { ok: true, mode: 'smtp', source: cfg.source };
   } catch (e) {

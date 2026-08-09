@@ -46,7 +46,7 @@ describe('mail configuration', () => {
     assert.equal(status.configured, true);
     assert.equal(status.provider, 'smtp');
     assert.equal(status.host, 'smtp.example.com');
-    assert.equal(status.from, 'billing@example.com');
+    assert.match(status.from, /billing@example\.com/);
     assert.equal(status.passConfigured, true);
   });
 
@@ -59,7 +59,21 @@ describe('mail configuration', () => {
         text: 'x',
         allowLog: false,
       }),
-      /Connect Microsoft|not configured/i
+      /Resend API key|not configured|Connect Microsoft/i
     );
+  });
+
+  it('saves Resend settings for inbox delivery', () => {
+    const admin = db.prepare('SELECT * FROM users WHERE id=1').get();
+    const status = mail.saveMailConfig(db, admin, {
+      provider: 'resend',
+      apiKey: 're_test_key_12345',
+      from: 'onboarding@resend.dev',
+      fromName: 'Firm Billing',
+    });
+    assert.equal(status.configured, true);
+    assert.equal(status.provider, 'resend');
+    assert.equal(status.hasApiKey, true);
+    assert.match(status.from, /onboarding@resend\.dev/);
   });
 });

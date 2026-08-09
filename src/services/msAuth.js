@@ -349,13 +349,14 @@ function isConnected(db) {
  * Send email via the connected Microsoft account (Graph /me/sendMail).
  * Requires Mail.Send consent — reconnect Microsoft after this scope was added.
  */
-async function sendMailGraph(db, { to, subject, text, fromName = 'Firm Billing' } = {}) {
+async function sendMailGraph(db, { to, subject, text, html = null, fromName = 'Firm Billing' } = {}) {
   const token = await ensureAccessToken(db);
   if (!token) {
     const err = new Error('Connect Microsoft under Settings to send email automatically.');
     err.code = 'MS_NOT_CONNECTED';
     throw err;
   }
+  const useHtml = Boolean(html);
   const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
     headers: {
@@ -366,8 +367,8 @@ async function sendMailGraph(db, { to, subject, text, fromName = 'Firm Billing' 
       message: {
         subject: String(subject || '').replace(/[\r\n]+/g, ' '),
         body: {
-          contentType: 'Text',
-          content: String(text || ''),
+          contentType: useHtml ? 'HTML' : 'Text',
+          content: useHtml ? String(html) : String(text || ''),
         },
         toRecipients: [{
           emailAddress: { address: String(to || '').trim().toLowerCase() },

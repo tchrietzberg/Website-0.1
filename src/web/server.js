@@ -653,7 +653,8 @@ function createServer(db = openDb()) {
             db,
             to,
             subject: 'Firm Billing test email',
-            text: 'This is a test email from Firm Billing. Email delivery is working.',
+            text: 'This is a test email from Firm Billing. Email delivery is working — you should see this in Gmail or any other inbox.',
+            html: '<p>This is a test email from <strong>Firm Billing</strong>. Email delivery is working — you should see this in Gmail or any other inbox.</p>',
             allowLog: false,
           });
           return json(res, 200, { ok: true, delivery });
