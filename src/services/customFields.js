@@ -1088,7 +1088,7 @@ function getMatterPage(db, matterId, actor = null) {
   const matter = db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
-    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
     WHERE m.id = ?
   `).get(matterId);

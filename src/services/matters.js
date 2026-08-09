@@ -305,16 +305,14 @@ function createMatter(db, actor, input = {}) {
   let clientId = input.clientId != null && input.clientId !== ''
     ? Number(input.clientId)
     : null;
-  if (clientId != null && (!Number.isFinite(clientId) || clientId <= 0)) {
-    throw new Error('client required');
-  }
-  if (!clientId) {
-    const firstClient = db.prepare('SELECT id FROM clients ORDER BY id LIMIT 1').get();
-    if (!firstClient) throw new Error('add a client before creating matters');
-    clientId = Number(firstClient.id);
-  } else {
+  if (clientId != null) {
+    if (!Number.isFinite(clientId) || clientId <= 0) {
+      throw new Error('invalid client');
+    }
     const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(clientId);
     if (!client) throw new Error('client not found');
+  } else {
+    clientId = null;
   }
 
   const attorneyId = input.responsibleAttorneyId != null && input.responsibleAttorneyId !== ''
@@ -432,7 +430,10 @@ function updateMatter(db, actor, id, patch) {
     if (key === 'clientId' || key === 'responsibleAttorneyId') {
       newVal = newVal === '' || newVal == null ? null : Number(newVal);
       if (newVal != null && !Number.isFinite(newVal)) newVal = null;
-      if (key === 'clientId' && !newVal) throw new Error('client required');
+      if (key === 'clientId' && newVal != null) {
+        const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(newVal);
+        if (!client) throw new Error('client not found');
+      }
     } else if (newVal != null) {
       newVal = String(newVal);
     } else {
@@ -489,7 +490,7 @@ function listMatters(db, filters = {}) {
   return db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
-    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
     WHERE (? IS NULL OR m.status = ?)
       AND (? IS NULL OR m.matter_type = ?)

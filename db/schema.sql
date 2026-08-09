@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS clients (
 
 CREATE TABLE IF NOT EXISTS matters (
   id INTEGER PRIMARY KEY,
-  client_id INTEGER NOT NULL REFERENCES clients(id),
+  client_id INTEGER REFERENCES clients(id),
   number TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   matter_type TEXT NOT NULL DEFAULT 'billable',

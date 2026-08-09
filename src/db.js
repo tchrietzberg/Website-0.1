@@ -18,6 +18,7 @@ function migrate(db) {
   db.exec(schema);
   migrateTimeEntryRoundingCheck(db);
   migrateMatterTypeCheck(db);
+  migrateMatterClientOptional(db);
   migrateOneDriveColumns(db);
   migrateAuthColumns(db);
   migrateCustomFieldAppliesTo(db);
@@ -475,6 +476,42 @@ function migrateOneDriveColumns(db) {
   }
 }
 
+/** Allow matters without a client (associate optionally on create/edit). */
+function migrateMatterClientOptional(db) {
+  const row = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='matters'"
+  ).get();
+  if (!row?.sql || !/client_id\s+INTEGER\s+NOT NULL/i.test(row.sql)) return;
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec(`
+    CREATE TABLE matters_client_opt (
+      id INTEGER PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id),
+      number TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      matter_type TEXT NOT NULL DEFAULT 'billable',
+      jurisdiction TEXT,
+      court TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      responsible_attorney_id INTEGER REFERENCES users(id),
+      opened_on TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO matters_client_opt(
+      id, client_id, number, name, matter_type, jurisdiction, court, status,
+      responsible_attorney_id, opened_on, created_at
+    )
+    SELECT
+      id, client_id, number, name, matter_type, jurisdiction, court, status,
+      responsible_attorney_id, opened_on, created_at
+    FROM matters;
+    DROP TABLE matters;
+    ALTER TABLE matters_client_opt RENAME TO matters;
+  `);
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+
 /** SQLite cannot ALTER CHECK; drop matters.matter_type enum so Billable remaps work. */
 function migrateMatterTypeCheck(db) {
   const row = db.prepare(
@@ -486,7 +523,7 @@ function migrateMatterTypeCheck(db) {
   db.exec(`
     CREATE TABLE matters_mig (
       id INTEGER PRIMARY KEY,
-      client_id INTEGER NOT NULL REFERENCES clients(id),
+      client_id INTEGER REFERENCES clients(id),
       number TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       matter_type TEXT NOT NULL DEFAULT 'billable',

@@ -199,6 +199,8 @@ describe('matter search and record-based fields', () => {
 
   it('new matters show only core fields; optional standards follow the type layout', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Lean Matter' });
+    assert.equal(page0.matter.client_id, null);
+    assert.equal(page0.matter.client_name, null);
     const keys = Object.values(page0.sections).flat().map((f) => f.key);
     assert.deepEqual(keys.sort(), ['std:name', 'std:number']);
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:client'));

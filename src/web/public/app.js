@@ -32,9 +32,7 @@
     matterFieldPanelFlash: null,
     contactFieldPanelFlash: null,
     editingContactFieldId: null,
-    createMatterFieldMsg: null,
     createContactFieldMsg: null,
-    createMatterFieldsOpen: false,
     createContactFieldsOpen: false,
     createContactRecordTypeKey: 'client',
     timeEntryRetain: null,
@@ -2735,8 +2733,6 @@
     const nameFormula = createSettings?.matterNameFormula || state.settings?.matterNameFormula || null;
     const formulaActive = !!(nameFormula?.enabled && (nameFormula.parts || []).length);
     const draftName = state.createMatterDraftName || '';
-    const createFieldMsg = state.createMatterFieldMsg;
-    state.createMatterFieldMsg = null;
     if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
       createRecordTypeKey = recordTypes[0].key;
       state.createMatterRecordTypeKey = createRecordTypeKey;
@@ -2792,7 +2788,6 @@
     }));
     // Put formula name fields first so they read with the name builder.
     createFieldDefs.sort((a, b) => Number(b.inNameFormula) - Number(a.inNameFormula));
-    const createCustomRows = mergedCreateFields.filter((f) => f.id != null);
 
     main.innerHTML = `
       <div class="card stack page-card">
@@ -2817,9 +2812,9 @@
               <button type="button" id="cancelCreateMatter">Cancel</button>
             </div>
             <div class="grid two create-matter-custom">
-              <label>Client *
-                <select name="clientId" id="createMatterClientSelect" required>
-                  <option value="" ${!selectedClientId ? 'selected' : ''}>Select a client…</option>
+              <label>Client
+                <select name="clientId" id="createMatterClientSelect">
+                  <option value="" ${!selectedClientId ? 'selected' : ''}>None — optional</option>
                   ${clientList.map((c) => `
                     <option value="${c.id}" ${selectedClientId === String(c.id) ? 'selected' : ''}>
                       ${escapeHtml(c.name)}${c.record_type ? ` (${escapeHtml(c.record_type)})` : ''}
@@ -2870,19 +2865,7 @@
             </div>
           </form>
           <div id="newMatterMsg"></div>
-        </div>
-
-        ${createRecordTypeFieldsPanelHtml({
-          panelId: 'createMatterFieldsPanel',
-          formId: 'createMatterFieldForm',
-          msgId: 'createMatterFieldMsg',
-          typeLabel: createTypeLabel,
-          fields: createCustomRows,
-          open: !!(state.createMatterFieldsOpen || createFieldMsg),
-          entityNoun: 'matter',
-          hint: `Adds fields to the <strong>${escapeHtml(createTypeLabel)}</strong> record type. For one matter only, create it first, then use Manage fields.`,
-          msgHtml: createFieldMsg ? successNoticeHtml(createFieldMsg) : '',
-        })}` : ''}
+        </div>` : ''}
 
         <div class="page-section">
           <h2>Search matters</h2>
@@ -2936,8 +2919,6 @@
         state.createMatterRecordTypeKey = 'billable';
         state.createMatterClientId = '';
         state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
-        state.createMatterFieldMsg = null;
-        state.createMatterFieldsOpen = false;
         await renderMatters();
       };
     }
@@ -3033,41 +3014,6 @@
           await renderMatters();
         };
       }
-      wireCreateRecordTypeFieldsPanel('createMatterFieldsPanel', 'createMatterFieldsOpen');
-      const createFieldForm = $('#createMatterFieldForm');
-      wireDropdownOptionsToggle(createFieldForm);
-      if (createFieldForm) {
-        createFieldForm.onsubmit = async (ev) => {
-          ev.preventDefault();
-          const nameEl = $('#createMatterName');
-          if (nameEl) state.createMatterDraftName = String(nameEl.value || '');
-          const typeKey = state.createMatterRecordTypeKey || 'billable';
-          const fd = new FormData(createFieldForm);
-          const { fieldType, options, body } = customFieldPayload(fd);
-          if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
-            state.createMatterFieldsOpen = true;
-            $('#createMatterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
-            return;
-          }
-          try {
-            await api('/api/custom-fields', {
-              method: 'POST',
-              body: JSON.stringify({ ...body, recordTypeKey: typeKey, appliesTo: 'matter' }),
-            });
-            state.createMatterFieldsOpen = true;
-            state.createMatterFieldMsg = {
-              title: 'Record type field added',
-              detail: `${body.label || 'Field'} added to the ${createTypeLabel} record type.`,
-            };
-            await renderMatters();
-            const panel = $('#createMatterFieldsPanel');
-            if (panel?.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          } catch (e) {
-            state.createMatterFieldsOpen = true;
-            $('#createMatterFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-          }
-        };
-      }
     }
 
     main.querySelectorAll('[data-matter]').forEach((row) => {
@@ -3125,20 +3071,24 @@
             $('#newClientName')?.focus();
             return;
           }
-        } else {
+        } else if (clientChoice) {
           clientId = Number(clientChoice);
-          if (!clientChoice || !Number.isFinite(clientId) || clientId <= 0) {
-            $('#newMatterMsg').innerHTML = '<div class="error">Select a client for this matter.</div>';
+          if (!Number.isFinite(clientId) || clientId <= 0) {
+            $('#newMatterMsg').innerHTML = '<div class="error">Select a valid client, or leave Client as None.</div>';
             $('#createMatterClientSelect')?.focus();
             return;
           }
         }
         const clientLabel = clientChoice === '__new__'
           ? newClientName
-          : (clientList.find((c) => Number(c.id) === clientId)?.name || 'client');
+          : (clientId
+            ? (clientList.find((c) => Number(c.id) === clientId)?.name || 'client')
+            : null);
         const sure = await confirmAction({
           title: 'Create this matter?',
-          message: `Create “${name}” for ${clientLabel}? You can add time and details after it’s created.`,
+          message: clientLabel
+            ? `Create “${name}” for ${clientLabel}? You can add time and details after it’s created.`
+            : `Create “${name}” with no client? You can associate a client later on the matter page.`,
           confirmLabel: 'Yes, create matter',
           cancelLabel: 'Not yet',
         });
@@ -3170,7 +3120,7 @@
             body: JSON.stringify({
               name,
               recordTypeKey,
-              clientId,
+              ...(clientId ? { clientId } : {}),
               customValues,
             }),
           });
@@ -3180,8 +3130,6 @@
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterClientId = '';
           state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
-          state.createMatterFieldMsg = null;
-          state.createMatterFieldsOpen = false;
           state.matterSearch = { q: page.matter.name };
           state.matterCreateFlash = {
             title: 'Matter created',

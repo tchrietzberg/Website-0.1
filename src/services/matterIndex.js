@@ -33,7 +33,7 @@ function indexMatter(db, matterId) {
   const row = db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
-    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
     WHERE m.id = ?
   `).get(matterId);
@@ -110,7 +110,7 @@ function searchMatters(db, filters = {}) {
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matter_search_index idx
     JOIN matters m ON m.id = idx.matter_id
-    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
     WHERE ${tokenClauses}
       AND (? IS NULL OR m.status = ?)
