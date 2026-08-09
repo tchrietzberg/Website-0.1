@@ -3188,17 +3188,11 @@
   }
 
   function goAddContact() {
-    if (!canCreateMatter(state.user) || !roleCanModify('contact')) {
-      state.view = 'contacts';
-      state.contactId = null;
-      renderShell();
-      renderView();
-      return;
-    }
-    state.showCreateContact = true;
     state.view = 'contacts';
     state.contactId = null;
     state.showCreateMatter = false;
+    // Open create when the role can add contacts; otherwise show the list/search.
+    state.showCreateContact = !!(canCreateMatter(state.user) && roleCanModify('contact'));
     renderShell();
     renderView();
   }
@@ -3285,12 +3279,12 @@
               </span>
             </button>`
           : ''}
-        ${canCreateMatter(state.user) && roleCanModify('contact')
+        ${roleCanView('contact')
           ? `<button type="button" class="sidebar-action primary" id="sideAddContact">
               <span class="sidebar-action-mark" aria-hidden="true">${navIcon('contacts')}</span>
               <span class="sidebar-action-text">
                 <strong>Create Contact</strong>
-                <small>Add a client or company</small>
+                <small>Open create + search</small>
               </span>
             </button>`
           : ''}
