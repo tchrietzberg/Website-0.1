@@ -14,9 +14,10 @@
     tkSearch: { q: '' },
     showCreateMatter: false,
     focusTimeEntry: false,
-    timeFlash: '',
-    matterTimeFlash: '',
-    matterFieldFlash: '',
+    timeFlash: null,
+    matterTimeFlash: null,
+    matterFieldFlash: null,
+    matterCreateFlash: null,
     timeEntryRetain: null,
     matterTimeRetain: null,
     focusCustomReportId: null,
@@ -113,6 +114,85 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  /** Modern success notice: title + optional detail line. */
+  function successNoticeHtml(notice) {
+    if (!notice) return '';
+    if (typeof notice === 'string') {
+      return `<div class="success-notice" role="status">
+        <span class="success-notice-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
+            <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M6 10.2l2.4 2.4L14 7.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <div class="success-notice-body">
+          <strong class="success-notice-title">${escapeHtml(notice)}</strong>
+        </div>
+      </div>`;
+    }
+    const title = notice.title || 'Saved';
+    const detail = notice.detail || '';
+    return `<div class="success-notice" role="status">
+      <span class="success-notice-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
+          <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M6 10.2l2.4 2.4L14 7.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <div class="success-notice-body">
+        <strong class="success-notice-title">${escapeHtml(title)}</strong>
+        ${detail ? `<span class="success-notice-detail">${escapeHtml(detail)}</span>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function formatHoursLabel(minutes) {
+    const hrs = formatDuration(minutes);
+    return `${hrs} ${Number(hrs) === 1 ? 'hour' : 'hours'}`;
+  }
+
+  /** Lightweight confirm dialog. Resolves true/false. */
+  function confirmAction({
+    title = 'Are you sure?',
+    message = '',
+    confirmLabel = 'Confirm',
+    cancelLabel = 'Cancel',
+  } = {}) {
+    return new Promise((resolve) => {
+      const existing = document.querySelector('.confirm-overlay');
+      if (existing) existing.remove();
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = `
+        <div class="confirm-dialog" role="alertdialog" aria-modal="true"
+          aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+          <h2 id="confirmTitle">${escapeHtml(title)}</h2>
+          ${message ? `<p id="confirmMessage">${escapeHtml(message)}</p>` : '<p id="confirmMessage" hidden></p>'}
+          <div class="confirm-actions">
+            <button type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
+            <button type="button" class="primary" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const finish = (value) => {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(value);
+      };
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') finish(false);
+        if (ev.key === 'Enter') finish(true);
+      };
+      document.addEventListener('keydown', onKey);
+      overlay.querySelector('[data-confirm-cancel]').onclick = () => finish(false);
+      overlay.querySelector('[data-confirm-ok]').onclick = () => finish(true);
+      overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) finish(false);
+      });
+      setTimeout(() => overlay.querySelector('[data-confirm-ok]')?.focus(), 0);
+    });
   }
 
   /** Built-in fields (client, status, etc.) are not managed from Add field UI. */
@@ -1277,6 +1357,19 @@
       newMatterForm.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(newMatterForm);
+        const name = String(fd.get('name') || '').trim();
+        if (!name) {
+          $('#newMatterMsg').innerHTML = '<div class="error">Enter a matter name to continue.</div>';
+          return;
+        }
+        const sure = await confirmAction({
+          title: 'Create this matter?',
+          message: `Create “${name}”? You can add time and details after it’s created.`,
+          confirmLabel: 'Yes, create matter',
+          cancelLabel: 'Not yet',
+        });
+        if (!sure) return;
+
         const customValues = {};
         for (const [key, value] of fd.entries()) {
           if (String(key).startsWith('cf_')) customValues[key.slice(3)] = value;
@@ -1290,14 +1383,17 @@
           const page = await api('/api/matters', {
             method: 'POST',
             body: JSON.stringify({
-              name: fd.get('name'),
+              name,
               customValues,
             }),
           });
-          $('#newMatterMsg').innerHTML = `<div class="ok-banner">Created and indexed ${escapeHtml(page.matter.name)}.</div>`;
           await refreshRefs();
           state.showCreateMatter = false;
           state.matterSearch = { q: page.matter.name };
+          state.matterCreateFlash = {
+            title: 'Matter created',
+            detail: page.matter.name,
+          };
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -1658,10 +1754,12 @@
     const formTimekeeperId = retain.timekeeperId || state.user.id;
     const formHours = '';
     const formDescription = '';
-    const flash = state.matterTimeFlash || '';
-    const matterFlash = state.matterFieldFlash || '';
-    state.matterTimeFlash = '';
-    state.matterFieldFlash = '';
+    const flash = state.matterTimeFlash;
+    const matterFlash = state.matterFieldFlash;
+    const createFlash = state.matterCreateFlash;
+    state.matterTimeFlash = null;
+    state.matterFieldFlash = null;
+    state.matterCreateFlash = null;
     state.matterTimeRetain = null;
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
     const fieldCtx = {
@@ -1680,6 +1778,7 @@
           <button type="button" id="backMatters">← Matters</button>
         </div>
         <h1>${escapeHtml(m.name || 'Matter')}</h1>
+        ${createFlash ? successNoticeHtml(createFlash) : ''}
       </div>
 
       <form id="matterForm" class="card stack">
@@ -1696,7 +1795,7 @@
           <div class="row-actions">
             <button class="primary" type="submit">Save</button>
           </div>` : ''}
-        <div id="matterMsg">${matterFlash ? `<div class="ok-banner">${escapeHtml(matterFlash)}</div>` : ''}</div>
+        <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
       </form>
 
       <div class="card">
@@ -1712,7 +1811,7 @@
             timeFieldDefs,
           })}
         </form>
-        <div id="matterTimeMsg" style="margin-top:.75rem">${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}</div>
+        <div id="matterTimeMsg" style="margin-top:.75rem">${flash ? successNoticeHtml(flash) : ''}</div>
         <h2 style="margin-top:1.25rem">Recent on this matter</h2>
         <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Status</th></tr></thead>
@@ -1920,7 +2019,10 @@
         patch.customValues = customValues;
         try {
           await api(`/api/matters/${m.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
-          state.matterFieldFlash = 'Matter fields saved.';
+          state.matterFieldFlash = {
+            title: 'Changes saved',
+            detail: 'Matter details are up to date.',
+          };
           await renderMatterDetail();
           await refreshRefs();
         } catch (e) {
@@ -1935,7 +2037,10 @@
       fixedMatterId: m.id,
       onSaved: async (entry, body) => {
         const savedDesc = String(body.description || entry.description || '').trim() || 'Time entry';
-        state.matterTimeFlash = `Saved ${savedDesc} — ${formatDuration(entry.roundedMinutes)} hrs`;
+        state.matterTimeFlash = {
+          title: 'Time saved',
+          detail: `${savedDesc} · ${formatHoursLabel(entry.roundedMinutes)}`,
+        };
         state.matterTimeRetain = {
           addAnother: true,
           serviceDate: body.serviceDate,
@@ -2169,8 +2274,8 @@
     const formTimekeeperId = retain.timekeeperId || state.user.id;
     const formHours = addAnother ? '' : '1.00';
     const formDescription = addAnother ? '' : 'Reviewed production set';
-    const flash = state.timeFlash || '';
-    state.timeFlash = '';
+    const flash = state.timeFlash;
+    state.timeFlash = null;
     state.timeEntryRetain = null;
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
     main.innerHTML = `
@@ -2194,7 +2299,7 @@
             timeFieldDefs,
           })}
         </form>
-        <div id="timeMsg" style="margin-top:.75rem">${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}</div>
+        <div id="timeMsg" style="margin-top:.75rem">${flash ? successNoticeHtml(flash) : ''}</div>
       </div>
       <div class="card">
         <h2>Recent entries</h2>
@@ -2237,7 +2342,10 @@
           timekeeperId: body.timekeeperId,
         };
         state.focusTimeEntry = true;
-        state.timeFlash = `Saved ${desc} — ${formatDuration(entry.roundedMinutes)} hrs`;
+        state.timeFlash = {
+          title: 'Time saved',
+          detail: `${desc} · ${formatHoursLabel(entry.roundedMinutes)}`,
+        };
         await renderTime();
       },
     });
