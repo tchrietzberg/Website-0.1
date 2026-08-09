@@ -4945,7 +4945,6 @@
         <input type="checkbox" name="billable" value="1" id="timeEntryBillable"
           ${formBillable ? 'checked' : ''} />
         <span>Billable</span>
-        <span class="muted" style="font-weight:400"> · uncheck for non-billable</span>
       </label>
       <label class="span-all">Description
         <textarea name="description" rows="2" required
