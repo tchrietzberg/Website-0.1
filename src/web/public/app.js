@@ -15,7 +15,9 @@
     showCreateMatter: false,
     focusTimeEntry: false,
     timeFlash: '',
+    matterTimeFlash: '',
     timeEntryRetain: null,
+    matterTimeRetain: null,
   };
 
   function canCreateMatter(user) {
@@ -1306,24 +1308,176 @@
     loadBrowser(null);
   }
 
+  function timeEntryFieldDefs(timeFields) {
+    return (timeFields || []).map((f) => ({
+      key: `cf:${f.id}`,
+      label: f.label,
+      type: f.field_type,
+      options: f.options,
+      required: !!f.required,
+      fieldId: f.id,
+      kind: 'custom',
+      width: f.field_type === 'textarea' ? 'full' : 'half',
+      value: null,
+    }));
+  }
+
+  function timeEntryFormFieldsHtml({
+    formDate,
+    formHours,
+    formDescription,
+    formTimekeeperId,
+    timeFieldDefs,
+  }) {
+    return `
+      <label>Date
+        <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
+      </label>
+      <label>Hours
+        <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
+          value="${escapeHtml(formHours)}" placeholder="0.25" required />
+      </label>
+      <label>Timekeeper
+        <select name="timekeeperId">
+          ${(state.users || []).map((u) =>
+            `<option value="${u.id}" ${Number(u.id) === Number(formTimekeeperId) ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
+          ).join('')}
+        </select>
+      </label>
+      <label class="span-all">Description
+        <textarea name="description" rows="2" required
+          placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
+      </label>
+      ${timeFieldDefs.map((field) => `
+        <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}
+          ${renderFieldInput(field, { canEdit: true })}
+        </label>`).join('')}
+      <div class="row-actions span-all">
+        <button class="primary" type="submit">Save</button>
+      </div>`;
+  }
+
+  function wireTimeEntrySubmit(form, {
+    msgEl,
+    timeFieldDefs,
+    fixedMatterId = null,
+    matterPicker = null,
+    onSaved,
+  }) {
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const body = Object.fromEntries(fd.entries());
+      body.matterId = Number(fixedMatterId != null ? fixedMatterId : body.matterId);
+      body.timekeeperId = Number(body.timekeeperId);
+      const hoursRaw = String(body.hours ?? '').trim();
+      body.hours = Number(hoursRaw);
+      if (!Number.isFinite(body.hours) || body.hours <= 0) {
+        msgEl.innerHTML = '<div class="error">Enter hours in 0.25 increments (e.g. 0.25, 0.50, 1.25).</div>';
+        const hoursInput = ev.target.querySelector('input[name="hours"]');
+        if (hoursInput) hoursInput.focus();
+        return;
+      }
+      delete body.rawMinutes;
+      delete body.category;
+      delete body.subcategory;
+      const customValues = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (key.startsWith('cf_')) {
+          customValues[key.slice(3)] = value;
+          delete body[key];
+        }
+      }
+      timeFieldDefs.forEach((f) => {
+        if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
+          customValues[f.fieldId] = '0';
+        }
+      });
+      body.customValues = customValues;
+      if (!body.matterId) {
+        matterPicker?.setInvalid(true);
+        msgEl.innerHTML = '<div class="error">Select a matter to continue.</div>';
+        matterPicker?.focus();
+        return;
+      }
+      try {
+        const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
+        await onSaved(entry, body);
+      } catch (e) {
+        msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
+    };
+  }
+
   async function renderMatterDetail() {
     if (!state.matterId) {
       state.view = 'matters';
       return renderMatters();
     }
-    const page = await api(`/api/matters/${state.matterId}`);
+    const matterId = state.matterId;
+    const [page, timeFields, matterEntries] = await Promise.all([
+      api(`/api/matters/${matterId}`),
+      api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
+      api(`/api/time-entries?matterId=${matterId}`).catch(() => []),
+    ]);
     const m = page.matter;
     const canEdit = canCreateMatter(state.user);
     const matterReports = [
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
       ['lodestar-matter-summary', 'Lodestar Summary', 'Hours and amounts by timekeeper'],
     ];
+    const today = new Date().toISOString().slice(0, 10);
+    const retain = state.matterTimeRetain || {};
+    const addAnother = !!retain.addAnother;
+    const formDate = retain.serviceDate || today;
+    const formTimekeeperId = retain.timekeeperId || state.user.id;
+    const formHours = addAnother ? '' : '';
+    const formDescription = addAnother ? '' : '';
+    const flash = state.matterTimeFlash || '';
+    state.matterTimeFlash = '';
+    state.matterTimeRetain = null;
+    const timeFieldDefs = timeEntryFieldDefs(timeFields);
 
     main.innerHTML = `
-      <div class="card stack">
-        <div class="row-actions">
+      <div class="card">
+        <div class="row-actions" style="margin-bottom:.75rem">
           <button type="button" id="backMatters">← Matters</button>
         </div>
+        <h1>Add time</h1>
+        <p class="hint">Log time on this matter. Saved entries are ready for Billing.</p>
+        <form id="matterTimeForm" class="grid two">
+          <input type="hidden" name="matterId" value="${Number(m.id)}" />
+          ${timeEntryFormFieldsHtml({
+            formDate,
+            formHours,
+            formDescription,
+            formTimekeeperId,
+            timeFieldDefs,
+          })}
+        </form>
+        <div id="matterTimeMsg" style="margin-top:.75rem">${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}</div>
+        <h2 style="margin-top:1.25rem">Recent on this matter</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Status</th></tr></thead>
+          <tbody>
+            ${(matterEntries || []).slice(0, 20).map((e) => {
+              const statusLabel = e.status === 'approved' ? 'Ready to bill'
+                : e.status === 'invoiced' ? 'Billed'
+                  : e.status;
+              return `
+              <tr>
+                <td>${escapeHtml(e.service_date)}</td>
+                <td>${escapeHtml(e.timekeeper_name || '')}<div class="muted">${escapeHtml(e.description)}</div></td>
+                <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
+                  <span class="muted">hrs</span></td>
+                <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
+              </tr>`;
+            }).join('') || '<tr><td colspan="4" class="muted">No time on this matter yet</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+
+      <div class="card stack">
         <h2>Time reports</h2>
         <p class="hint">Run Lodestar Detail or Summary for this matter.</p>
         <div id="matterReportMsg"></div>
@@ -1476,6 +1630,27 @@
       renderShell();
       renderView();
     };
+
+    wireTimeEntrySubmit($('#matterTimeForm'), {
+      msgEl: $('#matterTimeMsg'),
+      timeFieldDefs,
+      fixedMatterId: m.id,
+      onSaved: async (entry, body) => {
+        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing.`;
+        if (entry.duplicateWarnings?.length) {
+          msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
+        }
+        state.matterTimeFlash = msg;
+        state.matterTimeRetain = {
+          addAnother: true,
+          serviceDate: body.serviceDate,
+          timekeeperId: body.timekeeperId,
+        };
+        await renderMatterDetail();
+        const desc = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
+        if (desc) setTimeout(() => desc.focus(), 0);
+      },
+    });
 
     const downloadMatterTimeReport = async (reportId, format) => {
       try {
@@ -1674,17 +1849,7 @@
     const flash = state.timeFlash || '';
     state.timeFlash = '';
     state.timeEntryRetain = null;
-    const timeFieldDefs = (timeFields || []).map((f) => ({
-      key: `cf:${f.id}`,
-      label: f.label,
-      type: f.field_type,
-      options: f.options,
-      required: !!f.required,
-      fieldId: f.id,
-      kind: 'custom',
-      width: f.field_type === 'textarea' ? 'full' : 'half',
-      value: null,
-    }));
+    const timeFieldDefs = timeEntryFieldDefs(timeFields);
     main.innerHTML = `
       <div class="card">
         <h1>Time Entry</h1>
@@ -1698,31 +1863,13 @@
             })}
             <span class="hint">Type to filter by matter name or client.</span>
           </div>
-          <label>Date
-            <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
-          </label>
-          <label>Hours
-            <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
-              value="${escapeHtml(formHours)}" placeholder="0.25" required />
-          </label>
-          <label>Timekeeper
-            <select name="timekeeperId">
-              ${state.users.map((u) =>
-                `<option value="${u.id}" ${Number(u.id) === Number(formTimekeeperId) ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
-              ).join('')}
-            </select>
-          </label>
-          <label class="span-all">Description
-            <textarea name="description" rows="2" required
-              placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
-          </label>
-          ${timeFieldDefs.map((field) => `
-            <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}
-              ${renderFieldInput(field, { canEdit: true })}
-            </label>`).join('')}
-          <div class="row-actions span-all">
-            <button class="primary" type="submit">Save</button>
-          </div>
+          ${timeEntryFormFieldsHtml({
+            formDate,
+            formHours,
+            formDescription,
+            formTimekeeperId,
+            timeFieldDefs,
+          })}
         </form>
         <div id="timeMsg" style="margin-top:.75rem">${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}</div>
       </div>
@@ -1753,45 +1900,11 @@
       </div>`;
 
     const matterPicker = wireMatterPicker($('#timeForm'), { matters });
-    $('#timeForm').onsubmit = async (ev) => {
-      ev.preventDefault();
-      const fd = new FormData(ev.target);
-      const body = Object.fromEntries(fd.entries());
-      body.matterId = Number(body.matterId);
-      body.timekeeperId = Number(body.timekeeperId);
-      const hoursRaw = String(body.hours ?? '').trim();
-      body.hours = Number(hoursRaw);
-      if (!Number.isFinite(body.hours) || body.hours <= 0) {
-        $('#timeMsg').innerHTML = '<div class="error">Enter hours in 0.25 increments (e.g. 0.25, 0.50, 1.25).</div>';
-        const hoursInput = ev.target.querySelector('input[name="hours"]');
-        if (hoursInput) hoursInput.focus();
-        return;
-      }
-      delete body.rawMinutes;
-      delete body.category;
-      delete body.subcategory;
-      const customValues = {};
-      for (const [key, value] of Object.entries(body)) {
-        if (key.startsWith('cf_')) {
-          customValues[key.slice(3)] = value;
-          delete body[key];
-        }
-      }
-      // Checkboxes only appear in FormData when checked
-      timeFieldDefs.forEach((f) => {
-        if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
-          customValues[f.fieldId] = '0';
-        }
-      });
-      body.customValues = customValues;
-      if (!body.matterId) {
-        matterPicker?.setInvalid(true);
-        $('#timeMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
-        matterPicker?.focus();
-        return;
-      }
-      try {
-        const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
+    wireTimeEntrySubmit($('#timeForm'), {
+      msgEl: $('#timeMsg'),
+      timeFieldDefs,
+      matterPicker,
+      onSaved: async (entry, body) => {
         let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing. Add another entry below.`;
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
@@ -1806,10 +1919,8 @@
         state.focusTimeEntry = true;
         state.timeFlash = msg;
         await renderTime();
-      } catch (e) {
-        $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-      }
-    };
+      },
+    });
 
     if (state.focusTimeEntry) {
       state.focusTimeEntry = false;
