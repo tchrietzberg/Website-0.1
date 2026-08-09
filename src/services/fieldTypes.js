@@ -24,6 +24,19 @@ const ALLOWED_FIELD_TYPES = [
   'formula',
 ];
 
+/** Practical types for logging time — no formulas, geo, rich text, etc. */
+const TIME_ENTRY_FIELD_TYPES = [
+  'text',
+  'textarea',
+  'number',
+  'currency',
+  'percent',
+  'date',
+  'checkbox',
+  'select',
+  'multiselect',
+];
+
 const FIELD_TYPE_ALIASES = {
   dropdown: 'select',
   picklist: 'select',
@@ -67,6 +80,19 @@ function normalizeFieldType(fieldType) {
 
 function isAllowedFieldType(fieldType) {
   return ALLOWED_FIELD_TYPES.includes(normalizeFieldType(fieldType));
+}
+
+function allowedFieldTypesForAppliesTo(appliesTo) {
+  const scope = String(appliesTo || 'matter').trim().toLowerCase();
+  if (scope === 'time' || scope === 'time_entry' || scope === 'time-entry') {
+    return TIME_ENTRY_FIELD_TYPES.slice();
+  }
+  return ALLOWED_FIELD_TYPES.slice();
+}
+
+function isAllowedFieldTypeForAppliesTo(fieldType, appliesTo) {
+  const type = normalizeFieldType(fieldType);
+  return allowedFieldTypesForAppliesTo(appliesTo).includes(type);
 }
 
 function fieldWidthForType(fieldType) {
@@ -376,11 +402,14 @@ function fieldTypeCheckSql() {
 
 module.exports = {
   ALLOWED_FIELD_TYPES,
+  TIME_ENTRY_FIELD_TYPES,
   FIELD_TYPE_ALIASES,
   FULL_WIDTH_TYPES,
   SYSTEM_MANAGED_TYPES,
   normalizeFieldType,
   isAllowedFieldType,
+  allowedFieldTypesForAppliesTo,
+  isAllowedFieldTypeForAppliesTo,
   fieldWidthForType,
   isSystemManagedFieldType,
   needsOptionList,

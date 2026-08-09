@@ -135,6 +135,28 @@ describe('expanded custom field types', () => {
     assert.equal(fields.find((f) => f.fieldId === total.id)?.readonly, true);
   });
 
+  it('limits time-entry custom fields to practical types', () => {
+    const ok = customFields.createCustomField(db, admin, {
+      label: 'Activity code',
+      fieldType: 'text',
+      appliesTo: 'time_entry',
+    });
+    assert.equal(ok.appliesTo, 'time_entry');
+    assert.throws(() => customFields.createCustomField(db, admin, {
+      label: 'Bad formula',
+      fieldType: 'formula',
+      appliesTo: 'time_entry',
+      expression: '{x} + 1',
+    }), /not available for time entry/i);
+    assert.throws(() => customFields.createCustomField(db, admin, {
+      label: 'Bad geo',
+      fieldType: 'geolocation',
+      appliesTo: 'time_entry',
+    }), /not available for time entry/i);
+    assert.ok(fieldTypes.TIME_ENTRY_FIELD_TYPES.includes('select'));
+    assert.ok(!fieldTypes.TIME_ENTRY_FIELD_TYPES.includes('formula'));
+  });
+
   it('stores geolocation and phone on contacts', () => {
     const geo = customFields.createCustomField(db, admin, {
       label: 'Office coords',

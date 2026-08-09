@@ -577,6 +577,14 @@ function createCustomField(db, actor, input) {
     appliesTo = 'matter';
   }
 
+  if (!fieldTypes.isAllowedFieldTypeForAppliesTo(fieldType, appliesTo)) {
+    throw new Error(
+      appliesTo === 'time_entry'
+        ? 'That field type is not available for time entry fields'
+        : 'invalid fieldType for this object'
+    );
+  }
+
   let apiName = String(input.apiName || slugify(label));
   if (!/^[a-z][a-z0-9_]*$/.test(apiName)) {
     throw new Error('apiName must be snake_case starting with a letter');
@@ -784,6 +792,14 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
     fieldType = normalizeFieldType(patch.fieldType || patch.field_type);
     if (!fieldTypes.isAllowedFieldType(fieldType)) {
       throw new Error('invalid fieldType');
+    }
+    const appliesTo = normalizeAppliesTo(existing.applies_to || 'matter');
+    if (!fieldTypes.isAllowedFieldTypeForAppliesTo(fieldType, appliesTo)) {
+      throw new Error(
+        appliesTo === 'time_entry'
+          ? 'That field type is not available for time entry fields'
+          : 'invalid fieldType for this object'
+      );
     }
   }
 

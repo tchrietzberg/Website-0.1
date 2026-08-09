@@ -626,12 +626,35 @@
     { value: 'formula', label: 'Formula' },
   ];
 
+  /** Practical types for time-entry custom fields (no formula/geo/rich text/etc.). */
+  const TIME_ENTRY_FIELD_FORMATTERS = [
+    { value: 'checkbox', label: 'Checkbox' },
+    { value: 'currency', label: 'Currency' },
+    { value: 'date', label: 'Date' },
+    { value: 'number', label: 'Number' },
+    { value: 'percent', label: 'Percent' },
+    { value: 'dropdown', label: 'Picklist' },
+    { value: 'multiselect', label: 'Picklist (Multi-Select)' },
+    { value: 'text', label: 'Text' },
+    { value: 'textarea', label: 'Text Area' },
+  ];
+
   const SYSTEM_FIELD_TYPES = new Set(['auto_number', 'formula']);
   const OPTION_FIELD_TYPES = new Set(['dropdown', 'select', 'multiselect', 'picklist']);
 
-  function fieldFormatterOptions(selected = 'text') {
-    return FIELD_FORMATTERS.map((f) =>
-      `<option value="${f.value}" ${f.value === selected ? 'selected' : ''}>${f.label}</option>`
+  function formattersForAppliesTo(appliesTo) {
+    const scope = String(appliesTo || 'matter').toLowerCase();
+    if (scope === 'time' || scope === 'time_entry' || scope === 'time-entry') {
+      return TIME_ENTRY_FIELD_FORMATTERS;
+    }
+    return FIELD_FORMATTERS;
+  }
+
+  function fieldFormatterOptions(selected = 'text', appliesTo = 'matter') {
+    const list = formattersForAppliesTo(appliesTo);
+    const selectedValue = list.some((f) => f.value === selected) ? selected : 'text';
+    return list.map((f) =>
+      `<option value="${f.value}" ${f.value === selectedValue ? 'selected' : ''}>${f.label}</option>`
     ).join('');
   }
 
@@ -779,6 +802,7 @@
     hint = '',
     msgHtml = '',
     entityNoun = 'record',
+    appliesTo = 'matter',
   } = {}) {
     const count = (fields || []).length;
     const meta = count
@@ -810,6 +834,7 @@
             submitLabel: 'Add field',
             defaultLabel: 'Default on this record type',
             requiredLabel: 'Required on create',
+            appliesTo,
           })}
           <div id="${escapeHtml(msgId)}">${msgHtml || ''}</div>
         </div>
@@ -834,11 +859,15 @@
     showDefault = true,
     formHint = '',
     scopeField = null,
+    appliesTo = 'matter',
   } = {}) {
     const type = field
       ? (field.field_type || field.fieldType || field.type || 'text')
       : 'text';
     const uiType = type === 'select' ? 'dropdown' : type;
+    const allowed = formattersForAppliesTo(appliesTo);
+    const allowFormula = allowed.some((f) => f.value === 'formula');
+    const allowAuto = allowed.some((f) => f.value === 'auto_number');
     const options = Array.isArray(field?.options)
       ? field.options.join('\n')
       : (field?.optionsText || '');
@@ -859,7 +888,7 @@
         <span class="hint">${escapeHtml(scopeField.hint || 'Choose whether this field is for one matter or the whole record type.')}</span>
       </label>` : '';
     return `
-      <form id="${escapeHtml(formId)}" class="grid two">
+      <form id="${escapeHtml(formId)}" class="grid two" data-field-applies-to="${escapeHtml(appliesTo)}">
         ${formHint ? `<p class="hint span-all">${formHint}</p>` : ''}
         ${scopeHtml}
         <label>Custom field label
@@ -868,12 +897,12 @@
         </label>
         <label>Custom field type
           <select name="fieldType">
-            ${fieldFormatterOptions(uiType)}
+            ${fieldFormatterOptions(uiType, appliesTo)}
           </select>
         </label>
         ${dropdownOptionsFieldHtml(options, { show: OPTION_FIELD_TYPES.has(uiType) })}
-        ${formulaConfigFieldHtml(expression, { show: uiType === 'formula' })}
-        ${autoNumberConfigFieldHtml(prefix, pad, { show: uiType === 'auto_number' })}
+        ${allowFormula ? formulaConfigFieldHtml(expression, { show: uiType === 'formula' }) : ''}
+        ${allowAuto ? autoNumberConfigFieldHtml(prefix, pad, { show: uiType === 'auto_number' }) : ''}
         <div class="span-all" data-default-field-wrap ${showDefault ? '' : 'hidden'}>
           ${defaultFieldCheckboxHtml(isDefault, defaultLabel)}
         </div>
@@ -1084,10 +1113,15 @@
               submitLabel: 'Save changes',
               field: editing,
               showCancel: true,
+              appliesTo,
             })}`
             : customFieldFormHtml({
               formId,
               submitLabel: `Add ${scopeLabel} field`,
+              appliesTo,
+              formHint: appliesTo === 'time_entry'
+                ? 'Choose types used when logging time (text, picklist, number, date, checkbox, etc.).'
+                : '',
             })}`;
 
         if (appliesTo === 'client') {
@@ -1237,6 +1271,7 @@
             showCancel: true,
             defaultLabel: 'Record type default field',
             requiredLabel: 'Record type required field',
+            appliesTo: entityAppliesTo,
             formHint: `This field belongs to the <strong>${escapeHtml(typeLabel)}</strong> record type and shows on all ${escapeHtml(entityNoun)}s of that type.`,
           })}`
           : customFieldFormHtml({
@@ -1244,6 +1279,7 @@
             submitLabel: 'Add to this record type',
             defaultLabel: 'Record type default field',
             requiredLabel: 'Record type required field',
+            appliesTo: entityAppliesTo,
             formHint: `New fields are added to the <strong>${escapeHtml(typeLabel)}</strong> record type layout for every ${escapeHtml(entityNoun)} of this type. Check <strong>Record type default field</strong> to mark it as a default on this record type.`,
           })}`;
 
@@ -3292,6 +3328,7 @@
           fields: createCustomRows,
           open: !!(state.createContactFieldsOpen || createFieldMsg),
           entityNoun: 'contact',
+          appliesTo: 'client',
           hint: `Adds fields to the <strong>${escapeHtml(createTypeLabel)}</strong> record type (defaults for every contact of that type). For a field on one contact only, create the contact first, then use Add custom fields / Manage fields.`,
           msgHtml: createFieldMsg ? successNoticeHtml(createFieldMsg) : '',
         })}` : ''}
@@ -3509,6 +3546,7 @@
             showDefault: !isEditingContactOnly,
             defaultLabel: 'Record type default field',
             requiredLabel: isEditingContactOnly ? 'Required on this contact' : 'Record type required field',
+            appliesTo: 'client',
             formHint: isEditingContactOnly
               ? 'This field is for <strong>this contact only</strong> (not type-dependent).'
               : `This field is on the <strong>${escapeHtml(typeLabel)}</strong> record type (all contacts of this type).`,
@@ -3519,6 +3557,7 @@
             showDefault: false,
             defaultLabel: 'Record type default field',
             requiredLabel: 'Required field',
+            appliesTo: 'client',
             scopeField: {
               selectId: `${formId}Scope`,
               selected: 'record',
@@ -4308,6 +4347,7 @@
             showDefault: !isEditingMatterOnly,
             defaultLabel: 'Record type default field',
             requiredLabel: isEditingMatterOnly ? 'Required on this matter' : 'Record type required field',
+            appliesTo: 'matter',
             formHint: isEditingMatterOnly
               ? 'This field is for <strong>this matter only</strong>.'
               : `This field is on the <strong>${escapeHtml(matterTypeLabel)}</strong> record type (all matters of this type).`,
@@ -4318,6 +4358,7 @@
             showDefault: false,
             defaultLabel: 'Record type default field',
             requiredLabel: 'Required field',
+            appliesTo: 'matter',
             scopeField: {
               selectId: `${formId}Scope`,
               selected: 'record',
@@ -6324,6 +6365,7 @@
             submitLabel: 'Create field & add to formula',
             defaultLabel: 'Show on create (default field)',
             requiredLabel: 'Required on create',
+            appliesTo: 'matter',
             formHint: 'New fields are added to the selected record type and included in the name formula.',
           })}
         </div>
