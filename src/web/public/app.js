@@ -45,11 +45,24 @@
     try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
   }
 
+  function isPublicAuthPath(path) {
+    const p = String(path || '').split('?')[0];
+    return [
+      '/api/login',
+      '/api/me',
+      '/api/auth/token-info',
+      '/api/auth/set-password',
+      '/api/password-reset/request',
+      '/api/login/magic/request',
+      '/api/login/magic/confirm',
+    ].includes(p);
+  }
+
   async function api(path, opts = {}) {
     const method = String(opts.method || 'GET').toUpperCase();
     const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) && path !== '/api/login') {
+    if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !isPublicAuthPath(path)) {
       headers['X-CSRF-Token'] = state.csrf;
     }
     const res = await fetch(path, { ...opts, method, headers, credentials: 'include' });
@@ -59,7 +72,7 @@
       if (data && data.csrf) state.csrf = data.csrf;
       if (data && data.token) persistSession(data.token, data.csrf || state.csrf);
       if (!res.ok) {
-        if (res.status === 401 && path !== '/api/login' && path !== '/api/me') {
+        if (res.status === 401 && !isPublicAuthPath(path)) {
           clearSession();
         }
         const err = new Error(data.message || data.error || res.statusText);
@@ -447,7 +460,31 @@
     })[id] || id;
   }
 
+  function clearAuthTokenFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('auth_token')) return;
+    params.delete('auth_token');
+    const q = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${q ? `?${q}` : ''}${window.location.hash || ''}`);
+  }
+
+  async function finishAuthSession(data) {
+    persistSession(data.token, data.csrf);
+    state.user = data.user;
+    clearAuthTokenFromUrl();
+    document.body.classList.remove('login-mode');
+    if (appEl) appEl.classList.remove('login-mode');
+    await refreshRefs();
+    renderShell();
+    renderView();
+  }
+
   async function boot() {
+    const params = new URLSearchParams(window.location.search);
+    const authToken = params.get('auth_token');
+    if (authToken) {
+      return renderAuthToken(authToken);
+    }
     try {
       const me = await api('/api/me');
       state.user = me.user;
@@ -458,7 +495,6 @@
     }
     if (!state.user) return renderLogin();
     await refreshRefs();
-    const params = new URLSearchParams(window.location.search);
     if (window.location.hash === '#settings' || params.get('onedrive')) {
       state.view = 'settings';
     }
@@ -479,7 +515,7 @@
     state.settings = settings;
   }
 
-  function renderLogin() {
+  function enterLoginChrome() {
     if (sidebar) sidebar.hidden = true;
     if (appEl) {
       appEl.classList.remove('app-shell');
@@ -489,9 +525,31 @@
     if (nav) nav.innerHTML = '';
     if (userbar) userbar.textContent = '';
     if (sidebarActions) sidebarActions.innerHTML = '';
-    main.innerHTML = `
-      <div class="login-stage">
-        <div class="login-panel">
+  }
+
+  function renderLogin(mode = 'password') {
+    enterLoginChrome();
+    const panel = mode === 'forgot'
+      ? `
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Reset your password by email</p>
+          <label class="login-field">Email
+            <input id="email" type="email" autocomplete="username" placeholder="you@firm.example" />
+          </label>
+          <button class="primary login-submit" id="resetBtn" type="button">Send reset link</button>
+          <p class="login-hint"><button type="button" class="linkish" id="backToLogin">Back to sign in</button></p>
+          <div id="loginErr"></div>`
+      : mode === 'magic'
+        ? `
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Email a one-time sign-in link</p>
+          <label class="login-field">Email
+            <input id="email" type="email" autocomplete="username" placeholder="you@firm.example" />
+          </label>
+          <button class="primary login-submit" id="magicBtn" type="button">Email sign-in link</button>
+          <p class="login-hint"><button type="button" class="linkish" id="backToLogin">Back to sign in</button></p>
+          <div id="loginErr"></div>`
+        : `
           <p class="login-brand">Firm Billing</p>
           <p class="login-lead">Sign in with your firm email and password</p>
           <label class="login-field">Email
@@ -503,14 +561,71 @@
               placeholder="Password" value="demo-change-me" />
           </label>
           <button class="primary login-submit" id="loginBtn" type="button">Sign in</button>
+          <div class="login-alt-links">
+            <button type="button" class="linkish" id="forgotLink">Forgot password</button>
+            <button type="button" class="linkish" id="magicLink">Email sign-in link</button>
+          </div>
           <div id="loginErr"></div>
-          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>
-        </div>
-      </div>`;
+          <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
+
+    main.innerHTML = `<div class="login-stage"><div class="login-panel">${panel}</div></div>`;
+
+    const err = (msg) => {
+      const el = $('#loginErr');
+      if (el) el.innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
+    };
+    const ok = (msg) => {
+      const el = $('#loginErr');
+      if (el) el.innerHTML = msg ? `<div class="ok-banner">${escapeHtml(msg)}</div>` : '';
+    };
+
+    const back = $('#backToLogin');
+    if (back) back.onclick = () => renderLogin('password');
+    const forgot = $('#forgotLink');
+    if (forgot) forgot.onclick = () => renderLogin('forgot');
+    const magic = $('#magicLink');
+    if (magic) magic.onclick = () => renderLogin('magic');
+
+    if (mode === 'forgot') {
+      $('#resetBtn').onclick = async () => {
+        try {
+          $('#resetBtn').disabled = true;
+          err('');
+          const data = await api('/api/password-reset/request', {
+            method: 'POST',
+            body: JSON.stringify({ email: $('#email').value.trim() }),
+          });
+          ok(data.message || 'If that email is on file, a reset link was sent.');
+        } catch (e) {
+          $('#resetBtn').disabled = false;
+          err(e.message);
+        }
+      };
+      return;
+    }
+
+    if (mode === 'magic') {
+      $('#magicBtn').onclick = async () => {
+        try {
+          $('#magicBtn').disabled = true;
+          err('');
+          const data = await api('/api/login/magic/request', {
+            method: 'POST',
+            body: JSON.stringify({ email: $('#email').value.trim() }),
+          });
+          ok(data.message || 'If that email is on file, a sign-in link was sent.');
+        } catch (e) {
+          $('#magicBtn').disabled = false;
+          err(e.message);
+        }
+      };
+      return;
+    }
+
     const submit = async () => {
       try {
         $('#loginBtn').disabled = true;
-        $('#loginErr').innerHTML = '';
+        err('');
         const data = await api('/api/login', {
           method: 'POST',
           body: JSON.stringify({
@@ -518,16 +633,10 @@
             password: $('#password').value,
           }),
         });
-        persistSession(data.token, data.csrf);
-        state.user = data.user;
-        document.body.classList.remove('login-mode');
-        if (appEl) appEl.classList.remove('login-mode');
-        await refreshRefs();
-        renderShell();
-        renderView();
+        await finishAuthSession(data);
       } catch (e) {
         $('#loginBtn').disabled = false;
-        $('#loginErr').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        err(e.message);
       }
     };
     $('#loginBtn').onclick = submit;
@@ -543,6 +652,107 @@
         $('#password').focus();
       }
     });
+  }
+
+  async function renderAuthToken(rawToken) {
+    enterLoginChrome();
+    main.innerHTML = `
+      <div class="login-stage">
+        <div class="login-panel">
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Checking secure link…</p>
+          <div id="loginErr"></div>
+        </div>
+      </div>`;
+    try {
+      const info = await api(`/api/auth/token-info?token=${encodeURIComponent(rawToken)}`);
+      if (!info.valid) {
+        main.innerHTML = `
+          <div class="login-stage">
+            <div class="login-panel">
+              <p class="login-brand">Firm Billing</p>
+              <p class="login-lead">This link is invalid or has expired.</p>
+              <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
+              <div id="loginErr"></div>
+            </div>
+          </div>`;
+        clearAuthTokenFromUrl();
+        $('#backToLogin').onclick = () => renderLogin('password');
+        return;
+      }
+
+      if (info.purpose === 'magic_login') {
+        main.innerHTML = `
+          <div class="login-stage">
+            <div class="login-panel">
+              <p class="login-brand">Firm Billing</p>
+              <p class="login-lead">Signing you in…</p>
+              <div id="loginErr"></div>
+            </div>
+          </div>`;
+        const data = await api('/api/login/magic/confirm', {
+          method: 'POST',
+          body: JSON.stringify({ token: rawToken }),
+        });
+        await finishAuthSession(data);
+        return;
+      }
+
+      const title = info.purpose === 'invite'
+        ? 'Set your password to finish joining'
+        : 'Choose a new password';
+      main.innerHTML = `
+        <div class="login-stage">
+          <div class="login-panel">
+            <p class="login-brand">Firm Billing</p>
+            <p class="login-lead">${escapeHtml(title)}</p>
+            <p class="login-hint">${escapeHtml(info.name || '')} · ${escapeHtml(info.emailHint || '')}</p>
+            <label class="login-field">New password
+              <input id="password" type="password" autocomplete="new-password"
+                minlength="10" placeholder="At least 10 characters" />
+            </label>
+            <label class="login-field">Confirm password
+              <input id="password2" type="password" autocomplete="new-password"
+                minlength="10" placeholder="Repeat password" />
+            </label>
+            <button class="primary login-submit" id="setPwdBtn" type="button">Save and sign in</button>
+            <div id="loginErr"></div>
+          </div>
+        </div>`;
+      const err = (msg) => {
+        $('#loginErr').innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
+      };
+      $('#setPwdBtn').onclick = async () => {
+        const password = $('#password').value;
+        const password2 = $('#password2').value;
+        if (password.length < 10) return err('Password must be at least 10 characters');
+        if (password !== password2) return err('Passwords do not match');
+        try {
+          $('#setPwdBtn').disabled = true;
+          err('');
+          const data = await api('/api/auth/set-password', {
+            method: 'POST',
+            body: JSON.stringify({ token: rawToken, password }),
+          });
+          await finishAuthSession(data);
+        } catch (e) {
+          $('#setPwdBtn').disabled = false;
+          err(e.message);
+        }
+      };
+    } catch (e) {
+      main.innerHTML = `
+        <div class="login-stage">
+          <div class="login-panel">
+            <p class="login-brand">Firm Billing</p>
+            <p class="login-lead">Could not open this link.</p>
+            <div class="error">${escapeHtml(e.message)}</div>
+            <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
+          </div>
+        </div>`;
+      clearAuthTokenFromUrl();
+      $('#backToLogin').onclick = () => renderLogin('password');
+    }
   }
 
   function goAddMatter() {
@@ -1983,26 +2193,23 @@
               <option value="admin">Admin</option>
             </select>
           </label>
-          <label>Temporary password
-            <input name="password" type="password" autocomplete="new-password" required minlength="10"
-              placeholder="At least 10 characters" />
-          </label>
           <label>Default rate ($/hr)
             <input class="rate-dollars" name="defaultRate" type="text" inputmode="decimal" placeholder="350.00" required />
           </label>
           <label>Rate effective date
             <input name="rateEffectiveDate" type="date" value="${today}" required />
           </label>
-          <div class="row-actions" style="align-items:end">
-            <button class="primary" type="submit">Add timekeeper</button>
+          <p class="hint span-all">Sends a secure invite email so they set their own password. No temporary password is stored.</p>
+          <div class="row-actions span-all" style="align-items:end">
+            <button class="primary" type="submit">Invite by email</button>
           </div>
         </form>
         <div id="tkMsg"></div>
-        ` : '<p class="hint">Only admins can add timekeepers. Billing clerks can add/change rates.</p>'}
+        ` : '<p class="hint">Only admins can invite timekeepers. Billing clerks can add/change rates.</p>'}
 
         <div class="table-wrap"><table>
           <thead>
-            <tr><th>Timekeeper</th><th>Role</th><th>Current rate</th><th>Effective</th><th>Add rate change</th></tr>
+            <tr><th>Timekeeper</th><th>Role</th><th>Current rate</th><th>Effective</th><th>Add rate change</th>${isAdmin ? '<th></th>' : ''}</tr>
           </thead>
           <tbody>
             ${timekeepers.map((t) => `
@@ -2024,7 +2231,11 @@
                     </ul>
                   </details>
                 </td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No timekeepers</td></tr>'}
+                ${isAdmin ? `
+                <td>
+                  <button type="button" data-send-reset="${t.id}">Email reset</button>
+                </td>` : ''}
+              </tr>`).join('') || `<tr><td colspan="${isAdmin ? 6 : 5}" class="muted">No timekeepers</td></tr>`}
           </tbody>
         </table></div>
         <div id="rateMsg"></div>
@@ -2212,25 +2423,47 @@
         const fd = new FormData(tkForm);
         try {
           const defaultRateCents = dollarsToCents(fd.get('defaultRate'));
-          await api('/api/users', {
+          const invited = await api('/api/users/invite', {
             method: 'POST',
             body: JSON.stringify({
               name: fd.get('name'),
               email: fd.get('email'),
               role: fd.get('role'),
-              password: fd.get('password'),
               defaultRateCents,
               rateEffectiveDate: fd.get('rateEffectiveDate'),
             }),
           });
-          $('#tkMsg').innerHTML = '<div class="ok-banner">Timekeeper added.</div>';
+          const mode = invited.delivery?.mode === 'smtp'
+            ? 'Invite email sent.'
+            : 'Invite created (email logged locally — configure SMTP for delivery).';
           await refreshRefs();
           await renderSettings();
+          const msg = $('#tkMsg');
+          if (msg) msg.innerHTML = `<div class="ok-banner">${escapeHtml(mode)}</div>`;
         } catch (e) {
           $('#tkMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }
+
+    main.querySelectorAll('[data-send-reset]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          btn.disabled = true;
+          const result = await api(`/api/users/${btn.dataset.sendReset}/send-reset`, {
+            method: 'POST',
+            body: '{}',
+          });
+          const mode = result.delivery?.mode === 'smtp'
+            ? 'Password reset email sent.'
+            : 'Reset link created (email logged locally — configure SMTP for delivery).';
+          $('#rateMsg').innerHTML = `<div class="ok-banner">${escapeHtml(mode)}</div>`;
+        } catch (e) {
+          btn.disabled = false;
+          $('#rateMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    });
 
     main.querySelectorAll('form.rate-form').forEach((rf) => {
       rf.onsubmit = async (ev) => {

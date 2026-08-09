@@ -20,6 +20,7 @@ const reports = require('../services/reports');
 const usersSvc = require('../services/users');
 const ratesAdmin = require('../services/ratesAdmin');
 const customFields = require('../services/customFields');
+const authEmail = require('../services/authEmail');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -140,6 +141,7 @@ function createServer(db = openDb()) {
   migrate(db);
   security.sessionSecret(db);
   security.ensureSessionTables(db);
+  authEmail.ensureAuthTokenTables(db);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -220,6 +222,97 @@ function createServer(db = openDb()) {
         return json(res, 200, { user: session.user, csrf: session.csrf }, req);
       }
 
+      // Public auth-email flows (invite set-password, reset, magic login)
+      const rateLimitedAuthEmail = () => {
+        const limit = security.checkAuthEmailRateLimit(req);
+        if (!limit.ok) {
+          json(res, 429, {
+            error: 'rate_limited',
+            message: 'Too many requests. Try again later.',
+            retryAfterSec: limit.retryAfterSec,
+          }, req, { 'Retry-After': String(limit.retryAfterSec) });
+          return true;
+        }
+        security.recordAuthEmailAttempt(req);
+        return false;
+      };
+
+      if (req.method === 'GET' && pathname === '/api/auth/token-info') {
+        if (rateLimitedAuthEmail()) return;
+        const token = url.searchParams.get('token') || '';
+        return json(res, 200, authEmail.tokenInfoPublic(db, token), req);
+      }
+
+      if (req.method === 'POST' && pathname === '/api/password-reset/request') {
+        if (rateLimitedAuthEmail()) return;
+        const body = await parseBody(req);
+        const result = await authEmail.requestPasswordReset(db, req, body.email);
+        return json(res, 200, result, req);
+      }
+
+      if (req.method === 'POST' && pathname === '/api/login/magic/request') {
+        if (rateLimitedAuthEmail()) return;
+        const body = await parseBody(req);
+        const result = await authEmail.requestMagicLogin(db, req, body.email);
+        return json(res, 200, result, req);
+      }
+
+      if (req.method === 'POST' && pathname === '/api/auth/set-password') {
+        if (rateLimitedAuthEmail()) return;
+        const body = await parseBody(req);
+        try {
+          const { user: u, session } = authEmail.setPasswordWithToken(db, req, {
+            token: body.token,
+            password: body.password,
+          });
+          security.clearLoginFailures(req);
+          const secure = security.requestIsSecure(req);
+          const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
+          return json(res, 200, {
+            user: u,
+            csrf: session.csrf,
+            token: session.token,
+          }, req, {
+            'Set-Cookie': security.cookieHeader('session', session.token, {
+              maxAgeSec: maxAge,
+              secure,
+              httpOnly: true,
+              sameSite: 'Lax',
+            }),
+          });
+        } catch (e) {
+          const status = e.code === 'INVALID_TOKEN' || e.code === 'WRONG_PURPOSE' ? 400 : 400;
+          return json(res, status, { error: e.code || 'error', message: e.message }, req);
+        }
+      }
+
+      if (req.method === 'POST' && pathname === '/api/login/magic/confirm') {
+        if (rateLimitedAuthEmail()) return;
+        const body = await parseBody(req);
+        try {
+          const { user: u, session } = authEmail.completeMagicLogin(db, req, {
+            token: body.token,
+          });
+          security.clearLoginFailures(req);
+          const secure = security.requestIsSecure(req);
+          const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
+          return json(res, 200, {
+            user: u,
+            csrf: session.csrf,
+            token: session.token,
+          }, req, {
+            'Set-Cookie': security.cookieHeader('session', session.token, {
+              maxAgeSec: maxAge,
+              secure,
+              httpOnly: true,
+              sameSite: 'Lax',
+            }),
+          });
+        } catch (e) {
+          return json(res, 400, { error: e.code || 'error', message: e.message }, req);
+        }
+      }
+
       // Microsoft OAuth redirect must work even if session cookie is delayed
       if (req.method === 'GET' && pathname === '/api/onedrive/oauth/callback') {
         const msAuth = require('../services/msAuth');
@@ -266,6 +359,26 @@ function createServer(db = openDb()) {
           });
         }
         return json(res, 201, created);
+      }
+      if (req.method === 'POST' && pathname === '/api/users/invite') {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const body = await parseBody(req);
+        const invited = await authEmail.inviteUserAndEmail(db, user, req, body);
+        if (body.defaultRateCents != null) {
+          ratesAdmin.addRate(db, user, {
+            scope: 'timekeeper',
+            scopeId: invited.user.id,
+            amountCents: Number(body.defaultRateCents),
+            effectiveDate: body.rateEffectiveDate || new Date().toISOString().slice(0, 10),
+          });
+        }
+        return json(res, 201, invited);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/users\/\d+\/send-reset$/)) {
+        if (!requireRoles(user, res, ['admin'])) return;
+        const id = Number(pathname.split('/')[3]);
+        const result = await authEmail.adminSendPasswordReset(db, user, req, id);
+        return json(res, 200, result);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/users\/\d+\/active$/)) {
         if (!requireRoles(user, res, ['admin'])) return;

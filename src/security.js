@@ -9,6 +9,8 @@ const LOGIN_MAX_ATTEMPTS = Math.max(3, Number(process.env.LOGIN_MAX_ATTEMPTS || 
 const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 
 const loginAttempts = new Map(); // ip -> { count, resetAt }
+const authEmailAttempts = new Map(); // ip -> { count, resetAt }
+const AUTH_EMAIL_MAX_ATTEMPTS = Math.max(3, Number(process.env.AUTH_EMAIL_MAX_ATTEMPTS || 10));
 
 function isProduction() {
   return IS_PROD;
@@ -239,6 +241,34 @@ function clearLoginFailures(req) {
   loginAttempts.delete(clientIp(req));
 }
 
+function checkAuthEmailRateLimit(req) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const row = authEmailAttempts.get(ip);
+  if (!row || row.resetAt < now) {
+    authEmailAttempts.set(ip, { count: 0, resetAt: now + LOGIN_WINDOW_MS });
+    return { ok: true, remaining: AUTH_EMAIL_MAX_ATTEMPTS };
+  }
+  if (row.count >= AUTH_EMAIL_MAX_ATTEMPTS) {
+    return {
+      ok: false,
+      retryAfterSec: Math.ceil((row.resetAt - now) / 1000),
+    };
+  }
+  return { ok: true, remaining: AUTH_EMAIL_MAX_ATTEMPTS - row.count };
+}
+
+function recordAuthEmailAttempt(req) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const row = authEmailAttempts.get(ip);
+  if (!row || row.resetAt < now) {
+    authEmailAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return;
+  }
+  row.count += 1;
+}
+
 function allowedOrigins() {
   const raw = String(process.env.ALLOWED_ORIGINS || '').trim();
   if (!raw) return null;
@@ -394,6 +424,8 @@ module.exports = {
   checkLoginRateLimit,
   recordLoginFailure,
   clearLoginFailures,
+  checkAuthEmailRateLimit,
+  recordAuthEmailAttempt,
   assertSameOrigin,
   assertCsrf,
   securityHeaders,

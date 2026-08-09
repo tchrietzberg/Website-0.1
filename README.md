@@ -95,9 +95,10 @@ Built-in controls (zero npm deps):
 - **Password auth** (scrypt) — email-only login removed
 - **Persistent DB sessions** with sliding expiry, HttpOnly cookies (Secure in production)
 - **CSRF** (`X-CSRF-Token`) + same-origin checks on mutating API calls
-- **Login rate limiting**, request body size limits
+- **Login / auth-email rate limiting**, request body size limits
 - **Security headers**: CSP, nosniff, frame deny, Referrer-Policy, Permissions-Policy, HSTS (prod/proxy)
 - **Static path hardening**, OAuth redirect host allowlist (`ALLOWED_ORIGINS` / `PUBLIC_ORIGIN`)
+- **Invite / password reset / magic-link login** via one-time hashed tokens + SMTP (or local mail log in dev)
 - Timekeepers can only create/submit **their own** time entries (admins/clerks may proxy)
 
 Public deploy checklist:
@@ -106,8 +107,9 @@ Public deploy checklist:
 2. Set a long random `SESSION_SECRET` and `NODE_ENV=production`
 3. Set `ALLOWED_ORIGINS` / `PUBLIC_ORIGIN` to your https origin
 4. Re-seed or reset demo passwords — never ship `demo-change-me`
-5. Set `MS_CLIENT_ID` for OneDrive; prefer env secrets over DB storage
-6. Bind to localhost behind the proxy (`BIND_HOST=127.0.0.1`) when possible
+5. Configure SMTP (`SMTP_HOST`, `SMTP_FROM`, …) for invite / reset / magic-link email
+6. Set `MS_CLIENT_ID` for OneDrive; prefer env secrets over DB storage
+7. Bind to localhost behind the proxy (`BIND_HOST=127.0.0.1`) when possible
 
 Still deferred / not full firm compliance:
 

@@ -35,6 +35,8 @@ function migrate(db) {
 function migrateAuthColumns(db) {
   const security = require('./security');
   security.ensureSessionTables(db);
+  const authEmail = require('./services/authEmail');
+  authEmail.ensureAuthTokenTables(db);
 }
 
 function tableColumns(db, table) {
