@@ -137,19 +137,44 @@ describe('invoice lifecycle', () => {
     approvedEntry(60);
     const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
     assert.equal(inv.matter_name, 'NDCal Case');
-    const pdf = invoiceSvc.toInvoicePdf(inv);
+    const fields = invoiceSvc.getBillFields(ctx.db);
+    const pdf = invoiceSvc.toInvoicePdf(inv, fields);
     assert.ok(Buffer.isBuffer(pdf));
     assert.ok(pdf.slice(0, 5).toString() === '%PDF-');
     assert.match(pdf.toString('latin1'), /Bill INV-/);
     assert.match(pdf.toString('latin1'), /NDCal Case/);
     assert.match(pdf.toString('latin1'), /Matter name/);
 
-    const xlsx = invoiceSvc.toInvoiceXlsx(inv);
+    const xlsx = invoiceSvc.toInvoiceXlsx(inv, fields);
     assert.ok(Buffer.isBuffer(xlsx));
     assert.ok(xlsx.length > 100);
     // ZIP local file header signature
     assert.equal(xlsx[0], 0x50);
     assert.equal(xlsx[1], 0x4b);
+  });
+
+  it('lets firms add and remove fields included on bills', () => {
+    const defaults = invoiceSvc.getBillFieldConfig(ctx.db);
+    assert.ok(defaults.headerKeys.includes('matter_name'));
+    assert.ok(defaults.lineKeys.includes('timekeeper'));
+
+    invoiceSvc.removeBillField(ctx.db, ctx.clerk, { group: 'header', key: 'matter_name' });
+    invoiceSvc.removeBillField(ctx.db, ctx.clerk, { group: 'lines', key: 'timekeeper' });
+    invoiceSvc.addBillField(ctx.db, ctx.clerk, { group: 'header', key: 'due_date' });
+    invoiceSvc.addBillField(ctx.db, ctx.clerk, { group: 'lines', key: 'minutes' });
+
+    const cfg = invoiceSvc.getBillFieldConfig(ctx.db);
+    assert.ok(!cfg.headerKeys.includes('matter_name'));
+    assert.ok(cfg.headerKeys.includes('due_date'));
+    assert.ok(!cfg.lineKeys.includes('timekeeper'));
+    assert.ok(cfg.lineKeys.includes('minutes'));
+
+    approvedEntry(60);
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
+    const pdf = invoiceSvc.toInvoicePdf(inv, invoiceSvc.getBillFields(ctx.db)).toString('latin1');
+    assert.doesNotMatch(pdf, /Matter name/);
+    assert.match(pdf, /Due date/);
+    assert.doesNotMatch(pdf, /Timekeeper/);
   });
 
   it('create bill issues immediately, marks entries invoiced, and is immutable', () => {

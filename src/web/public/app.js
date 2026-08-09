@@ -3578,12 +3578,106 @@
     return map[status] || status;
   }
 
+  function billHeaderMetaHtml(inv, fieldConfig) {
+    const keys = fieldConfig?.headerKeys || [];
+    const bits = [];
+    for (const key of keys) {
+      if (key === 'subtotal' || key === 'total') continue;
+      let value = '';
+      if (key === 'matter_name') value = inv.matter_name || inv.matter_number || '';
+      else if (key === 'matter_number') value = inv.matter_number || '';
+      else if (key === 'client') value = inv.client_name || '';
+      else if (key === 'status') value = invoiceStageLabel(inv.status);
+      else if (key === 'issue_date') value = inv.issue_date || '';
+      else if (key === 'due_date') value = inv.due_date || '';
+      if (value) bits.push(escapeHtml(String(value)));
+    }
+    const moneyBits = [];
+    if (keys.includes('subtotal')) moneyBits.push(`Subtotal ${money(inv.subtotal_cents)}`);
+    if (keys.includes('total')) moneyBits.push(`Total ${money(inv.total_cents)}`);
+    const all = [...bits, ...moneyBits];
+    return all.length ? `<p class="muted">${all.join(' · ')}</p>` : '';
+  }
+
+  function billLineCellHtml(line, key) {
+    if (key === 'service_date') return `<td>${escapeHtml(line.service_date || '')}</td>`;
+    if (key === 'timekeeper') return `<td>${escapeHtml(line.timekeeper_name || '')}</td>`;
+    if (key === 'description') return `<td>${escapeHtml(line.description || '')}</td>`;
+    if (key === 'hours') return `<td>${escapeHtml(formatDuration(line.minutes))}</td>`;
+    if (key === 'minutes') return `<td>${escapeHtml(String(line.minutes || 0))}</td>`;
+    if (key === 'rate') return `<td>${money(line.rate_cents)}</td>`;
+    if (key === 'amount') return `<td>${money(line.amount_cents)}</td>`;
+    return '<td></td>';
+  }
+
+  function billFieldsPanelHtml(fieldConfig, { canEdit = false } = {}) {
+    const enabledHeader = [
+      ...(fieldConfig.coreHeader || []),
+      ...(fieldConfig.enabledHeader || []),
+    ];
+    const enabledLines = fieldConfig.enabledLines || [];
+    const availableHeader = fieldConfig.availableHeader || [];
+    const availableLines = fieldConfig.availableLines || [];
+    const row = (f, group) => `
+      <div class="field-mgmt-row">
+        <div>
+          <strong>${escapeHtml(f.label)}</strong>
+          <div class="muted">${group === 'header' ? 'Bill header' : 'Line column'}${f.removable === false ? ' · always included' : ''}</div>
+        </div>
+        <div class="row-actions">
+          ${canEdit && f.removable !== false
+            ? `<button type="button" data-del-bill-field="${escapeHtml(f.key)}" data-bill-group="${group}">Remove</button>`
+            : ''}
+        </div>
+      </div>`;
+    return `
+      <div class="card stack" id="billFieldsCard">
+        <h2>Fields on bills</h2>
+        <p class="hint">Choose which header details and line columns appear on bills, PDF, and Excel.</p>
+        <h3 style="margin:0;font-family:var(--font);font-size:1rem">Header</h3>
+        <div class="field-mgmt-list">
+          ${enabledHeader.map((f) => row(f, 'header')).join('') || '<p class="muted">No header fields</p>'}
+        </div>
+        ${canEdit && availableHeader.length ? `
+          <div class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:center">
+            <label class="matter-type-picker" style="margin:0">Add header field
+              <select id="addBillHeaderField">
+                <option value="">Choose…</option>
+                ${availableHeader.map((f) => `
+                  <option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
+              </select>
+            </label>
+            <button type="button" id="addBillHeaderFieldBtn">Add</button>
+          </div>` : ''}
+        <h3 style="margin:.75rem 0 0;font-family:var(--font);font-size:1rem">Line columns</h3>
+        <div class="field-mgmt-list">
+          ${enabledLines.map((f) => row(f, 'lines')).join('') || '<p class="muted">No line columns yet</p>'}
+        </div>
+        ${canEdit && availableLines.length ? `
+          <div class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:center">
+            <label class="matter-type-picker" style="margin:0">Add line column
+              <select id="addBillLineField">
+                <option value="">Choose…</option>
+                ${availableLines.map((f) => `
+                  <option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
+              </select>
+            </label>
+            <button type="button" id="addBillLineFieldBtn">Add</button>
+          </div>` : ''}
+        <div id="billFieldsMsg"></div>
+      </div>`;
+  }
+
   async function renderBilling() {
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
-    const [invoices, matters, ready] = await Promise.all([
+    const [invoices, matters, ready, fieldConfig] = await Promise.all([
       api('/api/invoices'),
       api('/api/matters').catch(() => []),
       canBill ? api('/api/billing/ready').catch(() => []) : Promise.resolve([]),
+      api('/api/billing/fields').catch(() => ({
+        coreHeader: [], enabledHeader: [], availableHeader: [],
+        enabledLines: [], availableLines: [], headerKeys: [], lineKeys: [],
+      })),
     ]);
     state.matters = matters || [];
     const readyIds = new Set((ready || []).map((r) => Number(r.id)));
@@ -3612,6 +3706,7 @@
         </form>` : '<div class="error">Only admins and billing clerks can create bills.</div>'}
         <div id="billMsg"></div>
       </div>
+      ${billFieldsPanelHtml(fieldConfig, { canEdit: canBill })}
       ${(ready || []).length ? `
       <div class="card">
         <h2>Ready to bill</h2>
@@ -3668,6 +3763,52 @@
           $('#billMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
+
+      const setFieldsMsg = (html) => {
+        const msg = $('#billFieldsMsg');
+        if (msg) msg.innerHTML = html || '';
+      };
+      const refreshFields = async () => {
+        const openId = $('#invoiceDetail')?.dataset?.invoiceId;
+        await renderBilling();
+        if (openId) await showInvoice(Number(openId));
+      };
+      main.querySelectorAll('[data-del-bill-field]').forEach((btn) => {
+        btn.onclick = async () => {
+          try {
+            await api(
+              `/api/billing/fields?group=${encodeURIComponent(btn.dataset.billGroup)}&key=${encodeURIComponent(btn.dataset.delBillField)}`,
+              { method: 'DELETE' }
+            );
+            await refreshFields();
+          } catch (e) {
+            setFieldsMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      });
+      const wireAdd = (selectId, btnId, group) => {
+        const sel = $(selectId);
+        const btn = $(btnId);
+        if (!sel || !btn) return;
+        btn.onclick = async () => {
+          const key = sel.value;
+          if (!key) {
+            setFieldsMsg('<div class="error">Choose a field to add.</div>');
+            return;
+          }
+          try {
+            await api('/api/billing/fields', {
+              method: 'POST',
+              body: JSON.stringify({ group, key }),
+            });
+            await refreshFields();
+          } catch (e) {
+            setFieldsMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      };
+      wireAdd('#addBillHeaderField', '#addBillHeaderFieldBtn', 'header');
+      wireAdd('#addBillLineField', '#addBillLineFieldBtn', 'lines');
     }
     main.querySelectorAll('[data-open]').forEach((b) => {
       b.onclick = () => showInvoice(Number(b.dataset.open));
@@ -3678,26 +3819,28 @@
     const inv = await api(`/api/invoices/${id}`);
     const el = $('#invoiceDetail');
     if (!el) return;
+    el.dataset.invoiceId = String(id);
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
+    const fieldConfig = inv.fieldConfig || {};
+    const lineKeys = (fieldConfig.lineKeys && fieldConfig.lineKeys.length)
+      ? fieldConfig.lineKeys
+      : ['service_date', 'timekeeper', 'hours', 'rate', 'amount'];
+    const lineLabels = Object.fromEntries(
+      [...(fieldConfig.enabledLines || [])].map((f) => [f.key, f.label])
+    );
     el.innerHTML = `
       <div class="card stack">
         <h2>${escapeHtml(inv.number)}
           <span class="pill" data-status="${escapeHtml(inv.status)}">${escapeHtml(invoiceStageLabel(inv.status))}</span>
         </h2>
-        <p class="muted">${escapeHtml(inv.client_name || '')} · ${escapeHtml(inv.matter_name || inv.matter_number || '')}
-          · Subtotal ${money(inv.subtotal_cents)}
-          · Total ${money(inv.total_cents)}</p>
+        ${billHeaderMetaHtml(inv, fieldConfig)}
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Rate</th><th>Amount</th></tr></thead>
+          <thead><tr>${lineKeys.map((k) => `<th>${escapeHtml(lineLabels[k] || k)}</th>`).join('')}</tr></thead>
           <tbody>
             ${(inv.lines || []).map((l) => `
               <tr>
-                <td>${escapeHtml(l.service_date)}<div class="muted">${escapeHtml(l.description || '')}</div></td>
-                <td>${escapeHtml(l.timekeeper_name || '')}</td>
-                <td>${escapeHtml(formatDuration(l.minutes))}</td>
-                <td>${money(l.rate_cents)}</td>
-                <td>${money(l.amount_cents)}</td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No lines</td></tr>'}
+                ${lineKeys.map((k) => billLineCellHtml(l, k)).join('')}
+              </tr>`).join('') || `<tr><td colspan="${Math.max(lineKeys.length, 1)}" class="muted">No lines</td></tr>`}
           </tbody>
         </table></div>
         <div class="row-actions">

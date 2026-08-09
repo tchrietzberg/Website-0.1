@@ -1,8 +1,154 @@
 const { amountFromMinutes, formatCents, formatDuration } = require('../money');
 const { resolveRate } = require('../rates');
-const { allocateNumber, audit } = require('../db');
+const { allocateNumber, audit, getSetting, setSetting } = require('../db');
 const { buildXlsx } = require('../xlsx');
 const { buildTextPdf } = require('../pdf');
+
+const BILL_FIELDS_SETTING = 'bill_fields';
+
+/** Always shown on bills (cannot be removed). */
+const BILL_CORE_HEADER_FIELDS = [
+  { key: 'number', label: 'Bill number', group: 'header' },
+];
+
+/** Optional header fields firms can include on bills. */
+const BILL_HEADER_FIELDS = [
+  { key: 'matter_name', label: 'Matter name', group: 'header' },
+  { key: 'matter_number', label: 'Matter number', group: 'header' },
+  { key: 'client', label: 'Client', group: 'header' },
+  { key: 'status', label: 'Status', group: 'header' },
+  { key: 'issue_date', label: 'Issue date', group: 'header' },
+  { key: 'due_date', label: 'Due date', group: 'header' },
+  { key: 'subtotal', label: 'Subtotal', group: 'header' },
+  { key: 'total', label: 'Total', group: 'header' },
+];
+
+/** Line columns firms can include on bills. */
+const BILL_LINE_FIELDS = [
+  { key: 'service_date', label: 'Date', group: 'lines' },
+  { key: 'timekeeper', label: 'Timekeeper', group: 'lines' },
+  { key: 'description', label: 'Description', group: 'lines' },
+  { key: 'hours', label: 'Hours', group: 'lines' },
+  { key: 'minutes', label: 'Minutes', group: 'lines' },
+  { key: 'rate', label: 'Rate', group: 'lines' },
+  { key: 'amount', label: 'Amount', group: 'lines' },
+];
+
+const BILL_HEADER_KEYS = BILL_HEADER_FIELDS.map((f) => f.key);
+const BILL_LINE_KEYS = BILL_LINE_FIELDS.map((f) => f.key);
+
+const DEFAULT_BILL_FIELDS = {
+  header: ['matter_name', 'client', 'status', 'issue_date', 'subtotal', 'total'],
+  lines: ['service_date', 'timekeeper', 'description', 'hours', 'rate', 'amount'],
+};
+
+function normalizeBillFieldKeys(keys, allowed) {
+  const wanted = new Set(
+    (Array.isArray(keys) ? keys : [])
+      .map((k) => String(k || '').trim())
+      .filter((k) => allowed.includes(k))
+  );
+  return allowed.filter((k) => wanted.has(k));
+}
+
+function getBillFields(db) {
+  const raw = getSetting(db, BILL_FIELDS_SETTING, null);
+  if (raw == null || raw === '') {
+    return {
+      header: [...DEFAULT_BILL_FIELDS.header],
+      lines: [...DEFAULT_BILL_FIELDS.lines],
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw) || {};
+    return {
+      header: normalizeBillFieldKeys(parsed.header, BILL_HEADER_KEYS),
+      lines: normalizeBillFieldKeys(parsed.lines, BILL_LINE_KEYS),
+    };
+  } catch {
+    return {
+      header: [...DEFAULT_BILL_FIELDS.header],
+      lines: [...DEFAULT_BILL_FIELDS.lines],
+    };
+  }
+}
+
+function setBillFields(db, actor, input = {}) {
+  const current = getBillFields(db);
+  const next = {
+    header: input.header !== undefined
+      ? normalizeBillFieldKeys(input.header, BILL_HEADER_KEYS)
+      : current.header,
+    lines: input.lines !== undefined
+      ? normalizeBillFieldKeys(input.lines, BILL_LINE_KEYS)
+      : current.lines,
+  };
+  setSetting(db, BILL_FIELDS_SETTING, JSON.stringify(next));
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'bill_fields.update',
+    entityType: 'firm_settings',
+    entityId: null,
+    detail: next,
+  });
+  return getBillFieldConfig(db);
+}
+
+function getBillFieldConfig(db) {
+  const enabled = getBillFields(db);
+  const headerSet = new Set(enabled.header);
+  const lineSet = new Set(enabled.lines);
+  return {
+    coreHeader: BILL_CORE_HEADER_FIELDS.map((f) => ({ ...f, removable: false })),
+    enabledHeader: BILL_HEADER_FIELDS
+      .filter((f) => headerSet.has(f.key))
+      .map((f) => ({ ...f, removable: true })),
+    availableHeader: BILL_HEADER_FIELDS
+      .filter((f) => !headerSet.has(f.key))
+      .map((f) => ({ ...f, removable: true })),
+    enabledLines: BILL_LINE_FIELDS
+      .filter((f) => lineSet.has(f.key))
+      .map((f) => ({ ...f, removable: true })),
+    availableLines: BILL_LINE_FIELDS
+      .filter((f) => !lineSet.has(f.key))
+      .map((f) => ({ ...f, removable: true })),
+    headerKeys: enabled.header,
+    lineKeys: enabled.lines,
+  };
+}
+
+function addBillField(db, actor, { group, key } = {}) {
+  const g = String(group || '').trim();
+  const k = String(key || '').trim();
+  const current = getBillFields(db);
+  if (g === 'header') {
+    if (!BILL_HEADER_KEYS.includes(k)) throw new Error('unknown bill header field');
+    if (!current.header.includes(k)) current.header.push(k);
+  } else if (g === 'lines') {
+    if (!BILL_LINE_KEYS.includes(k)) throw new Error('unknown bill line field');
+    if (!current.lines.includes(k)) current.lines.push(k);
+  } else {
+    throw new Error('group must be header or lines');
+  }
+  return setBillFields(db, actor, current);
+}
+
+function removeBillField(db, actor, { group, key } = {}) {
+  const g = String(group || '').trim();
+  const k = String(key || '').trim();
+  if (g === 'header' && k === 'number') {
+    throw new Error('Bill number cannot be removed');
+  }
+  const current = getBillFields(db);
+  if (g === 'header') {
+    current.header = current.header.filter((x) => x !== k);
+  } else if (g === 'lines') {
+    current.lines = current.lines.filter((x) => x !== k);
+  } else {
+    throw new Error('group must be header or lines');
+  }
+  return setBillFields(db, actor, current);
+}
 
 /** Create and issue a bill in one step from unbilled time (no approval step). */
 function createBill(db, actor, matterId, entryIds = null) {
@@ -242,7 +388,13 @@ function getInvoice(db, id) {
   `).all(id);
   const writeDowns = db.prepare('SELECT * FROM write_downs WHERE invoice_id = ? ORDER BY id').all(id);
   const credits = db.prepare('SELECT * FROM credit_notes WHERE invoice_id = ? ORDER BY id').all(id);
-  return { ...invoice, lines, writeDowns, credits };
+  return {
+    ...invoice,
+    lines,
+    writeDowns,
+    credits,
+    fieldConfig: getBillFieldConfig(db),
+  };
 }
 
 function listInvoices(db) {
@@ -270,71 +422,160 @@ function invoiceMatterLabel(inv) {
   return inv.matter_name || inv.matter_number || 'Matter';
 }
 
-function invoiceExportRows(inv) {
+function resolveBillFields(fields) {
+  if (fields && typeof fields === 'object' && (fields.header || fields.lines || fields.headerKeys)) {
+    return {
+      header: normalizeBillFieldKeys(fields.header || fields.headerKeys, BILL_HEADER_KEYS),
+      lines: normalizeBillFieldKeys(fields.lines || fields.lineKeys, BILL_LINE_KEYS),
+    };
+  }
+  return {
+    header: [...DEFAULT_BILL_FIELDS.header],
+    lines: [...DEFAULT_BILL_FIELDS.lines],
+  };
+}
+
+function headerFieldValue(inv, key) {
   const matterName = invoiceMatterLabel(inv);
+  switch (key) {
+    case 'matter_name': return matterName;
+    case 'matter_number': return inv.matter_number || '';
+    case 'client': return inv.client_name || '';
+    case 'status': return invoiceStageLabel(inv.status);
+    case 'issue_date': return inv.issue_date || '';
+    case 'due_date': return inv.due_date || '';
+    case 'subtotal': return Number(inv.subtotal_cents || 0) / 100;
+    case 'total': return Number(inv.total_cents || 0) / 100;
+    default: return '';
+  }
+}
+
+function headerFieldLabel(key) {
+  return BILL_HEADER_FIELDS.find((f) => f.key === key)?.label
+    || BILL_CORE_HEADER_FIELDS.find((f) => f.key === key)?.label
+    || key;
+}
+
+function lineFieldLabel(key) {
+  return BILL_LINE_FIELDS.find((f) => f.key === key)?.label || key;
+}
+
+function lineCell(line, key) {
+  switch (key) {
+    case 'service_date': return { v: line.service_date || '', t: 's' };
+    case 'timekeeper': return { v: line.timekeeper_name || '', t: 's' };
+    case 'description': return { v: line.description || '', t: 's' };
+    case 'hours': return { v: formatDuration(line.minutes || 0, 'decimal'), t: 's' };
+    case 'minutes': return { v: Number(line.minutes || 0), t: 'n' };
+    case 'rate': return { v: Number(line.rate_cents || 0) / 100, t: 'currency' };
+    case 'amount': return { v: Number(line.amount_cents || 0) / 100, t: 'currency' };
+    default: return { v: '', t: 's' };
+  }
+}
+
+function lineCellText(line, key) {
+  switch (key) {
+    case 'service_date': return String(line.service_date || '');
+    case 'timekeeper': return String(line.timekeeper_name || '');
+    case 'description': return String(line.description || '');
+    case 'hours': return formatDuration(line.minutes || 0, 'decimal');
+    case 'minutes': return String(line.minutes || 0);
+    case 'rate': return formatCents(line.rate_cents || 0);
+    case 'amount': return formatCents(line.amount_cents || 0);
+    default: return '';
+  }
+}
+
+function invoiceExportRows(inv, fields = null) {
+  const cfg = resolveBillFields(fields || inv.fieldConfig);
   const headerMeta = [
     [{ v: 'Bill', t: 's' }, { v: inv.number || '', t: 's' }],
-    [{ v: 'Matter name', t: 's' }, { v: matterName, t: 's' }],
-    [{ v: 'Matter number', t: 's' }, { v: inv.matter_number || '', t: 's' }],
-    [{ v: 'Client', t: 's' }, { v: inv.client_name || '', t: 's' }],
-    [{ v: 'Status', t: 's' }, { v: invoiceStageLabel(inv.status), t: 's' }],
-    [],
   ];
-  const header = [
-    { v: 'Date', t: 's' },
-    { v: 'Timekeeper', t: 's' },
-    { v: 'Description', t: 's' },
-    { v: 'Hours', t: 's' },
-    { v: 'Minutes', t: 's' },
-    { v: 'Rate', t: 's' },
-    { v: 'Amount', t: 's' },
-  ];
-  const body = (inv.lines || []).map((l) => [
-    { v: l.service_date || '', t: 's' },
-    { v: l.timekeeper_name || '', t: 's' },
-    { v: l.description || '', t: 's' },
-    { v: formatDuration(l.minutes || 0, 'decimal'), t: 's' },
-    { v: Number(l.minutes || 0), t: 'n' },
-    { v: Number(l.rate_cents || 0) / 100, t: 'currency' },
-    { v: Number(l.amount_cents || 0) / 100, t: 'currency' },
-  ]);
-  const summary = [
-    [],
-    [{ v: 'Subtotal', t: 's' }, { v: Number(inv.subtotal_cents || 0) / 100, t: 'currency' }],
-    [{ v: 'Total', t: 's' }, { v: Number(inv.total_cents || 0) / 100, t: 'currency' }],
-  ];
+  for (const key of cfg.header) {
+    if (key === 'subtotal' || key === 'total') continue;
+    const value = headerFieldValue(inv, key);
+    headerMeta.push([
+      { v: headerFieldLabel(key), t: 's' },
+      key === 'subtotal' || key === 'total'
+        ? { v: value, t: 'currency' }
+        : { v: String(value || ''), t: 's' },
+    ]);
+  }
+  headerMeta.push([]);
+
+  const lineKeys = cfg.lines.length ? cfg.lines : [...DEFAULT_BILL_FIELDS.lines];
+  const header = lineKeys.map((key) => ({ v: lineFieldLabel(key), t: 's' }));
+  const body = (inv.lines || []).map((l) => lineKeys.map((key) => lineCell(l, key)));
+
+  const summary = [[]];
+  if (cfg.header.includes('subtotal')) {
+    summary.push([
+      { v: 'Subtotal', t: 's' },
+      { v: Number(inv.subtotal_cents || 0) / 100, t: 'currency' },
+    ]);
+  }
+  if (cfg.header.includes('total')) {
+    summary.push([
+      { v: 'Total', t: 's' },
+      { v: Number(inv.total_cents || 0) / 100, t: 'currency' },
+    ]);
+  }
   return [...headerMeta, header, ...body, ...summary];
 }
 
-function toInvoiceXlsx(inv) {
-  return buildXlsx(invoiceExportRows(inv));
+function toInvoiceXlsx(inv, fields = null) {
+  return buildXlsx(invoiceExportRows(inv, fields));
 }
 
-function toInvoicePdf(inv) {
+function toInvoicePdf(inv, fields = null) {
+  const cfg = resolveBillFields(fields || inv.fieldConfig);
   const matterName = invoiceMatterLabel(inv);
-  const lines = [
-    `Matter name: ${matterName}`,
-    inv.matter_number ? `Matter number: ${inv.matter_number}` : null,
-    `Client: ${inv.client_name || ''}`,
-    `Status: ${invoiceStageLabel(inv.status)}`,
-    inv.issue_date ? `Issue date: ${inv.issue_date}` : null,
-    inv.due_date ? `Due date: ${inv.due_date}` : null,
-    '',
-    'Date       Timekeeper                 Hours   Rate      Amount',
-    '--------------------------------------------------------------------------',
-  ];
-  for (const l of inv.lines || []) {
-    const date = String(l.service_date || '').padEnd(10);
-    const tk = String(l.timekeeper_name || '').slice(0, 24).padEnd(24);
-    const hours = formatDuration(l.minutes || 0, 'decimal').padStart(6);
-    const rate = formatCents(l.rate_cents || 0).padStart(9);
-    const amount = formatCents(l.amount_cents || 0).padStart(9);
-    lines.push(`${date} ${tk} ${hours} ${rate} ${amount}`);
-    if (l.description) lines.push(`  ${l.description}`);
+  const lines = [];
+  for (const key of cfg.header) {
+    if (key === 'subtotal' || key === 'total') continue;
+    const value = headerFieldValue(inv, key);
+    if (value === '' || value == null) continue;
+    lines.push(`${headerFieldLabel(key)}: ${value}`);
   }
-  lines.push('--------------------------------------------------------------------------');
-  lines.push(`Subtotal:   ${formatCents(inv.subtotal_cents || 0)}`);
-  lines.push(`Total:      ${formatCents(inv.total_cents || 0)}`);
+  lines.push('');
+
+  const lineKeys = cfg.lines.length ? cfg.lines : [...DEFAULT_BILL_FIELDS.lines];
+  // Keep description under the row when other columns are present.
+  const tableKeys = lineKeys.filter((k) => k !== 'description');
+  const showDescription = lineKeys.includes('description');
+  if (tableKeys.length) {
+    const colHeader = tableKeys.map((k) => {
+      const label = lineFieldLabel(k);
+      if (k === 'timekeeper') return label.padEnd(24);
+      if (k === 'service_date') return label.padEnd(10);
+      if (k === 'hours' || k === 'minutes') return label.padStart(6);
+      if (k === 'rate' || k === 'amount') return label.padStart(9);
+      return label;
+    }).join(' ');
+    lines.push(colHeader.trimEnd());
+    lines.push('-'.repeat(Math.max(74, colHeader.length)));
+  }
+  for (const l of inv.lines || []) {
+    if (tableKeys.length) {
+      const cols = tableKeys.map((k) => {
+        const text = lineCellText(l, k);
+        if (k === 'timekeeper') return text.slice(0, 24).padEnd(24);
+        if (k === 'service_date') return text.padEnd(10);
+        if (k === 'hours' || k === 'minutes') return text.padStart(6);
+        if (k === 'rate' || k === 'amount') return text.padStart(9);
+        return text;
+      });
+      lines.push(cols.join(' '));
+    }
+    if (showDescription && l.description) lines.push(`  ${l.description}`);
+  }
+  if (tableKeys.length) lines.push('-'.repeat(74));
+  if (cfg.header.includes('subtotal')) {
+    lines.push(`Subtotal:   ${formatCents(inv.subtotal_cents || 0)}`);
+  }
+  if (cfg.header.includes('total')) {
+    lines.push(`Total:      ${formatCents(inv.total_cents || 0)}`);
+  }
   if ((inv.credits || []).length) {
     lines.push('');
     lines.push('Credit notes:');
@@ -349,6 +590,10 @@ function toInvoicePdf(inv) {
 }
 
 module.exports = {
+  BILL_HEADER_FIELDS,
+  BILL_LINE_FIELDS,
+  BILL_CORE_HEADER_FIELDS,
+  DEFAULT_BILL_FIELDS,
   createBill,
   generatePrebill,
   writeDownLine,
@@ -358,6 +603,11 @@ module.exports = {
   listInvoices,
   listMattersReadyForBilling,
   invoiceStageLabel,
+  getBillFields,
+  getBillFieldConfig,
+  setBillFields,
+  addBillField,
+  removeBillField,
   toInvoiceXlsx,
   toInvoicePdf,
 };

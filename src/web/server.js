@@ -140,6 +140,7 @@ function readSettings(db) {
     microsoft: msAuth.connectionStatus(db),
     email: mail.mailStatus(db),
     contactFieldConfig: clientsSvc.getContactFieldConfig(db),
+    billFieldConfig: invoiceSvc.getBillFieldConfig(db),
     permissions: permissions.getPermissionsSettings(db),
   };
 }
@@ -849,6 +850,10 @@ function createServer(db = openDb()) {
           const clientsSvc = require('../services/clients');
           clientsSvc.setEnabledContactStandardKeys(db, user, body.contactStandardFields);
         }
+        if (body.billFields !== undefined) {
+          if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+          invoiceSvc.setBillFields(db, user, body.billFields);
+        }
         if (
           body.rolePermissions !== undefined
           || body.profilePermissions !== undefined
@@ -1041,6 +1046,37 @@ function createServer(db = openDb()) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         return json(res, 200, invoiceSvc.listMattersReadyForBilling(db));
       }
+      if (req.method === 'GET' && pathname === '/api/billing/fields') {
+        return json(res, 200, invoiceSvc.getBillFieldConfig(db));
+      }
+      if (req.method === 'POST' && pathname === '/api/billing/fields') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 200, invoiceSvc.addBillField(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'DELETE' && pathname === '/api/billing/fields') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        try {
+          const group = url.searchParams.get('group');
+          const key = url.searchParams.get('key');
+          return json(res, 200, invoiceSvc.removeBillField(db, user, { group, key }));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'PUT' && pathname === '/api/billing/fields') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 200, invoiceSvc.setBillFields(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+$/)) {
         const id = Number(pathname.split('/')[3]);
         const inv = invoiceSvc.getInvoice(db, id);
@@ -1051,10 +1087,11 @@ function createServer(db = openDb()) {
         const id = Number(pathname.split('/')[3]);
         const inv = invoiceSvc.getInvoice(db, id);
         if (!inv) return json(res, 404, { error: 'not found' });
+        const fields = invoiceSvc.getBillFields(db);
         const fmt = String(url.searchParams.get('format') || 'pdf').toLowerCase();
         const safeName = String(inv.number || `invoice-${id}`).replace(/[^\w.-]+/g, '_');
         if (fmt === 'xlsx' || fmt === 'excel') {
-          const buf = invoiceSvc.toInvoiceXlsx(inv);
+          const buf = invoiceSvc.toInvoiceXlsx(inv, fields);
           res.writeHead(200, {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition': `attachment; filename="${safeName}.xlsx"`,
@@ -1064,7 +1101,7 @@ function createServer(db = openDb()) {
           return;
         }
         if (fmt === 'pdf') {
-          const buf = invoiceSvc.toInvoicePdf(inv);
+          const buf = invoiceSvc.toInvoicePdf(inv, fields);
           res.writeHead(200, {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="${safeName}.pdf"`,
