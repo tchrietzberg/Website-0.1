@@ -1537,6 +1537,8 @@ if (require.main === module) {
   migrate(db);
   const server = createServer(db);
   const bindHost = process.env.BIND_HOST || '0.0.0.0';
+  // Help detect stale processes after code deploys (delete routes, etc.).
+  console.info(`[boot] firm-billing server build=${process.env.GIT_COMMIT || 'dev'} deleteInvoice=on`);
   server.listen(PORT, bindHost, () => {
     console.log(`Firm billing listening on http://${bindHost}:${PORT}`);
     console.log(`DB: ${DEFAULT_DB}`);

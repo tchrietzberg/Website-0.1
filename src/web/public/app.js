@@ -5887,7 +5887,7 @@
   async function renderBilling() {
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
     const [invoices, matters] = await Promise.all([
-      api('/api/invoices'),
+      api('/api/invoices', { cache: false }),
       api('/api/matters').catch(() => []),
     ]);
     if (!stillOnView('billing')) return;
@@ -6115,7 +6115,11 @@
     if (!ok) return;
     try {
       // Prefer POST /delete — some previews/proxies mishandle HTTP DELETE.
-      await api(`/api/invoices/${invoiceId}/delete`, { method: 'POST', body: '{}' });
+      await api(`/api/invoices/${invoiceId}/delete`, {
+        method: 'POST',
+        body: '{}',
+        headers: { 'X-No-Cache': '1' },
+      });
       const detail = $('#invoiceDetail');
       if (detail && Number(detail.dataset.invoiceId) === invoiceId) {
         detail.innerHTML = '';
@@ -6126,7 +6130,11 @@
       if (msg) msg.innerHTML = `<div class="ok-banner">Deleted ${escapeHtml(label)}.</div>`;
     } catch (e) {
       const msg = $('#billMsg') || $('#invMsg');
-      if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      const text = /not found/i.test(String(e.message || ''))
+        ? 'Bill not found — it may already be deleted. Refreshing the list.'
+        : e.message;
+      if (msg) msg.innerHTML = `<div class="error">${escapeHtml(text)}</div>`;
+      try { await renderBilling(); } catch { /* ignore */ }
     }
   }
 
