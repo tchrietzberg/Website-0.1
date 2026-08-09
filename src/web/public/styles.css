@@ -866,6 +866,11 @@ h3 {
   margin: 0.75rem 0 0.35rem;
 }
 
+.settings-divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0.75rem 0;
+}
 .field-edit-title {
   margin: 0.75rem 0 0.35rem;
   font-size: 1rem;

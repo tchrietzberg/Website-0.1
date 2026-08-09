@@ -377,6 +377,28 @@
     sync();
   }
 
+  function contactStandardInputHtml(field, { value = '', canEdit = true } = {}) {
+    const disabled = canEdit ? '' : 'disabled';
+    const req = field.required ? 'required' : '';
+    const safeVal = escapeHtml(value ?? '');
+    if (field.type === 'textarea') {
+      return `<textarea name="${escapeHtml(field.key)}" rows="2" ${req} ${disabled}
+        placeholder="${field.key === 'notes' ? 'Optional' : ''}">${safeVal}</textarea>`;
+    }
+    const type = field.type === 'email' ? 'email' : 'text';
+    const placeholder = field.key === 'company'
+      ? 'Company or organization'
+      : field.key === 'email'
+        ? 'name@example.com'
+        : field.key === 'phone'
+          ? 'Phone'
+          : field.key === 'name'
+            ? 'Contact name'
+            : '';
+    return `<input name="${escapeHtml(field.key)}" type="${type}" value="${safeVal}"
+      ${req} ${disabled} placeholder="${escapeHtml(placeholder)}" />`;
+  }
+
   /** Manage matter (default layout) or time-entry custom fields on Settings. */
   async function bindDefaultFieldsEditor({
     bodyEl,
@@ -425,6 +447,13 @@
       }
     };
 
+    const saveContactStandardKeys = async (keys) => {
+      await api('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ contactStandardFields: keys }),
+      });
+    };
+
     const render = async () => {
       if (firmWide) {
         const fields = await api(`/api/custom-fields?appliesTo=${encodeURIComponent(appliesTo)}`);
@@ -442,8 +471,49 @@
               <button type="button" data-edit-firm-field="${f.id}">Edit</button>
               <button type="button" data-del-firm-field="${f.id}">Remove</button>
             </div>
-          </div>`).join('') || `<p class="muted">No ${escapeHtml(scopeLabel)} fields yet.</p>`;
+          </div>`).join('') || `<p class="muted">No custom ${escapeHtml(scopeLabel)} fields yet.</p>`;
+
+        let standardBlock = '';
+        if (appliesTo === 'client') {
+          const config = await api('/api/clients/field-config');
+          const enabled = config.enabledStandard || [];
+          const available = config.availableStandard || [];
+          const enabledRows = enabled.map((f) => `
+            <div class="field-mgmt-row">
+              <div>
+                <strong>${escapeHtml(f.label)}</strong>
+                <div class="muted">default field</div>
+              </div>
+              <div class="row-actions">
+                <button type="button" data-remove-contact-std="${escapeHtml(f.key)}">Remove</button>
+              </div>
+            </div>`).join('') || '<p class="muted">No optional default fields selected. Name is always shown.</p>';
+          const addOpts = available.map((f) =>
+            `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`
+          ).join('');
+          standardBlock = `
+            <div class="stack contact-default-fields">
+              <h3 class="field-edit-title" style="margin:0">Default fields</h3>
+              <p class="hint">Choose which built-in fields appear on contacts. Name is always included.</p>
+              <div class="field-mgmt-list">${enabledRows}</div>
+              ${available.length ? `
+                <form id="addContactStdForm" class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:end">
+                  <label style="margin:0;flex:1;min-width:10rem">Add default field
+                    <select name="fieldKey" required>
+                      <option value="">Select a field…</option>
+                      ${addOpts}
+                    </select>
+                  </label>
+                  <button class="primary" type="submit">Add</button>
+                </form>` : '<p class="muted">All default fields are enabled.</p>'}
+            </div>
+            <hr class="settings-divider" />
+            <h3 class="field-edit-title" style="margin:0">Custom fields</h3>
+            <p class="hint">Add your own fields for every contact.</p>`;
+        }
+
         bodyEl.innerHTML = `
+          ${standardBlock}
           <div class="field-mgmt-list">${rows}</div>
           ${editing
             ? `<h3 class="field-edit-title">Edit ${escapeHtml(scopeLabel)} field</h3>${customFieldFormHtml({
@@ -456,6 +526,40 @@
               formId,
               submitLabel: `Add ${scopeLabel} field`,
             })}`;
+
+        if (appliesTo === 'client') {
+          bodyEl.querySelectorAll('[data-remove-contact-std]').forEach((btn) => {
+            btn.onclick = async () => {
+              try {
+                const config = await api('/api/clients/field-config');
+                const next = (config.enabledKeys || []).filter((k) => k !== btn.dataset.removeContactStd);
+                await saveContactStandardKeys(next);
+                setMsg('<div class="ok-banner">Default field removed from contacts.</div>');
+                await render();
+              } catch (e) {
+                setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+              }
+            };
+          });
+          const stdForm = bodyEl.querySelector('#addContactStdForm');
+          if (stdForm) {
+            stdForm.onsubmit = async (ev) => {
+              ev.preventDefault();
+              const fieldKey = String(new FormData(stdForm).get('fieldKey') || '').trim();
+              if (!fieldKey) return;
+              try {
+                const config = await api('/api/clients/field-config');
+                const next = [...new Set([...(config.enabledKeys || []), fieldKey])];
+                await saveContactStandardKeys(next);
+                setMsg('<div class="ok-banner">Default field added to contacts.</div>');
+                await render();
+              } catch (e) {
+                setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+              }
+            };
+          }
+        }
+
         bodyEl.querySelectorAll('[data-edit-firm-field]').forEach((btn) => {
           btn.onclick = () => {
             editingId = Number(btn.dataset.editFirmField);
@@ -1455,13 +1559,17 @@
     const canEdit = canCreateMatter(state.user);
     const showCreate = canEdit && state.showCreateContact;
     const q = state.contactSearch.q || '';
-    const [contacts, createFields] = await Promise.all([
+    const [contacts, createFields, fieldConfig] = await Promise.all([
       api(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`),
       showCreate
         ? api('/api/custom-fields?appliesTo=client').catch(() => [])
         : Promise.resolve([]),
+      api('/api/clients/field-config').catch(() => ({ enabledStandard: [], enabledKeys: [] })),
     ]);
     state.clients = contacts || state.clients || [];
+    const enabledStd = fieldConfig.enabledStandard || [];
+    const listCols = enabledStd.filter((f) => f.key !== 'notes');
+    const searchBits = ['name', ...enabledStd.map((f) => f.label.toLowerCase())];
     const createFieldDefs = (createFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -1487,20 +1595,13 @@
           <form id="newContactForm" class="stack">
             <div class="grid two">
               <label>Name *
-                <input name="name" required placeholder="Contact name" />
+                ${contactStandardInputHtml({ key: 'name', type: 'text', required: true }, { canEdit: true })}
               </label>
-              <label>Company
-                <input name="company" placeholder="Company or organization" />
-              </label>
-              <label>Email
-                <input name="email" type="email" placeholder="name@example.com" />
-              </label>
-              <label>Phone
-                <input name="phone" placeholder="Phone" />
-              </label>
-              <label class="span-all">Notes
-                <textarea name="notes" rows="2" placeholder="Optional"></textarea>
-              </label>
+              ${enabledStd.map((field) => `
+                <label class="${field.width === 'full' ? 'span-all' : ''}">
+                  ${escapeHtml(field.label)}
+                  ${contactStandardInputHtml(field, { canEdit: true })}
+                </label>`).join('')}
               ${createFieldDefs.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}">
                   ${escapeHtml(field.label)}${field.required ? ' *' : ''}
@@ -1519,7 +1620,7 @@
           <h2>Search contacts</h2>
           <form id="contactSearch" class="matter-search-bar">
             <input name="q" value="${escapeHtml(q)}"
-              placeholder="Search by name, email, phone, or company…" aria-label="Search contacts" />
+              placeholder="Search by ${escapeHtml(searchBits.join(', '))}…" aria-label="Search contacts" />
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearContactSearch">Clear</button>
           </form>
@@ -1529,16 +1630,17 @@
           <h2>All contacts</h2>
           <div class="table-wrap"><table>
             <thead>
-              <tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th></tr>
+              <tr>
+                <th>Name</th>
+                ${listCols.map((f) => `<th>${escapeHtml(f.label)}</th>`).join('')}
+              </tr>
             </thead>
             <tbody>
               ${(contacts || []).map((c) => `
                 <tr class="click-row" data-contact="${c.id}">
                   <td><strong>${escapeHtml(c.name)}</strong></td>
-                  <td>${escapeHtml(c.company || '—')}</td>
-                  <td>${escapeHtml(c.email || '—')}</td>
-                  <td>${escapeHtml(c.phone || '—')}</td>
-                </tr>`).join('') || '<tr><td colspan="4" class="muted">No contacts yet</td></tr>'}
+                  ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
+                </tr>`).join('') || `<tr><td colspan="${1 + listCols.length}" class="muted">No contacts yet</td></tr>`}
             </tbody>
           </table></div>
         </div>
@@ -1593,17 +1695,14 @@
             customValues[f.fieldId] = '0';
           }
         });
+        const payload = { name, customValues };
+        for (const field of enabledStd) {
+          payload[field.key] = fd.get(field.key);
+        }
         try {
           const page = await api('/api/clients', {
             method: 'POST',
-            body: JSON.stringify({
-              name,
-              email: fd.get('email'),
-              phone: fd.get('phone'),
-              company: fd.get('company'),
-              notes: fd.get('notes'),
-              customValues,
-            }),
+            body: JSON.stringify(payload),
           });
           state.showCreateContact = false;
           state.contactCreateFlash = {
@@ -1627,6 +1726,7 @@
     const page = await api(`/api/clients/${state.contactId}`);
     const c = page.client;
     const fields = page.fields || [];
+    const enabledStd = (page.fieldConfig && page.fieldConfig.enabledStandard) || [];
     const flash = state.contactFlash;
     const createFlash = state.contactCreateFlash;
     state.contactFlash = null;
@@ -1644,20 +1744,16 @@
       <form id="contactForm" class="card stack">
         <div class="grid two">
           <label>Name *
-            <input name="name" required value="${escapeHtml(c.name || '')}" ${canEdit ? '' : 'disabled'} />
+            ${contactStandardInputHtml(
+              { key: 'name', type: 'text', required: true },
+              { value: c.name || '', canEdit }
+            )}
           </label>
-          <label>Company
-            <input name="company" value="${escapeHtml(c.company || '')}" ${canEdit ? '' : 'disabled'} />
-          </label>
-          <label>Email
-            <input name="email" type="email" value="${escapeHtml(c.email || '')}" ${canEdit ? '' : 'disabled'} />
-          </label>
-          <label>Phone
-            <input name="phone" value="${escapeHtml(c.phone || '')}" ${canEdit ? '' : 'disabled'} />
-          </label>
-          <label class="span-all">Notes
-            <textarea name="notes" rows="2" ${canEdit ? '' : 'disabled'}>${escapeHtml(c.notes || '')}</textarea>
-          </label>
+          ${enabledStd.map((field) => `
+            <label class="${field.width === 'full' ? 'span-all' : ''}">
+              ${escapeHtml(field.label)}
+              ${contactStandardInputHtml(field, { value: c[field.key] || '', canEdit })}
+            </label>`).join('')}
           ${fields.map((f) => `
             <label class="${f.width === 'full' ? 'span-all' : ''}">
               ${escapeHtml(f.label)}${f.required ? ' *' : ''}
@@ -1692,17 +1788,17 @@
         form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
           customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
         });
+        const payload = {
+          name: fd.get('name'),
+          customValues,
+        };
+        for (const field of enabledStd) {
+          payload[field.key] = fd.get(field.key);
+        }
         try {
           await api(`/api/clients/${c.id}`, {
             method: 'PATCH',
-            body: JSON.stringify({
-              name: fd.get('name'),
-              email: fd.get('email'),
-              phone: fd.get('phone'),
-              company: fd.get('company'),
-              notes: fd.get('notes'),
-              customValues,
-            }),
+            body: JSON.stringify(payload),
           });
           state.contactFlash = {
             title: 'Contact saved',
@@ -3495,7 +3591,7 @@
       </div>
       <div class="card stack" id="contactFieldsCard">
         <h2>Contact fields</h2>
-        <p class="hint">Shown when creating or editing contacts. Custom fields apply to all contacts.</p>
+        <p class="hint">Choose default fields (company, email, phone, notes) and add custom fields for every contact. Name is always shown.</p>
         <div id="contactFieldsBody" class="stack"></div>
         <div id="contactFieldMsg"></div>
       </div>

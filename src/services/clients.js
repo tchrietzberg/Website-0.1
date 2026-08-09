@@ -1,5 +1,73 @@
-const { audit } = require('../db');
+const { audit, getSetting, setSetting } = require('../db');
 const customFields = require('./customFields');
+
+/** Always shown on contacts. */
+const CONTACT_CORE_FIELD = {
+  key: 'name',
+  label: 'Name',
+  type: 'text',
+  width: 'half',
+  required: true,
+};
+
+/** Optional built-in contact fields — firm enables which appear on create/edit. */
+const CONTACT_OPTIONAL_STANDARD_FIELDS = [
+  { key: 'company', label: 'Company', type: 'text', width: 'half' },
+  { key: 'email', label: 'Email', type: 'email', width: 'half' },
+  { key: 'phone', label: 'Phone', type: 'text', width: 'half' },
+  { key: 'notes', label: 'Notes', type: 'textarea', width: 'full' },
+];
+
+const CONTACT_OPTIONAL_KEYS = CONTACT_OPTIONAL_STANDARD_FIELDS.map((f) => f.key);
+const CONTACT_STANDARD_SETTING = 'contact_standard_fields';
+
+function normalizeContactStandardKeys(keys) {
+  const wanted = new Set(
+    (Array.isArray(keys) ? keys : [])
+      .map((k) => String(k || '').trim())
+      .filter((k) => CONTACT_OPTIONAL_KEYS.includes(k))
+  );
+  return CONTACT_OPTIONAL_KEYS.filter((k) => wanted.has(k));
+}
+
+/** Default: none of the optional built-ins — users pick which to show. */
+function getEnabledContactStandardKeys(db) {
+  const raw = getSetting(db, CONTACT_STANDARD_SETTING, null);
+  if (raw == null || raw === '') return [];
+  try {
+    return normalizeContactStandardKeys(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+function setEnabledContactStandardKeys(db, actor, keys) {
+  const enabled = normalizeContactStandardKeys(keys);
+  setSetting(db, CONTACT_STANDARD_SETTING, JSON.stringify(enabled));
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'contact.standard_fields.update',
+    entityType: 'firm_settings',
+    entityId: null,
+    detail: { enabled },
+  });
+  return getContactFieldConfig(db);
+}
+
+function getContactFieldConfig(db) {
+  const enabledKeys = getEnabledContactStandardKeys(db);
+  const enabledSet = new Set(enabledKeys);
+  return {
+    core: [CONTACT_CORE_FIELD],
+    enabledStandard: CONTACT_OPTIONAL_STANDARD_FIELDS
+      .filter((f) => enabledSet.has(f.key))
+      .map((f) => ({ ...f, kind: 'standard', removable: true })),
+    availableStandard: CONTACT_OPTIONAL_STANDARD_FIELDS
+      .filter((f) => !enabledSet.has(f.key))
+      .map((f) => ({ ...f, kind: 'standard' })),
+    enabledKeys,
+  };
+}
 
 function listClients(db, { q = '' } = {}) {
   const query = String(q || '').trim();
@@ -46,6 +114,7 @@ function getClient(db, id) {
     client,
     fields: fieldDefs,
     customValues,
+    fieldConfig: getContactFieldConfig(db),
   };
 }
 
@@ -137,8 +206,13 @@ function updateClient(db, actor, id, patch = {}) {
 }
 
 module.exports = {
+  CONTACT_OPTIONAL_STANDARD_FIELDS,
+  CONTACT_OPTIONAL_KEYS,
   listClients,
   getClient,
   createClient,
   updateClient,
+  getContactFieldConfig,
+  getEnabledContactStandardKeys,
+  setEnabledContactStandardKeys,
 };

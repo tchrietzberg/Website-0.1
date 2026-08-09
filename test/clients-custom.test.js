@@ -34,6 +34,22 @@ describe('contacts and contact custom fields', () => {
     assert.equal(clientsSvc.listClients(db, { q: 'acme' }).length, 1);
   });
 
+  it('lets firms select optional default contact fields', () => {
+    let config = clientsSvc.getContactFieldConfig(db);
+    assert.deepEqual(config.enabledKeys, []);
+    assert.equal(config.availableStandard.length, 4);
+    assert.ok(config.core.some((f) => f.key === 'name'));
+
+    config = clientsSvc.setEnabledContactStandardKeys(db, admin, ['email', 'company', 'bogus']);
+    assert.deepEqual(config.enabledKeys, ['company', 'email']);
+    assert.equal(config.enabledStandard.length, 2);
+    assert.equal(config.availableStandard.length, 2);
+    assert.ok(config.availableStandard.some((f) => f.key === 'phone'));
+
+    config = clientsSvc.setEnabledContactStandardKeys(db, admin, []);
+    assert.deepEqual(config.enabledKeys, []);
+  });
+
   it('supports required contact custom fields and updates', () => {
     const field = customFields.createCustomField(db, admin, {
       label: 'Preferred contact method',

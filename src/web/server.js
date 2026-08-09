@@ -127,6 +127,7 @@ function readSettings(db) {
   const onedrive = require('../services/onedrive');
   const msAuth = require('../services/msAuth');
   const mail = require('../mail');
+  const clientsSvc = require('../services/clients');
   return {
     roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
     roundMode: getSetting(db, 'round_mode', 'up'),
@@ -137,6 +138,7 @@ function readSettings(db) {
     msGraphConfigured: onedrive.graphConfigured(db),
     microsoft: msAuth.connectionStatus(db),
     email: mail.mailStatus(db),
+    contactFieldConfig: clientsSvc.getContactFieldConfig(db),
   };
 }
 
@@ -423,6 +425,10 @@ function createServer(db = openDb()) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const asOf = url.searchParams.get('asOf') || undefined;
         return json(res, 200, ratesAdmin.timekeeperRatesSummary(db, asOf));
+      }
+      if (req.method === 'GET' && pathname === '/api/clients/field-config') {
+        const clientsSvc = require('../services/clients');
+        return json(res, 200, clientsSvc.getContactFieldConfig(db));
       }
       if (req.method === 'GET' && pathname === '/api/clients') {
         const clientsSvc = require('../services/clients');
@@ -776,6 +782,10 @@ function createServer(db = openDb()) {
           if (!requireRoles(user, res, ['admin'])) return;
           const mail = require('../mail');
           mail.saveMailConfig(db, user, body.emailConfig);
+        }
+        if (body.contactStandardFields !== undefined) {
+          const clientsSvc = require('../services/clients');
+          clientsSvc.setEnabledContactStandardKeys(db, user, body.contactStandardFields);
         }
         return json(res, 200, readSettings(db));
       }
