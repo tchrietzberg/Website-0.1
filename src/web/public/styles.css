@@ -510,6 +510,66 @@ body {
   margin-top: 0;
 }
 
+.onedrive-collapse {
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f3f6fa 100%);
+  overflow: hidden;
+}
+
+.onedrive-collapse-summary {
+  list-style: none;
+  cursor: pointer;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.onedrive-collapse-summary::-webkit-details-marker {
+  display: none;
+}
+
+.onedrive-collapse-summary::after {
+  content: "▸";
+  color: var(--soft);
+  font-size: 0.85rem;
+  transition: transform 160ms ease;
+}
+
+.onedrive-collapse[open] > .onedrive-collapse-summary::after {
+  transform: rotate(90deg);
+}
+
+.onedrive-collapse-title {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.onedrive-collapse-meta {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onedrive-collapse-body {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+
 .onedrive-tabs {
   display: -webkit-flex;
   display: flex;

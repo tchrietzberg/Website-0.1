@@ -66,6 +66,42 @@
       .replace(/"/g, '&quot;');
   }
 
+  /** Core identity fields stay required in layout but are not listed in Manage fields. */
+  function isCoreIdentityField(field) {
+    const key = field?.fieldKey || field?.key || '';
+    return key === 'std:number' || key === 'std:name';
+  }
+
+  function fieldMgmtRows(fields) {
+    const rows = (fields || []).filter((f) => !isCoreIdentityField(f));
+    if (!rows.length) return '<p class="muted">No managed fields</p>';
+    return rows.map((f) => `
+      <div class="field-mgmt-row">
+        <div>
+          <strong>${escapeHtml(f.label)}</strong>
+          <span class="muted"> · ${escapeHtml(f.kind)}${f.removable ? '' : ' · required'}</span>
+        </div>
+        ${f.removable
+          ? `<button type="button" data-del-matter-field="${escapeHtml(f.fieldKey)}">Delete</button>`
+          : ''}
+      </div>`).join('');
+  }
+
+  function typeFieldMgmtRows(fields, delAttr = 'data-del-type-field') {
+    const rows = (fields || []).filter((f) => !isCoreIdentityField(f));
+    if (!rows.length) return '<p class="muted">No managed fields</p>';
+    return rows.map((f) => `
+      <div class="field-mgmt-row">
+        <div>
+          <strong>${escapeHtml(f.label)}</strong>
+          <span class="muted"> · ${escapeHtml(f.kind)}${f.removable ? '' : ' · required'}</span>
+        </div>
+        ${f.removable
+          ? `<button type="button" ${delAttr}="${escapeHtml(f.fieldKey)}">Delete</button>`
+          : ''}
+      </div>`).join('');
+  }
+
   function matterSearchText(m) {
     return [m.number, m.name, m.client_name, m.status, m.attorney_name]
       .filter(Boolean)
@@ -620,14 +656,7 @@
         const body = $('#defaultFieldsBody');
         body.innerHTML = `
           <div class="field-mgmt-list">
-            ${(typeLayout.fields || []).map((f) => `
-              <div class="field-mgmt-row">
-                <div>
-                  <strong>${f.label}</strong>
-                  <span class="muted"> · ${f.kind}${f.removable ? '' : ' · required'}</span>
-                </div>
-                ${f.removable ? `<button type="button" data-del-type-field="${f.fieldKey}">Delete</button>` : ''}
-              </div>`).join('') || '<p class="muted">No fields</p>'}
+            ${typeFieldMgmtRows(typeLayout.fields)}
           </div>
           ${(typeLayout.availableStandardFields || []).length ? `
           <form id="addTypeStandardForm" class="field-mgmt-add">
@@ -978,124 +1007,21 @@
         <div id="matterMsg"></div>
       </form>
 
-      <div class="card stack" id="onedriveCard">
-        <h2>OneDrive</h2>
-        <p class="hint">Link a matter folder, then browse files here like OneDrive/SharePoint — open folders, preview the live library, and sync from Microsoft Graph when a token is configured.</p>
-        ${(page.onedrive && page.onedrive.linked) ? `
-          <div class="onedrive-status">
-            <span class="pill" data-status="${page.onedrive.status === 'error' ? 'rejected' : 'open'}">${page.onedrive.status === 'error' ? 'Sync error' : 'Linked'}</span>
-            <strong>${escapeHtml(page.onedrive.folderName || 'Matter folder')}</strong>
-          </div>
-          ${page.onedrive.notes ? `<p class="muted">${escapeHtml(page.onedrive.notes)}</p>` : ''}
-          <p class="muted">Linked${page.onedrive.linkedByName ? ` by ${escapeHtml(page.onedrive.linkedByName)}` : ''}${page.onedrive.linkedAt ? ` · ${String(page.onedrive.linkedAt).slice(0, 10)}` : ''}${page.onedrive.lastSyncedAt ? ` · Synced ${String(page.onedrive.lastSyncedAt).slice(0, 16).replace('T', ' ')}` : ''}</p>
-          ${page.onedrive.lastSyncError ? `<div class="error">${escapeHtml(page.onedrive.lastSyncError)}</div>` : ''}
-
-          <div class="onedrive-tabs" role="tablist">
-            <button type="button" class="onedrive-tab is-active" data-od-tab="files">Files</button>
-            <button type="button" class="onedrive-tab" data-od-tab="embed">OneDrive view</button>
-          </div>
-
-          <div class="onedrive-pane is-active" data-od-pane="files">
-            <div class="onedrive-toolbar">
-              <nav class="onedrive-crumbs" id="onedriveCrumbs" aria-label="Folder path"></nav>
-              <div class="row-actions">
-                ${canEdit ? `<button type="button" class="primary" id="onedriveSync">${page.onedrive.graphConfigured ? 'Refresh from OneDrive' : 'Set up live sync'}</button>` : ''}
-                ${canEdit ? `<button type="button" id="onedriveDemoSeed">Load demo files</button>` : ''}
-                <a class="btn" id="onedriveOpenExternal"
-                  href="${escapeHtml(page.onedrive.folderUrl)}" target="_blank" rel="noopener noreferrer">Open in Microsoft</a>
-              </div>
-            </div>
-            <div id="onedriveBrowser" class="onedrive-browser">
-              <p class="muted">Loading folder…</p>
-            </div>
-            ${!page.onedrive.graphConfigured ? `
-              <p class="hint">Live sync is off until someone connects Microsoft under <strong>Settings → OneDrive / SharePoint</strong> (sign in — no token copy/paste). Demo files load when you link a folder; use <strong>OneDrive view</strong> for the real Microsoft library.</p>
-            ` : ''}
-          </div>
-
-          <div class="onedrive-pane" data-od-pane="embed" hidden>
-            <div class="onedrive-embed-wrap">
-              <iframe class="onedrive-embed"
-                title="OneDrive folder"
-                src="${escapeHtml(page.onedrive.embedUrl || page.onedrive.folderUrl)}"
-                loading="lazy"
-                referrerpolicy="no-referrer-when-downgrade"
-                allow="fullscreen"></iframe>
-            </div>
-            <p class="hint">If the embed asks you to sign in, use your Microsoft account. Some tenants block embedding — use <strong>Open in Microsoft</strong> or the Files tab after sync.</p>
-          </div>
-
-          ${canEdit ? `
-          <div class="row-actions">
-            <button type="button" id="onedriveEdit">Update link</button>
-            <button type="button" id="onedriveDisconnect">Disconnect</button>
-          </div>
-          <form id="onedriveForm" class="grid two" hidden>
-            <label class="span-all">Folder URL
-              <input name="folderUrl" required
-                value="${escapeHtml(page.onedrive.folderUrl || '')}"
-                placeholder="https://…sharepoint.com/… or onedrive.live.com/…" />
-            </label>
-            <label>Folder name
-              <input name="folderName"
-                value="${escapeHtml(page.onedrive.folderName || '')}"
-                placeholder="${escapeHtml(page.onedriveSuggestedName || '')}" />
-            </label>
-            <label>Notes
-              <input name="notes" value="${escapeHtml(page.onedrive.notes || '')}"
-                placeholder="Optional" />
-            </label>
-            <div class="row-actions span-all">
-              <button class="primary" type="submit">Save OneDrive link</button>
-              <button type="button" id="onedriveCancelEdit">Cancel</button>
-            </div>
-          </form>` : ''}
-        ` : `
-          <p class="muted">No OneDrive folder linked yet. After linking, files and folders appear here for browsing.</p>
-          ${canEdit ? `
-          <form id="onedriveForm" class="grid two">
-            <label class="span-all">Folder URL
-              <input name="folderUrl" required
-                placeholder="https://contoso.sharepoint.com/… or https://onedrive.live.com/…" />
-            </label>
-            <label>Folder name
-              <input name="folderName"
-                value="${escapeHtml(page.onedriveSuggestedName || '')}"
-                placeholder="${escapeHtml(page.onedriveSuggestedName || '')}" />
-            </label>
-            <label>Notes
-              <input name="notes" placeholder="Optional" />
-            </label>
-            <div class="row-actions span-all">
-              <button class="primary" type="submit">Link OneDrive folder</button>
-            </div>
-          </form>` : ''}
-        `}
-        <div id="onedriveMsg"></div>
-      </div>
-
       ${canEdit ? `
       <div class="card stack">
         <h2>Manage fields</h2>
-        <p class="hint">Add or delete fields on this matter, or on the default layout for record type <strong>${(page.typeLayout && page.typeLayout.label) || m.matter_type}</strong>.</p>
+        <p class="hint">Add or delete fields on this matter, or on the default layout for record type <strong>${escapeHtml((page.typeLayout && page.typeLayout.label) || m.matter_type)}</strong>. Matter number and name stay required and are shown in the header.</p>
 
         <h3>Matter fields</h3>
         <div class="field-mgmt-list">
-          ${(page.layoutFields || []).map((f) => `
-            <div class="field-mgmt-row">
-              <div>
-                <strong>${f.label}</strong>
-                <span class="muted"> · ${f.kind}${f.removable ? '' : ' · required'}</span>
-              </div>
-              ${f.removable ? `<button type="button" data-del-matter-field="${f.fieldKey}">Delete</button>` : ''}
-            </div>`).join('') || '<p class="muted">No fields</p>'}
+          ${fieldMgmtRows(page.layoutFields)}
         </div>
         ${(page.availableStandardFields || []).length ? `
         <form id="addStandardFieldForm" class="field-mgmt-add">
           <label>Add field
             <select name="fieldKey" required>
               ${(page.availableStandardFields || []).map((f) =>
-                `<option value="${f.key}">${f.label}</option>`).join('')}
+                `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
             </select>
           </label>
           <button class="primary" type="submit">Add to matter</button>
@@ -1120,24 +1046,17 @@
         <div id="matterFieldMsg"></div>
 
         ${['admin', 'billing_clerk'].includes(state.user.role) && page.typeLayout ? `
-        <h3>Default fields (${page.typeLayout.label})</h3>
+        <h3>Default fields (${escapeHtml(page.typeLayout.label)})</h3>
         <p class="hint">Changes here apply to the record-type default layout.</p>
         <div class="field-mgmt-list">
-          ${(page.typeLayout.fields || []).map((f) => `
-            <div class="field-mgmt-row">
-              <div>
-                <strong>${f.label}</strong>
-                <span class="muted"> · ${f.kind}${f.removable ? '' : ' · required'}</span>
-              </div>
-              ${f.removable ? `<button type="button" data-del-type-field="${f.fieldKey}">Delete</button>` : ''}
-            </div>`).join('') || '<p class="muted">No fields</p>'}
+          ${typeFieldMgmtRows(page.typeLayout.fields)}
         </div>
         ${(page.typeLayout.availableStandardFields || []).length ? `
         <form id="addTypeStandardOnMatterForm" class="field-mgmt-add">
           <label>Add default field
             <select name="fieldKey" required>
               ${page.typeLayout.availableStandardFields.map((f) =>
-                `<option value="${f.key}">${f.label}</option>`).join('')}
+                `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
             </select>
           </label>
           <button class="primary" type="submit">Add to default</button>
@@ -1159,7 +1078,112 @@
           </div>
         </form>
         <div id="typeFieldOnMatterMsg"></div>` : ''}
-      </div>` : ''}`;
+      </div>` : ''}
+
+      <details class="onedrive-collapse" id="onedriveCard">
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">OneDrive</span>
+          <span class="onedrive-collapse-meta muted">
+            ${(page.onedrive && page.onedrive.linked)
+              ? escapeHtml(page.onedrive.folderName || 'Folder linked')
+              : 'Optional · link a matter folder'}
+          </span>
+        </summary>
+        <div class="onedrive-collapse-body stack">
+          <p class="hint">Browse or sync a SharePoint/OneDrive folder for this matter.</p>
+          ${(page.onedrive && page.onedrive.linked) ? `
+            <div class="onedrive-status">
+              <span class="pill" data-status="${page.onedrive.status === 'error' ? 'rejected' : 'open'}">${page.onedrive.status === 'error' ? 'Sync error' : 'Linked'}</span>
+              <strong>${escapeHtml(page.onedrive.folderName || 'Matter folder')}</strong>
+            </div>
+            ${page.onedrive.notes ? `<p class="muted">${escapeHtml(page.onedrive.notes)}</p>` : ''}
+            <p class="muted">Linked${page.onedrive.linkedByName ? ` by ${escapeHtml(page.onedrive.linkedByName)}` : ''}${page.onedrive.linkedAt ? ` · ${String(page.onedrive.linkedAt).slice(0, 10)}` : ''}${page.onedrive.lastSyncedAt ? ` · Synced ${String(page.onedrive.lastSyncedAt).slice(0, 16).replace('T', ' ')}` : ''}</p>
+            ${page.onedrive.lastSyncError ? `<div class="error">${escapeHtml(page.onedrive.lastSyncError)}</div>` : ''}
+
+            <div class="onedrive-tabs" role="tablist">
+              <button type="button" class="onedrive-tab is-active" data-od-tab="files">Files</button>
+              <button type="button" class="onedrive-tab" data-od-tab="embed">OneDrive view</button>
+            </div>
+
+            <div class="onedrive-pane is-active" data-od-pane="files">
+              <div class="onedrive-toolbar">
+                <nav class="onedrive-crumbs" id="onedriveCrumbs" aria-label="Folder path"></nav>
+                <div class="row-actions">
+                  ${canEdit ? `<button type="button" class="primary" id="onedriveSync">${page.onedrive.graphConfigured ? 'Refresh from OneDrive' : 'Set up live sync'}</button>` : ''}
+                  ${canEdit ? `<button type="button" id="onedriveDemoSeed">Load demo files</button>` : ''}
+                  <a class="btn" id="onedriveOpenExternal"
+                    href="${escapeHtml(page.onedrive.folderUrl)}" target="_blank" rel="noopener noreferrer">Open in Microsoft</a>
+                </div>
+              </div>
+              <div id="onedriveBrowser" class="onedrive-browser">
+                <p class="muted">Loading folder…</p>
+              </div>
+              ${!page.onedrive.graphConfigured ? `
+                <p class="hint">Live sync needs <strong>Settings → Sign in with Microsoft</strong>. Demo files and OneDrive view still work.</p>
+              ` : ''}
+            </div>
+
+            <div class="onedrive-pane" data-od-pane="embed" hidden>
+              <div class="onedrive-embed-wrap">
+                <iframe class="onedrive-embed"
+                  title="OneDrive folder"
+                  src="${escapeHtml(page.onedrive.embedUrl || page.onedrive.folderUrl)}"
+                  loading="lazy"
+                  referrerpolicy="no-referrer-when-downgrade"
+                  allow="fullscreen"></iframe>
+              </div>
+              <p class="hint">If the embed asks you to sign in, use your Microsoft account. Some tenants block embedding — use <strong>Open in Microsoft</strong>.</p>
+            </div>
+
+            ${canEdit ? `
+            <div class="row-actions">
+              <button type="button" id="onedriveEdit">Update link</button>
+              <button type="button" id="onedriveDisconnect">Disconnect</button>
+            </div>
+            <form id="onedriveForm" class="grid two" hidden>
+              <label class="span-all">Folder URL
+                <input name="folderUrl" required
+                  value="${escapeHtml(page.onedrive.folderUrl || '')}"
+                  placeholder="https://…sharepoint.com/… or onedrive.live.com/…" />
+              </label>
+              <label>Folder name
+                <input name="folderName"
+                  value="${escapeHtml(page.onedrive.folderName || '')}"
+                  placeholder="${escapeHtml(page.onedriveSuggestedName || '')}" />
+              </label>
+              <label>Notes
+                <input name="notes" value="${escapeHtml(page.onedrive.notes || '')}"
+                  placeholder="Optional" />
+              </label>
+              <div class="row-actions span-all">
+                <button class="primary" type="submit">Save OneDrive link</button>
+                <button type="button" id="onedriveCancelEdit">Cancel</button>
+              </div>
+            </form>` : ''}
+          ` : `
+            <p class="muted">No folder linked yet.</p>
+            ${canEdit ? `
+            <form id="onedriveForm" class="grid two">
+              <label class="span-all">Folder URL
+                <input name="folderUrl" required
+                  placeholder="https://contoso.sharepoint.com/… or https://onedrive.live.com/…" />
+              </label>
+              <label>Folder name
+                <input name="folderName"
+                  value="${escapeHtml(page.onedriveSuggestedName || '')}"
+                  placeholder="${escapeHtml(page.onedriveSuggestedName || '')}" />
+              </label>
+              <label>Notes
+                <input name="notes" placeholder="Optional" />
+              </label>
+              <div class="row-actions span-all">
+                <button class="primary" type="submit">Link OneDrive folder</button>
+              </div>
+            </form>` : ''}
+          `}
+          <div id="onedriveMsg"></div>
+        </div>
+      </details>`;
 
     $('#backMatters').onclick = () => {
       state.view = 'matters';
