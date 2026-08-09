@@ -4807,21 +4807,11 @@
         if (!connected) {
           $('#onedriveMsg').innerHTML = `
             <div class="ok-banner">
-              Next step: connect Microsoft in Settings (sign in — no tokens to copy).
+              Live Microsoft sync is deferred for a later build. Use <strong>Load demo files</strong> or link a folder URL for now.
               <div class="row-actions" style="margin-top:.65rem">
-                <button type="button" class="primary" id="goOneDriveSettings">Open Settings → OneDrive</button>
                 <button type="button" id="onedriveDemoSeedInline">Load demo files</button>
               </div>
             </div>`;
-          const go = $('#goOneDriveSettings');
-          if (go) {
-            go.onclick = () => {
-              state.view = 'settings';
-              state.matterId = null;
-              renderShell();
-              renderView();
-            };
-          }
           const demoInline = $('#onedriveDemoSeedInline');
           if (demoInline) {
             demoInline.onclick = () => {
@@ -4844,20 +4834,8 @@
           if (/Connect Microsoft|not configured|Graph token/i.test(msg)) {
             $('#onedriveMsg').innerHTML = `
               <div class="error">
-                Microsoft is not connected yet.
-                <div class="row-actions" style="margin-top:.65rem">
-                  <button type="button" class="primary" id="goOneDriveSettings2">Open Settings → Connect Microsoft</button>
-                </div>
+                Live Microsoft sync is deferred for a later build. Use demo files or a folder URL for now.
               </div>`;
-            const go2 = $('#goOneDriveSettings2');
-            if (go2) {
-              go2.onclick = () => {
-                state.view = 'settings';
-                state.matterId = null;
-                renderShell();
-                renderView();
-              };
-            }
           } else {
             $('#onedriveMsg').innerHTML = `<div class="error">${escapeHtml(msg)}</div>`;
           }
@@ -5231,7 +5209,7 @@
                 <p class="muted">Loading folder…</p>
               </div>
               ${!page.onedrive.graphConfigured ? `
-                <p class="hint">Live sync needs <strong>Settings → Sign in with Microsoft</strong>. Demo files and OneDrive view still work.</p>
+                <p class="hint">Live Microsoft sync is deferred for a later build. Demo files and OneDrive view still work.</p>
               ` : ''}
             </div>
 
