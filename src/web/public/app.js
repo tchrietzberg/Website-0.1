@@ -61,21 +61,57 @@
 
   function roleObjectPerms(objectKey, settings = state.settings) {
     const role = state.user?.role;
-    if (!role) return { viewAll: false, modifyAll: false, delete: false };
-    if (role === 'admin') return { viewAll: true, modifyAll: true, delete: true };
+    const empty = {
+      viewAll: false,
+      modifyAll: false,
+      delete: false,
+      selectTimekeeper: false,
+      viewOthers: false,
+      modifyOthers: false,
+      deleteOthers: false,
+    };
+    if (!role) return empty;
+    if (role === 'admin') {
+      return {
+        viewAll: true,
+        modifyAll: true,
+        delete: true,
+        selectTimekeeper: true,
+        viewOthers: true,
+        modifyOthers: true,
+        deleteOthers: true,
+      };
+    }
     const entry = settings?.permissions?.rolePermissions?.[role]
       || settings?.permissions?.profilePermissions?.[role];
     if (!entry || typeof entry !== 'object') {
       // Legacy string mode
       const mode = entry;
       const full = mode !== 'read_only';
-      return { viewAll: true, modifyAll: full, delete: full };
+      const proxy = role === 'billing_clerk' && full;
+      return {
+        viewAll: true,
+        modifyAll: full,
+        delete: full,
+        selectTimekeeper: proxy,
+        viewOthers: full,
+        modifyOthers: proxy,
+        deleteOthers: full,
+      };
     }
     const obj = entry.objects?.[objectKey] || entry[objectKey] || {};
-    return {
+    const base = {
       viewAll: obj.viewAll !== false,
       modifyAll: obj.modifyAll !== false,
       delete: !!obj.delete,
+    };
+    if (objectKey !== 'time') return base;
+    return {
+      ...base,
+      selectTimekeeper: !!obj.selectTimekeeper,
+      viewOthers: obj.viewOthers !== false,
+      modifyOthers: !!obj.modifyOthers,
+      deleteOthers: obj.deleteOthers != null ? !!obj.deleteOthers : !!obj.delete,
     };
   }
 
@@ -89,6 +125,31 @@
 
   function roleCanDelete(objectKey, settings = state.settings) {
     return !!roleObjectPerms(objectKey, settings).delete;
+  }
+
+  function roleCanSelectTimekeeper(settings = state.settings) {
+    return !!roleObjectPerms('time', settings).selectTimekeeper;
+  }
+
+  function roleCanViewOthersTime(settings = state.settings) {
+    return !!roleObjectPerms('time', settings).viewOthers;
+  }
+
+  function roleCanModifyOthersTime(settings = state.settings) {
+    return !!roleObjectPerms('time', settings).modifyOthers;
+  }
+
+  function roleCanDeleteOthersTime(settings = state.settings) {
+    return !!roleObjectPerms('time', settings).deleteOthers;
+  }
+
+  function timekeeperDisplayName(entry) {
+    if (!entry) return '—';
+    if (Number(entry.timekeeper_id) === Number(state.user?.id)) {
+      return entry.timekeeper_name || state.user?.name || 'You';
+    }
+    if (!roleCanSelectTimekeeper()) return 'Another timekeeper';
+    return entry.timekeeper_name || '—';
   }
 
   /** @deprecated prefer roleCanModify(objectKey) */
@@ -934,14 +995,25 @@
     await render();
   }
 
-  function normalizeRolePermEntry(entry) {
+  function normalizeRolePermEntry(entry, roleKey = null) {
     const objects = { matter: {}, contact: {}, time: {}, report: {} };
     const src = entry && typeof entry === 'object' ? entry : {};
     const objectsSrc = src.objects && typeof src.objects === 'object' ? src.objects : src;
+    const proxyDefault = roleKey === 'admin' || roleKey === 'billing_clerk';
     if (typeof entry === 'string') {
       const full = entry !== 'read_only';
       for (const key of Object.keys(objects)) {
-        objects[key] = { viewAll: true, modifyAll: full, delete: full };
+        objects[key] = {
+          viewAll: true,
+          modifyAll: full,
+          delete: full,
+          ...(key === 'time' ? {
+            selectTimekeeper: full && proxyDefault,
+            viewOthers: full,
+            modifyOthers: full && proxyDefault,
+            deleteOthers: full,
+          } : {}),
+        };
       }
       return { objects };
     }
@@ -952,6 +1024,18 @@
         modifyAll: o.modifyAll !== false,
         delete: !!o.delete,
       };
+      if (key === 'time') {
+        objects[key].selectTimekeeper = o.selectTimekeeper != null
+          ? !!o.selectTimekeeper
+          : proxyDefault;
+        objects[key].viewOthers = o.viewOthers !== false;
+        objects[key].modifyOthers = o.modifyOthers != null
+          ? !!o.modifyOthers
+          : proxyDefault;
+        objects[key].deleteOthers = o.deleteOthers != null
+          ? !!o.deleteOthers
+          : !!o.delete;
+      }
     }
     return { objects };
   }
@@ -965,15 +1049,29 @@
       { key: 'time', label: 'Time entries' },
       { key: 'report', label: 'Reports' },
     ];
+    const timeExtraFlags = [
+      { flag: 'selectTimekeeper', label: 'Select timekeeper' },
+      { flag: 'viewOthers', label: 'View other timekeepers’ entries' },
+      { flag: 'modifyOthers', label: 'Edit other timekeepers’ entries' },
+      { flag: 'deleteOthers', label: 'Delete other timekeepers’ entries' },
+    ];
     const current = {};
     for (const role of roles) {
       current[role.key] = normalizeRolePermEntry(
         (permissions.rolePermissions || {})[role.key]
-          ?? (permissions.profilePermissions || {})[role.key]
+          ?? (permissions.profilePermissions || {})[role.key],
+        role.key
       );
     }
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
+    };
+    const ensureTimeObject = (roleKey) => {
+      if (!current[roleKey]) current[roleKey] = normalizeRolePermEntry({}, roleKey);
+      if (!current[roleKey].objects.time) {
+        current[roleKey].objects.time = normalizeRolePermEntry({}, roleKey).objects.time;
+      }
+      return current[roleKey].objects.time;
     };
     const render = () => {
       bodyEl.innerHTML = `
@@ -981,6 +1079,7 @@
           ${roles.map((role) => {
             const locked = role.key === 'admin';
             const objs = current[role.key].objects;
+            const timePerms = objs.time || {};
             return `
             <div class="role-perm-card" data-role="${escapeHtml(role.key)}">
               <h3>${escapeHtml(role.label)}${locked ? ' <span class="muted">(full access)</span>' : ''}</h3>
@@ -1006,6 +1105,22 @@
                   }).join('')}
                 </tbody>
               </table></div>
+              <div class="timekeeper-perms">
+                <h4>Timekeeper access</h4>
+                <p class="hint">Controls entering time for others and seeing other timekeepers’ names and entries.</p>
+                <div class="timekeeper-perms-grid">
+                  ${timeExtraFlags.map((item) => `
+                    <label class="check-inline">
+                      <input type="checkbox"
+                        data-role-perm="${escapeHtml(role.key)}"
+                        data-object="time"
+                        data-flag="${escapeHtml(item.flag)}"
+                        ${timePerms[item.flag] ? 'checked' : ''}
+                        ${locked ? 'disabled' : ''} />
+                      ${escapeHtml(item.label)}
+                    </label>`).join('')}
+                </div>
+              </div>
             </div>`;
           }).join('')}
         </div>
@@ -1017,9 +1132,11 @@
           const roleKey = box.dataset.rolePerm;
           const objectKey = box.dataset.object;
           const flag = box.dataset.flag;
-          if (!current[roleKey]) current[roleKey] = normalizeRolePermEntry({});
+          if (!current[roleKey]) current[roleKey] = normalizeRolePermEntry({}, roleKey);
           if (!current[roleKey].objects[objectKey]) {
-            current[roleKey].objects[objectKey] = { viewAll: true, modifyAll: true, delete: false };
+            current[roleKey].objects[objectKey] = objectKey === 'time'
+              ? ensureTimeObject(roleKey)
+              : { viewAll: true, modifyAll: true, delete: false };
           }
           current[roleKey].objects[objectKey][flag] = !!box.checked;
           // Modify/Delete imply View All for usable access.
@@ -1029,6 +1146,39 @@
               `[data-role-perm="${roleKey}"][data-object="${objectKey}"][data-flag="viewAll"]`
             );
             if (viewBox) viewBox.checked = true;
+          }
+          // Timekeeper extras imply related access.
+          if (objectKey === 'time' && box.checked) {
+            const timeObj = current[roleKey].objects.time;
+            if (flag === 'selectTimekeeper' || flag === 'modifyOthers' || flag === 'deleteOthers') {
+              timeObj.viewOthers = true;
+              const viewOthersBox = bodyEl.querySelector(
+                `[data-role-perm="${roleKey}"][data-object="time"][data-flag="viewOthers"]`
+              );
+              if (viewOthersBox) viewOthersBox.checked = true;
+            }
+            if (flag === 'modifyOthers' || flag === 'deleteOthers' || flag === 'viewOthers'
+              || flag === 'selectTimekeeper') {
+              timeObj.viewAll = true;
+              const viewBox = bodyEl.querySelector(
+                `[data-role-perm="${roleKey}"][data-object="time"][data-flag="viewAll"]`
+              );
+              if (viewBox) viewBox.checked = true;
+            }
+            if (flag === 'modifyOthers') {
+              timeObj.modifyAll = true;
+              const modifyBox = bodyEl.querySelector(
+                `[data-role-perm="${roleKey}"][data-object="time"][data-flag="modifyAll"]`
+              );
+              if (modifyBox) modifyBox.checked = true;
+            }
+            if (flag === 'deleteOthers') {
+              timeObj.delete = true;
+              const delBox = bodyEl.querySelector(
+                `[data-role-perm="${roleKey}"][data-object="time"][data-flag="delete"]`
+              );
+              if (delBox) delBox.checked = true;
+            }
           }
         };
       });
@@ -1043,7 +1193,7 @@
             state.settings = updated;
             const next = updated.permissions?.rolePermissions || current;
             for (const role of roles) {
-              current[role.key] = normalizeRolePermEntry(next[role.key]);
+              current[role.key] = normalizeRolePermEntry(next[role.key], role.key);
             }
             setMsg('<div class="ok-banner">Role permissions saved.</div>');
             render();
@@ -2746,6 +2896,18 @@
     formTimekeeperId,
     timeFieldDefs,
   }) {
+    const canSelectTk = roleCanSelectTimekeeper();
+    const selfId = Number(state.user?.id);
+    const lockedId = selfId;
+    const selectedId = canSelectTk
+      ? (Number(formTimekeeperId) || selfId)
+      : lockedId;
+    const timekeeperOptions = canSelectTk
+      ? (state.users || [])
+      : (state.users || []).filter((u) => Number(u.id) === selfId);
+    const selfName = (state.users || []).find((u) => Number(u.id) === selfId)?.name
+      || state.user?.name
+      || 'You';
     return `
       <label>Date
         <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
@@ -2755,11 +2917,14 @@
           value="${escapeHtml(formHours)}" placeholder="0.25" required />
       </label>
       <label>Timekeeper
+        ${canSelectTk ? `
         <select name="timekeeperId">
-          ${(state.users || []).map((u) =>
-            `<option value="${u.id}" ${Number(u.id) === Number(formTimekeeperId) ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
+          ${timekeeperOptions.map((u) =>
+            `<option value="${u.id}" ${Number(u.id) === Number(selectedId) ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
           ).join('')}
-        </select>
+        </select>` : `
+        <input type="hidden" name="timekeeperId" value="${lockedId}" />
+        <input type="text" value="${escapeHtml(selfName)}" disabled aria-label="Timekeeper" />`}
       </label>
       <label class="span-all">Description
         <textarea name="description" rows="2" required
@@ -2786,7 +2951,9 @@
       const fd = new FormData(ev.target);
       const body = Object.fromEntries(fd.entries());
       body.matterId = Number(fixedMatterId != null ? fixedMatterId : body.matterId);
-      body.timekeeperId = Number(body.timekeeperId);
+      body.timekeeperId = roleCanSelectTimekeeper()
+        ? Number(body.timekeeperId || state.user.id)
+        : Number(state.user.id);
       const hoursRaw = String(body.hours ?? '').trim();
       body.hours = Number(hoursRaw);
       if (!Number.isFinite(body.hours) || body.hours <= 0) {
@@ -2983,7 +3150,7 @@
               return `
               <tr>
                 <td>${escapeHtml(e.service_date)}</td>
-                <td>${escapeHtml(e.timekeeper_name || '')}<div class="muted">${escapeHtml(e.description)}</div></td>
+                <td>${escapeHtml(timekeeperDisplayName(e))}<div class="muted">${escapeHtml(e.description || '')}</div></td>
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
@@ -3521,8 +3688,15 @@
               const statusLabel = e.status === 'approved' ? 'Ready to bill'
                 : e.status === 'invoiced' ? 'Billed'
                   : e.status;
-              const editable = canEdit && e.status !== 'invoiced' && !e.invoice_id;
-              const deletable = canDelete && e.status !== 'invoiced' && !e.invoice_id;
+              const isOwn = Number(e.timekeeper_id) === Number(state.user.id);
+              const editable = canEdit
+                && e.status !== 'invoiced'
+                && !e.invoice_id
+                && (isOwn || roleCanModifyOthersTime());
+              const deletable = canDelete
+                && e.status !== 'invoiced'
+                && !e.invoice_id
+                && (isOwn || roleCanDeleteOthersTime());
               const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
               if (editable) {
                 return `
@@ -4824,7 +4998,7 @@
       ${isAdmin ? `
       <div class="card stack" id="rolePermissionsCard">
         <h2>Role permissions</h2>
-        <p class="hint">Set View All, Modify All, and Delete for Matters, Contacts, and Time entries on each role. Admin always has full access.</p>
+        <p class="hint">Set View All, Modify All, and Delete for Matters, Contacts, Time entries, and Reports. For time, also set timekeeper access (select timekeeper; view/edit/delete other timekeepers’ entries). Admin always has full access.</p>
         <div id="rolePermissionsBody" class="stack"></div>
         <div id="rolePermissionsMsg"></div>
       </div>
@@ -5524,7 +5698,7 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact'],
-      answer: 'Open Contacts → Create contact. Add name (required) and any contact custom fields from Settings → Contact fields. Confirm to create, then edit the contact record anytime.',
+      answer: 'Use Quick action Create Contact, or Contacts → Create contact (also available on a contact’s page). Add name (required) and any contact custom fields from Settings → Contact fields. Confirm to create, then edit the contact record anytime.',
     },
     {
       id: 'fields',

@@ -29,6 +29,12 @@ describe('role permissions and field permissions', () => {
     assert.equal(defaults.paralegal.objects.matter.modifyAll, true);
     assert.equal(defaults.paralegal.objects.contact.delete, true);
     assert.equal(defaults.admin.objects.time.viewAll, true);
+    assert.equal(defaults.paralegal.objects.time.selectTimekeeper, false);
+    assert.equal(defaults.paralegal.objects.time.viewOthers, true);
+    assert.equal(defaults.paralegal.objects.time.modifyOthers, false);
+    assert.equal(defaults.billing_clerk.objects.time.selectTimekeeper, true);
+    assert.equal(defaults.admin.objects.time.selectTimekeeper, true);
+    assert.equal(defaults.admin.objects.time.modifyOthers, true);
 
     const next = permissions.setRolePermissions(db, admin, {
       paralegal: {
@@ -269,5 +275,108 @@ describe('role permissions and field permissions', () => {
     assert.equal(permissions.canDelete(db, 'paralegal', 'report'), false);
     assert.equal(permissions.canModifyAll(db, 'admin', 'report'), true);
     assert.equal(permissions.canDelete(db, 'admin', 'report'), true);
+  });
+
+  it('enforces timekeeper select / view / edit / delete others permissions', () => {
+    db.prepare("INSERT INTO users(email,name,role) VALUES ('clerk@x.com','Clerk','billing_clerk')").run();
+    const clerk = db.prepare('SELECT * FROM users WHERE id=3').get();
+    const matter = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'TK Matter',
+      openedOn: '2026-06-01',
+    });
+
+    const adminEntry = timeSvc.createEntry(db, admin, {
+      matterId: matter.matter.id,
+      timekeeperId: admin.id,
+      serviceDate: '2026-06-02',
+      hours: 1,
+      description: 'Admin work',
+    });
+
+    assert.throws(() => timeSvc.createEntry(db, paralegal, {
+      matterId: matter.matter.id,
+      timekeeperId: admin.id,
+      serviceDate: '2026-06-03',
+      hours: 1,
+      description: 'Proxy denied',
+    }), /yourself/i);
+
+    const paraEntry = timeSvc.createEntry(db, paralegal, {
+      matterId: matter.matter.id,
+      timekeeperId: paralegal.id,
+      serviceDate: '2026-06-03',
+      hours: 0.5,
+      description: 'Own work',
+    });
+
+    let listed = timeSvc.listEntries(db, { matterId: matter.matter.id }, paralegal);
+    assert.equal(listed.length, 2);
+    const other = listed.find((r) => r.id === adminEntry.id);
+    assert.equal(other.timekeeper_name, null);
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: {
+            viewAll: true,
+            modifyAll: true,
+            delete: true,
+            selectTimekeeper: false,
+            viewOthers: false,
+            modifyOthers: false,
+            deleteOthers: false,
+          },
+          report: { viewAll: true, modifyAll: true, delete: true },
+        },
+      },
+    });
+    listed = timeSvc.listEntries(db, { matterId: matter.matter.id }, paralegal);
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].id, paraEntry.id);
+
+    assert.throws(
+      () => timeSvc.updateEntry(db, paralegal, adminEntry.id, { description: 'nope' }),
+      /own time entries/i
+    );
+    assert.throws(
+      () => timeSvc.deleteEntry(db, paralegal, adminEntry.id),
+      /own time entries/i
+    );
+
+    permissions.setRolePermissions(db, admin, {
+      paralegal: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: {
+            viewAll: true,
+            modifyAll: true,
+            delete: true,
+            selectTimekeeper: true,
+            viewOthers: true,
+            modifyOthers: true,
+            deleteOthers: true,
+          },
+          report: { viewAll: true, modifyAll: true, delete: true },
+        },
+      },
+    });
+    const proxied = timeSvc.createEntry(db, paralegal, {
+      matterId: matter.matter.id,
+      timekeeperId: clerk.id,
+      serviceDate: '2026-06-04',
+      hours: 0.25,
+      description: 'For clerk',
+    });
+    assert.equal(proxied.timekeeperId, clerk.id);
+    const updated = timeSvc.updateEntry(db, paralegal, adminEntry.id, {
+      description: 'Edited by para',
+    });
+    assert.equal(updated.description, 'Edited by para');
+    const removed = timeSvc.deleteEntry(db, paralegal, adminEntry.id);
+    assert.equal(removed.ok, true);
   });
 });

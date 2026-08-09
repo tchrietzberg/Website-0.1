@@ -1886,6 +1886,28 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   margin-left: auto;
 }
 
+.timekeeper-perms {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.timekeeper-perms h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+}
+
+.timekeeper-perms-grid {
+  display: grid;
+  gap: 0.45rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  margin-top: 0.55rem;
+}
+
+.timekeeper-perms-grid .check-inline {
+  margin-top: 0;
+}
+
 .check-inline {
   display: -webkit-flex;
   display: flex;

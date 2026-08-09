@@ -74,13 +74,12 @@ function createEntry(db, actor, input) {
   if (!matter) throw new Error('matter not found');
 
   let timekeeperId = Number(input.timekeeperId || actor.id);
-  const canProxy = actor.role === 'admin' || actor.role === 'billing_clerk';
-  if (!canProxy && timekeeperId !== actor.id) {
+  if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = actor.id;
+  if (timekeeperId !== actor.id && !permissions.canSelectTimekeeper(db, actor.role)) {
     const err = new Error('You can only create time entries for yourself');
     err.code = 'FORBIDDEN';
     throw err;
   }
-  if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = actor.id;
 
   let billable = input.billable;
   if (billable == null) {
@@ -164,8 +163,7 @@ function createEntry(db, actor, input) {
 function submitEntry(db, actor, id) {
   const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
   if (!entry) throw new Error('entry not found');
-  const canProxy = actor.role === 'admin' || actor.role === 'billing_clerk';
-  if (!canProxy && entry.timekeeper_id !== actor.id) {
+  if (entry.timekeeper_id !== actor.id && !permissions.canModifyOthersTime(db, actor.role)) {
     const err = new Error('You can only submit your own time entries');
     err.code = 'FORBIDDEN';
     throw err;
@@ -238,10 +236,30 @@ function listQueue(db) {
   `).all();
 }
 
+function redactTimekeeperName(row, actor, access) {
+  if (!actor || !row) return row;
+  if (Number(row.timekeeper_id) === Number(actor.id)) return row;
+  if (access.selectTimekeeper) return row;
+  return { ...row, timekeeper_name: null };
+}
+
 function listEntries(db, filters = {}, actor = null) {
   if (actor) permissions.assertCanViewRecords(db, actor, 'time');
-  const { matterId = null, timekeeperId = null, status = null } = filters || {};
-  return db.prepare(`
+  let { matterId = null, timekeeperId = null, status = null } = filters || {};
+  const access = actor ? permissions.getRoleObjectAccess(db, actor.role, 'time') : null;
+  if (actor && access && !access.viewOthers) {
+    timekeeperId = actor.id;
+  } else if (
+    actor
+    && access
+    && !access.selectTimekeeper
+    && timekeeperId != null
+    && Number(timekeeperId) !== Number(actor.id)
+  ) {
+    // Without select-timekeeper, do not expose other timekeepers by filter.
+    timekeeperId = actor.id;
+  }
+  const rows = db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.name AS matter_name
     FROM time_entries te
     JOIN users u ON u.id = te.timekeeper_id
@@ -251,6 +269,8 @@ function listEntries(db, filters = {}, actor = null) {
       AND (? IS NULL OR te.status = ?)
     ORDER BY te.service_date DESC, te.id DESC
   `).all(matterId, matterId, timekeeperId, timekeeperId, status, status);
+  if (!actor || !access) return rows;
+  return rows.map((row) => redactTimekeeperName(row, actor, access));
 }
 
 function getEntry(db, id) {
@@ -271,20 +291,23 @@ function updateEntry(db, actor, id, input = {}) {
     throw new Error('Cannot edit a time entry that has already been billed');
   }
 
-  const canProxy = actor.role === 'admin' || actor.role === 'billing_clerk';
-  if (!canProxy && entry.timekeeper_id !== actor.id) {
+  const isOwn = Number(entry.timekeeper_id) === Number(actor.id);
+  if (!isOwn && !permissions.canModifyOthersTime(db, actor.role)) {
     const err = new Error('You can only edit your own time entries');
     err.code = 'FORBIDDEN';
     throw err;
   }
 
   let timekeeperId = input.timekeeperId != null ? Number(input.timekeeperId) : entry.timekeeper_id;
-  if (!canProxy && timekeeperId !== actor.id) {
+  if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = entry.timekeeper_id;
+  if (
+    Number(timekeeperId) !== Number(actor.id)
+    && !permissions.canSelectTimekeeper(db, actor.role)
+  ) {
     const err = new Error('You can only create time entries for yourself');
     err.code = 'FORBIDDEN';
     throw err;
   }
-  if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = entry.timekeeper_id;
 
   const matterId = input.matterId != null ? Number(input.matterId) : entry.matter_id;
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
@@ -437,6 +460,12 @@ function deleteEntry(db, actor, id) {
   if (!entry) throw new Error('entry not found');
   if (entry.status === 'invoiced' || entry.invoice_id) {
     throw new Error('Cannot delete a time entry that has already been billed');
+  }
+  const isOwn = Number(entry.timekeeper_id) === Number(actor.id);
+  if (!isOwn && !permissions.canDeleteOthersTime(db, actor.role)) {
+    const err = new Error('You can only delete your own time entries');
+    err.code = 'FORBIDDEN';
+    throw err;
   }
   db.prepare('DELETE FROM time_entry_custom_field_values WHERE time_entry_id = ?').run(id);
   db.prepare('DELETE FROM time_entries WHERE id = ?').run(id);

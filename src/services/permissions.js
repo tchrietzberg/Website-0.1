@@ -29,12 +29,26 @@ const ROLE_PERMISSIONS_KEY = 'role_permissions';
 const PROFILE_PERMISSIONS_KEY = 'profile_permissions'; // legacy
 const RECORD_PAGE_LAYOUT_KEY = 'record_page_layout';
 
-function defaultObjectPerms(full = true) {
-  return {
+/**
+ * @param {boolean} full
+ * @param {string|null} objectKey
+ * @param {string|null} roleKey — when set for `time`, select/modify-others
+ *   default to admin + billing_clerk only (historical proxy roles).
+ */
+function defaultObjectPerms(full = true, objectKey = null, roleKey = null) {
+  const out = {
     viewAll: full,
     modifyAll: full,
     delete: full,
   };
+  if (objectKey === 'time') {
+    const proxyRole = roleKey === 'admin' || roleKey === 'billing_clerk';
+    out.selectTimekeeper = full && (roleKey == null ? full : proxyRole);
+    out.viewOthers = full;
+    out.modifyOthers = full && (roleKey == null ? full : proxyRole);
+    out.deleteOthers = full;
+  }
+  return out;
 }
 
 function defaultRolePermissions(full = true) {
@@ -43,7 +57,7 @@ function defaultRolePermissions(full = true) {
       key,
       {
         objects: Object.fromEntries(
-          OBJECT_KEYS.map((obj) => [obj, defaultObjectPerms(full)])
+          OBJECT_KEYS.map((obj) => [obj, defaultObjectPerms(full, obj, key)])
         ),
       },
     ])
@@ -60,17 +74,38 @@ function normalizeBool(value, fallback = true) {
   return !!value;
 }
 
-function normalizeObjectPerms(input = {}, fallback = defaultObjectPerms(true)) {
-  return {
+function normalizeObjectPerms(input = {}, fallback = defaultObjectPerms(true), objectKey = null) {
+  const out = {
     viewAll: normalizeBool(input.viewAll ?? input.view_all, fallback.viewAll),
     modifyAll: normalizeBool(input.modifyAll ?? input.modify_all, fallback.modifyAll),
     delete: normalizeBool(input.delete, fallback.delete),
   };
+  if (objectKey === 'time') {
+    out.selectTimekeeper = normalizeBool(
+      input.selectTimekeeper ?? input.select_timekeeper,
+      fallback.selectTimekeeper != null ? fallback.selectTimekeeper : false
+    );
+    out.viewOthers = normalizeBool(
+      input.viewOthers ?? input.view_others,
+      fallback.viewOthers != null ? fallback.viewOthers : true
+    );
+    out.modifyOthers = normalizeBool(
+      input.modifyOthers ?? input.modify_others,
+      fallback.modifyOthers != null ? fallback.modifyOthers : false
+    );
+    out.deleteOthers = normalizeBool(
+      input.deleteOthers ?? input.delete_others,
+      fallback.deleteOthers != null ? fallback.deleteOthers : out.delete
+    );
+  }
+  return out;
 }
 
-function normalizeRoleEntry(input, fallback = null) {
+function normalizeRoleEntry(input, fallback = null, roleKey = null) {
   const base = fallback || {
-    objects: Object.fromEntries(OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true)])),
+    objects: Object.fromEntries(
+      OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true, o, roleKey)])
+    ),
   };
   // Legacy string mode: 'read_only' | 'read_write'
   if (typeof input === 'string') {
@@ -78,11 +113,13 @@ function normalizeRoleEntry(input, fallback = null) {
     const full = !(mode === 'readonly' || mode === 'read_only');
     return {
       objects: Object.fromEntries(
-        OBJECT_KEYS.map((o) => [o, {
-          viewAll: true,
-          modifyAll: full,
-          delete: full,
-        }])
+        OBJECT_KEYS.map((o) => {
+          const perms = defaultObjectPerms(full, o, roleKey);
+          // Legacy read_only still allowed viewing all objects.
+          perms.viewAll = true;
+          if (o === 'time') perms.viewOthers = true;
+          return [o, perms];
+        })
       ),
     };
   }
@@ -92,7 +129,8 @@ function normalizeRoleEntry(input, fallback = null) {
   for (const obj of OBJECT_KEYS) {
     objects[obj] = normalizeObjectPerms(
       objectsSrc[obj] || {},
-      base.objects?.[obj] || defaultObjectPerms(true)
+      base.objects?.[obj] || defaultObjectPerms(true, obj, roleKey),
+      obj
     );
   }
   return { objects };
@@ -111,14 +149,15 @@ function readRawRolePermissions(db) {
 
 function getRolePermissions(db) {
   const parsed = readRawRolePermissions(db) || {};
+  const defaults = defaultRolePermissions(true);
   const out = {};
   for (const key of ROLE_KEYS) {
-    out[key] = normalizeRoleEntry(parsed[key], defaultRolePermissions(true)[key]);
+    out[key] = normalizeRoleEntry(parsed[key], defaults[key], key);
   }
   // Admin always keeps full access so settings cannot lock the firm out.
   out.admin = {
     objects: Object.fromEntries(
-      OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true)])
+      OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true, o, 'admin')])
     ),
   };
   return out;
@@ -141,14 +180,14 @@ function setRolePermissions(db, actor, input = {}) {
   const next = {};
   for (const key of ROLE_KEYS) {
     if (input[key] !== undefined) {
-      next[key] = normalizeRoleEntry(input[key], current[key]);
+      next[key] = normalizeRoleEntry(input[key], current[key], key);
     } else {
       next[key] = current[key];
     }
   }
   next.admin = {
     objects: Object.fromEntries(
-      OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true)])
+      OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true, o, 'admin')])
     ),
   };
   setSetting(db, ROLE_PERMISSIONS_KEY, JSON.stringify(next));
@@ -198,6 +237,22 @@ function canModifyAll(db, role, objectKey) {
 
 function canDelete(db, role, objectKey) {
   return !!getRoleObjectAccess(db, role, objectKey).delete;
+}
+
+function canSelectTimekeeper(db, role) {
+  return !!getRoleObjectAccess(db, role, 'time').selectTimekeeper;
+}
+
+function canViewOthersTime(db, role) {
+  return !!getRoleObjectAccess(db, role, 'time').viewOthers;
+}
+
+function canModifyOthersTime(db, role) {
+  return !!getRoleObjectAccess(db, role, 'time').modifyOthers;
+}
+
+function canDeleteOthersTime(db, role) {
+  return !!getRoleObjectAccess(db, role, 'time').deleteOthers;
 }
 
 /** Legacy: read_write if modifyAll on all objects, else read_only. */
@@ -488,6 +543,10 @@ module.exports = {
   canViewAll,
   canModifyAll,
   canDelete,
+  canSelectTimekeeper,
+  canViewOthersTime,
+  canModifyOthersTime,
+  canDeleteOthersTime,
   getProfileAccess,
   assertCanViewRecords,
   assertCanModifyRecords,
