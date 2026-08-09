@@ -1341,17 +1341,18 @@
     ]);
     const m = page.matter;
     const canEdit = canCreateMatter(state.user);
-    const sections = Object.entries(page.sections || {});
+    // Matter number stays in the data model / layouts but is not shown on the matter page.
+    const sections = Object.entries(page.sections || {})
+      .map(([section, fields]) => [section, (fields || []).filter((f) => f.key !== 'std:number')])
+      .filter(([, fields]) => fields.length > 0);
     const fieldCtx = { canEdit, clients, recordTypes, users: state.users };
 
     main.innerHTML = `
       <div class="card stack">
         <div class="row-actions">
           <button type="button" id="backMatters">← Matters</button>
-          <span class="pill">${page.layout.source === 'record' ? 'Record layout' : 'Record-type layout'}</span>
         </div>
-        <h1>${m.number}</h1>
-        <p class="lead">${m.name}</p>
+        <h1>${escapeHtml(m.name || 'Matter')}</h1>
       </div>
 
       <form id="matterForm" class="card stack">
@@ -1373,7 +1374,7 @@
       ${canEdit ? `
       <div class="card stack">
         <h2>Manage fields</h2>
-        <p class="hint">Add or delete fields on this matter, or on the default layout for record type <strong>${escapeHtml((page.typeLayout && page.typeLayout.label) || m.matter_type)}</strong>. Matter number and name stay required and are shown in the header.</p>
+        <p class="hint">Add or delete fields on this matter. Firm-wide defaults are managed in Settings.</p>
 
         <h3>Matter fields</h3>
         <div class="field-mgmt-list">
