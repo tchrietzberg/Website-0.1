@@ -5060,7 +5060,7 @@
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
                   ? `<button type="button" data-del-time="${e.id}">Delete</button>`
-                  : '<span class="muted">—</span>'}</td>
+                  : ''}</td>
               </tr>`;
             }).join('') || '<tr><td colspan="6" class="muted">No entries yet</td></tr>'}
           </tbody>
