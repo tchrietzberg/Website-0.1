@@ -45,7 +45,7 @@
     contactFlash: null,
     contactCreateFlash: null,
     contactListFlash: null,
-    billingForm: { matterId: '', dateFrom: '', dateTo: null },
+    billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5978,6 +5978,44 @@
     return '<td></td>';
   }
 
+  async function billingEarliestDate(matterId) {
+    if (!matterId) return '';
+    try {
+      const data = await api(
+        `/api/time-entries/earliest-date?matterId=${encodeURIComponent(matterId)}`,
+        { cache: false },
+      );
+      return String(data?.earliestDate || '').slice(0, 10);
+    } catch {
+      return '';
+    }
+  }
+
+  async function applyBillingMatterDateDefaults(matterId, { force = false } = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    const key = matterId != null && matterId !== '' ? String(matterId) : '';
+    if (!state.billingForm) {
+      state.billingForm = { matterId: '', dateFrom: '', dateTo: today, defaultsForMatterId: '' };
+    }
+    const form = state.billingForm;
+    if (!key) {
+      form.matterId = '';
+      form.dateFrom = '';
+      form.dateTo = form.dateTo == null ? today : form.dateTo;
+      form.defaultsForMatterId = '';
+      state.billingForm = form;
+      return form;
+    }
+    if (!force && form.defaultsForMatterId === key) return form;
+    const earliest = await billingEarliestDate(key);
+    form.matterId = key;
+    form.dateFrom = earliest || '';
+    form.dateTo = today;
+    form.defaultsForMatterId = key;
+    state.billingForm = form;
+    return form;
+  }
+
   async function renderBilling() {
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
     const [invoices, matters] = await Promise.all([
@@ -5987,9 +6025,16 @@
     if (!stillOnView('billing')) return;
     state.matters = matters || [];
     const today = new Date().toISOString().slice(0, 10);
-    if (!state.billingForm) state.billingForm = { matterId: '', dateFrom: '', dateTo: today };
+    if (!state.billingForm) {
+      state.billingForm = { matterId: '', dateFrom: '', dateTo: today, defaultsForMatterId: '' };
+    }
     // null = never set → default To to today; '' means the user cleared it.
     if (state.billingForm.dateTo == null) state.billingForm.dateTo = today;
+    if (state.billingForm.matterId
+      && state.billingForm.defaultsForMatterId !== String(state.billingForm.matterId)) {
+      await applyBillingMatterDateDefaults(state.billingForm.matterId);
+      if (!stillOnView('billing')) return;
+    }
     const form = state.billingForm;
     const selectedMatterId = form.matterId || '';
     const dateFrom = form.dateFrom || '';
@@ -6014,7 +6059,7 @@
           <label>To
             <input type="date" name="dateTo" id="billDateTo" value="${escapeHtml(dateTo)}" />
           </label>
-          <p class="hint span-all">Optional dates filter which time entries are billed and included in Lodestar.</p>
+          <p class="hint span-all">Defaults to the matter’s earliest time entry through today. Adjust to filter which time entries are billed and included in Lodestar.</p>
           <div class="row-actions span-all" style="flex-wrap:wrap;gap:.5rem">
             <button type="button" data-bill-report="lodestar-matter-summary">Lodestar Summary</button>
             <button type="button" data-bill-report="lodestar-matter-detail">Lodestar Detail</button>
@@ -6052,10 +6097,16 @@
       const billMatterPicker = wireMatterPicker(billForm, {
         matters,
         onChange: (m) => {
-          state.billingForm = {
-            ...(state.billingForm || {}),
-            matterId: m?.id != null ? String(m.id) : '',
-          };
+          void (async () => {
+            const form = await applyBillingMatterDateDefaults(
+              m?.id != null ? m.id : '',
+              { force: true },
+            );
+            const fromEl = $('#billDateFrom');
+            const toEl = $('#billDateTo');
+            if (fromEl) fromEl.value = form.dateFrom || '';
+            if (toEl) toEl.value = form.dateTo || today;
+          })();
         },
       });
       const persistDates = () => {
@@ -6064,6 +6115,7 @@
           matterId: String(new FormData(billForm).get('matterId') || state.billingForm?.matterId || ''),
           dateFrom: String($('#billDateFrom')?.value || ''),
           dateTo: String($('#billDateTo')?.value || ''),
+          defaultsForMatterId: state.billingForm?.defaultsForMatterId || '',
         };
       };
       $('#billDateFrom')?.addEventListener('change', persistDates);

@@ -944,6 +944,18 @@ function createServer(db = openDb()) {
       }
 
       // Time
+      if (req.method === 'GET' && pathname === '/api/time-entries/earliest-date') {
+        try {
+          const matterId = url.searchParams.get('matterId');
+          if (!matterId) {
+            return json(res, 400, { error: 'matterId is required', message: 'matterId is required' });
+          }
+          const earliest = timeSvc.earliestServiceDate(db, Number(matterId), user);
+          return json(res, 200, { matterId: Number(matterId), earliestDate: earliest });
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/time-entries') {
         try {
           const matterId = url.searchParams.get('matterId');

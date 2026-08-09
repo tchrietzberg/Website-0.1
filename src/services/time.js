@@ -285,6 +285,25 @@ function listEntries(db, filters = {}, actor = null) {
   return rows.map((row) => redactTimekeeperName(row, actor, access));
 }
 
+/** Earliest service_date for a matter (respects the actor's time visibility). */
+function earliestServiceDate(db, matterId, actor = null) {
+  if (!matterId) return null;
+  if (actor) permissions.assertCanViewRecords(db, actor, 'time');
+  let timekeeperId = null;
+  const access = actor ? permissions.getRoleObjectAccess(db, actor.role, 'time') : null;
+  if (actor && access && !access.viewOthers) {
+    timekeeperId = actor.id;
+  }
+  const row = db.prepare(`
+    SELECT MIN(te.service_date) AS earliest
+    FROM time_entries te
+    WHERE te.matter_id = ?
+      AND (? IS NULL OR te.timekeeper_id = ?)
+  `).get(Number(matterId), timekeeperId, timekeeperId);
+  const earliest = row?.earliest ? String(row.earliest).slice(0, 10) : '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(earliest) ? earliest : null;
+}
+
 function getEntry(db, id) {
   return db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.name AS matter_name
@@ -582,6 +601,7 @@ module.exports = {
   deleteEntry,
   listQueue,
   listEntries,
+  earliestServiceDate,
   evaluateRules,
   detectDuplicates,
   canApprove,
