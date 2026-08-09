@@ -1243,6 +1243,7 @@
       clearSession();
       renderLogin();
     };
+    ensureHelpAgent();
   }
 
   async function renderView() {
