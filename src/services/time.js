@@ -1,4 +1,9 @@
-const { roundMinutes, assertAllowedIncrement, assertRoundMode } = require('../money');
+const {
+  roundMinutes,
+  hoursToMinutes,
+  assertAllowedIncrement,
+  assertRoundMode,
+} = require('../money');
 const { getSetting, setSetting, audit } = require('../db');
 const customFields = require('./customFields');
 
@@ -30,6 +35,19 @@ function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinu
   return rows.map((r) => r.id);
 }
 
+function resolveMinutes(input) {
+  if (input.hours != null && input.hours !== '') {
+    // Quarter-hour entry already matches billed increments — do not re-round.
+    const rawMinutes = hoursToMinutes(input.hours);
+    return { rawMinutes, rounded: rawMinutes, fromHours: true };
+  }
+  const rawMinutes = Number(input.rawMinutes);
+  if (!Number.isInteger(rawMinutes)) {
+    throw new Error('rawMinutes must be an integer');
+  }
+  return { rawMinutes, rounded: null, fromHours: false };
+}
+
 function createEntry(db, actor, input) {
   const mode = assertRoundMode(getSetting(db, 'round_mode', 'up'));
   const defaultInc = Number(getSetting(db, 'round_increment_minutes', '15'));
@@ -38,7 +56,11 @@ function createEntry(db, actor, input) {
     : assertAllowedIncrement(
       input.roundIncrementMinutes != null ? Number(input.roundIncrementMinutes) : defaultInc
     );
-  const rounded = roundMinutes(input.rawMinutes, increment, mode);
+  const resolved = resolveMinutes(input);
+  const rounded = resolved.rounded != null
+    ? resolved.rounded
+    : roundMinutes(resolved.rawMinutes, increment, mode);
+  input = { ...input, rawMinutes: resolved.rawMinutes };
 
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(input.matterId);
   if (!matter) throw new Error('matter not found');

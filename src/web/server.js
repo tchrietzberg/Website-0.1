@@ -759,7 +759,10 @@ function createServer(db = openDb()) {
           matterId: Number(body.matterId),
           timekeeperId: Number(body.timekeeperId || user.id),
           serviceDate: body.serviceDate,
-          rawMinutes: Number(body.rawMinutes),
+          hours: body.hours != null && body.hours !== '' ? Number(body.hours) : undefined,
+          rawMinutes: body.rawMinutes != null && body.rawMinutes !== ''
+            ? Number(body.rawMinutes)
+            : undefined,
           description: body.description,
           billable: body.billable == null ? null : (body.billable ? 1 : 0),
           category: body.category,

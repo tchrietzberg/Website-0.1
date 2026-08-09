@@ -68,6 +68,17 @@ describe('time entry rules', () => {
     assert.equal(e.billable, 1);
   });
 
+  it('accepts quarter-hour decimal hours without re-rounding', () => {
+    const e = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1.25, description: 'review',
+    });
+    assert.equal(e.rawMinutes, 75);
+    assert.equal(e.roundedMinutes, 75);
+    assert.throws(() => timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1.1, description: 'bad',
+    }), /0\.25 increments/);
+  });
+
   it('surfaces duplicate warnings without blocking', () => {
     const a = timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: 15, description: 'one',

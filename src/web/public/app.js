@@ -1669,7 +1669,7 @@
       || (matters.length === 1 ? matters[0].id : null);
     const formDate = retain.serviceDate || today;
     const formTimekeeperId = retain.timekeeperId || state.user.id;
-    const formMinutes = addAnother ? '' : '7';
+    const formHours = addAnother ? '' : '1.00';
     const formDescription = addAnother ? '' : 'Reviewed production set';
     const flash = state.timeFlash || '';
     state.timeFlash = '';
@@ -1701,9 +1701,10 @@
           <label>Date
             <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
           </label>
-          <label>Minutes
-            <input name="rawMinutes" type="number" min="1" value="${escapeHtml(formMinutes)}"
-              placeholder="Minutes" required />
+          <label>Hours
+            <input name="hours" type="number" min="0.25" step="0.25" value="${escapeHtml(formHours)}"
+              placeholder="0.25" required />
+            <span class="hint">0.25 = 15 min · 0.50 = 30 min · 0.75 = 45 min · 1 = 1 hour · 1.25 = 1h 15m</span>
           </label>
           <label>Timekeeper
             <select name="timekeeperId">
@@ -1731,7 +1732,7 @@
         <h2>Recent entries</h2>
         <p class="hint">Saved time is ready for Billing automatically — no approval step.</p>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Matter</th><th>Minutes</th><th>Status</th></tr></thead>
+          <thead><tr><th>Date</th><th>Matter</th><th>Hours</th><th>Status</th></tr></thead>
           <tbody>
             ${entries.slice(0, 30).map((e) => {
               const matterName = (matters.find((m) => Number(m.id) === Number(e.matter_id)) || {}).name
@@ -1745,7 +1746,7 @@
                 <td>${escapeHtml(e.service_date)}</td>
                 <td>${escapeHtml(matterName)}<div class="muted">${escapeHtml(e.description)}</div></td>
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
-                  <span class="muted">(${e.rounded_minutes} min)</span></td>
+                  <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
               </tr>`;
             }).join('') || '<tr><td colspan="4" class="muted">No entries yet</td></tr>'}
@@ -1768,7 +1769,8 @@
       const body = Object.fromEntries(fd.entries());
       body.matterId = Number(body.matterId);
       body.timekeeperId = Number(body.timekeeperId);
-      body.rawMinutes = Number(body.rawMinutes);
+      body.hours = Number(body.hours);
+      delete body.rawMinutes;
       delete body.category;
       delete body.subcategory;
       const customValues = {};
@@ -1793,7 +1795,7 @@
       }
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
-        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min) — ready for Billing.`;
+        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} hrs — ready for Billing.`;
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
@@ -1826,8 +1828,8 @@
           const desc = form && form.querySelector('textarea[name="description"]');
           if (desc) desc.focus();
         } else {
-          const minutes = form && form.querySelector('input[name="rawMinutes"]');
-          if (minutes) minutes.focus();
+          const hours = form && form.querySelector('input[name="hours"]');
+          if (hours) hours.focus();
         }
       }, 0);
     }

@@ -8,6 +8,7 @@ const {
   centsFromDollarsString,
   formatDuration,
   minutesToDecimalHours,
+  hoursToMinutes,
 } = require('../src/money');
 
 describe('money rounding', () => {
@@ -53,6 +54,28 @@ describe('money rounding', () => {
   it('rejects zero/negative duration', () => {
     assert.throws(() => roundMinutes(0, 15, 'up'));
     assert.throws(() => roundMinutes(-5, 15, 'up'));
+  });
+});
+
+describe('hoursToMinutes', () => {
+  it('converts quarter-hour increments to minutes', () => {
+    assert.equal(hoursToMinutes(0.25), 15);
+    assert.equal(hoursToMinutes(0.5), 30);
+    assert.equal(hoursToMinutes(0.50), 30);
+    assert.equal(hoursToMinutes(0.75), 45);
+    assert.equal(hoursToMinutes(1), 60);
+    assert.equal(hoursToMinutes(1.0), 60);
+    assert.equal(hoursToMinutes(1.25), 75);
+    assert.equal(hoursToMinutes(2.5), 150);
+    assert.equal(hoursToMinutes('1.75'), 105);
+  });
+
+  it('rejects non-quarter increments and non-positive values', () => {
+    assert.throws(() => hoursToMinutes(0.1), /0\.25 increments/);
+    assert.throws(() => hoursToMinutes(0.33), /0\.25 increments/);
+    assert.throws(() => hoursToMinutes(1.1), /0\.25 increments/);
+    assert.throws(() => hoursToMinutes(0), /greater than 0/);
+    assert.throws(() => hoursToMinutes(-0.25), /greater than 0/);
   });
 });
 

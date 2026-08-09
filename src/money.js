@@ -135,6 +135,26 @@ function minutesToDecimalHours(minutes) {
 }
 
 /**
+ * Convert decimal hours in quarter-hour increments to integer minutes.
+ * Examples: 0.25 → 15, 0.50 → 30, 0.75 → 45, 1 → 60, 1.25 → 75.
+ */
+function hoursToMinutes(hours) {
+  const n = Number(hours);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error('hours must be greater than 0');
+  }
+  const hundredths = Math.round(n * 100);
+  if (Math.abs(n * 100 - hundredths) > 1e-6) {
+    throw new Error('hours must be in 0.25 increments (0.25, 0.50, 0.75, 1.00, …)');
+  }
+  if (hundredths % 25 !== 0) {
+    throw new Error('hours must be in 0.25 increments (0.25, 0.50, 0.75, 1.00, …)');
+  }
+  // hundredths is a multiple of 25 → minutes is always an integer
+  return (hundredths * 60) / 100;
+}
+
+/**
  * Format a duration in minutes for display.
  * @param {number} minutes integer minutes (may be 0)
  * @param {'hms'|'hm'|'decimal'} format
@@ -201,6 +221,7 @@ module.exports = {
   divideHalfUp,
   roundMinutes,
   minutesToDecimalHours,
+  hoursToMinutes,
   formatDuration,
   amountFromMinutes,
   formatCents,
