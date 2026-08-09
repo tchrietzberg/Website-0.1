@@ -601,6 +601,15 @@ body {
   overflow: hidden;
 }
 
+#matterNameFormulaCard {
+  margin-top: 0.25rem;
+}
+
+.create-matter-custom .name-formula-field {
+  border-left: 3px solid color-mix(in srgb, var(--accent, #1a3a6b) 55%, transparent);
+  padding-left: 0.65rem;
+}
+
 #app .settings-collapse {
   margin-bottom: 1rem;
 }

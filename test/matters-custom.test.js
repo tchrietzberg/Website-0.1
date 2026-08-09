@@ -273,6 +273,79 @@ describe('matter search and record-based fields', () => {
     assert.equal(next.matter.name, 'Alpha Matter - Trial - 2025');
   });
 
+  it('builds create matter names from a Settings field formula', () => {
+    const ticker = customFields.createCustomField(db, admin, {
+      label: 'Ticker',
+      fieldType: 'text',
+      recordTypeKey: 'billable',
+      required: true,
+      isDefault: true,
+    });
+    const company = customFields.createCustomField(db, admin, {
+      label: 'Company Name',
+      fieldType: 'text',
+      recordTypeKey: 'billable',
+      required: true,
+      isDefault: true,
+    });
+    const caseType = customFields.createCustomField(db, admin, {
+      label: 'Case Type',
+      fieldType: 'select',
+      options: ['Securities', 'Antitrust'],
+      recordTypeKey: 'billable',
+      required: true,
+      isDefault: true,
+    });
+
+    const cfg = matterSvc.setMatterNameFormula(db, admin, {
+      enabled: true,
+      separator: '-',
+      appendStatusYear: false,
+      parts: [
+        { kind: 'custom_field', fieldId: ticker.id },
+        { kind: 'token', token: 'opened_year' },
+        { kind: 'custom_field', fieldId: company.id },
+        { kind: 'custom_field', fieldId: caseType.id },
+      ],
+    });
+    assert.equal(cfg.enabled, true);
+    assert.equal(cfg.previewExample, 'Ticker-Year-Company Name-Case Type');
+    assert.ok(cfg.availableFields.some((f) => f.id === ticker.id));
+
+    assert.throws(() => matterSvc.createMatter(db, admin, {
+      openedOn: '2026-04-01',
+      recordTypeKey: 'billable',
+      customValues: {
+        [ticker.id]: 'AAPL',
+        [company.id]: 'Acme',
+      },
+    }), /Case Type/);
+
+    const page = matterSvc.createMatter(db, admin, {
+      openedOn: '2026-04-01',
+      recordTypeKey: 'billable',
+      customValues: {
+        [ticker.id]: 'AAPL',
+        [company.id]: 'Acme',
+        [caseType.id]: 'Securities',
+      },
+    });
+    assert.equal(page.matter.name, 'AAPL-2026-Acme-Securities');
+
+    // Manual name is ignored when the formula is active.
+    const page2 = matterSvc.createMatter(db, admin, {
+      name: 'Should Not Win',
+      openedOn: '2025-12-15',
+      recordTypeKey: 'billable',
+      customValues: {
+        [ticker.id]: 'MSFT',
+        [company.id]: 'Contoso',
+        [caseType.id]: 'Antitrust',
+      },
+    });
+    assert.equal(page2.matter.name, 'MSFT-2025-Contoso-Antitrust');
+  });
+
   it('shows type dropdown fields on matter pages from the record page layout', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Status Matter' });
     customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:status');

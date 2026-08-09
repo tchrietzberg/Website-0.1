@@ -142,6 +142,7 @@ function readSettings(db) {
     contactFieldConfig: clientsSvc.getContactFieldConfig(db),
     billFieldConfig: invoiceSvc.getBillFieldConfig(db),
     permissions: permissions.getPermissionsSettings(db),
+    matterNameFormula: matterSvc.getMatterNameFormulaConfig(db),
   };
 }
 
@@ -918,6 +919,10 @@ function createServer(db = openDb()) {
         if (body.billFields !== undefined) {
           if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
           invoiceSvc.setBillFields(db, user, body.billFields);
+        }
+        if (body.matterNameFormula !== undefined) {
+          if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+          matterSvc.setMatterNameFormula(db, user, body.matterNameFormula);
         }
         if (
           body.rolePermissions !== undefined
