@@ -301,7 +301,7 @@
       || roleCanModify('time', settings);
   }
 
-  const $ = (sel, el = document) => el.querySelector(sel);
+  const $ = (sel, el = document) => (el ? el.querySelector(sel) : null);
   const main = $('#main');
   const nav = $('#nav');
   const userbar = $('#userbar');
