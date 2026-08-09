@@ -2119,6 +2119,7 @@
             <div class="report-row">
               <strong>${label}</strong>
               <button data-view-report="${id}">View</button>
+              <a class="btn" href="/api/reports/${id}?format=pdf">PDF</a>
               <a class="btn" href="/api/reports/${id}?format=csv" target="_blank">CSV</a>
               <a class="btn" href="/api/reports/${id}?format=xlsx">Excel</a>
             </div>`).join('')}
@@ -2203,18 +2204,37 @@
       };
     });
 
-    // Auth header for download links via fetch+blob for xlsx/csv when needed
+    // Auth header for download links via fetch+blob for pdf/xlsx/csv when needed
     main.querySelectorAll('a.btn').forEach((a) => {
       a.onclick = async (ev) => {
         ev.preventDefault();
-        const res = await fetch(a.getAttribute('href'), {
+        const href = a.getAttribute('href') || '';
+        const res = await fetch(href, {
           headers: { Authorization: `Bearer ${state.token}` },
+          credentials: 'include',
         });
+        if (!res.ok) {
+          let message = res.statusText;
+          try {
+            const data = await res.json();
+            message = data.message || data.error || message;
+          } catch { /* ignore */ }
+          const out = $('#reportOut');
+          if (out) {
+            out.hidden = false;
+            out.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+          }
+          return;
+        }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const tmp = document.createElement('a');
         tmp.href = url;
-        tmp.download = a.getAttribute('href').includes('xlsx') ? 'report.xlsx' : 'report.csv';
+        const ext = href.includes('format=pdf') ? 'pdf'
+          : href.includes('xlsx') ? 'xlsx'
+            : 'csv';
+        const nameMatch = href.match(/\/api\/reports\/([^?]+)/);
+        tmp.download = `${nameMatch?.[1] || 'report'}.${ext}`;
         tmp.click();
         URL.revokeObjectURL(url);
       };

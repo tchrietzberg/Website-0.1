@@ -940,6 +940,28 @@ function createServer(db = openDb()) {
           res.end(buf);
           return;
         }
+        if (fmt === 'pdf') {
+          const titles = {
+            matters: 'Matters Report',
+            'lodestar-summary': 'Lodestar Summary (all matters)',
+            'lodestar-detail': 'Lodestar Detail (all matters)',
+            'ar-aging': 'AR Aging',
+            'write-offs': 'Write-offs',
+            realization: 'Realization',
+            'unapplied-cash': 'Unapplied Cash',
+          };
+          const buf = reports.toPdf(rows, {
+            title: titles[name] || name,
+            currencyKeys,
+          });
+          res.writeHead(200, {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${name}.pdf"`,
+            'Content-Length': buf.length,
+          });
+          res.end(buf);
+          return;
+        }
         return json(res, 200, rows);
       }
 

@@ -91,4 +91,32 @@ describe('matters report', () => {
     const summaryXlsx = reports.lodestarMatterSummaryXlsx(db, 1);
     assert.ok(summaryXlsx.length > 100);
   });
+
+  it('exports firm reports as PDF', () => {
+    const entry = timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-03-01',
+      rawMinutes: 60,
+      description: 'Research',
+    });
+    timeSvc.submitEntry(db, para, entry.id);
+    timeSvc.approveEntry(db, admin, entry.id);
+
+    const mattersPdf = reports.toPdf(reports.mattersReport(db), {
+      title: 'Matters Report',
+      currencyKeys: [],
+    });
+    assert.ok(Buffer.isBuffer(mattersPdf));
+    assert.equal(mattersPdf.slice(0, 5).toString(), '%PDF-');
+    assert.match(mattersPdf.toString('latin1'), /Matters Report/);
+    assert.match(mattersPdf.toString('latin1'), /Alpha Matter/);
+
+    const lodestarPdf = reports.toPdf(reports.lodestarSummary(db), {
+      title: 'Lodestar Summary (all matters)',
+      currencyKeys: ['amount_cents', 'rate_cents'],
+    });
+    assert.equal(lodestarPdf.slice(0, 5).toString(), '%PDF-');
+    assert.match(lodestarPdf.toString('latin1'), /Lodestar Summary/);
+  });
 });

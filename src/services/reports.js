@@ -524,6 +524,41 @@ function toXlsx(rows, currencyKeys = []) {
   return buildXlsx([header, ...body]);
 }
 
+function humanizeKey(key) {
+  return String(key || '')
+    .replace(/_cents$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatReportCell(key, value, currencyKeys = []) {
+  if (value == null || value === '') return '';
+  if (currencyKeys.includes(key) && Number.isInteger(value)) return formatCents(value);
+  if (typeof value === 'number' && !Number.isInteger(value)) {
+    return String(Math.round(value * 100) / 100);
+  }
+  return String(value);
+}
+
+/** Tabular firm-report PDF (matters, lodestar firm listings, etc.). */
+function toPdf(rows, { title = 'Report', currencyKeys = [] } = {}) {
+  if (!rows.length) {
+    return buildTextPdf({ title, lines: ['No rows'] });
+  }
+  const keys = Object.keys(rows[0]);
+  const lines = [];
+  for (const row of rows) {
+    lines.push('--------------------------------------------------------------------------');
+    for (const key of keys) {
+      const label = humanizeKey(key).padEnd(22);
+      lines.push(`${label} ${formatReportCell(key, row[key], currencyKeys)}`);
+    }
+  }
+  lines.push('--------------------------------------------------------------------------');
+  lines.push(`Rows: ${rows.length}`);
+  return buildTextPdf({ title, lines });
+}
+
 module.exports = {
   lodestarDetail,
   lodestarSummary,
@@ -540,5 +575,6 @@ module.exports = {
   realization,
   toCsv,
   toXlsx,
+  toPdf,
   formatCents,
 };
