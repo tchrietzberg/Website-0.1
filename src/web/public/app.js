@@ -619,7 +619,7 @@
         const rows = `${builtinRows}${customRows}`
           || `<p class="muted">No ${escapeHtml(scopeLabel)} fields yet.</p>`;
         const listHint = appliesTo === 'client'
-          ? '<p class="hint">Name is always shown. Use <strong>Default field</strong> to show a built-in or custom field on contacts.</p>'
+          ? '<p class="hint">Name is always shown. Add custom fields below and use <strong>Default field</strong> to show them on contacts.</p>'
           : `<p class="hint">Mark <strong>Default field</strong> for fields that should appear by default on ${escapeHtml(scopeLabel)} forms.</p>`;
 
         bodyEl.innerHTML = `
@@ -4789,7 +4789,7 @@
       </div>
       <div class="card stack" id="contactFieldsCard">
         <h2>Contact fields</h2>
-        <p class="hint">Manage contact fields in one list. Check <strong>Default field</strong> to show a field on contacts. Name is always shown.</p>
+        <p class="hint">Name is always shown. Add custom contact fields and check <strong>Default field</strong> to show them on contacts.</p>
         <div id="contactFieldsBody" class="stack"></div>
         <div id="contactFieldMsg"></div>
       </div>
@@ -5503,7 +5503,7 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact'],
-      answer: 'Open Contacts → Create contact. Add name (required), plus company, email, phone, notes, and any required contact custom fields. Confirm to create, then edit the contact record anytime.',
+      answer: 'Open Contacts → Create contact. Add name (required) and any contact custom fields from Settings → Contact fields. Confirm to create, then edit the contact record anytime.',
     },
     {
       id: 'fields',

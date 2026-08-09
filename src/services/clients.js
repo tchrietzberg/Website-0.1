@@ -11,13 +11,12 @@ const CONTACT_CORE_FIELD = {
   required: true,
 };
 
-/** Optional built-in contact fields — firm enables which appear on create/edit. */
-const CONTACT_OPTIONAL_STANDARD_FIELDS = [
-  { key: 'company', label: 'Company', type: 'text', width: 'half' },
-  { key: 'email', label: 'Email', type: 'email', width: 'half' },
-  { key: 'phone', label: 'Phone', type: 'text', width: 'half' },
-  { key: 'notes', label: 'Notes', type: 'textarea', width: 'full' },
-];
+/**
+ * Optional built-in contact fields — firm enables which appear on create/edit.
+ * Company, email, phone, and notes were removed as default contact fields;
+ * add custom contact fields in Settings when needed.
+ */
+const CONTACT_OPTIONAL_STANDARD_FIELDS = [];
 
 const CONTACT_OPTIONAL_KEYS = CONTACT_OPTIONAL_STANDARD_FIELDS.map((f) => f.key);
 const CONTACT_STANDARD_SETTING = 'contact_standard_fields';

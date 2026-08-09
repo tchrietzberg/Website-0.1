@@ -34,20 +34,18 @@ describe('contacts and contact custom fields', () => {
     assert.equal(clientsSvc.listClients(db, { q: 'acme' }).length, 1);
   });
 
-  it('lets firms select optional default contact fields', () => {
+  it('has name as the only built-in contact field', () => {
     let config = clientsSvc.getContactFieldConfig(db);
     assert.deepEqual(config.enabledKeys, []);
-    assert.equal(config.availableStandard.length, 4);
-    assert.ok(config.core.some((f) => f.key === 'name'));
+    assert.deepEqual(config.availableStandard, []);
+    assert.deepEqual(config.enabledStandard, []);
+    assert.equal(config.core.length, 1);
+    assert.equal(config.core[0].key, 'name');
 
-    config = clientsSvc.setEnabledContactStandardKeys(db, admin, ['email', 'company', 'bogus']);
-    assert.deepEqual(config.enabledKeys, ['company', 'email']);
-    assert.equal(config.enabledStandard.length, 2);
-    assert.equal(config.availableStandard.length, 2);
-    assert.ok(config.availableStandard.some((f) => f.key === 'phone'));
-
-    config = clientsSvc.setEnabledContactStandardKeys(db, admin, []);
+    // Legacy keys are ignored now that company/email/phone/notes are not default fields.
+    config = clientsSvc.setEnabledContactStandardKeys(db, admin, ['email', 'company', 'phone', 'notes']);
     assert.deepEqual(config.enabledKeys, []);
+    assert.deepEqual(config.availableStandard, []);
   });
 
   it('supports default-field flag on contact custom fields', () => {
