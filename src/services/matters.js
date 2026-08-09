@@ -2,13 +2,18 @@ const { allocateNumber, audit } = require('../db');
 const customFields = require('./customFields');
 const matterIndex = require('./matterIndex');
 
-const STATUS_NAME_SEP = ' — ';
+const NAME_SEP = ' - ';
 
 function formatBuiltInStatus(status) {
   const s = String(status || '').trim();
   if (s === 'open') return 'Open';
   if (s === 'closed') return 'Closed';
   return s;
+}
+
+function yearFromOpenedOn(openedOn) {
+  const y = String(openedOn || '').trim().slice(0, 4);
+  return /^\d{4}$/.test(y) ? y : '';
 }
 
 /** Custom matter fields whose label indicates a status dropdown. */
@@ -28,23 +33,52 @@ function statusCustomFields(db, matter) {
   `).all(matter.matter_type || customFields.DEFAULT_RECORD_TYPE_KEY, matter.id);
 }
 
-function stripStatusSuffix(name) {
-  const raw = String(name || '');
-  const idx = raw.lastIndexOf(STATUS_NAME_SEP);
-  if (idx === -1) return raw.trim();
-  return raw.slice(0, idx).trim();
+/** Strip managed " - Status - Year" (and legacy em-dash) suffixes. */
+function stripNameDecorations(name) {
+  let base = String(name || '').trim();
+  // Name - Status - 2026  (or em dash)
+  let m = base.match(/^(.*?)(?:\s+[—-]\s+.+?\s+[—-]\s+\d{4})$/);
+  if (m) return m[1].trim();
+  // Name - 2026
+  m = base.match(/^(.*?)\s+[—-]\s+(\d{4})$/);
+  if (m) return m[1].trim();
+  // Legacy Name — Status
+  m = base.match(/^(.*?)\s+[—-]\s+(.+)$/);
+  if (m && !/^\d{4}$/.test(m[2].trim())) return m[1].trim();
+  return base;
 }
 
-function nameWithStatus(name, statusLabel) {
-  const base = stripStatusSuffix(name);
+/** Matter Name - Status - Year */
+function composeMatterName(baseName, statusLabel, openedOn) {
+  const base = stripNameDecorations(baseName);
   const status = String(statusLabel || '').trim();
-  if (!status) return base;
-  return `${base}${STATUS_NAME_SEP}${status}`;
+  const year = yearFromOpenedOn(openedOn);
+  const parts = [base];
+  if (status) parts.push(status);
+  if (year) parts.push(year);
+  return parts.filter(Boolean).join(NAME_SEP);
+}
+
+function customStatusValue(db, matterId, fieldId) {
+  const row = db.prepare(`
+    SELECT value_text FROM custom_field_values
+    WHERE matter_id = ? AND field_id = ?
+  `).get(matterId, fieldId);
+  return row?.value_text == null ? '' : String(row.value_text).trim();
+}
+
+/** Prefer custom Status field value, else built-in open/closed. */
+function currentStatusLabel(db, matter) {
+  for (const field of statusCustomFields(db, matter)) {
+    const text = customStatusValue(db, matter.id, field.id);
+    if (text) return text;
+  }
+  return formatBuiltInStatus(matter.status);
 }
 
 /**
  * If status (built-in or a Status custom field) changed in this patch,
- * return the label to append on the matter name; otherwise null.
+ * return the label to use in the matter name; otherwise null.
  */
 function resolveStatusNameUpdate(db, matter, patch) {
   // Prefer an explicit custom Status field when present in the save payload.
@@ -56,12 +90,8 @@ function resolveStatusNameUpdate(db, matter, patch) {
         continue;
       }
       const next = patch.customValues[key] ?? patch.customValues[field.id];
-      const prev = db.prepare(`
-        SELECT value_text FROM custom_field_values
-        WHERE matter_id = ? AND field_id = ?
-      `).get(matter.id, field.id);
       const nextText = next == null ? '' : String(next).trim();
-      const prevText = prev?.value_text == null ? '' : String(prev.value_text).trim();
+      const prevText = customStatusValue(db, matter.id, field.id);
       if (nextText !== prevText) return nextText;
       break;
     }
@@ -74,6 +104,16 @@ function resolveStatusNameUpdate(db, matter, patch) {
   }
 
   return null;
+}
+
+function writeMatterName(db, actor, id, oldName, nextName) {
+  if (!nextName || nextName === oldName) return false;
+  db.prepare('UPDATE matters SET name = ? WHERE id = ?').run(nextName, id);
+  db.prepare(`
+    INSERT INTO matter_field_history(matter_id, field_name, old_value, new_value, changed_by)
+    VALUES (?, 'name', ?, ?, ?)
+  `).run(id, oldName, nextName, actor.id);
+  return true;
 }
 
 function createMatter(db, actor, input = {}) {
@@ -102,17 +142,21 @@ function createMatter(db, actor, input = {}) {
     ? Number(input.responsibleAttorneyId)
     : null;
 
+  const initialStatus = formatBuiltInStatus(input.status || 'open');
+  const displayName = composeMatterName(name, initialStatus, openedOn);
+
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
       responsible_attorney_id, opened_on)
-    VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     clientId,
     number,
-    name,
+    displayName,
     matterType,
     input.jurisdiction != null && input.jurisdiction !== '' ? String(input.jurisdiction) : null,
     input.court != null && input.court !== '' ? String(input.court) : null,
+    String(input.status || 'open'),
     Number.isFinite(attorneyId) ? attorneyId : null,
     openedOn
   );
@@ -120,6 +164,10 @@ function createMatter(db, actor, input = {}) {
 
   if (input.customValues) {
     customFields.setCustomValues(db, actor, id, input.customValues);
+    const matterRow = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
+    const statusLabel = currentStatusLabel(db, matterRow) || initialStatus;
+    const nextName = composeMatterName(name, statusLabel, openedOn);
+    writeMatterName(db, actor, id, matterRow.name, nextName);
   }
 
   matterIndex.indexMatter(db, id);
@@ -142,6 +190,10 @@ function updateMatter(db, actor, id, patch) {
   if (patch.matterType != null) delete patch.matterType;
 
   const statusForName = resolveStatusNameUpdate(db, current, patch);
+  const openedOnChanging = patch.openedOn !== undefined
+    && String(patch.openedOn || '').slice(0, 10) !== String(current.opened_on || '').slice(0, 10);
+  const nameChanging = patch.name !== undefined
+    && stripNameDecorations(patch.name) !== stripNameDecorations(current.name);
 
   const map = {
     name: 'name',
@@ -155,6 +207,9 @@ function updateMatter(db, actor, id, patch) {
 
   for (const [key, col] of Object.entries(map)) {
     if (patch[key] === undefined) continue;
+    // Name is rewritten below into Name - Status - Year; skip raw overwrite here
+    // when we will recompose, unless status/year are unchanged and only name base changes.
+    if (key === 'name' && (statusForName != null || openedOnChanging)) continue;
     const oldVal = current[col];
     let newVal = patch[key];
     if (key === 'clientId' || key === 'responsibleAttorneyId') {
@@ -178,18 +233,16 @@ function updateMatter(db, actor, id, patch) {
     customFields.setCustomValues(db, actor, id, patch.customValues);
   }
 
-  // When status changes, keep the matter name ending with that status.
-  if (statusForName != null) {
-    const after = db.prepare('SELECT name FROM matters WHERE id = ?').get(id);
+  // Keep matter name as: Matter Name - Status - Year
+  if (statusForName != null || openedOnChanging || nameChanging) {
+    const after = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const baseName = patch.name !== undefined ? String(patch.name) : after.name;
-    const nextName = nameWithStatus(baseName, statusForName);
-    if (nextName && nextName !== after.name) {
-      db.prepare('UPDATE matters SET name = ? WHERE id = ?').run(nextName, id);
-      db.prepare(`
-        INSERT INTO matter_field_history(matter_id, field_name, old_value, new_value, changed_by)
-        VALUES (?, 'name', ?, ?, ?)
-      `).run(id, after.name, nextName, actor.id);
-    }
+    const statusLabel = statusForName != null
+      ? statusForName
+      : currentStatusLabel(db, after);
+    const openedOn = after.opened_on;
+    const nextName = composeMatterName(baseName, statusLabel, openedOn);
+    writeMatterName(db, actor, id, after.name, nextName);
   }
 
   matterIndex.indexMatter(db, id);

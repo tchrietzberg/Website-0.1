@@ -147,15 +147,19 @@ describe('matter search and record-based fields', () => {
     );
   });
 
-  it('appends status to the matter name when status changes', () => {
-    const page = matterSvc.createMatter(db, admin, { name: 'Alpha Matter' });
+  it('names matters as Name - Status - Year on create and status changes', () => {
+    const page = matterSvc.createMatter(db, admin, {
+      name: 'Alpha Matter',
+      openedOn: '2026-03-15',
+    });
     const id = page.matter.id;
+    assert.equal(page.matter.name, 'Alpha Matter - Open - 2026');
 
     const closed = matterSvc.updateMatter(db, admin, id, { status: 'closed' });
-    assert.equal(closed.matter.name, 'Alpha Matter — Closed');
+    assert.equal(closed.matter.name, 'Alpha Matter - Closed - 2026');
 
     const reopened = matterSvc.updateMatter(db, admin, id, { status: 'open' });
-    assert.equal(reopened.matter.name, 'Alpha Matter — Open');
+    assert.equal(reopened.matter.name, 'Alpha Matter - Open - 2026');
 
     const stage = customFields.createCustomField(db, admin, {
       label: 'Status',
@@ -167,12 +171,13 @@ describe('matter search and record-based fields', () => {
     const withCustom = matterSvc.updateMatter(db, admin, id, {
       customValues: { [stage.id]: 'Discovery' },
     });
-    assert.equal(withCustom.matter.name, 'Alpha Matter — Discovery');
+    assert.equal(withCustom.matter.name, 'Alpha Matter - Discovery - 2026');
 
     const next = matterSvc.updateMatter(db, admin, id, {
       customValues: { [stage.id]: 'Trial' },
+      openedOn: '2025-01-01',
     });
-    assert.equal(next.matter.name, 'Alpha Matter — Trial');
+    assert.equal(next.matter.name, 'Alpha Matter - Trial - 2025');
   });
 
   it('shows type dropdown fields on matter pages even after record layout exists', () => {
