@@ -34,8 +34,8 @@ describe('matters report', () => {
   it('lists matter names only', () => {
     const rows = reports.mattersReport(db);
     assert.equal(rows.length, 2);
-    assert.deepEqual(rows.map((r) => r.matter_name).sort(), ['Alpha Matter', 'Beta Matter']);
-    assert.deepEqual(Object.keys(rows[0]), ['matter_name']);
+    assert.deepEqual(rows.map((r) => r.Matter).sort(), ['Alpha Matter', 'Beta Matter']);
+    assert.deepEqual(Object.keys(rows[0]), ['Matter']);
   });
 
   it('builds friendly lodestar matter detail and summary PDF/Excel', () => {
@@ -86,7 +86,9 @@ describe('matters report', () => {
     assert.ok(Buffer.isBuffer(mattersPdf));
     assert.equal(mattersPdf.slice(0, 5).toString(), '%PDF-');
     assert.match(mattersPdf.toString('latin1'), /Matters Report/);
+    assert.match(mattersPdf.toString('latin1'), /Matter/);
     assert.match(mattersPdf.toString('latin1'), /Alpha Matter/);
+    assert.doesNotMatch(mattersPdf.toString('latin1'), /Matter Name/);
 
     const lodestarPdf = reports.toPdf(reports.lodestarSummary(db), {
       title: 'Lodestar Summary (all matters)',

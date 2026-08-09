@@ -327,7 +327,7 @@ function wipReport(db) {
 /** Firm matters listing — matter names only for now. */
 function mattersReport(db) {
   return db.prepare(`
-    SELECT m.name AS matter_name
+    SELECT m.name AS "Matter"
     FROM matters m
     ORDER BY m.name COLLATE NOCASE, m.id
   `).all();
