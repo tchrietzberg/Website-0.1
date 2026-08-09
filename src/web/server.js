@@ -473,10 +473,14 @@ function createServer(db = openDb()) {
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/custom-fields$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
-        const matterId = Number(pathname.split('/')[3]);
-        const body = await parseBody(req);
-        const field = customFields.createCustomField(db, user, { ...body, matterId });
-        return json(res, 201, { field, page: matterSvc.getMatter(db, matterId) });
+        try {
+          const matterId = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          const field = customFields.createCustomField(db, user, { ...body, matterId });
+          return json(res, 201, { field, page: matterSvc.getMatter(db, matterId) });
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/use-record-layout$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
@@ -588,8 +592,12 @@ function createServer(db = openDb()) {
       }
       if (req.method === 'POST' && pathname === '/api/custom-fields') {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
-        const body = await parseBody(req);
-        return json(res, 201, customFields.createCustomField(db, user, body));
+        try {
+          const body = await parseBody(req);
+          return json(res, 201, customFields.createCustomField(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/custom-fields\/\d+$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;

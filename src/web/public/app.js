@@ -178,6 +178,25 @@
       .filter(Boolean);
   }
 
+  /** API stores dropdowns as select; accept either in the UI. */
+  function apiFieldType(fieldType) {
+    return fieldType === 'dropdown' ? 'select' : fieldType;
+  }
+
+  function customFieldPayload(fd) {
+    const fieldType = String(fd.get('fieldType') || 'text');
+    const options = parseOptionsInput(fd.get('optionsText'));
+    const body = {
+      label: fd.get('label'),
+      fieldType: apiFieldType(fieldType),
+    };
+    if (fieldType === 'dropdown' || fieldType === 'select') {
+      body.options = options;
+      body.optionsText = String(fd.get('optionsText') || '');
+    }
+    return { fieldType, options, body };
+  }
+
   function dropdownOptionsFieldHtml() {
     return `
       <label class="span-all" data-dropdown-options hidden>
@@ -261,8 +280,7 @@
           timeFieldForm.onsubmit = async (ev) => {
             ev.preventDefault();
             const fd = new FormData(timeFieldForm);
-            const fieldType = fd.get('fieldType');
-            const options = parseOptionsInput(fd.get('optionsText'));
+            const { fieldType, options, body } = customFieldPayload(fd);
             if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
               setMsg('<div class="error">Add at least one dropdown option.</div>');
               return;
@@ -271,9 +289,7 @@
               await api('/api/custom-fields', {
                 method: 'POST',
                 body: JSON.stringify({
-                  label: fd.get('label'),
-                  fieldType,
-                  options,
+                  ...body,
                   appliesTo: 'time_entry',
                 }),
               });
@@ -327,8 +343,7 @@
         typeFieldForm.onsubmit = async (ev) => {
           ev.preventDefault();
           const fd = new FormData(typeFieldForm);
-          const fieldType = fd.get('fieldType');
-          const options = parseOptionsInput(fd.get('optionsText'));
+          const { fieldType, options, body } = customFieldPayload(fd);
           if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
             setMsg('<div class="error">Add at least one dropdown option.</div>');
             return;
@@ -337,9 +352,7 @@
             await api('/api/custom-fields', {
               method: 'POST',
               body: JSON.stringify({
-                label: fd.get('label'),
-                fieldType,
-                options,
+                ...body,
                 recordTypeKey: key,
                 appliesTo: 'matter',
               }),
@@ -1862,8 +1875,7 @@
       rf.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(rf);
-        const fieldType = fd.get('fieldType');
-        const options = parseOptionsInput(fd.get('optionsText'));
+        const { fieldType, options, body } = customFieldPayload(fd);
         if ((fieldType === 'dropdown' || fieldType === 'select') && !options.length) {
           $('#matterFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
           return;
@@ -1871,15 +1883,11 @@
         try {
           await api(`/api/matters/${m.id}/custom-fields`, {
             method: 'POST',
-            body: JSON.stringify({
-              label: fd.get('label'),
-              fieldType,
-              options,
-            }),
+            body: JSON.stringify(body),
           });
           await renderMatterDetail();
         } catch (e) {
-          $('#matterFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          $('#matterFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }
