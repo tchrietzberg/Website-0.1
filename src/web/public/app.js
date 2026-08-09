@@ -2508,8 +2508,8 @@
       appEl.classList.remove('login-mode');
       appEl.classList.add('app-shell');
     }
+    // Matters stay under Quick actions (Create Matter opens create + search).
     const items = [
-      roleCanView('matter') ? ['matters', 'Matters', 'matters', 'Matters & search'] : null,
       roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
