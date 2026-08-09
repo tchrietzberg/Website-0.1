@@ -45,7 +45,7 @@
     contactFlash: null,
     contactCreateFlash: null,
     contactListFlash: null,
-    billingForm: { matterId: '', dateFrom: '', dateTo: '' },
+    billingForm: { matterId: '', dateFrom: '', dateTo: null },
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5975,7 +5975,11 @@
     ]);
     if (!stillOnView('billing')) return;
     state.matters = matters || [];
-    const form = state.billingForm || { matterId: '', dateFrom: '', dateTo: '' };
+    const today = new Date().toISOString().slice(0, 10);
+    if (!state.billingForm) state.billingForm = { matterId: '', dateFrom: '', dateTo: today };
+    // null = never set → default To to today; '' means the user cleared it.
+    if (state.billingForm.dateTo == null) state.billingForm.dateTo = today;
+    const form = state.billingForm;
     const selectedMatterId = form.matterId || '';
     const dateFrom = form.dateFrom || '';
     const dateTo = form.dateTo || '';
