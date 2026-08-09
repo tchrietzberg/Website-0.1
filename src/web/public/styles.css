@@ -1372,6 +1372,53 @@ td .muted {
   align-items: center;
 }
 
+.time-entries-table {
+  min-width: 48rem;
+}
+
+.time-entries-table th:nth-child(3),
+.time-entries-table td:nth-child(3) {
+  min-width: 12rem;
+  max-width: 22rem;
+  word-break: break-word;
+}
+
+.time-entries-table .inline-input {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  box-sizing: border-box;
+}
+
+.time-entries-table .inline-input:focus {
+  outline: 2px solid rgba(26, 58, 107, 0.28);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.time-entries-table .inline-desc {
+  min-height: 3.2rem;
+  resize: vertical;
+}
+
+.time-entries-table .inline-hours {
+  width: 5.5rem;
+  max-width: 5.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-entries-table select.inline-input {
+  min-width: 8rem;
+}
+
 .stack { display: grid; gap: 0.85rem; }
 
 /* —— Sign-in (centered, brand-first) —— */

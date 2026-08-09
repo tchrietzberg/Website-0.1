@@ -1009,6 +1009,46 @@ function createServer(db = openDb()) {
           return json(res, code, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/time-entries\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const id = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          const customValues = {};
+          if (body.customValues && typeof body.customValues === 'object') {
+            Object.assign(customValues, body.customValues);
+          }
+          for (const [key, value] of Object.entries(body)) {
+            if (key.startsWith('cf_')) {
+              customValues[key.slice(3)] = value;
+            }
+          }
+          const hoursNum = body.hours != null && body.hours !== '' ? Number(body.hours) : NaN;
+          const minutesNum = body.rawMinutes != null && body.rawMinutes !== ''
+            ? Number(body.rawMinutes)
+            : NaN;
+          const updated = timeSvc.updateEntry(db, user, id, {
+            matterId: body.matterId != null ? Number(body.matterId) : undefined,
+            timekeeperId: body.timekeeperId != null ? Number(body.timekeeperId) : undefined,
+            serviceDate: body.serviceDate,
+            hours: Number.isFinite(hoursNum) ? hoursNum : undefined,
+            rawMinutes: Number.isFinite(minutesNum) ? minutesNum : undefined,
+            description: body.description,
+            billable: body.billable == null ? undefined : (body.billable ? 1 : 0),
+            category: body.category,
+            subcategory: body.subcategory,
+            utbmsTask: body.utbmsTask,
+            utbmsActivity: body.utbmsActivity,
+            roundIncrementMinutes: body.roundIncrementMinutes != null
+              ? Number(body.roundIncrementMinutes) : undefined,
+            customValues: Object.keys(customValues).length ? customValues : undefined,
+          });
+          return json(res, 200, updated);
+        } catch (e) {
+          const code = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, code, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/time-entries\/\d+$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {

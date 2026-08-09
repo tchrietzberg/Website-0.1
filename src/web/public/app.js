@@ -3473,33 +3473,121 @@
       </div>` : `<div class="card"><h1>Time Entry</h1>${flash ? successNoticeHtml(flash) : ''}<p class="muted">Your role can view time entries but not create them.</p></div>`}
       <div class="card">
         <h2>Recent entries</h2>
-        <p class="hint">Saved time is ready for Billing automatically — no approval step.</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Matter</th><th>Hours</th><th>Status</th>${canDelete ? '<th></th>' : ''}</tr></thead>
+        <div class="table-wrap"><table class="time-entries-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Matter</th>
+              <th>Description</th>
+              <th>Hours</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             ${entries.slice(0, 30).map((e) => {
-              const matterName = (matters.find((m) => Number(m.id) === Number(e.matter_id)) || {}).name
+              const matterName = e.matter_name
+                || (matters.find((m) => Number(m.id) === Number(e.matter_id)) || {}).name
                 || e.matter_number
                 || '—';
               const statusLabel = e.status === 'approved' ? 'Ready to bill'
                 : e.status === 'invoiced' ? 'Billed'
                   : e.status;
+              const editable = canEdit && e.status !== 'invoiced' && !e.invoice_id;
               const deletable = canDelete && e.status !== 'invoiced' && !e.invoice_id;
+              const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
+              if (editable) {
+                return `
+              <tr data-time-row="${e.id}">
+                <td>
+                  <input class="inline-input" type="date" data-field="serviceDate"
+                    value="${escapeHtml(e.service_date || '')}" />
+                </td>
+                <td>
+                  <select class="inline-input" data-field="matterId" aria-label="Matter">
+                    ${(matters || []).map((m) => `
+                      <option value="${m.id}" ${Number(m.id) === Number(e.matter_id) ? 'selected' : ''}>
+                        ${escapeHtml(m.name || m.number || String(m.id))}
+                      </option>`).join('')}
+                  </select>
+                </td>
+                <td>
+                  <textarea class="inline-input inline-desc" data-field="description" rows="2"
+                    aria-label="Description">${escapeHtml(e.description || '')}</textarea>
+                </td>
+                <td>
+                  <input class="inline-input inline-hours" type="number" min="0.25" step="0.25"
+                    inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
+                    aria-label="Hours" />
+                </td>
+                <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
+                <td class="row-actions">
+                  <button type="button" class="primary" data-save-time="${e.id}">Save</button>
+                  ${deletable ? `<button type="button" data-del-time="${e.id}">Delete</button>` : ''}
+                </td>
+              </tr>`;
+              }
               return `
               <tr>
                 <td>${escapeHtml(e.service_date)}</td>
-                <td>${escapeHtml(matterName)}<div class="muted">${escapeHtml(e.description)}</div></td>
+                <td>${escapeHtml(matterName)}</td>
+                <td>${escapeHtml(e.description || '—')}</td>
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">hrs</span></td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
-                ${canDelete ? `<td>${deletable
+                <td>${deletable
                   ? `<button type="button" data-del-time="${e.id}">Delete</button>`
-                  : '<span class="muted">—</span>'}</td>` : ''}
+                  : '<span class="muted">—</span>'}</td>
               </tr>`;
-            }).join('') || `<tr><td colspan="${canDelete ? 5 : 4}" class="muted">No entries yet</td></tr>`}
+            }).join('') || '<tr><td colspan="6" class="muted">No entries yet</td></tr>'}
           </tbody>
         </table></div>
+        <div id="timeListMsg" style="margin-top:.75rem"></div>
       </div>`;
+
+    const listMsg = (html) => {
+      const el = $('#timeListMsg');
+      if (el) el.innerHTML = html || '';
+    };
+
+    main.querySelectorAll('[data-save-time]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.dataset.saveTime);
+        const row = main.querySelector(`[data-time-row="${id}"]`);
+        if (!row) return;
+        const serviceDate = row.querySelector('[data-field="serviceDate"]')?.value;
+        const matterId = Number(row.querySelector('[data-field="matterId"]')?.value);
+        const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
+        const hours = Number(row.querySelector('[data-field="hours"]')?.value);
+        if (!matterId) {
+          listMsg('<div class="error">Select a matter.</div>');
+          return;
+        }
+        if (!description) {
+          listMsg('<div class="error">Enter a description.</div>');
+          return;
+        }
+        if (!Number.isFinite(hours) || hours <= 0) {
+          listMsg('<div class="error">Enter hours in 0.25 increments.</div>');
+          return;
+        }
+        btn.disabled = true;
+        try {
+          const updated = await api(`/api/time-entries/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ serviceDate, matterId, description, hours }),
+          });
+          state.timeFlash = {
+            title: 'Time entry updated',
+            detail: `${description} · ${formatHoursLabel(updated.roundedMinutes)}`,
+          };
+          await renderTime();
+        } catch (e) {
+          listMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          btn.disabled = false;
+        }
+      };
+    });
 
     main.querySelectorAll('[data-del-time]').forEach((btn) => {
       btn.onclick = async () => {
@@ -3515,9 +3603,7 @@
           state.timeFlash = { title: 'Time entry deleted' };
           await renderTime();
         } catch (e) {
-          const msg = $('#timeMsg');
-          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-          else alert(e.message);
+          listMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
         }
       };
     });

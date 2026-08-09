@@ -98,6 +98,38 @@ describe('time entry rules', () => {
     const ready = invoiceSvc.listMattersReadyForBilling(ctx.db);
     assert.ok(ready.some((m) => m.id === 2));
   });
+
+  it('updates unbilled time entry fields inline', () => {
+    const e = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1, description: 'draft note',
+    });
+    const updated = timeSvc.updateEntry(ctx.db, ctx.para, e.id, {
+      matterId: 2,
+      serviceDate: '2026-03-02',
+      hours: 1.5,
+      description: 'Revised research note',
+    });
+    assert.equal(updated.serviceDate, '2026-03-02');
+    assert.equal(updated.description, 'Revised research note');
+    assert.equal(updated.roundedMinutes, 90);
+    const listed = timeSvc.listEntries(ctx.db, {}, ctx.para);
+    const row = listed.find((r) => r.id === e.id);
+    assert.ok(row);
+    assert.equal(row.matter_name, 'Other Case');
+    assert.equal(row.description, 'Revised research note');
+  });
+
+  it('blocks editing billed time entries', () => {
+    const e = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1,
+      description: 'billed work', category: 'Discovery', subcategory: 'Review',
+    });
+    invoiceSvc.createBill(ctx.db, ctx.clerk, 1, [e.id]);
+    assert.throws(
+      () => timeSvc.updateEntry(ctx.db, ctx.para, e.id, { description: 'nope' }),
+      /already been billed/
+    );
+  });
 });
 
 describe('invoice lifecycle', () => {

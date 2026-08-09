@@ -242,7 +242,7 @@ function listEntries(db, filters = {}, actor = null) {
   if (actor) permissions.assertCanViewRecords(db, actor, 'time');
   const { matterId = null, timekeeperId = null, status = null } = filters || {};
   return db.prepare(`
-    SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number
+    SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.name AS matter_name
     FROM time_entries te
     JOIN users u ON u.id = te.timekeeper_id
     JOIN matters m ON m.id = te.matter_id
@@ -251,6 +251,184 @@ function listEntries(db, filters = {}, actor = null) {
       AND (? IS NULL OR te.status = ?)
     ORDER BY te.service_date DESC, te.id DESC
   `).all(matterId, matterId, timekeeperId, timekeeperId, status, status);
+}
+
+function getEntry(db, id) {
+  return db.prepare(`
+    SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.name AS matter_name
+    FROM time_entries te
+    JOIN users u ON u.id = te.timekeeper_id
+    JOIN matters m ON m.id = te.matter_id
+    WHERE te.id = ?
+  `).get(id);
+}
+
+function updateEntry(db, actor, id, input = {}) {
+  permissions.assertCanModifyRecords(db, actor, 'time');
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(id);
+  if (!entry) throw new Error('entry not found');
+  if (entry.status === 'invoiced' || entry.invoice_id) {
+    throw new Error('Cannot edit a time entry that has already been billed');
+  }
+
+  const canProxy = actor.role === 'admin' || actor.role === 'billing_clerk';
+  if (!canProxy && entry.timekeeper_id !== actor.id) {
+    const err = new Error('You can only edit your own time entries');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  let timekeeperId = input.timekeeperId != null ? Number(input.timekeeperId) : entry.timekeeper_id;
+  if (!canProxy && timekeeperId !== actor.id) {
+    const err = new Error('You can only create time entries for yourself');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = entry.timekeeper_id;
+
+  const matterId = input.matterId != null ? Number(input.matterId) : entry.matter_id;
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
+  if (!matter) throw new Error('matter not found');
+
+  const serviceDate = input.serviceDate != null
+    ? String(input.serviceDate).slice(0, 10)
+    : entry.service_date;
+  const description = input.description !== undefined
+    ? String(input.description || '').trim()
+    : entry.description;
+  if (!description) throw new Error('description required');
+
+  const mode = assertRoundMode(getSetting(db, 'round_mode', 'up'));
+  const defaultInc = Number(getSetting(db, 'round_increment_minutes', '15'));
+  const increment = mode === 'none'
+    ? defaultInc
+    : assertAllowedIncrement(
+      input.roundIncrementMinutes != null ? Number(input.roundIncrementMinutes) : defaultInc
+    );
+
+  let rawMinutes = entry.raw_minutes;
+  let roundedMinutes = entry.rounded_minutes;
+  if (input.hours != null || input.rawMinutes != null) {
+    const resolved = resolveMinutes(input);
+    rawMinutes = resolved.rawMinutes;
+    roundedMinutes = resolved.rounded != null
+      ? resolved.rounded
+      : roundMinutes(resolved.rawMinutes, increment, mode);
+  }
+
+  let billable = entry.billable;
+  if (input.billable != null) billable = input.billable ? 1 : 0;
+
+  const category = input.category !== undefined ? (input.category || null) : entry.category;
+  const subcategory = input.subcategory !== undefined
+    ? (input.subcategory || null)
+    : entry.subcategory;
+  const utbmsTask = input.utbmsTask !== undefined ? (input.utbmsTask || null) : entry.utbms_task;
+  const utbmsActivity = input.utbmsActivity !== undefined
+    ? (input.utbmsActivity || null)
+    : entry.utbms_activity;
+
+  const candidate = {
+    matterId,
+    timekeeperId,
+    serviceDate,
+    rawMinutes,
+    roundedMinutes,
+    description,
+    billable,
+    category,
+    subcategory,
+    utbmsTask,
+    utbmsActivity,
+  };
+
+  const ruleErrors = evaluateRules(db, candidate);
+  if (ruleErrors.length) {
+    const err = new Error(ruleErrors.join('; '));
+    err.code = 'BILLING_RULE';
+    err.errors = ruleErrors;
+    throw err;
+  }
+
+  const customValues = input.customValues && typeof input.customValues === 'object'
+    ? input.customValues
+    : null;
+  if (customValues) {
+    const existing = Object.fromEntries(
+      customFields.getTimeCustomValues(db, id).map((v) => [v.field_id, v.value_text])
+    );
+    const merged = { ...existing, ...customValues };
+    customFields.assertRequiredCustomValues(db, {
+      appliesTo: 'time_entry',
+      values: merged,
+    });
+    customFields.setTimeCustomValues(db, actor, id, customValues);
+  }
+
+  db.prepare(`
+    UPDATE time_entries SET
+      matter_id = ?,
+      timekeeper_id = ?,
+      service_date = ?,
+      raw_minutes = ?,
+      rounded_minutes = ?,
+      description = ?,
+      billable = ?,
+      category = ?,
+      subcategory = ?,
+      utbms_task = ?,
+      utbms_activity = ?
+    WHERE id = ?
+  `).run(
+    matterId,
+    timekeeperId,
+    serviceDate,
+    rawMinutes,
+    roundedMinutes,
+    description,
+    billable,
+    category,
+    subcategory,
+    utbmsTask,
+    utbmsActivity,
+    id
+  );
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'time_entry.update',
+    entityType: 'time_entry',
+    entityId: id,
+    detail: {
+      matterId,
+      serviceDate,
+      roundedMinutes,
+      description,
+    },
+  });
+
+  const updated = getEntry(db, id);
+  return {
+    id: updated.id,
+    matterId: updated.matter_id,
+    timekeeperId: updated.timekeeper_id,
+    serviceDate: updated.service_date,
+    rawMinutes: updated.raw_minutes,
+    roundedMinutes: updated.rounded_minutes,
+    description: updated.description,
+    billable: updated.billable,
+    category: updated.category,
+    subcategory: updated.subcategory,
+    utbmsTask: updated.utbms_task,
+    utbmsActivity: updated.utbms_activity,
+    status: updated.status,
+    matter_name: updated.matter_name,
+    matter_number: updated.matter_number,
+    timekeeper_name: updated.timekeeper_name,
+    customValues: Object.fromEntries(
+      customFields.getTimeCustomValues(db, id).map((v) => [v.field_id, v.value_text])
+    ),
+  };
 }
 
 function deleteEntry(db, actor, id) {
@@ -278,6 +456,8 @@ function deleteEntry(db, actor, id) {
 
 module.exports = {
   createEntry,
+  updateEntry,
+  getEntry,
   submitEntry,
   approveEntry,
   rejectEntry,
