@@ -639,6 +639,17 @@ body {
   margin-top: 0.85rem;
   width: 100%;
 }
+
+.create-matter-new-client {
+  margin-top: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--border, #d0d5dd) 85%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--ink, #111) 4%);
+}
+.create-matter-new-client > .hint {
+  margin: 0 0 0.65rem;
+}
 .create-matter-row {
   display: -webkit-flex;
   display: flex;

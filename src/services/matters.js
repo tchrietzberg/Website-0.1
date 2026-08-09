@@ -305,10 +305,16 @@ function createMatter(db, actor, input = {}) {
   let clientId = input.clientId != null && input.clientId !== ''
     ? Number(input.clientId)
     : null;
-  if (!clientId || !Number.isFinite(clientId)) {
+  if (clientId != null && (!Number.isFinite(clientId) || clientId <= 0)) {
+    throw new Error('client required');
+  }
+  if (!clientId) {
     const firstClient = db.prepare('SELECT id FROM clients ORDER BY id LIMIT 1').get();
     if (!firstClient) throw new Error('add a client before creating matters');
     clientId = Number(firstClient.id);
+  } else {
+    const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(clientId);
+    if (!client) throw new Error('client not found');
   }
 
   const attorneyId = input.responsibleAttorneyId != null && input.responsibleAttorneyId !== ''
