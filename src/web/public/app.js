@@ -1349,7 +1349,12 @@
     const sections = Object.entries(page.sections || {})
       .map(([section, fields]) => [section, (fields || []).filter((f) => f.key !== 'std:number')])
       .filter(([, fields]) => fields.length > 0);
-    const fieldCtx = { canEdit, clients, recordTypes, users: state.users };
+    // Matter page is view + reports; fields are not edited/saved here.
+    const fieldCtx = { canEdit: false, clients, recordTypes, users: state.users };
+    const matterReports = [
+      ['lodestar-matter-detail', 'Lodestar Detail', 'Time entries for this matter by timekeeper'],
+      ['lodestar-matter-summary', 'Lodestar Summary', 'Timekeeper rates, hours, and lodestar totals'],
+    ];
 
     main.innerHTML = `
       <div class="card stack">
@@ -1359,7 +1364,24 @@
         <h1>${escapeHtml(m.name || 'Matter')}</h1>
       </div>
 
-      <form id="matterForm" class="card stack">
+      <div class="card stack">
+        <h2>Time reports</h2>
+        <p class="hint">Run Lodestar Detail or Summary for this matter.</p>
+        <div id="matterReportMsg"></div>
+        ${matterReports.map(([id, label, hint]) => `
+          <div class="report-row">
+            <div>
+              <strong>${label}</strong>
+              <div class="muted">${hint}</div>
+            </div>
+            <button type="button" data-matter-report="${id}" data-format="pdf">PDF</button>
+            <button type="button" data-matter-report="${id}" data-format="xlsx">Excel</button>
+            <button type="button" data-view-matter-report="${id}">View</button>
+          </div>`).join('')}
+        <div id="matterReportOut" hidden></div>
+      </div>
+
+      <div id="matterForm" class="card stack">
         ${sections.map(([section, fields]) => `
           <h2>${section.charAt(0).toUpperCase() + section.slice(1)}</h2>
           <div class="grid two">
@@ -1371,9 +1393,7 @@
               </label>`).join('')}
           </div>
         `).join('') || '<p class="muted">No layout fields</p>'}
-        ${canEdit ? '<div class="row-actions"><button class="primary" type="submit">Save matter</button></div>' : ''}
-        <div id="matterMsg"></div>
-      </form>
+      </div>
 
       ${canEdit ? `
       <div class="card stack">
@@ -1522,41 +1542,87 @@
       renderView();
     };
 
-    const form = $('#matterForm');
-    if (canEdit) {
-      form.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(form);
-        const patch = {};
-        const customValues = {};
-        for (const [key, value] of fd.entries()) {
-          if (key.startsWith('cf_')) {
-            customValues[key.slice(3)] = value;
-          } else if (key === 'std:name') patch.name = value;
-          else if (key === 'std:client') patch.clientId = Number(value);
-          else if (key === 'std:matter_type') { /* record type is fixed */ }
-          else if (key === 'std:status') patch.status = value;
-          else if (key === 'std:jurisdiction') patch.jurisdiction = value;
-          else if (key === 'std:court') patch.court = value;
-          else if (key === 'std:responsible_attorney') {
-            patch.responsibleAttorneyId = value ? Number(value) : null;
-          } else if (key === 'std:opened_on') patch.openedOn = value;
-        }
-        // checkboxes unchecked are omitted
-        form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
-          customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
-        });
-        patch.customValues = customValues;
+    const downloadMatterTimeReport = async (reportId, format) => {
+      try {
+        const res = await api(`/api/reports/${reportId}?matterId=${m.id}&format=${format}`);
+        const blob = await res.blob();
+        const slug = String(m.name || m.id).replace(/[^\w.-]+/g, '_').slice(0, 40);
+        const kind = reportId.includes('summary') ? 'lodestar-summary' : 'lodestar-detail';
+        const tmp = document.createElement('a');
+        tmp.href = URL.createObjectURL(blob);
+        tmp.download = `${kind}-${slug}.${format === 'xlsx' ? 'xlsx' : 'pdf'}`;
+        document.body.appendChild(tmp);
+        tmp.click();
+        tmp.remove();
+        URL.revokeObjectURL(tmp.href);
+        $('#matterReportMsg').innerHTML = '';
+      } catch (e) {
+        $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
+    };
+
+    main.querySelectorAll('[data-matter-report]').forEach((b) => {
+      b.onclick = () => downloadMatterTimeReport(b.dataset.matterReport, b.dataset.format);
+    });
+
+    main.querySelectorAll('[data-view-matter-report]').forEach((b) => {
+      b.onclick = async () => {
         try {
-          await api(`/api/matters/${m.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
-          $('#matterMsg').innerHTML = '<div class="ok-banner">Matter saved.</div>';
-          await renderMatterDetail();
-          await refreshRefs();
+          const reportId = b.dataset.viewMatterReport;
+          const data = await api(`/api/reports/${reportId}?matterId=${m.id}`);
+          const out = $('#matterReportOut');
+          out.hidden = false;
+          const header = data.header || {};
+          const summary = data.summary || [];
+          const isDetail = reportId === 'lodestar-matter-detail';
+          const title = isDetail ? 'Lodestar Detail' : 'Lodestar Summary';
+          const entryBlocks = isDetail
+            ? (data.timekeepers || []).map((g) => `
+                <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">${escapeHtml(g.timekeeper)}
+                  <span class="muted">· ${escapeHtml(formatDuration(g.minutes))} · ${money(g.amount_cents)}</span>
+                </h3>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>Date</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                  <tbody>
+                    ${(g.entries || []).map((e) => `
+                      <tr>
+                        <td>${escapeHtml(e.service_date || '')}</td>
+                        <td>${escapeHtml(formatDuration(e.minutes))}</td>
+                        <td>${money(e.amount_cents)}</td>
+                        <td>${escapeHtml(e.description || '')}</td>
+                      </tr>`).join('') || '<tr><td colspan="4" class="muted">No entries</td></tr>'}
+                  </tbody>
+                </table></div>`).join('')
+            : '';
+          out.innerHTML = `
+            <h2>${title}</h2>
+            <p class="lead">${escapeHtml(header.matter_name || m.name || '')}</p>
+            <p class="muted">${escapeHtml(header.client_name || '')}
+              ${header.attorney_name ? ` · Responsible attorney: ${escapeHtml(header.attorney_name)}` : ''}
+              ${header.status ? ` · ${escapeHtml(header.status)}` : ''}</p>
+            ${entryBlocks}
+            <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">Timekeeper summary</h3>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Lodestar</th></tr></thead>
+              <tbody>
+                ${summary.map((s) => `
+                  <tr>
+                    <td>${escapeHtml(s.timekeeper)}</td>
+                    <td>${escapeHtml(s.role || '')}</td>
+                    <td>${escapeHtml(formatDuration(s.minutes))}</td>
+                    <td>${money(s.rate_cents)}</td>
+                    <td>${money(s.amount_cents)}</td>
+                  </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time for this matter</td></tr>'}
+              </tbody>
+            </table></div>
+            <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
+              · ${money(data.totals?.amount_cents || 0)}</p>`;
+          $('#matterReportMsg').innerHTML = '';
         } catch (e) {
-          $('#matterMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
-    }
+    });
 
     const onedriveForm = $('#onedriveForm');
     if (onedriveForm) {
