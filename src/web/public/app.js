@@ -284,13 +284,19 @@
     return rows.map((f) => {
       const id = fieldIdFromMgmt(f);
       const typeLabel = fieldTypeLabel(f.fieldType || f.type || f.kind);
+      const isDefault = !!(f.isDefault || f.is_default);
       return `
       <div class="field-mgmt-row">
         <div>
           <strong>${escapeHtml(f.label)}</strong>
-          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}</span>
+          <span class="muted"> · ${escapeHtml(typeLabel)}${f.required ? ' · required' : ''}${isDefault ? ' · default' : ''}</span>
         </div>
         <div class="row-actions">
+          ${id ? `
+            <label class="check-inline">
+              <input type="checkbox" data-toggle-default-cf="${id}" ${isDefault ? 'checked' : ''} />
+              Default field
+            </label>` : ''}
           ${id ? `<button type="button" ${editAttr}="${id}">Edit</button>` : ''}
           ${canDelete && id
             ? `<button type="button" data-del-custom-field="${id}">Delete</button>`
@@ -307,6 +313,14 @@
       <label class="check-inline span-all">
         <input type="checkbox" name="required" ${checked ? 'checked' : ''} />
         ${escapeHtml(label)}
+      </label>`;
+  }
+
+  function defaultFieldCheckboxHtml(checked = false) {
+    return `
+      <label class="check-inline span-all">
+        <input type="checkbox" name="isDefault" ${checked ? 'checked' : ''} />
+        Default field
       </label>`;
   }
 
@@ -351,6 +365,7 @@
       label: fd.get('label'),
       fieldType: apiFieldType(fieldType),
       required: fd.get('required') === 'on',
+      isDefault: fd.get('isDefault') === 'on',
     };
     if (fieldType === 'dropdown' || fieldType === 'select') {
       body.options = options;
@@ -384,6 +399,7 @@
       ? field.options.join('\n')
       : (field?.optionsText || '');
     const required = !!(field && field.required);
+    const isDefault = !!(field && (field.isDefault || field.is_default));
     const label = field?.label || '';
     return `
       <form id="${escapeHtml(formId)}" class="grid two">
@@ -397,6 +413,7 @@
           </select>
         </label>
         ${dropdownOptionsFieldHtml(options, { show: uiType === 'dropdown' })}
+        ${defaultFieldCheckboxHtml(isDefault)}
         ${requiredFieldCheckboxHtml(required, requiredLabel)}
         <div class="row-actions span-all">
           <button class="primary" type="submit">${escapeHtml(submitLabel)}</button>
@@ -510,61 +527,59 @@
           : null;
         const formId = appliesTo === 'client' ? 'contactFieldForm' : 'timeFieldForm';
         const canDeleteFields = isAdminUser();
-        const rows = (fields || []).map((f) => `
+        let contactConfig = null;
+        if (appliesTo === 'client') {
+          contactConfig = await api('/api/clients/field-config');
+        }
+        const enabledStdKeys = new Set(contactConfig?.enabledKeys || []);
+        const builtinRows = appliesTo === 'client'
+          ? (contactConfig?.availableStandard || [])
+            .concat(contactConfig?.enabledStandard || [])
+            .sort((a, b) => String(a.label).localeCompare(String(b.label)))
+            .map((f) => {
+              const isOn = enabledStdKeys.has(f.key);
+              return `
+              <div class="field-mgmt-row">
+                <div>
+                  <strong>${escapeHtml(f.label)}</strong>
+                  <div class="muted">built-in · ${escapeHtml(f.type || 'text')}</div>
+                </div>
+                <div class="row-actions">
+                  <label class="check-inline">
+                    <input type="checkbox" data-toggle-contact-std="${escapeHtml(f.key)}"
+                      ${isOn ? 'checked' : ''} />
+                    Default field
+                  </label>
+                </div>
+              </div>`;
+            }).join('')
+          : '';
+        const customRows = (fields || []).map((f) => `
           <div class="field-mgmt-row">
             <div>
               <strong>${escapeHtml(f.label)}</strong>
-              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · ${escapeHtml(scopeLabel)}${f.required ? ' · required' : ''}</div>
+              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · ${escapeHtml(scopeLabel)}${f.required ? ' · required' : ''}${f.isDefault || f.is_default ? ' · default' : ''}</div>
             </div>
             <div class="row-actions">
+              <label class="check-inline">
+                <input type="checkbox" data-toggle-default-cf="${f.id}"
+                  ${f.isDefault || f.is_default ? 'checked' : ''} />
+                Default field
+              </label>
               <button type="button" data-edit-firm-field="${f.id}">Edit</button>
               ${canDeleteFields
                 ? `<button type="button" data-del-firm-field="${f.id}">Delete</button>`
                 : ''}
             </div>
-          </div>`).join('') || `<p class="muted">No custom ${escapeHtml(scopeLabel)} fields yet.</p>`;
-
-        let standardBlock = '';
-        if (appliesTo === 'client') {
-          const config = await api('/api/clients/field-config');
-          const enabled = config.enabledStandard || [];
-          const available = config.availableStandard || [];
-          const enabledRows = enabled.map((f) => `
-            <div class="field-mgmt-row">
-              <div>
-                <strong>${escapeHtml(f.label)}</strong>
-                <div class="muted">default field</div>
-              </div>
-              <div class="row-actions">
-                <button type="button" data-remove-contact-std="${escapeHtml(f.key)}">Remove</button>
-              </div>
-            </div>`).join('') || '<p class="muted">No optional default fields selected. Name is always shown.</p>';
-          const addOpts = available.map((f) =>
-            `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`
-          ).join('');
-          standardBlock = `
-            <div class="stack contact-default-fields">
-              <h3 class="field-edit-title" style="margin:0">Default fields</h3>
-              <p class="hint">Choose which built-in fields appear on contacts. Name is always included.</p>
-              <div class="field-mgmt-list">${enabledRows}</div>
-              ${available.length ? `
-                <form id="addContactStdForm" class="row-actions" style="flex-wrap:wrap;gap:.5rem;align-items:end">
-                  <label style="margin:0;flex:1;min-width:10rem">Add default field
-                    <select name="fieldKey" required>
-                      <option value="">Select a field…</option>
-                      ${addOpts}
-                    </select>
-                  </label>
-                  <button class="primary" type="submit">Add</button>
-                </form>` : '<p class="muted">All default fields are enabled.</p>'}
-            </div>
-            <hr class="settings-divider" />
-            <h3 class="field-edit-title" style="margin:0">Custom fields</h3>
-            <p class="hint">Add your own fields for every contact.</p>`;
-        }
+          </div>`).join('');
+        const rows = `${builtinRows}${customRows}`
+          || `<p class="muted">No ${escapeHtml(scopeLabel)} fields yet.</p>`;
+        const listHint = appliesTo === 'client'
+          ? '<p class="hint">Name is always shown. Use <strong>Default field</strong> to show a built-in or custom field on contacts.</p>'
+          : `<p class="hint">Mark <strong>Default field</strong> for fields that should appear by default on ${escapeHtml(scopeLabel)} forms.</p>`;
 
         bodyEl.innerHTML = `
-          ${standardBlock}
+          ${listHint}
           <div class="field-mgmt-list">${rows}</div>
           ${editing
             ? `<h3 class="field-edit-title">Edit ${escapeHtml(scopeLabel)} field</h3>${customFieldFormHtml({
@@ -579,37 +594,42 @@
             })}`;
 
         if (appliesTo === 'client') {
-          bodyEl.querySelectorAll('[data-remove-contact-std]').forEach((btn) => {
-            btn.onclick = async () => {
+          bodyEl.querySelectorAll('[data-toggle-contact-std]').forEach((box) => {
+            box.onchange = async () => {
               try {
                 const config = await api('/api/clients/field-config');
-                const next = (config.enabledKeys || []).filter((k) => k !== btn.dataset.removeContactStd);
+                const key = box.dataset.toggleContactStd;
+                let next = [...(config.enabledKeys || [])];
+                if (box.checked) {
+                  if (!next.includes(key)) next.push(key);
+                } else {
+                  next = next.filter((k) => k !== key);
+                }
                 await saveContactStandardKeys(next);
-                setMsg('<div class="ok-banner">Default field removed from contacts.</div>');
+                setMsg('<div class="ok-banner">Contact fields updated.</div>');
                 await render();
               } catch (e) {
                 setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+                box.checked = !box.checked;
               }
             };
           });
-          const stdForm = bodyEl.querySelector('#addContactStdForm');
-          if (stdForm) {
-            stdForm.onsubmit = async (ev) => {
-              ev.preventDefault();
-              const fieldKey = String(new FormData(stdForm).get('fieldKey') || '').trim();
-              if (!fieldKey) return;
-              try {
-                const config = await api('/api/clients/field-config');
-                const next = [...new Set([...(config.enabledKeys || []), fieldKey])];
-                await saveContactStandardKeys(next);
-                setMsg('<div class="ok-banner">Default field added to contacts.</div>');
-                await render();
-              } catch (e) {
-                setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
-              }
-            };
-          }
         }
+        bodyEl.querySelectorAll('[data-toggle-default-cf]').forEach((box) => {
+          box.onchange = async () => {
+            try {
+              await api(`/api/custom-fields/${box.dataset.toggleDefaultCf}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ isDefault: !!box.checked }),
+              });
+              setMsg('<div class="ok-banner">Default field updated.</div>');
+              await render();
+            } catch (e) {
+              setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+              box.checked = !box.checked;
+            }
+          };
+        });
 
         bodyEl.querySelectorAll('[data-edit-firm-field]').forEach((btn) => {
           btn.onclick = () => {
@@ -705,6 +725,21 @@
           editingId = Number(btn.dataset.editTypeField);
           setMsg('');
           render();
+        };
+      });
+      bodyEl.querySelectorAll('[data-toggle-default-cf]').forEach((box) => {
+        box.onchange = async () => {
+          try {
+            await api(`/api/custom-fields/${box.dataset.toggleDefaultCf}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ isDefault: !!box.checked }),
+            });
+            setMsg('<div class="ok-banner">Default field updated.</div>');
+            await render();
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+            box.checked = !box.checked;
+          }
         };
       });
       bodyEl.querySelectorAll('[data-del-type-field]').forEach((btn) => {
@@ -4056,7 +4091,7 @@
       </div>
       <div class="card stack" id="contactFieldsCard">
         <h2>Contact fields</h2>
-        <p class="hint">Choose default fields (company, email, phone, notes) and add custom fields for every contact. Name is always shown.</p>
+        <p class="hint">Manage contact fields in one list. Check <strong>Default field</strong> to show a field on contacts. Name is always shown.</p>
         <div id="contactFieldsBody" class="stack"></div>
         <div id="contactFieldMsg"></div>
       </div>

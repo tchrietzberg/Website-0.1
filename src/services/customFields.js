@@ -49,6 +49,7 @@ function describeLayoutFields(db, layoutId) {
   return layoutItems(db, layoutId).map((item) => {
     const isCustom = String(item.field_key).startsWith('cf:');
     let required = false;
+    let isDefault = false;
     let fieldId = null;
     let fieldType = null;
     let options = null;
@@ -57,6 +58,7 @@ function describeLayoutFields(db, layoutId) {
       const row = getCustomField(db, fieldId);
       if (row) {
         required = !!row.required;
+        isDefault = !!row.isDefault;
         fieldType = row.field_type;
         options = row.options;
       }
@@ -69,6 +71,8 @@ function describeLayoutFields(db, layoutId) {
       removable: !CORE_LAYOUT_KEYS.includes(item.field_key),
       kind: isCustom ? 'custom' : 'standard',
       required,
+      isDefault,
+      is_default: isDefault ? 1 : 0,
       fieldId,
       fieldType,
       type: fieldType,
@@ -416,11 +420,16 @@ function createCustomField(db, actor, input) {
     ? JSON.stringify(optionList)
     : null;
 
+  const isDefault = input.isDefault === true || input.isDefault === 1 || input.is_default === true || input.is_default === 1
+    || input.isDefault === 'on'
+    ? 1
+    : 0;
+
   const info = db.prepare(`
     INSERT INTO custom_fields(
       api_name, label, field_type, options_json, applies_to, record_type_key, matter_id,
-      required, active, created_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      required, is_default, active, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
   `).run(
     apiName,
     label,
@@ -430,6 +439,7 @@ function createCustomField(db, actor, input) {
     recordTypeKey,
     matterId,
     input.required ? 1 : 0,
+    isDefault,
     actor.id
   );
   const id = Number(info.lastInsertRowid);
@@ -471,6 +481,7 @@ function createCustomField(db, actor, input) {
       matterId,
       appliesTo,
       required: !!(input.required ? 1 : 0),
+      isDefault: !!isDefault,
     },
   });
 
@@ -482,12 +493,15 @@ function getCustomField(db, id) {
   if (!f) return null;
   const appliesTo = f.applies_to || 'matter';
   const fieldType = f.field_type === 'select' ? 'dropdown' : f.field_type;
+  const isDefault = !!f.is_default;
   return {
     ...f,
     field_type: fieldType,
     fieldType,
     applies_to: appliesTo,
     appliesTo,
+    is_default: isDefault ? 1 : 0,
+    isDefault,
     options: f.options_json ? JSON.parse(f.options_json) : null,
     scope: appliesTo === 'time_entry' || appliesTo === 'client'
       ? appliesTo
@@ -586,11 +600,17 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
     required = patch.required === 0 || patch.required === false ? 0 : 1;
   }
 
+  let isDefault = existing.is_default ? 1 : 0;
+  if (patch.isDefault !== undefined || patch.is_default !== undefined) {
+    const raw = patch.isDefault !== undefined ? patch.isDefault : patch.is_default;
+    isDefault = raw === 0 || raw === false || raw === '0' || raw === '' ? 0 : 1;
+  }
+
   db.prepare(`
     UPDATE custom_fields
-    SET label = ?, field_type = ?, options_json = ?, required = ?
+    SET label = ?, field_type = ?, options_json = ?, required = ?, is_default = ?
     WHERE id = ?
-  `).run(label, fieldType, optionsJson, required, fieldId);
+  `).run(label, fieldType, optionsJson, required, isDefault, fieldId);
 
   if (fieldType !== existing.field_type) {
     const width = fieldType === 'textarea' ? 'full' : 'half';
@@ -608,6 +628,7 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
       label,
       fieldType,
       required: !!required,
+      isDefault: !!isDefault,
       fromType: existing.field_type,
     },
   });
@@ -621,6 +642,7 @@ function listTimeEntryFieldDefs(db) {
     type: f.field_type,
     options: f.options,
     required: !!f.required,
+    isDefault: !!f.isDefault,
     scope: 'time_entry',
     fieldId: f.id,
     kind: 'custom',
@@ -636,6 +658,7 @@ function listClientFieldDefs(db) {
     type: f.field_type,
     options: f.options,
     required: !!f.required,
+    isDefault: !!f.isDefault,
     scope: 'client',
     fieldId: f.id,
     kind: 'custom',
@@ -765,6 +788,7 @@ function fieldDefsForMatter(db, matter) {
       type: f.field_type,
       options: f.options,
       required: !!f.required,
+      isDefault: !!f.isDefault,
       scope: f.scope,
       fieldId: f.id,
       kind: 'custom',

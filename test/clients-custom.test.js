@@ -50,6 +50,18 @@ describe('contacts and contact custom fields', () => {
     assert.deepEqual(config.enabledKeys, []);
   });
 
+  it('supports default-field flag on contact custom fields', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Referral source',
+      fieldType: 'text',
+      appliesTo: 'client',
+      isDefault: true,
+    });
+    assert.equal(field.isDefault, true);
+    const updated = customFields.updateCustomField(db, admin, field.id, { isDefault: false });
+    assert.equal(updated.isDefault, false);
+  });
+
   it('supports required contact custom fields and updates', () => {
     const field = customFields.createCustomField(db, admin, {
       label: 'Preferred contact method',

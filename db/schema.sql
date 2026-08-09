@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS custom_fields (
   record_type_key TEXT REFERENCES record_types(key),
   matter_id INTEGER REFERENCES matters(id),
   required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),

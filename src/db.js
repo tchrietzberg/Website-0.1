@@ -76,6 +76,9 @@ function migrateCustomFieldAppliesTo(db) {
   if (!cols.has('required')) {
     db.exec('ALTER TABLE custom_fields ADD COLUMN required INTEGER NOT NULL DEFAULT 0');
   }
+  if (!cols.has('is_default')) {
+    db.exec('ALTER TABLE custom_fields ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0');
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS time_entry_custom_field_values (
       time_entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
@@ -144,6 +147,7 @@ function migrateClientContacts(db) {
         record_type_key TEXT REFERENCES record_types(key),
         matter_id INTEGER REFERENCES matters(id),
         required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
+        is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
         active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
         created_by INTEGER REFERENCES users(id),
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -157,7 +161,7 @@ function migrateClientContacts(db) {
       );
       INSERT INTO custom_fields_mig
         SELECT id, api_name, label, field_type, options_json, applies_to, record_type_key,
-               matter_id, required, active, created_by, created_at
+               matter_id, required, 0, active, created_by, created_at
         FROM custom_fields;
       DROP TABLE custom_fields;
       ALTER TABLE custom_fields_mig RENAME TO custom_fields;
