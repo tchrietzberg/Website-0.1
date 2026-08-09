@@ -2848,7 +2848,7 @@
     const fieldMgmtPanelHtml = (opts = {}) => {
       const {
         title = 'Manage fields',
-        hint = 'Add or edit custom fields (label, type, required). Firm-wide defaults are managed in Settings.',
+        hint = 'Add fields for this matter only. Shared fields come from the record page layout in Settings.',
         formId = 'recordFieldForm',
         panelId = '',
         showDismiss = false,
