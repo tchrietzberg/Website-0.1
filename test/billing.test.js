@@ -251,6 +251,40 @@ describe('invoice lifecycle', () => {
     const cn = invoiceSvc.createCreditNote(ctx.db, ctx.clerk, inv.id, 1000, 'billing error');
     assert.equal(cn.amount_cents, 1000);
   });
+
+  it('create bill can filter by service-date range', () => {
+    timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: 60,
+      description: 'march', category: 'Discovery', subcategory: 'Review',
+    });
+    timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 1, timekeeperId: 3, serviceDate: '2026-04-15', rawMinutes: 60,
+      description: 'april', category: 'Discovery', subcategory: 'Review',
+    });
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1, {
+      dateFrom: '2026-04-01',
+      dateTo: '2026-04-30',
+    });
+    assert.equal(inv.lines.length, 1);
+    assert.equal(inv.lines[0].service_date, '2026-04-15');
+    const left = ctx.db.prepare(`
+      SELECT COUNT(*) AS n FROM time_entries
+      WHERE matter_id = 1 AND invoice_id IS NULL AND status = 'approved'
+    `).get().n;
+    assert.equal(left, 1);
+  });
+
+  it('create bill explains missing rates with timekeeper and date', () => {
+    // Entry for attorney #2 who has no rate in this fixture.
+    timeSvc.createEntry(ctx.db, ctx.atty, {
+      matterId: 2, timekeeperId: 2, serviceDate: '2026-03-01', rawMinutes: 60,
+      description: 'no rate work',
+    });
+    assert.throws(
+      () => invoiceSvc.createBill(ctx.db, ctx.clerk, 2),
+      /No rate for Atty on 2026-03-01/
+    );
+  });
 });
 
 describe('payments', () => {

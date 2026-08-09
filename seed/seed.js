@@ -44,11 +44,13 @@ const northwind = db.prepare("SELECT * FROM clients WHERE name LIKE 'Northwind%'
 
 db.prepare(`
   INSERT INTO rates(scope, scope_id, amount_cents, effective_date, created_by) VALUES
+  ('timekeeper', ?, 45000, '2020-01-01', ?),
   ('timekeeper', ?, 35000, '2020-01-01', ?),
   ('timekeeper', ?, 27500, '2020-01-01', ?),
   ('timekeeper', ?, 17500, '2020-01-01', ?),
   ('client', ?, 40000, '2025-01-01', ?)
 `).run(
+  avery.id, avery.id,
   jordan.id, avery.id,
   riley.id, avery.id,
   sam.id, avery.id,

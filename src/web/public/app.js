@@ -45,6 +45,7 @@
     contactFlash: null,
     contactCreateFlash: null,
     contactListFlash: null,
+    billingForm: { matterId: '', dateFrom: '', dateTo: '' },
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -169,9 +170,6 @@
     } else if (view === 'billing') {
       void api('/api/invoices');
       void api('/api/matters');
-      if (['admin', 'billing_clerk'].includes(state.user.role)) {
-        void api('/api/billing/ready');
-      }
     } else if (view === 'reports') {
       void api('/api/custom-reports');
       void api('/api/record-types');
@@ -5959,54 +5957,48 @@
 
   async function renderBilling() {
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
-    const [invoices, matters, ready] = await Promise.all([
+    const [invoices, matters] = await Promise.all([
       api('/api/invoices'),
       api('/api/matters').catch(() => []),
-      canBill ? api('/api/billing/ready').catch(() => []) : Promise.resolve([]),
     ]);
     if (!stillOnView('billing')) return;
     state.matters = matters || [];
-    const readyIds = new Set((ready || []).map((r) => Number(r.id)));
+    const form = state.billingForm || { matterId: '', dateFrom: '', dateTo: '' };
+    const selectedMatterId = form.matterId || '';
+    const dateFrom = form.dateFrom || '';
+    const dateTo = form.dateTo || '';
     setMainHtml(`
       <div class="card stack">
         <h1>Billing</h1>
-        <p class="lead">Create a bill from saved time in one step.</p>
+        <p class="lead">Select a matter and date range, run Lodestar, then create a bill.</p>
         ${canBill ? `
         <form id="billForm" class="grid two">
           <div class="field span-all">
             <span class="field-label">Matter</span>
             ${renderMatterPicker({
               name: 'matterId',
-              selectedId: ready?.[0]?.id || null,
-              matters: matters.filter((m) => readyIds.has(Number(m.id))).concat(
-                matters.filter((m) => !readyIds.has(Number(m.id)))
-              ),
+              selectedId: selectedMatterId || null,
+              matters: matters || [],
             })}
-            <span class="hint">${(ready || []).length
-              ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with time ready to bill.`
-              : 'Save time on Time Entry first, then create a bill here.'}</span>
           </div>
-          <div class="row-actions span-all">
-            <button class="primary" type="submit" ${(ready || []).length ? '' : 'disabled'}>Create bill</button>
+          <label>From
+            <input type="date" name="dateFrom" id="billDateFrom" value="${escapeHtml(dateFrom)}" />
+          </label>
+          <label>To
+            <input type="date" name="dateTo" id="billDateTo" value="${escapeHtml(dateTo)}" />
+          </label>
+          <p class="hint span-all">Optional dates filter which time entries are billed and included in Lodestar.</p>
+          <div class="row-actions span-all" style="flex-wrap:wrap;gap:.5rem">
+            <button type="button" data-bill-report="lodestar-matter-summary">Lodestar Summary</button>
+            <button type="button" data-bill-report="lodestar-matter-detail">Lodestar Detail</button>
+            <button type="button" data-bill-report-format="pdf" data-bill-report="lodestar-matter-summary">Summary PDF</button>
+            <button type="button" data-bill-report-format="pdf" data-bill-report="lodestar-matter-detail">Detail PDF</button>
+            <button class="primary" type="submit">Create bill</button>
           </div>
-        </form>` : '<div class="error">Only admins and billing clerks can create bills.</div>'}
+        </form>
+        <div id="billReportOut" hidden></div>` : '<div class="error">Only admins and billing clerks can create bills.</div>'}
         <div id="billMsg"></div>
       </div>
-      ${(ready || []).length ? `
-      <div class="card">
-        <h2>Ready to bill</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Matter</th><th>Entries</th><th>Time</th></tr></thead>
-          <tbody>
-            ${ready.map((r) => `
-              <tr>
-                <td>${escapeHtml(r.name)}<div class="muted">${escapeHtml(r.client_name || '')}</div></td>
-                <td>${r.entry_count}</td>
-                <td>${escapeHtml(formatDuration(r.minutes))} <span class="muted">(${r.minutes} min)</span></td>
-              </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>` : ''}
       <div class="card">
         <h2>Bills</h2>
         <div class="table-wrap"><table>
@@ -6026,10 +6018,119 @@
       <div id="invoiceDetail"></div>`);
 
     if (canBill) {
-      const billMatterPicker = wireMatterPicker($('#billForm'), { matters });
-      $('#billForm').onsubmit = async (ev) => {
+      const billForm = $('#billForm');
+      const billMatterPicker = wireMatterPicker(billForm, {
+        matters,
+        onChange: (m) => {
+          state.billingForm = {
+            ...(state.billingForm || {}),
+            matterId: m?.id != null ? String(m.id) : '',
+          };
+        },
+      });
+      const persistDates = () => {
+        state.billingForm = {
+          ...(state.billingForm || {}),
+          matterId: String(new FormData(billForm).get('matterId') || state.billingForm?.matterId || ''),
+          dateFrom: String($('#billDateFrom')?.value || ''),
+          dateTo: String($('#billDateTo')?.value || ''),
+        };
+      };
+      $('#billDateFrom')?.addEventListener('change', persistDates);
+      $('#billDateTo')?.addEventListener('change', persistDates);
+
+      const billingQuery = () => {
+        persistDates();
+        const fd = new FormData(billForm);
+        const matterId = Number(fd.get('matterId') || state.billingForm?.matterId);
+        const from = String(fd.get('dateFrom') || '').trim();
+        const to = String(fd.get('dateTo') || '').trim();
+        return { matterId, dateFrom: from, dateTo: to };
+      };
+
+      const runBillReport = async (reportId, format = null) => {
+        const { matterId, dateFrom: from, dateTo: to } = billingQuery();
+        if (!matterId) {
+          billMatterPicker?.setInvalid(true);
+          $('#billMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
+          billMatterPicker?.focus();
+          return;
+        }
+        const params = new URLSearchParams({ matterId: String(matterId) });
+        if (from) params.set('dateFrom', from);
+        if (to) params.set('dateTo', to);
+        if (format) params.set('format', format);
+        const url = `/api/reports/${reportId}?${params}`;
+        const out = $('#billReportOut');
+        const msg = $('#billMsg');
+        try {
+          if (format === 'pdf' || format === 'xlsx') {
+            const res = await api(url);
+            const blob = await res.blob();
+            const tmp = document.createElement('a');
+            tmp.href = URL.createObjectURL(blob);
+            tmp.download = `${reportId}-${matterId}.${format === 'xlsx' ? 'xlsx' : 'pdf'}`;
+            document.body.appendChild(tmp);
+            tmp.click();
+            tmp.remove();
+            URL.revokeObjectURL(tmp.href);
+            if (msg) msg.innerHTML = '';
+            return;
+          }
+          const data = await api(url);
+          if (!out) return;
+          out.hidden = false;
+          if (reportId === 'lodestar-matter-summary') {
+            const rows = data.summary || [];
+            out.innerHTML = `
+              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Summary</h3>
+              <p class="muted">${escapeHtml(data.header?.matter_name || '')}${from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''}</p>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Timekeeper</th><th>Role</th><th>Rate</th><th>Hours</th><th>Amount</th></tr></thead>
+                <tbody>
+                  ${rows.map((r) => `
+                    <tr>
+                      <td>${escapeHtml(r.timekeeper)}</td>
+                      <td>${escapeHtml(r.role || '')}</td>
+                      <td>${money(r.rate_cents)}</td>
+                      <td>${escapeHtml(formatDuration(r.minutes))}</td>
+                      <td>${money(r.amount_cents)}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time in this range</td></tr>'}
+                </tbody>
+              </table></div>
+              <p class="muted">Total ${escapeHtml(formatDuration(data.totals?.minutes || 0))} · ${money(data.totals?.amount_cents || 0)}</p>`;
+          } else {
+            const entries = (data.timekeepers || []).flatMap((g) => g.entries || []);
+            out.innerHTML = `
+              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Detail</h3>
+              <p class="muted">${escapeHtml(data.header?.matter_name || '')}${from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''}</p>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                <tbody>
+                  ${entries.map((e) => `
+                    <tr>
+                      <td>${escapeHtml(e.service_date || '')}</td>
+                      <td>${escapeHtml(e.timekeeper || '')}</td>
+                      <td>${escapeHtml(formatDuration(e.minutes))}</td>
+                      <td>${money(e.amount_cents)}</td>
+                      <td>${escapeHtml(e.description || '')}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time in this range</td></tr>'}
+                </tbody>
+              </table></div>`;
+          }
+          if (msg) msg.innerHTML = '';
+        } catch (e) {
+          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+
+      main.querySelectorAll('[data-bill-report]').forEach((btn) => {
+        btn.onclick = () => runBillReport(btn.dataset.billReport, btn.dataset.billReportFormat || null);
+      });
+
+      billForm.onsubmit = async (ev) => {
         ev.preventDefault();
-        const matterId = Number(new FormData(ev.target).get('matterId'));
+        const { matterId, dateFrom: from, dateTo: to } = billingQuery();
         if (!matterId) {
           billMatterPicker?.setInvalid(true);
           $('#billMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
@@ -6039,7 +6140,11 @@
         try {
           const inv = await api('/api/invoices/bill', {
             method: 'POST',
-            body: JSON.stringify({ matterId }),
+            body: JSON.stringify({
+              matterId,
+              ...(from ? { dateFrom: from } : {}),
+              ...(to ? { dateTo: to } : {}),
+            }),
           });
           $('#billMsg').innerHTML = `<div class="ok-banner">Bill ${escapeHtml(inv.number)} created.</div>`;
           await renderBilling();

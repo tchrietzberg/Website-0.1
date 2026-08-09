@@ -13,11 +13,20 @@ function roleLabel(role) {
   return map[role] || role || '';
 }
 
+function normalizeReportDates(opts = {}) {
+  const dateFrom = opts.dateFrom ? String(opts.dateFrom).slice(0, 10) : null;
+  const dateTo = opts.dateTo ? String(opts.dateTo).slice(0, 10) : null;
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    throw new Error('From date must be on or before To date');
+  }
+  return { dateFrom, dateTo };
+}
+
 function matterHeader(db, matterId) {
   const m = db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
-    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
     WHERE m.id = ?
   `).get(matterId);
@@ -26,7 +35,7 @@ function matterHeader(db, matterId) {
     matter_id: m.id,
     matter_number: m.number,
     matter_name: m.name,
-    client_name: m.client_name,
+    client_name: m.client_name || '',
     status: m.status,
     attorney_name: m.attorney_name || '',
     opened_on: m.opened_on,
@@ -34,7 +43,8 @@ function matterHeader(db, matterId) {
   };
 }
 
-function lodestarDetail(db, { matterId = null } = {}) {
+function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } = {}) {
+  const range = normalizeReportDates({ dateFrom, dateTo });
   const entries = db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, u.role AS timekeeper_role,
            m.number AS matter_number, m.name AS matter_name, m.status AS matter_status,
@@ -43,12 +53,18 @@ function lodestarDetail(db, { matterId = null } = {}) {
     FROM time_entries te
     JOIN users u ON u.id = te.timekeeper_id
     JOIN matters m ON m.id = te.matter_id
-    JOIN clients c ON c.id = m.client_id
+    LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users atty ON atty.id = m.responsible_attorney_id
     WHERE te.billable = 1 AND te.status IN ('draft','submitted','approved','invoiced')
       AND (? IS NULL OR te.matter_id = ?)
+      AND (? IS NULL OR te.service_date >= ?)
+      AND (? IS NULL OR te.service_date <= ?)
     ORDER BY m.number, u.name, te.service_date, te.id
-  `).all(matterId, matterId);
+  `).all(
+    matterId, matterId,
+    range.dateFrom, range.dateFrom,
+    range.dateTo, range.dateTo
+  );
 
   return entries.map((e) => {
     const rate = resolveRate(db, {
@@ -63,7 +79,7 @@ function lodestarDetail(db, { matterId = null } = {}) {
       matter_number: e.matter_number,
       matter_name: e.matter_name,
       matter_status: e.matter_status,
-      client_name: e.client_name,
+      client_name: e.client_name || '',
       attorney_name: e.attorney_name || '',
       timekeeper: e.timekeeper_name,
       role: roleLabel(e.timekeeper_role),
@@ -79,8 +95,8 @@ function lodestarDetail(db, { matterId = null } = {}) {
   });
 }
 
-function lodestarSummary(db, { matterId = null } = {}) {
-  const detail = lodestarDetail(db, { matterId });
+function lodestarSummary(db, { matterId = null, dateFrom = null, dateTo = null } = {}) {
+  const detail = lodestarDetail(db, { matterId, dateFrom, dateTo });
   const map = new Map();
   for (const row of detail) {
     const key = `${row.matter_number}|${row.timekeeper}|${row.rate_cents}`;
@@ -102,10 +118,10 @@ function lodestarSummary(db, { matterId = null } = {}) {
 }
 
 /** Structured lodestar matter detail (demo-style grouping by timekeeper). */
-function lodestarMatterDetail(db, matterId) {
+function lodestarMatterDetail(db, matterId, opts = {}) {
   if (!matterId) throw new Error('matterId required');
   const header = matterHeader(db, matterId);
-  const detail = lodestarDetail(db, { matterId });
+  const detail = lodestarDetail(db, { matterId, ...normalizeReportDates(opts) });
   const groups = new Map();
   for (const row of detail) {
     const cur = groups.get(row.timekeeper) || {
@@ -150,8 +166,8 @@ function lodestarMatterDetail(db, matterId) {
 }
 
 /** Lodestar matter export — timekeeper summary only (demo-style). */
-function lodestarMatterSummary(db, matterId) {
-  const report = lodestarMatterDetail(db, matterId);
+function lodestarMatterSummary(db, matterId, opts = {}) {
+  const report = lodestarMatterDetail(db, matterId, opts);
   return {
     header: report.header,
     summary: report.summary,
@@ -163,8 +179,8 @@ function hoursLabel(minutes) {
   return formatDuration(minutes || 0, 'decimal');
 }
 
-function lodestarMatterDetailPdf(db, matterId) {
-  const report = lodestarMatterDetail(db, matterId);
+function lodestarMatterDetailPdf(db, matterId, opts = {}) {
+  const report = lodestarMatterDetail(db, matterId, opts);
   const lines = [
     'Date       Timekeeper                 Hours     Amount  Description',
     '--------------------------------------------------------------------------',
@@ -192,8 +208,8 @@ function lodestarMatterDetailPdf(db, matterId) {
   });
 }
 
-function lodestarMatterSummaryPdf(db, matterId) {
-  const report = lodestarMatterSummary(db, matterId);
+function lodestarMatterSummaryPdf(db, matterId, opts = {}) {
+  const report = lodestarMatterSummary(db, matterId, opts);
   const { header } = report;
   const lines = [
     `Matter: ${header.matter_number} — ${header.client_name} — ${header.matter_name} — ${header.status}`,
@@ -221,8 +237,8 @@ function lodestarMatterSummaryPdf(db, matterId) {
   });
 }
 
-function lodestarMatterDetailXlsx(db, matterId) {
-  const report = lodestarMatterDetail(db, matterId);
+function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
+  const report = lodestarMatterDetail(db, matterId, opts);
   const rows = [
     [{ v: 'Lodestar Detail', t: 's' }],
     [],
@@ -255,8 +271,8 @@ function lodestarMatterDetailXlsx(db, matterId) {
   return buildXlsx(rows);
 }
 
-function lodestarMatterSummaryXlsx(db, matterId) {
-  const report = lodestarMatterSummary(db, matterId);
+function lodestarMatterSummaryXlsx(db, matterId, opts = {}) {
+  const report = lodestarMatterSummary(db, matterId, opts);
   const { header } = report;
   const rows = [
     [{ v: 'Lodestar Matter Summary', t: 's' }],

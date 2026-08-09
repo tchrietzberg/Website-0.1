@@ -150,10 +150,28 @@ function removeBillField(db, actor, { group, key } = {}) {
   return setBillFields(db, actor, current);
 }
 
-/** Create and issue a bill in one step from unbilled time (no approval step). */
-function createBill(db, actor, matterId, entryIds = null) {
+/**
+ * Create and issue a bill in one step from unbilled time (no approval step).
+ * Fourth arg may be an entry-id array (legacy) or
+ * `{ entryIds, dateFrom, dateTo }` to limit by service date.
+ */
+function createBill(db, actor, matterId, opts = null) {
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
   if (!matter) throw new Error('matter not found');
+
+  let entryIds = null;
+  let dateFrom = null;
+  let dateTo = null;
+  if (Array.isArray(opts)) {
+    entryIds = opts;
+  } else if (opts && typeof opts === 'object') {
+    entryIds = Array.isArray(opts.entryIds) ? opts.entryIds : null;
+    dateFrom = opts.dateFrom ? String(opts.dateFrom).slice(0, 10) : null;
+    dateTo = opts.dateTo ? String(opts.dateTo).slice(0, 10) : null;
+  }
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    throw new Error('From date must be on or before To date');
+  }
 
   let entries;
   if (entryIds && entryIds.length) {
@@ -161,18 +179,24 @@ function createBill(db, actor, matterId, entryIds = null) {
     entries = db.prepare(`
       SELECT * FROM time_entries
       WHERE matter_id = ? AND status IN ('draft','submitted','approved') AND id IN (${placeholders})
+        AND (? IS NULL OR service_date >= ?)
+        AND (? IS NULL OR service_date <= ?)
       ORDER BY service_date, id
-    `).all(matterId, ...entryIds);
+    `).all(matterId, ...entryIds, dateFrom, dateFrom, dateTo, dateTo);
   } else {
     entries = db.prepare(`
       SELECT * FROM time_entries
       WHERE matter_id = ? AND status IN ('draft','submitted','approved') AND invoice_id IS NULL
         AND rounded_minutes > 0
+        AND (? IS NULL OR service_date >= ?)
+        AND (? IS NULL OR service_date <= ?)
       ORDER BY service_date, id
-    `).all(matterId);
+    `).all(matterId, dateFrom, dateFrom, dateTo, dateTo);
   }
   if (!entries.length) {
-    throw new Error('No time entries ready to bill on this matter');
+    throw new Error(dateFrom || dateTo
+      ? 'No unbilled time on this matter in the selected date range'
+      : 'No unbilled time on this matter');
   }
 
   const year = new Date().getUTCFullYear();
@@ -182,6 +206,7 @@ function createBill(db, actor, matterId, entryIds = null) {
   const lineRows = [];
   let subtotal = 0;
   let order = 0;
+  const missingRates = [];
   for (const e of entries) {
     const rate = resolveRate(db, {
       matterId: matter.id,
@@ -189,7 +214,15 @@ function createBill(db, actor, matterId, entryIds = null) {
       timekeeperId: e.timekeeper_id,
       serviceDate: e.service_date,
     });
-    if (!rate) throw new Error(`no rate for entry ${e.id} on ${e.service_date}`);
+    if (!rate) {
+      const tk = db.prepare('SELECT name FROM users WHERE id = ?').get(e.timekeeper_id);
+      missingRates.push({
+        entryId: e.id,
+        serviceDate: e.service_date,
+        timekeeper: tk?.name || `timekeeper #${e.timekeeper_id}`,
+      });
+      continue;
+    }
     const amount = amountFromMinutes(e.rounded_minutes, rate.amountCents);
     subtotal += amount;
     lineRows.push({
@@ -198,6 +231,14 @@ function createBill(db, actor, matterId, entryIds = null) {
       amount,
       sortOrder: order++,
     });
+  }
+  if (missingRates.length) {
+    const sample = missingRates.slice(0, 3).map((m) =>
+      `${m.timekeeper} on ${m.serviceDate}`).join('; ');
+    const more = missingRates.length > 3 ? ` (+${missingRates.length - 3} more)` : '';
+    throw new Error(
+      `No rate for ${sample}${more}. Add a timekeeper, client, or matter rate effective on or before those dates (Navigate → Add a user, or a matter/client rate).`
+    );
   }
 
   const inv = db.prepare(`

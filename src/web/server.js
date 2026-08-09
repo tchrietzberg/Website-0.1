@@ -1302,7 +1302,15 @@ function createServer(db = openDb()) {
       ) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
-        return json(res, 201, invoiceSvc.createBill(db, user, Number(body.matterId), body.entryIds || null));
+        try {
+          return json(res, 201, invoiceSvc.createBill(db, user, Number(body.matterId), {
+            entryIds: body.entryIds || null,
+            dateFrom: body.dateFrom || null,
+            dateTo: body.dateTo || null,
+          }));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/invoice-lines\/\d+\/write-down$/)) {
         if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
@@ -1354,34 +1362,42 @@ function createServer(db = openDb()) {
           if (!matterId) {
             return json(res, 400, { error: 'matterId required', message: 'Select a matter for this report.' });
           }
-          if (fmt === 'pdf') {
-            const buf = name === 'lodestar-matter-detail'
-              ? reports.lodestarMatterDetailPdf(db, matterId)
-              : reports.lodestarMatterSummaryPdf(db, matterId);
-            res.writeHead(200, {
-              'Content-Type': 'application/pdf',
-              'Content-Disposition': `attachment; filename="${name}-${matterId}.pdf"`,
-              'Content-Length': buf.length,
-            });
-            res.end(buf);
-            return;
+          const dateOpts = {
+            dateFrom: url.searchParams.get('dateFrom') || null,
+            dateTo: url.searchParams.get('dateTo') || null,
+          };
+          try {
+            if (fmt === 'pdf') {
+              const buf = name === 'lodestar-matter-detail'
+                ? reports.lodestarMatterDetailPdf(db, matterId, dateOpts)
+                : reports.lodestarMatterSummaryPdf(db, matterId, dateOpts);
+              res.writeHead(200, {
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename="${name}-${matterId}.pdf"`,
+                'Content-Length': buf.length,
+              });
+              res.end(buf);
+              return;
+            }
+            if (fmt === 'xlsx' || fmt === 'excel') {
+              const buf = name === 'lodestar-matter-detail'
+                ? reports.lodestarMatterDetailXlsx(db, matterId, dateOpts)
+                : reports.lodestarMatterSummaryXlsx(db, matterId, dateOpts);
+              res.writeHead(200, {
+                'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition': `attachment; filename="${name}-${matterId}.xlsx"`,
+                'Content-Length': buf.length,
+              });
+              res.end(buf);
+              return;
+            }
+            const payload = name === 'lodestar-matter-detail'
+              ? reports.lodestarMatterDetail(db, matterId, dateOpts)
+              : reports.lodestarMatterSummary(db, matterId, dateOpts);
+            return json(res, 200, payload);
+          } catch (e) {
+            return json(res, 400, { error: e.message, message: e.message });
           }
-          if (fmt === 'xlsx' || fmt === 'excel') {
-            const buf = name === 'lodestar-matter-detail'
-              ? reports.lodestarMatterDetailXlsx(db, matterId)
-              : reports.lodestarMatterSummaryXlsx(db, matterId);
-            res.writeHead(200, {
-              'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-              'Content-Disposition': `attachment; filename="${name}-${matterId}.xlsx"`,
-              'Content-Length': buf.length,
-            });
-            res.end(buf);
-            return;
-          }
-          const payload = name === 'lodestar-matter-detail'
-            ? reports.lodestarMatterDetail(db, matterId)
-            : reports.lodestarMatterSummary(db, matterId);
-          return json(res, 200, payload);
         }
 
         try {
@@ -1398,15 +1414,23 @@ function createServer(db = openDb()) {
           });
         }
 
+        const dateFrom = url.searchParams.get('dateFrom') || null;
+        const dateTo = url.searchParams.get('dateTo') || null;
         let rows;
-        if (name === 'lodestar-summary') rows = reports.lodestarSummary(db, { matterId });
-        else if (name === 'lodestar-detail') rows = reports.lodestarDetail(db, { matterId });
-        else if (name === 'matters') rows = reports.mattersReport(db);
-        else if (name === 'ar-aging') rows = reports.arAging(db);
-        else if (name === 'write-offs') rows = reports.writeOffs(db);
-        else if (name === 'realization') rows = reports.realization(db);
-        else if (name === 'unapplied-cash') rows = paymentSvc.unappliedCash(db);
-        else return json(res, 404, { error: 'unknown report' });
+        try {
+          if (name === 'lodestar-summary') {
+            rows = reports.lodestarSummary(db, { matterId, dateFrom, dateTo });
+          } else if (name === 'lodestar-detail') {
+            rows = reports.lodestarDetail(db, { matterId, dateFrom, dateTo });
+          } else if (name === 'matters') rows = reports.mattersReport(db);
+          else if (name === 'ar-aging') rows = reports.arAging(db);
+          else if (name === 'write-offs') rows = reports.writeOffs(db);
+          else if (name === 'realization') rows = reports.realization(db);
+          else if (name === 'unapplied-cash') rows = paymentSvc.unappliedCash(db);
+          else return json(res, 404, { error: 'unknown report' });
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
 
         if (fmt === 'csv') {
           return text(res, 200, reports.toCsv(rows), 'text/csv; charset=utf-8');
