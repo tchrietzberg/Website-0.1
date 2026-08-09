@@ -4900,6 +4900,7 @@
     const canEdit = canCreateMatter(state.user) && page.canEdit !== false && roleCanModify('matter');
     const canDelete = canCreateMatter(state.user) && page.canDelete !== false && roleCanDelete('matter');
     const canLogTime = roleCanModify('time');
+    const canViewTime = roleCanView('time');
     const canDeleteTime = roleCanDelete('time');
     const matterReports = [
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
@@ -4907,14 +4908,16 @@
     ];
     const today = new Date().toISOString().slice(0, 10);
     const retain = state.matterTimeRetain || {};
+    const addAnother = !!retain.addAnother;
     const formDate = retain.serviceDate || today;
     const formTimekeeperId = roleCanSelectTimekeeper()
       ? (retain.timekeeperId || state.user.id)
       : state.user.id;
-    const formHours = '';
-    const formDescription = '';
+    // Match Time Entry page defaults: seed first entry, clear hours/desc when adding another.
+    const formHours = addAnother ? '' : '1.00';
+    const formDescription = addAnother ? '' : 'Reviewed production set';
     const formBillable = retain.billable != null
-      ? !!retain.billable
+      ? !!Number(retain.billable)
       : defaultBillableFromMatterType(m.matter_type);
     const flash = state.matterTimeFlash;
     const matterFlash = state.matterFieldFlash;
@@ -4984,6 +4987,55 @@
       .map(([section, fields]) => [section, (fields || []).filter((f) => f.key !== 'std:number')])
       .filter(([, fields]) => fields.length > 0);
 
+    const recentEntriesHtml = (matterEntries || []).slice(0, 30).map((e) => {
+      const statusLabel = e.status === 'approved' ? 'Ready to bill'
+        : e.status === 'invoiced' ? 'Billed'
+          : e.status;
+      const isOwn = Number(e.timekeeper_id) === Number(state.user.id);
+      const billed = e.status === 'invoiced' || !!e.invoice_id;
+      const editable = canLogTime
+        && !billed
+        && (isOwn || roleCanModifyOthersTime());
+      const deletable = canDeleteTime && (isOwn || roleCanDeleteOthersTime());
+      const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
+      if (editable) {
+        const entryId = Number(e.id);
+        return `
+          <tr data-time-row="${entryId}">
+            <td>
+              <input class="inline-input" type="date" data-field="serviceDate"
+                value="${escapeHtml(String(e.service_date || '').slice(0, 10))}" />
+            </td>
+            <td>
+              <textarea class="inline-input inline-desc" data-field="description" rows="2"
+                aria-label="Description">${escapeHtml(e.description || '')}</textarea>
+            </td>
+            <td>
+              <input class="inline-input inline-hours" type="number" min="0.25" step="0.25"
+                inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
+                aria-label="Hours" />
+            </td>
+            <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
+            <td class="row-actions">
+              <button type="button" class="primary" data-save-time="${entryId}">Save</button>
+              ${deletable ? `<button type="button" class="danger" data-del-time="${entryId}" data-billed="0">Delete</button>` : ''}
+            </td>
+          </tr>`;
+      }
+      return `
+        <tr>
+          <td>${escapeHtml(e.service_date)}</td>
+          <td>${escapeHtml(e.description || '—')}
+            <div class="muted">${escapeHtml(timekeeperDisplayName(e))}</div></td>
+          <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
+            <span class="muted">hrs</span></td>
+          <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
+          <td>${deletable
+            ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
+            : ''}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>';
+
     setMainHtml(`
       <div class="card">
         <div class="row-actions" style="margin-bottom:.75rem">
@@ -4995,7 +5047,44 @@
         ${createFlash ? successNoticeHtml(createFlash) : ''}
       </div>
 
+      ${canViewTime ? `
+      ${canLogTime ? `<div class="card">
+        <h1>Time Entry</h1>
+        <p class="hint">Logging time on <strong>${escapeHtml(m.name || 'this matter')}</strong>. Billable defaults from the ${escapeHtml(matterTypeLabel)} record type.</p>
+        <form id="matterTimeForm" class="grid two">
+          <input type="hidden" name="matterId" value="${Number(m.id)}" />
+          ${timeEntryFormFieldsHtml({
+            formDate,
+            formHours,
+            formDescription,
+            formTimekeeperId,
+            formBillable,
+            timeFieldDefs,
+          })}
+        </form>
+        <div id="matterTimeMsg" style="margin-top:.75rem">${flash ? successNoticeHtml(flash) : ''}</div>
+      </div>` : `<div class="card"><h1>Time Entry</h1>${flash ? successNoticeHtml(flash) : ''}<p class="muted">Your role can view time entries but not create them.</p></div>`}
+      <div class="card">
+        <h2>Recent entries</h2>
+        <div class="table-wrap"><table class="time-entries-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Hours</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${recentEntriesHtml}
+          </tbody>
+        </table></div>
+        <div id="matterTimeListMsg" style="margin-top:.75rem"></div>
+      </div>` : ''}
+
       <form id="matterForm" class="card stack">
+        <h2>Matter details</h2>
         ${sections.map(([section, fields]) => `
           <div class="grid two">
             ${fields.map((f) => `
@@ -5011,49 +5100,6 @@
           </div>` : ''}
         <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
       </form>
-
-      ${canLogTime ? `<div class="card">
-        <h2>Add time</h2>
-        <p class="hint">Log time on this matter. Billable defaults from the matter’s ${escapeHtml(matterTypeLabel)} record type; you can override with the checkbox.</p>
-        <form id="matterTimeForm" class="grid two">
-          <input type="hidden" name="matterId" value="${Number(m.id)}" />
-          ${timeEntryFormFieldsHtml({
-            formDate,
-            formHours,
-            formDescription,
-            formTimekeeperId,
-            formBillable,
-            timeFieldDefs,
-          })}
-        </form>
-        <div id="matterTimeMsg" style="margin-top:.75rem">${flash ? successNoticeHtml(flash) : ''}</div>
-        <h2 style="margin-top:1.25rem">Recent on this matter</h2>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            ${(matterEntries || []).slice(0, 20).map((e) => {
-              const statusLabel = e.status === 'approved' ? 'Ready to bill'
-                : e.status === 'invoiced' ? 'Billed'
-                  : e.status;
-              const isOwn = Number(e.timekeeper_id) === Number(state.user.id);
-              const deletable = canDeleteTime && (isOwn || roleCanDeleteOthersTime());
-              const billed = e.status === 'invoiced' || !!e.invoice_id;
-              return `
-              <tr>
-                <td>${escapeHtml(e.service_date)}</td>
-                <td>${escapeHtml(timekeeperDisplayName(e))}<div class="muted">${escapeHtml(e.description || '')}</div></td>
-                <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
-                  <span class="muted">hrs</span></td>
-                <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
-                <td>${deletable
-                  ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
-                  : ''}</td>
-              </tr>`;
-            }).join('') || '<tr><td colspan="5" class="muted">No time on this matter yet</td></tr>'}
-          </tbody>
-        </table></div>
-        <div id="matterTimeListMsg" style="margin-top:.75rem"></div>
-      </div>` : ''}
 
       <div class="card stack">
         <h2>Time reports</h2>
@@ -5265,12 +5311,66 @@
       };
     }
 
+    const matterListMsg = (html) => {
+      const el = $('#matterTimeListMsg');
+      if (el) el.innerHTML = html || '';
+    };
+
+    main.querySelectorAll('[data-save-time]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.getAttribute('data-save-time'));
+        if (!Number.isFinite(id) || id <= 0) {
+          matterListMsg('<div class="error">Could not determine which time entry to save.</div>');
+          return;
+        }
+        const row = main.querySelector(`[data-time-row="${id}"]`);
+        if (!row) {
+          matterListMsg('<div class="error">Time entry row not found. Refresh and try again.</div>');
+          return;
+        }
+        const serviceDate = String(row.querySelector('[data-field="serviceDate"]')?.value || '').slice(0, 10);
+        const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
+        const hours = Number(row.querySelector('[data-field="hours"]')?.value);
+        if (!serviceDate) {
+          matterListMsg('<div class="error">Enter a service date.</div>');
+          return;
+        }
+        if (!description) {
+          matterListMsg('<div class="error">Enter a description.</div>');
+          return;
+        }
+        if (!Number.isFinite(hours) || hours <= 0) {
+          matterListMsg('<div class="error">Enter hours in 0.25 increments.</div>');
+          return;
+        }
+        btn.disabled = true;
+        try {
+          const updated = await api(`/api/time-entries/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              serviceDate,
+              matterId: Number(m.id),
+              description,
+              hours,
+            }),
+          });
+          state.matterTimeFlash = {
+            title: 'Time entry updated',
+            detail: `${description} · ${formatHoursLabel(updated.roundedMinutes)}`,
+          };
+          await renderMatterDetail();
+        } catch (e) {
+          matterListMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          btn.disabled = false;
+        }
+      };
+    });
+
     main.querySelectorAll('[data-del-time]').forEach((btn) => {
       btn.onclick = async () => {
         const id = Number(btn.getAttribute('data-del-time'));
         if (!Number.isFinite(id) || id <= 0) {
-          const el = $('#matterTimeListMsg');
-          if (el) el.innerHTML = '<div class="error">Could not determine which time entry to delete.</div>';
+          matterListMsg('<div class="error">Could not determine which time entry to delete.</div>');
           return;
         }
         const billed = btn.getAttribute('data-billed') === '1';
@@ -5288,8 +5388,7 @@
           state.matterTimeFlash = { title: 'Time entry deleted' };
           await renderMatterDetail();
         } catch (e) {
-          const el = $('#matterTimeListMsg');
-          if (el) el.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          matterListMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
         }
       };
     });
@@ -5313,8 +5412,12 @@
             billable: body.billable ? 1 : 0,
           };
           await renderMatterDetail();
+          const hoursInput = $('#matterTimeForm')?.querySelector('input[name="hours"]');
           const descInput = $('#matterTimeForm')?.querySelector('textarea[name="description"]');
-          if (descInput) setTimeout(() => descInput.focus(), 0);
+          setTimeout(() => {
+            if (descInput) descInput.focus();
+            else if (hoursInput) hoursInput.focus();
+          }, 0);
         },
       });
     }
