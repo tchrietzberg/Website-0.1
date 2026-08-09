@@ -3235,10 +3235,9 @@
       appEl.classList.remove('login-mode');
       appEl.classList.add('app-shell');
     }
-    // Matters stay under Quick actions (Create Matter opens create + search).
+    // Matters + Contacts stay under Quick actions (create opens create + search/list).
     // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
-      roleCanView('contact') ? ['contacts', 'Contacts', 'contacts', 'People & companies'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
