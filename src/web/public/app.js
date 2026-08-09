@@ -5037,14 +5037,40 @@
     }).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>';
 
     setMainHtml(`
-      <div class="card">
-        <div class="row-actions" style="margin-bottom:.75rem">
+      <div class="card matter-top">
+        <div class="row-actions matter-top-nav">
           <button type="button" id="backMatters">← Matters</button>
           ${canDelete ? '<button type="button" id="deleteMatter">Delete matter</button>' : ''}
         </div>
-        <h1>${escapeHtml(m.name || 'Matter')}</h1>
-        <p class="muted" style="margin:.25rem 0 0">Record type · ${escapeHtml(matterTypeLabel)}</p>
-        ${createFlash ? successNoticeHtml(createFlash) : ''}
+        <div class="matter-top-split">
+          <div class="matter-top-main">
+            <h1>${escapeHtml(m.name || 'Matter')}</h1>
+            <p class="muted matter-top-meta">Record type · ${escapeHtml(matterTypeLabel)}</p>
+            ${createFlash ? successNoticeHtml(createFlash) : ''}
+          </div>
+          <aside class="matter-reports-aside" aria-label="Time reports">
+            <div class="matter-reports-aside-head">
+              <h2>Time reports</h2>
+              <p class="hint">Lodestar for this matter</p>
+            </div>
+            <div class="matter-report-list">
+              ${matterReports.map(([id, label, hint]) => `
+                <div class="matter-report-item">
+                  <div class="matter-report-copy">
+                    <strong>${escapeHtml(label)}</strong>
+                    <span class="muted">${escapeHtml(hint)}</span>
+                  </div>
+                  <div class="matter-report-actions">
+                    <button type="button" data-view-matter-report="${id}">View</button>
+                    <button type="button" data-matter-report="${id}" data-format="pdf">PDF</button>
+                    <button type="button" data-matter-report="${id}" data-format="xlsx">Excel</button>
+                  </div>
+                </div>`).join('')}
+            </div>
+            <div id="matterReportMsg"></div>
+          </aside>
+        </div>
+        <div id="matterReportOut" class="matter-report-out" hidden></div>
       </div>
 
       ${canViewTime ? `
@@ -5100,23 +5126,6 @@
           </div>` : ''}
         <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
       </form>
-
-      <div class="card stack">
-        <h2>Time reports</h2>
-        <p class="hint">Run Lodestar Detail or Summary for this matter.</p>
-        <div id="matterReportMsg"></div>
-        ${matterReports.map(([id, label, hint]) => `
-          <div class="report-row">
-            <div>
-              <strong>${label}</strong>
-              <div class="muted">${hint}</div>
-            </div>
-            <button type="button" data-matter-report="${id}" data-format="pdf">PDF</button>
-            <button type="button" data-matter-report="${id}" data-format="xlsx">Excel</button>
-            <button type="button" data-view-matter-report="${id}">View</button>
-          </div>`).join('')}
-        <div id="matterReportOut" hidden></div>
-      </div>
 
       <details class="onedrive-collapse" id="onedriveCard">
         <summary class="onedrive-collapse-summary">

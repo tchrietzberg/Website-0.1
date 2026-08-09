@@ -2590,6 +2590,136 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 .pill[data-status="open"] { background: var(--ok-soft); color: var(--ok); }
 .pill[data-status="closed"] { background: #eef2f5; color: #4b5c6b; }
 
+/* Matter header: name on the left, compact Lodestar reports on the right */
+.matter-top-nav {
+  margin-bottom: 0.85rem;
+}
+
+.matter-top-split {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: stretch;
+  align-items: stretch;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  gap: 1.25rem 1.75rem;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+}
+
+.matter-top-main {
+  -webkit-flex: 1 1 16rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.matter-top-main h1 {
+  margin: 0;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.matter-top-meta {
+  margin: 0.35rem 0 0;
+}
+
+.matter-reports-aside {
+  -webkit-flex: 0 1 22rem;
+  flex: 0 1 22rem;
+  min-width: min(100%, 17rem);
+  max-width: 24rem;
+  margin-left: auto;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(165deg, rgba(232, 238, 247, 0.7) 0%, rgba(255, 255, 255, 0.95) 55%),
+    var(--panel);
+}
+
+.matter-reports-aside-head h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--accent);
+}
+
+.matter-reports-aside-head .hint {
+  margin: 0.2rem 0 0.7rem;
+  font-size: 0.82rem;
+}
+
+.matter-report-list {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.matter-report-item {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.matter-report-copy {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.matter-report-copy strong {
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.matter-report-copy .muted {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.matter-report-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.matter-report-actions button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.matter-report-out {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 860px) {
+  .matter-reports-aside {
+    -webkit-flex: 1 1 100%;
+    flex: 1 1 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
 .report-row {
   display: -webkit-flex;
   display: flex;
