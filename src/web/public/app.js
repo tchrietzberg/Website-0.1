@@ -18,6 +18,7 @@
     matterTimeFlash: '',
     timeEntryRetain: null,
     matterTimeRetain: null,
+    focusCustomReportId: null,
   };
 
   function canCreateMatter(user) {
