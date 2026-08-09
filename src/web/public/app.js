@@ -124,27 +124,41 @@
       </div>`).join('');
   }
 
-  function matterSearchText(m) {
-    return [m.number, m.name, m.client_name, m.status, m.attorney_name]
+  function matterSearchText(m, { hideNumber = false } = {}) {
+    return [
+      hideNumber ? null : m.number,
+      m.name,
+      m.client_name,
+      m.status,
+      m.attorney_name,
+    ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
   }
 
-  function renderMatterPicker({ name = 'matterId', selectedId = null, matters = [] } = {}) {
+  function renderMatterPicker({
+    name = 'matterId',
+    selectedId = null,
+    matters = [],
+    hideNumber = false,
+  } = {}) {
     const selected = matters.find((m) => Number(m.id) === Number(selectedId)) || null;
+    const placeholder = hideNumber
+      ? 'Search matters by name or client…'
+      : 'Search matters by number, name, or client…';
     return `
-      <div class="matter-picker" data-matter-picker>
+      <div class="matter-picker" data-matter-picker data-hide-number="${hideNumber ? '1' : '0'}">
         <input type="hidden" name="${name}" value="${selected ? selected.id : ''}" data-matter-id />
         <button type="button" class="matter-picker-trigger" data-matter-trigger
           aria-haspopup="listbox" aria-expanded="false">
           <span class="matter-picker-value" data-matter-label>
             ${selected ? `
-              <strong>${escapeHtml(selected.number)}</strong>
+              ${hideNumber ? '' : `<strong>${escapeHtml(selected.number)}</strong>`}
               <span>${escapeHtml(selected.name)}</span>
               ${selected.client_name ? `<small>${escapeHtml(selected.client_name)}</small>` : ''}
             ` : `
-              <span class="matter-picker-placeholder">Search matters by number, name, or client…</span>
+              <span class="matter-picker-placeholder">${placeholder}</span>
             `}
           </span>
           <span class="matter-picker-chevron" aria-hidden="true">▾</span>
@@ -175,10 +189,14 @@
     });
   }
 
-  function wireMatterPicker(scopeEl, { matters = [] } = {}) {
+  function wireMatterPicker(scopeEl, { matters = [], hideNumber = false } = {}) {
     const picker = scopeEl.querySelector('[data-matter-picker]');
     if (!picker) return null;
     ensureMatterPickerDocClose();
+    const hideNum = hideNumber || picker.dataset.hideNumber === '1';
+    const placeholder = hideNum
+      ? 'Search matters by name or client…'
+      : 'Search matters by number, name, or client…';
     const trigger = picker.querySelector('[data-matter-trigger]');
     const panel = picker.querySelector('[data-matter-panel]');
     const search = picker.querySelector('[data-matter-search]');
@@ -192,10 +210,10 @@
     function setSelected(m) {
       hidden.value = m ? String(m.id) : '';
       if (!m) {
-        label.innerHTML = '<span class="matter-picker-placeholder">Search matters by number, name, or client…</span>';
+        label.innerHTML = `<span class="matter-picker-placeholder">${placeholder}</span>`;
       } else {
         label.innerHTML = `
-          <strong>${escapeHtml(m.number)}</strong>
+          ${hideNum ? '' : `<strong>${escapeHtml(m.number)}</strong>`}
           <span>${escapeHtml(m.name)}</span>
           ${m.client_name ? `<small>${escapeHtml(m.client_name)}</small>` : ''}`;
       }
@@ -223,13 +241,13 @@
       const needle = String(q || '').trim().toLowerCase();
       filtered = !needle
         ? matters.slice(0, 80)
-        : matters.filter((m) => matterSearchText(m).includes(needle)).slice(0, 80);
+        : matters.filter((m) => matterSearchText(m, { hideNumber: hideNum }).includes(needle)).slice(0, 80);
       activeIndex = filtered.length ? 0 : -1;
       empty.hidden = filtered.length > 0;
       list.innerHTML = filtered.map((m, i) => `
         <li role="option" class="matter-picker-option ${i === activeIndex ? 'is-active' : ''}"
           data-id="${m.id}" aria-selected="${i === activeIndex ? 'true' : 'false'}">
-          <strong>${escapeHtml(m.number)}</strong>
+          ${hideNum ? '' : `<strong>${escapeHtml(m.number)}</strong>`}
           <span>${escapeHtml(m.name)}</span>
           <small>${escapeHtml(m.client_name || '—')}${m.status ? ` · ${escapeHtml(m.status)}` : ''}</small>
         </li>`).join('');
@@ -1438,27 +1456,26 @@
         <form id="timeForm" class="grid two">
           <div class="field span-all">
             <span class="field-label">Matter</span>
-            ${renderMatterPicker({ name: 'matterId', selectedId: preferredMatterId, matters })}
-            <span class="hint">Type to filter matters — the time entry fields stay visible below.</span>
+            ${renderMatterPicker({
+              name: 'matterId',
+              selectedId: preferredMatterId,
+              matters,
+              hideNumber: true,
+            })}
+            <span class="hint">Type to filter by matter name or client.</span>
           </div>
-          <label>Service date
+          <label>Date
             <input name="serviceDate" type="date" value="${today}" required />
           </label>
-          <label>Minutes (raw)
+          <label>Minutes
             <input name="rawMinutes" type="number" min="1" value="7" required />
           </label>
           <label>Timekeeper
             <select name="timekeeperId">
               ${state.users.map((u) =>
-                `<option value="${u.id}" ${u.id === state.user.id ? 'selected' : ''}>${u.name}</option>`
+                `<option value="${u.id}" ${u.id === state.user.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`
               ).join('')}
             </select>
-          </label>
-          <label>Category
-            <input name="category" placeholder="e.g. Discovery" />
-          </label>
-          <label>Subcategory
-            <input name="subcategory" placeholder="e.g. Document review" />
           </label>
           <label class="span-all">Description
             <textarea name="description" rows="2" required>Reviewed production set</textarea>
@@ -1472,25 +1489,30 @@
       <div class="card">
         <h2>Recent entries</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Matter</th><th>Raw→Rnd</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Matter</th><th>Minutes</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            ${entries.slice(0, 30).map((e) => `
+            ${entries.slice(0, 30).map((e) => {
+              const matterName = (matters.find((m) => Number(m.id) === Number(e.matter_id)) || {}).name
+                || e.matter_number
+                || '—';
+              return `
               <tr>
-                <td>${e.service_date}</td>
-                <td>${e.matter_number}<div class="muted">${e.description}</div></td>
-                <td>${e.raw_minutes}m → <strong>${formatDuration(e.rounded_minutes)}</strong>
+                <td>${escapeHtml(e.service_date)}</td>
+                <td>${escapeHtml(matterName)}<div class="muted">${escapeHtml(e.description)}</div></td>
+                <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">(${e.rounded_minutes} min)</span></td>
-                <td><span class="pill" data-status="${e.status}">${e.status}</span></td>
+                <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(e.status)}</span></td>
                 <td class="row-actions">
                   ${e.status === 'draft' || e.status === 'rejected'
                     ? `<button data-submit="${e.id}">Submit</button>` : ''}
                 </td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>'}
+              </tr>`;
+            }).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>'}
           </tbody>
         </table></div>
       </div>`;
 
-    const matterPicker = wireMatterPicker($('#timeForm'), { matters });
+    const matterPicker = wireMatterPicker($('#timeForm'), { matters, hideNumber: true });
     $('#timeForm').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = new FormData(ev.target);
@@ -1498,6 +1520,8 @@
       body.matterId = Number(body.matterId);
       body.timekeeperId = Number(body.timekeeperId);
       body.rawMinutes = Number(body.rawMinutes);
+      delete body.category;
+      delete body.subcategory;
       if (!body.matterId) {
         matterPicker?.setInvalid(true);
         $('#timeMsg').innerHTML = '<div class="error">Select a matter to continue.</div>';
@@ -1506,14 +1530,14 @@
       }
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
-        let msg = `Saved #${entry.id}: ${entry.rawMinutes}m → ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min).`;
+        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min).`;
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
-        $('#timeMsg').innerHTML = `<div class="ok-banner">${msg}</div>`;
+        $('#timeMsg').innerHTML = `<div class="ok-banner">${escapeHtml(msg)}</div>`;
         await renderTime();
       } catch (e) {
-        $('#timeMsg').innerHTML = `<div class="error">${e.message}</div>`;
+        $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
       }
     };
     main.querySelectorAll('[data-submit]').forEach((b) => {
