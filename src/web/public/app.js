@@ -2081,23 +2081,23 @@
       ['lodestar-detail', 'Lodestar Detail (all matters)'],
     ];
     const matterReports = [
-      ['lodestar-matter-detail', 'Lodestar Matter Detail', 'Entry-level by timekeeper with matter name, subtotals, and summary'],
-      ['lodestar-matter-summary', 'Lodestar Matter Summary', 'Timekeeper summary with rates, hours, and lodestar totals'],
+      ['lodestar-matter-detail', 'Lodestar Detail', 'Matter-specific entry detail by timekeeper, with subtotals'],
+      ['lodestar-matter-summary', 'Lodestar Summary', 'Matter-specific timekeeper rates, hours, and lodestar totals'],
     ];
     main.innerHTML = `
       <div class="card stack">
         <h1>Reports</h1>
-        <p class="lead">Firm listings and lodestar matter reports (PDF / Excel), including matter name.</p>
+        <p class="lead">Run Lodestar Detail and Summary for a specific matter, or firm-wide listings.</p>
 
         <h2>Lodestar by matter</h2>
-        <p class="hint">Similar to lodestar matter detail and matter export reports — select a matter, then download PDF or Excel.</p>
+        <p class="hint">Select a matter, then run Lodestar Detail or Lodestar Summary for that matter only.</p>
         <div class="field">
           <span class="field-label">Matter</span>
-          ${renderMatterPicker({
+          ${matters.length ? renderMatterPicker({
             name: 'reportMatterId',
             selectedId: matters[0]?.id || null,
             matters,
-          })}
+          }) : '<p class="muted">No matters yet — create a matter first.</p>'}
         </div>
         <div id="matterReportMsg"></div>
         ${matterReports.map(([id, label, hint]) => `
@@ -2106,9 +2106,9 @@
               <strong>${label}</strong>
               <div class="muted">${hint}</div>
             </div>
-            <button type="button" data-matter-report="${id}" data-format="pdf">PDF</button>
-            <button type="button" data-matter-report="${id}" data-format="xlsx">Excel</button>
-            <button type="button" data-view-matter-report="${id}">View</button>
+            <button type="button" data-matter-report="${id}" data-format="pdf" ${matters.length ? '' : 'disabled'}>PDF</button>
+            <button type="button" data-matter-report="${id}" data-format="xlsx" ${matters.length ? '' : 'disabled'}>Excel</button>
+            <button type="button" data-view-matter-report="${id}" ${matters.length ? '' : 'disabled'}>View</button>
           </div>`).join('')}
       </div>
 
@@ -2127,11 +2127,16 @@
       </div>
       <div id="reportOut" class="card" hidden></div>`;
 
-    const matterPicker = wireMatterPicker(main, { matters });
+    const matterPicker = matters.length ? wireMatterPicker(main, { matters }) : null;
 
     const selectedMatterId = () => {
       const input = main.querySelector('input[name="reportMatterId"]');
       return Number(input?.value || 0);
+    };
+
+    const selectedMatter = () => {
+      const matterId = selectedMatterId();
+      return matters.find((m) => Number(m.id) === matterId) || null;
     };
 
     const downloadMatterReport = async (reportId, format) => {
@@ -2144,11 +2149,12 @@
       try {
         const res = await api(`/api/reports/${reportId}?matterId=${matterId}&format=${format}`);
         const blob = await res.blob();
-        const matter = matters.find((m) => Number(m.id) === matterId);
+        const matter = selectedMatter();
         const slug = String(matter?.name || matterId).replace(/[^\w.-]+/g, '_').slice(0, 40);
+        const kind = reportId.includes('summary') ? 'lodestar-summary' : 'lodestar-detail';
         const tmp = document.createElement('a');
         tmp.href = URL.createObjectURL(blob);
-        tmp.download = `${reportId}-${slug}.${format === 'xlsx' ? 'xlsx' : 'pdf'}`;
+        tmp.download = `${kind}-${slug}.${format === 'xlsx' ? 'xlsx' : 'pdf'}`;
         document.body.appendChild(tmp);
         tmp.click();
         tmp.remove();
@@ -2172,17 +2178,40 @@
           return;
         }
         try {
-          const data = await api(`/api/reports/${b.dataset.viewMatterReport}?matterId=${matterId}`);
+          const reportId = b.dataset.viewMatterReport;
+          const data = await api(`/api/reports/${reportId}?matterId=${matterId}`);
           const out = $('#reportOut');
           out.hidden = false;
           const header = data.header || {};
           const summary = data.summary || [];
+          const isDetail = reportId === 'lodestar-matter-detail';
+          const title = isDetail ? 'Lodestar Detail' : 'Lodestar Summary';
+          const entryBlocks = isDetail
+            ? (data.timekeepers || []).map((g) => `
+                <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">${escapeHtml(g.timekeeper)}
+                  <span class="muted">· ${escapeHtml(formatDuration(g.minutes))} · ${money(g.amount_cents)}</span>
+                </h3>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>Date</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                  <tbody>
+                    ${(g.entries || []).map((e) => `
+                      <tr>
+                        <td>${escapeHtml(e.service_date || '')}</td>
+                        <td>${escapeHtml(formatDuration(e.minutes))}</td>
+                        <td>${money(e.amount_cents)}</td>
+                        <td>${escapeHtml(e.description || '')}</td>
+                      </tr>`).join('') || '<tr><td colspan="4" class="muted">No entries</td></tr>'}
+                  </tbody>
+                </table></div>`).join('')
+            : '';
           out.innerHTML = `
-            <h2>${escapeHtml(b.dataset.viewMatterReport)}</h2>
-            <p class="lead">${escapeHtml(header.matter_name || '')}</p>
+            <h2>${title}</h2>
+            <p class="lead">${escapeHtml(header.matter_name || selectedMatter()?.name || '')}</p>
             <p class="muted">${escapeHtml(header.client_name || '')}
               ${header.attorney_name ? ` · Responsible attorney: ${escapeHtml(header.attorney_name)}` : ''}
-              · ${escapeHtml(header.status || '')}</p>
+              ${header.status ? ` · ${escapeHtml(header.status)}` : ''}</p>
+            ${entryBlocks}
+            <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">Timekeeper summary</h3>
             <div class="table-wrap"><table>
               <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Lodestar</th></tr></thead>
               <tbody>
@@ -2193,7 +2222,7 @@
                     <td>${escapeHtml(formatDuration(s.minutes))}</td>
                     <td>${money(s.rate_cents)}</td>
                     <td>${money(s.amount_cents)}</td>
-                  </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time</td></tr>'}
+                  </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time for this matter</td></tr>'}
               </tbody>
             </table></div>
             <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
