@@ -53,6 +53,11 @@ function defaultObjectPerms(full = true, objectKey = null, roleKey = null) {
   return out;
 }
 
+function defaultAddUsers(roleKey) {
+  // Admin only by default; other roles can be granted Add users in Settings.
+  return roleKey === 'admin';
+}
+
 function defaultRolePermissions(full = true) {
   return Object.fromEntries(
     ROLE_KEYS.map((key) => [
@@ -61,6 +66,7 @@ function defaultRolePermissions(full = true) {
         objects: Object.fromEntries(
           OBJECT_KEYS.map((obj) => [obj, defaultObjectPerms(full, obj, key)])
         ),
+        addUsers: defaultAddUsers(key),
       },
     ])
   );
@@ -113,7 +119,11 @@ function normalizeRoleEntry(input, fallback = null, roleKey = null) {
     objects: Object.fromEntries(
       OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true, o, roleKey)])
     ),
+    addUsers: defaultAddUsers(roleKey),
   };
+  const addUsersFallback = roleKey === 'admin'
+    ? true
+    : (base.addUsers != null ? !!base.addUsers : defaultAddUsers(roleKey));
   // Legacy string mode: 'read_only' | 'read_write'
   if (typeof input === 'string') {
     const mode = String(input).trim().toLowerCase().replace(/[-\s]+/g, '_');
@@ -128,6 +138,8 @@ function normalizeRoleEntry(input, fallback = null, roleKey = null) {
           return [o, perms];
         })
       ),
+      // Legacy profiles never implied invite rights for non-admins.
+      addUsers: roleKey === 'admin',
     };
   }
   const src = input && typeof input === 'object' ? input : {};
@@ -140,7 +152,12 @@ function normalizeRoleEntry(input, fallback = null, roleKey = null) {
       obj
     );
   }
-  return { objects };
+  return {
+    objects,
+    addUsers: roleKey === 'admin'
+      ? true
+      : normalizeBool(src.addUsers ?? src.add_users, addUsersFallback),
+  };
 }
 
 function readRawRolePermissions(db) {
@@ -166,6 +183,7 @@ function getRolePermissions(db) {
     objects: Object.fromEntries(
       OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true, o, 'admin')])
     ),
+    addUsers: true,
   };
   return out;
 }
@@ -196,6 +214,7 @@ function setRolePermissions(db, actor, input = {}) {
     objects: Object.fromEntries(
       OBJECT_KEYS.map((o) => [o, defaultObjectPerms(true, o, 'admin')])
     ),
+    addUsers: true,
   };
   setSetting(db, ROLE_PERMISSIONS_KEY, JSON.stringify(next));
   // Keep legacy key in sync for older readers.
@@ -266,6 +285,20 @@ function canModifyOthersTime(db, role) {
 
 function canDeleteOthersTime(db, role) {
   return !!getRoleObjectAccess(db, role, 'time').deleteOthers;
+}
+
+/** Invite / Add a user — admin always; other roles only when granted. */
+function canAddUsers(db, role) {
+  if (role === 'admin') return true;
+  const key = ROLE_KEYS.includes(role) ? role : null;
+  if (!key) return false;
+  return !!getRolePermissions(db)[key].addUsers;
+}
+
+function assertCanAddUsers(db, actor) {
+  if (!canAddUsers(db, actor?.role)) {
+    throw forbidden('You do not have permission to add users');
+  }
 }
 
 /** Legacy: read_write if modifyAll on all objects, else read_only. */
@@ -568,11 +601,13 @@ module.exports = {
   canViewOthersTime,
   canModifyOthersTime,
   canDeleteOthersTime,
+  canAddUsers,
   getProfileAccess,
   assertCanViewRecords,
   assertCanModifyRecords,
   assertCanDeleteRecords,
   assertCanSearchRecords,
+  assertCanAddUsers,
   assertCanWriteRecords,
   getRecordPageLayout,
   setRecordPageLayout,

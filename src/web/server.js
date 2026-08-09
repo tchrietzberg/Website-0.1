@@ -371,7 +371,11 @@ function createServer(db = openDb()) {
         (req.method === 'POST' && pathname === '/api/users')
         || (req.method === 'POST' && pathname === '/api/users/invite')
       ) {
-        if (!requireRoles(user, res, ['admin'])) return;
+        try {
+          permissions.assertCanAddUsers(db, user);
+        } catch (e) {
+          return json(res, 403, { error: 'forbidden', message: e.message }, req);
+        }
         const body = await parseBody(req);
         const wantsInvite = pathname === '/api/users/invite'
           || body.invite === true

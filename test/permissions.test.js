@@ -35,6 +35,12 @@ describe('role permissions and field permissions', () => {
     assert.equal(defaults.billing_clerk.objects.time.selectTimekeeper, true);
     assert.equal(defaults.admin.objects.time.selectTimekeeper, true);
     assert.equal(defaults.admin.objects.time.modifyOthers, true);
+    assert.equal(defaults.admin.addUsers, true);
+    assert.equal(defaults.paralegal.addUsers, false);
+    assert.equal(defaults.attorney.addUsers, false);
+    assert.equal(defaults.billing_clerk.addUsers, false);
+    assert.equal(permissions.canAddUsers(db, 'admin'), true);
+    assert.equal(permissions.canAddUsers(db, 'paralegal'), false);
 
     const next = permissions.setRolePermissions(db, admin, {
       paralegal: {
@@ -111,6 +117,31 @@ describe('role permissions and field permissions', () => {
     const contact = clientsSvc.createClient(db, admin, { name: 'Temp Contact' });
     const deleted = clientsSvc.deleteClient(db, paralegal, contact.client.id);
     assert.equal(deleted.ok, true);
+  });
+
+  it('allows granting Add users to non-admin roles; admin stays on', () => {
+    assert.equal(permissions.canAddUsers(db, 'billing_clerk'), false);
+    permissions.setRolePermissions(db, admin, {
+      billing_clerk: {
+        objects: {
+          matter: { viewAll: true, modifyAll: true, delete: true },
+          contact: { viewAll: true, modifyAll: true, delete: true },
+          time: { viewAll: true, modifyAll: true, delete: true },
+          report: { viewAll: true, modifyAll: true, delete: true },
+        },
+        addUsers: true,
+      },
+      admin: { addUsers: false },
+    });
+    assert.equal(permissions.canAddUsers(db, 'billing_clerk'), true);
+    assert.equal(permissions.canAddUsers(db, 'admin'), true);
+    assert.doesNotThrow(() => permissions.assertCanAddUsers(db, {
+      id: 99, role: 'billing_clerk',
+    }));
+    assert.throws(
+      () => permissions.assertCanAddUsers(db, paralegal),
+      (err) => err && err.code === 'FORBIDDEN'
+    );
   });
 
   it('supports Hidden / Read / Read-Write field permissions', () => {

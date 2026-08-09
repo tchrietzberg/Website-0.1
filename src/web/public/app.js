@@ -71,9 +71,16 @@
     state._apiCache[key] = { at: Date.now(), data };
   }
 
-  /** Invite users / Add a user Navigate page — admin only (API matches). */
-  function canManageUsers(user = state.user) {
-    return isAdminUser(user);
+  /** Invite users / Add a user — admin always; other roles when Settings grants Add users. */
+  function canManageUsers(user = state.user, settings = state.settings) {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    const entry = settings?.permissions?.rolePermissions?.[user.role]
+      || settings?.permissions?.profilePermissions?.[user.role];
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      return !!(entry.addUsers ?? entry.add_users);
+    }
+    return false;
   }
 
   function canManageRates(user = state.user) {
@@ -1447,6 +1454,7 @@
     const src = entry && typeof entry === 'object' ? entry : {};
     const objectsSrc = src.objects && typeof src.objects === 'object' ? src.objects : src;
     const proxyDefault = roleKey === 'admin' || roleKey === 'billing_clerk';
+    const addUsersDefault = roleKey === 'admin';
     if (typeof entry === 'string') {
       const full = entry !== 'read_only';
       for (const key of Object.keys(objects)) {
@@ -1463,7 +1471,7 @@
           } : {}),
         };
       }
-      return { objects };
+      return { objects, addUsers: addUsersDefault };
     }
     for (const key of Object.keys(objects)) {
       const o = objectsSrc[key] || {};
@@ -1487,7 +1495,12 @@
           : !!o.delete;
       }
     }
-    return { objects };
+    return {
+      objects,
+      addUsers: roleKey === 'admin'
+        ? true
+        : !!(src.addUsers ?? src.add_users),
+    };
   }
 
   async function bindRolePermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
@@ -1561,14 +1574,20 @@
     };
     const roleSummaryHtml = (roleKey) => {
       const objs = current[roleKey]?.objects || {};
-      return objects.map((obj) => {
+      const chips = objects.map((obj) => {
         const label = objectAccessLabel(objs[obj.key]);
         const muted = label === 'No access';
         return `<span class="role-perm-chip${muted ? ' is-muted' : ''}">
           <strong>${escapeHtml(obj.label)}</strong>
           <span>${escapeHtml(label)}</span>
         </span>`;
-      }).join('');
+      });
+      const addUsersOn = !!current[roleKey]?.addUsers;
+      chips.push(`<span class="role-perm-chip${addUsersOn ? '' : ' is-muted'}">
+          <strong>Add users</strong>
+          <span>${addUsersOn ? 'Allowed' : 'Off'}</span>
+        </span>`);
+      return chips.join('');
     };
     const applyPreset = (roleKey, preset) => {
       const proxyDefault = roleKey === 'billing_clerk';
@@ -1632,11 +1651,12 @@
       const objs = current[roleKey].objects;
       const timePerms = objs.time || {};
       const showTimeExtras = !!(timePerms.viewAll);
+      const canAddUsersForRole = !!current[roleKey].addUsers;
       bodyEl.innerHTML = `
         <div class="role-perms-editor stack">
           <p class="role-perms-admin-note">
             <strong>Admin</strong> always has full access and isn’t shown here.
-            Only Admin can use <strong>Add a user</strong> (invite people to the firm).
+            <strong>Add users</strong> is on for Admin by default — grant it to other roles below if they should invite people.
           </p>
           <div class="role-perms-tabs" role="tablist" aria-label="Choose a role">
             ${editableRoles.map((r) => `
@@ -1705,6 +1725,20 @@
                 }).join('')}
               </tbody>
             </table></div>
+            <div class="firm-action-perms">
+              <h4>Firm actions</h4>
+              <p class="hint">Optional firm-wide actions outside Matters / Contacts / Time / Reports.</p>
+              <label class="check-inline role-perm-extra" title="Invite people from Navigate → Add a user">
+                <input type="checkbox"
+                  data-role-firm="${escapeHtml(roleKey)}"
+                  data-flag="addUsers"
+                  ${canAddUsersForRole ? 'checked' : ''} />
+                <span>
+                  <span class="role-perm-extra-label">Add users</span>
+                  <span class="muted">Invite people to the firm (Navigate → Add a user)</span>
+                </span>
+              </label>
+            </div>
             ${showTimeExtras ? `
             <div class="timekeeper-perms">
               <h4>Working with other people’s time</h4>
@@ -1745,6 +1779,18 @@
       });
       bodyEl.querySelectorAll('[data-role-preset]').forEach((btn) => {
         btn.onclick = () => applyPreset(roleKey, btn.dataset.rolePreset);
+      });
+      bodyEl.querySelectorAll('[data-role-firm]').forEach((box) => {
+        box.onchange = () => {
+          const rk = box.dataset.roleFirm;
+          const flag = box.dataset.flag;
+          if (!current[rk]) current[rk] = normalizeRolePermEntry({}, rk);
+          if (flag === 'addUsers') current[rk].addUsers = !!box.checked;
+          dirty = true;
+          cascadeNote = '';
+          setMsg('');
+          render();
+        };
       });
       bodyEl.querySelectorAll('[data-role-perm]').forEach((box) => {
         box.onchange = () => {
@@ -1817,6 +1863,7 @@
             cascadeNote = '';
             setMsg('<div class="ok-banner">Role permissions saved.</div>');
             render();
+            renderShell({ force: true });
             ensureLookupBar();
           } catch (e) {
             saveBtn.disabled = false;
@@ -2600,7 +2647,7 @@
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
-      canManageUsers() ? ['users', 'Add a user', 'users', 'Admin · invite & rates'] : null,
+      canManageUsers() ? ['users', 'Add a user', 'users', 'Invite people'] : null,
       ['settings', 'Settings', 'settings', 'Firm preferences'],
     ].filter(Boolean);
     // Approvals / payments / WIP views stay retired — billing covers pre-bill → bill
@@ -6641,10 +6688,13 @@
 
   async function renderUsers() {
     if (!canManageUsers()) {
-      main.innerHTML = `<div class="card"><div class="error">Only admins can add users. Ask an admin to invite someone, or open Settings if you manage rates as a billing clerk.</div></div>`;
+      main.innerHTML = `<div class="card"><div class="error">You don’t have permission to add users. Ask an admin to invite someone, or grant <strong>Add users</strong> under Settings → Role permissions.</div></div>`;
       return;
     }
-    const timekeepers = await api('/api/timekeepers').catch(() => []);
+    const showRates = canManageRates();
+    const timekeepers = showRates
+      ? await api('/api/timekeepers').catch(() => [])
+      : [];
     if (!stillOnView('users')) return;
     const today = new Date().toISOString().slice(0, 10);
     const flash = state.usersFlash;
@@ -6655,7 +6705,7 @@
         <div class="page-head">
           <h1>Users</h1>
         </div>
-        <p class="lead">Admin-only: invite people to the firm and manage timekeeper default rates.</p>
+        <p class="lead">Invite people to the firm${showRates ? ' and manage timekeeper default rates' : ''}.</p>
         ${flash ? successNoticeHtml(flash) : ''}
 
         <div class="page-section" id="addUserSection">
@@ -6685,11 +6735,12 @@
           <div id="tkMsg"></div>
         </div>
 
+        ${showRates ? `
         <div class="page-section" id="tkRatesSection">
           <h2>Timekeepers &amp; Rates</h2>
           <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates.</p>
-          ${timekeeperRatesTableHtml(timekeepers, { today, showReset: true })}
-        </div>
+          ${timekeeperRatesTableHtml(timekeepers, { today, showReset: isAdminUser() })}
+        </div>` : ''}
       </div>`;
 
     const tkForm = $('#tkForm');
@@ -6735,12 +6786,14 @@
       };
     }
 
-    wireTimekeeperRatesPanel({
-      onRefresh: async () => {
-        state.usersFlash = { title: 'Rate change saved', detail: 'The new effective-dated rate is active.' };
-        await renderUsers();
-      },
-    });
+    if (showRates) {
+      wireTimekeeperRatesPanel({
+        onRefresh: async () => {
+          state.usersFlash = { title: 'Rate change saved', detail: 'The new effective-dated rate is active.' };
+          await renderUsers();
+        },
+      });
+    }
 
     if (state.focusAddUser) {
       state.focusAddUser = false;
@@ -7010,7 +7063,7 @@
           <span class="onedrive-collapse-meta muted">${timekeepers.length} timekeeper${timekeepers.length === 1 ? '' : 's'}</span>
         </summary>
         <div class="onedrive-collapse-body stack">
-          <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates. Only admins can invite users (Navigate → Add a user).</p>
+          <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates. Invite users from Navigate → Add a user (Admin by default; grant Add users under Role permissions to allow other roles).</p>
           ${timekeeperRatesTableHtml(timekeepers, { today, showReset: false })}
         </div>
       </details>` : ''}`;
@@ -7398,7 +7451,7 @@
       id: 'users',
       label: 'Add a user',
       keywords: ['user', 'invite', 'timekeeper', 'rate', 'add a user', 'hire'],
-      answer: '[[Add a user|users]] is an Admin-only Navigate page. Invite someone by name, email, role, and default rate — they get a one-time link to set a password. Billing clerks can still change timekeeper rates under [[Settings|settings]].',
+      answer: '[[Add a user|users]] invites someone by name, email, role, and default rate — they get a one-time link to set a password. Admin has this by default; turn on <strong>Add users</strong> for other roles under [[Role permissions|settings]]. Billing clerks can still change timekeeper rates under [[Settings|settings]].',
       links: [
         { label: 'Go to Add a user', target: 'users' },
         { label: 'Open Settings', target: 'settings' },
