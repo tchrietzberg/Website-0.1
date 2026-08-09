@@ -147,6 +147,27 @@ describe('matter search and record-based fields', () => {
     );
   });
 
+  it('shows type dropdown fields on matter pages even after record layout exists', () => {
+    const page0 = matterSvc.createMatter(db, admin, { name: 'Status Matter' });
+    // Force a matter-specific layout (freeze clone of type layout)
+    customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:status');
+    assert.equal(matterSvc.getMatter(db, page0.matter.id).layout.source, 'record');
+
+    const stage = customFields.createCustomField(db, admin, {
+      label: 'Case status',
+      fieldType: 'dropdown',
+      options: ['Open', 'On hold', 'Closed'],
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      appliesTo: 'matter',
+    });
+    const page = matterSvc.getMatter(db, page0.matter.id);
+    const fields = Object.values(page.sections).flat();
+    const found = fields.find((f) => f.fieldId === stage.id);
+    assert.ok(found, 'dropdown custom field should appear on matter page sections');
+    assert.equal(found.type, 'dropdown');
+    assert.deepEqual(found.options, ['Open', 'On hold', 'Closed']);
+  });
+
   it('supports time-entry custom fields separate from matter fields', () => {
     const timeSvc = require('../src/services/time');
     const matter = matterSvc.createMatter(db, admin, {

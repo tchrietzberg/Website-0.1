@@ -16,6 +16,7 @@
     focusTimeEntry: false,
     timeFlash: '',
     matterTimeFlash: '',
+    matterFieldFlash: '',
     timeEntryRetain: null,
     matterTimeRetain: null,
     focusCustomReportId: null,
@@ -1489,11 +1490,13 @@
       return renderMatters();
     }
     const matterId = state.matterId;
-    const [page, timeFields, matterEntries] = await Promise.all([
+    const [page, timeFields, matterEntries, clients] = await Promise.all([
       api(`/api/matters/${matterId}`),
       api('/api/custom-fields?appliesTo=time_entry').catch(() => []),
       api(`/api/time-entries?matterId=${matterId}`).catch(() => []),
+      api('/api/clients').catch(() => state.clients || []),
     ]);
+    state.clients = clients || state.clients || [];
     const m = page.matter;
     const canEdit = canCreateMatter(state.user);
     const matterReports = [
@@ -1507,17 +1510,51 @@
     const formHours = '';
     const formDescription = '';
     const flash = state.matterTimeFlash || '';
+    const matterFlash = state.matterFieldFlash || '';
     state.matterTimeFlash = '';
+    state.matterFieldFlash = '';
     state.matterTimeRetain = null;
     const timeFieldDefs = timeEntryFieldDefs(timeFields);
+    const fieldCtx = {
+      canEdit,
+      clients: state.clients,
+      recordTypes: [{ key: 'default', label: 'Default' }],
+      users: state.users,
+    };
+    const sections = Object.entries(page.sections || {})
+      .map(([section, fields]) => [section, (fields || []).filter((f) => f.key !== 'std:number')])
+      .filter(([, fields]) => fields.length > 0);
 
     main.innerHTML = `
       <div class="card">
         <div class="row-actions" style="margin-bottom:.75rem">
           <button type="button" id="backMatters">← Matters</button>
         </div>
-        <h1>Add time</h1>
-        <p class="hint">Log time on this matter. Saved entries are ready for Billing.</p>
+        <h1>${escapeHtml(m.name || 'Matter')}</h1>
+      </div>
+
+      <form id="matterForm" class="card stack">
+        <h2>Matter fields</h2>
+        <p class="hint">Set values for this matter — including dropdown custom fields like Status.</p>
+        ${sections.map(([section, fields]) => `
+          <div class="grid two">
+            ${fields.map((f) => `
+              <label class="${f.width === 'full' ? 'span-all' : ''}">
+                ${escapeHtml(f.label)}
+                ${renderFieldInput(f, fieldCtx)}
+              </label>`).join('')}
+          </div>
+        `).join('') || '<p class="muted">No fields on this matter yet. Add one under Manage fields.</p>'}
+        ${canEdit ? `
+          <div class="row-actions">
+            <button class="primary" type="submit">Save matter fields</button>
+          </div>` : ''}
+        <div id="matterMsg">${matterFlash ? `<div class="ok-banner">${escapeHtml(matterFlash)}</div>` : ''}</div>
+      </form>
+
+      <div class="card">
+        <h2>Add time</h2>
+        <p class="hint">Log time on this matter. Time-entry custom fields appear here when added in Settings.</p>
         <form id="matterTimeForm" class="grid two">
           <input type="hidden" name="matterId" value="${Number(m.id)}" />
           ${timeEntryFormFieldsHtml({
@@ -1704,6 +1741,41 @@
       renderShell();
       renderView();
     };
+
+    const matterForm = $('#matterForm');
+    if (matterForm && canEdit) {
+      matterForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(matterForm);
+        const patch = {};
+        const customValues = {};
+        for (const [key, value] of fd.entries()) {
+          if (key.startsWith('cf_')) {
+            customValues[key.slice(3)] = value;
+          } else if (key === 'std:name') patch.name = value;
+          else if (key === 'std:client') patch.clientId = Number(value);
+          else if (key === 'std:matter_type') { /* fixed */ }
+          else if (key === 'std:status') patch.status = value;
+          else if (key === 'std:jurisdiction') patch.jurisdiction = value;
+          else if (key === 'std:court') patch.court = value;
+          else if (key === 'std:responsible_attorney') {
+            patch.responsibleAttorneyId = value ? Number(value) : null;
+          } else if (key === 'std:opened_on') patch.openedOn = value;
+        }
+        matterForm.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
+          customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
+        });
+        patch.customValues = customValues;
+        try {
+          await api(`/api/matters/${m.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+          state.matterFieldFlash = 'Matter fields saved.';
+          await renderMatterDetail();
+          await refreshRefs();
+        } catch (e) {
+          $('#matterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
 
     wireTimeEntrySubmit($('#matterTimeForm'), {
       msgEl: $('#matterTimeMsg'),

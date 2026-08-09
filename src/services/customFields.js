@@ -304,27 +304,28 @@ function createCustomField(db, actor, input) {
   );
   const id = Number(info.lastInsertRowid);
 
-  // Auto-add matter fields to the relevant layout
+  // Auto-add matter fields to the relevant layout(s)
   if (appliesTo === 'matter') {
+    const width = fieldType === 'textarea' ? 'full' : 'half';
+    const fieldKey = `cf:${id}`;
     if (matterId) {
       ensureMatterLayout(db, matterId);
       const layout = db.prepare('SELECT id FROM page_layouts WHERE matter_id = ?').get(matterId);
-      const max = db.prepare(
-        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
-      ).get(layout.id).m;
-      db.prepare(`
-        INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
-        VALUES (?, ?, 'details', ?, ?)
-      `).run(layout.id, `cf:${id}`, max + 1, fieldType === 'textarea' ? 'full' : 'half');
+      addFieldToLayout(db, layout.id, fieldKey, width);
     } else if (recordTypeKey) {
       const layout = ensureTypeLayout(db, recordTypeKey);
-      const max = db.prepare(
-        'SELECT COALESCE(MAX(sort_order), -1) AS m FROM page_layout_items WHERE layout_id = ?'
-      ).get(layout.id).m;
-      db.prepare(`
-        INSERT INTO page_layout_items(layout_id, field_key, section, sort_order, width)
-        VALUES (?, ?, 'details', ?, ?)
-      `).run(layout.id, `cf:${id}`, max + 1, fieldType === 'textarea' ? 'full' : 'half');
+      addFieldToLayout(db, layout.id, fieldKey, width);
+      // Also attach to existing matter-specific layouts so the field appears on open matters.
+      const matterLayouts = db.prepare(`
+        SELECT pl.id
+        FROM page_layouts pl
+        JOIN matters m ON m.id = pl.matter_id
+        WHERE pl.matter_id IS NOT NULL
+          AND m.matter_type = ?
+      `).all(recordTypeKey);
+      for (const ml of matterLayouts) {
+        addFieldToLayout(db, ml.id, fieldKey, width);
+      }
     }
   }
 
@@ -519,6 +520,17 @@ function fieldDefsForMatter(db, matter) {
   return byKey;
 }
 
+/** Ensure type-scoped custom fields also appear on matter-specific layouts. */
+function syncTypeCustomFieldsToMatterLayout(db, matter, layout) {
+  if (!layout?.matter_id) return;
+  const typeLayout = ensureTypeLayout(db, matter.matter_type || DEFAULT_RECORD_TYPE_KEY);
+  const typeItems = layoutItems(db, typeLayout.id)
+    .filter((item) => String(item.field_key).startsWith('cf:'));
+  for (const item of typeItems) {
+    addFieldToLayout(db, layout.id, item.field_key, item.width || 'half');
+  }
+}
+
 function getMatterPage(db, matterId) {
   const matter = db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
@@ -529,7 +541,11 @@ function getMatterPage(db, matterId) {
   `).get(matterId);
   if (!matter) return null;
 
-  const { layout, source } = resolveLayout(db, matter);
+  let { layout, source } = resolveLayout(db, matter);
+  if (source === 'record') {
+    syncTypeCustomFieldsToMatterLayout(db, matter, layout);
+    ({ layout, source } = resolveLayout(db, matter));
+  }
   const items = layoutItems(db, layout.id);
   const defs = fieldDefsForMatter(db, matter);
   const values = db.prepare(
