@@ -80,16 +80,22 @@ function createEntry(db, actor, input) {
   }
 
   const dupes = detectDuplicates(db, candidate);
+  // No approval workflow — saved time is immediately ready to bill.
   const info = db.prepare(`
     INSERT INTO time_entries(
       matter_id, timekeeper_id, service_date, raw_minutes, rounded_minutes,
-      description, billable, category, subcategory, utbms_task, utbms_activity, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+      description, billable, category, subcategory, utbms_task, utbms_activity,
+      status, approved_by, approved_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      'approved', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    )
   `).run(
     candidate.matterId, candidate.timekeeperId, candidate.serviceDate,
     candidate.rawMinutes, candidate.roundedMinutes, candidate.description,
     candidate.billable, candidate.category, candidate.subcategory,
-    candidate.utbmsTask, candidate.utbmsActivity
+    candidate.utbmsTask, candidate.utbmsActivity,
+    actor.id
   );
 
   const entryId = Number(info.lastInsertRowid);
@@ -102,14 +108,14 @@ function createEntry(db, actor, input) {
     action: 'time_entry.create',
     entityType: 'time_entry',
     entityId: entryId,
-    detail: { rawMinutes: candidate.rawMinutes, roundedMinutes: candidate.roundedMinutes },
+    detail: { rawMinutes: candidate.rawMinutes, roundedMinutes: candidate.roundedMinutes, status: 'approved' },
   });
 
   return {
     id: entryId,
     ...candidate,
     roundIncrementMinutes: increment,
-    status: 'draft',
+    status: 'approved',
     duplicateWarnings: dupes,
     customValues: Object.fromEntries(
       customFields.getTimeCustomValues(db, entryId).map((v) => [v.field_id, v.value_text])

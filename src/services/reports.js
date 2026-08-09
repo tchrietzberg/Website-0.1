@@ -45,7 +45,7 @@ function lodestarDetail(db, { matterId = null } = {}) {
     JOIN matters m ON m.id = te.matter_id
     JOIN clients c ON c.id = m.client_id
     LEFT JOIN users atty ON atty.id = m.responsible_attorney_id
-    WHERE te.billable = 1 AND te.status IN ('approved','invoiced')
+    WHERE te.billable = 1 AND te.status IN ('draft','submitted','approved','invoiced')
       AND (? IS NULL OR te.matter_id = ?)
     ORDER BY m.number, u.name, te.service_date, te.id
   `).all(matterId, matterId);
@@ -300,7 +300,7 @@ function wipReport(db) {
     FROM time_entries te
     JOIN users u ON u.id = te.timekeeper_id
     JOIN matters m ON m.id = te.matter_id
-    WHERE te.status = 'approved' AND te.invoice_id IS NULL AND te.billable = 1
+    WHERE te.status IN ('draft','submitted','approved') AND te.invoice_id IS NULL AND te.billable = 1
     ORDER BY m.number, te.service_date
   `).all();
   return rows.map((e) => {

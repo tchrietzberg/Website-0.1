@@ -46,9 +46,6 @@ describe('matters report', () => {
       rawMinutes: 60,
       description: 'Research',
     });
-    timeSvc.submitEntry(db, para, entry.id);
-    timeSvc.approveEntry(db, admin, entry.id);
-
     const detail = reports.lodestarMatterDetail(db, 1);
     assert.equal(detail.header.matter_name, 'Alpha Matter');
     assert.equal(detail.summary.length, 1);
@@ -82,9 +79,6 @@ describe('matters report', () => {
       rawMinutes: 60,
       description: 'Research',
     });
-    timeSvc.submitEntry(db, para, entry.id);
-    timeSvc.approveEntry(db, admin, entry.id);
-
     const mattersPdf = reports.toPdf(reports.mattersReport(db), {
       title: 'Matters Report',
       currencyKeys: [],

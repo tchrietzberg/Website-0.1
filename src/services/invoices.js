@@ -4,7 +4,7 @@ const { allocateNumber, audit } = require('../db');
 const { buildXlsx } = require('../xlsx');
 const { buildTextPdf } = require('../pdf');
 
-/** Create and issue a bill in one step from approved, unbilled time. */
+/** Create and issue a bill in one step from unbilled time (no approval step). */
 function createBill(db, actor, matterId, entryIds = null) {
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
   if (!matter) throw new Error('matter not found');
@@ -14,19 +14,19 @@ function createBill(db, actor, matterId, entryIds = null) {
     const placeholders = entryIds.map(() => '?').join(',');
     entries = db.prepare(`
       SELECT * FROM time_entries
-      WHERE matter_id = ? AND status = 'approved' AND id IN (${placeholders})
+      WHERE matter_id = ? AND status IN ('draft','submitted','approved') AND id IN (${placeholders})
       ORDER BY service_date, id
     `).all(matterId, ...entryIds);
   } else {
     entries = db.prepare(`
       SELECT * FROM time_entries
-      WHERE matter_id = ? AND status = 'approved' AND invoice_id IS NULL
+      WHERE matter_id = ? AND status IN ('draft','submitted','approved') AND invoice_id IS NULL
         AND rounded_minutes > 0
       ORDER BY service_date, id
     `).all(matterId);
   }
   if (!entries.length) {
-    throw new Error('No approved time entries ready to bill on this matter');
+    throw new Error('No time entries ready to bill on this matter');
   }
 
   const year = new Date().getUTCFullYear();
@@ -102,7 +102,7 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
   return createBill(db, actor, matterId, entryIds);
 }
 
-/** Matters with approved, unbilled time ready to bill. */
+/** Matters with unbilled time ready to bill (saved time; no approval step). */
 function listMattersReadyForBilling(db) {
   return db.prepare(`
     SELECT m.id, m.number, m.name, c.name AS client_name,
@@ -111,7 +111,8 @@ function listMattersReadyForBilling(db) {
     FROM matters m
     JOIN clients c ON c.id = m.client_id
     JOIN time_entries te ON te.matter_id = m.id
-    WHERE te.status = 'approved' AND te.invoice_id IS NULL AND te.rounded_minutes > 0
+    WHERE te.status IN ('draft','submitted','approved')
+      AND te.invoice_id IS NULL AND te.rounded_minutes > 0
     GROUP BY m.id
     ORDER BY m.name
   `).all();

@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS time_entries (
   subcategory TEXT,
   utbms_task TEXT,
   utbms_activity TEXT,
-  status TEXT NOT NULL DEFAULT 'draft'
+  status TEXT NOT NULL DEFAULT 'approved'
     CHECK (status IN ('draft','submitted','approved','rejected','invoiced')),
   rejection_reason TEXT,
   approved_by INTEGER REFERENCES users(id),

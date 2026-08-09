@@ -1721,7 +1721,7 @@
               ${renderFieldInput(field, { canEdit: true })}
             </label>`).join('')}
           <div class="row-actions span-all">
-            <button class="primary" type="submit" data-save-mode="save">Save draft</button>
+            <button class="primary" type="submit" data-save-mode="save">Save</button>
             <button type="submit" data-save-mode="save-another">Save &amp; add another</button>
           </div>
         </form>
@@ -1729,28 +1729,26 @@
       </div>
       <div class="card">
         <h2>Recent entries</h2>
+        <p class="hint">Saved time is ready for Billing automatically — no approval step.</p>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Matter</th><th>Minutes</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Matter</th><th>Minutes</th><th>Status</th></tr></thead>
           <tbody>
             ${entries.slice(0, 30).map((e) => {
               const matterName = (matters.find((m) => Number(m.id) === Number(e.matter_id)) || {}).name
                 || e.matter_number
                 || '—';
+              const statusLabel = e.status === 'approved' ? 'Ready to bill'
+                : e.status === 'invoiced' ? 'Billed'
+                  : e.status;
               return `
               <tr>
                 <td>${escapeHtml(e.service_date)}</td>
                 <td>${escapeHtml(matterName)}<div class="muted">${escapeHtml(e.description)}</div></td>
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">(${e.rounded_minutes} min)</span></td>
-                <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(e.status)}</span></td>
-                <td class="row-actions">
-                  ${e.status === 'draft' || e.status === 'rejected'
-                    ? `<button data-submit="${e.id}">Submit</button>` : ''}
-                  ${e.status === 'submitted' && ['admin', 'billing_clerk', 'attorney'].includes(state.user.role)
-                    ? `<button class="primary" data-approve="${e.id}">Approve</button>` : ''}
-                </td>
+                <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
               </tr>`;
-            }).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>'}
+            }).join('') || '<tr><td colspan="4" class="muted">No entries yet</td></tr>'}
           </tbody>
         </table></div>
       </div>`;
@@ -1795,7 +1793,7 @@
       }
       try {
         const entry = await api('/api/time-entries', { method: 'POST', body: JSON.stringify(body) });
-        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min).`;
+        let msg = `Saved #${entry.id}: ${formatDuration(entry.roundedMinutes)} (${entry.roundedMinutes} min) — ready for Billing.`;
         if (entry.duplicateWarnings?.length) {
           msg += ` Duplicate warning vs entries ${entry.duplicateWarnings.join(', ')}.`;
         }
@@ -1816,27 +1814,6 @@
         $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
       }
     };
-    main.querySelectorAll('[data-submit]').forEach((b) => {
-      b.onclick = async () => {
-        try {
-          await api(`/api/time-entries/${b.dataset.submit}/submit`, { method: 'POST', body: '{}' });
-          await renderTime();
-        } catch (e) {
-          $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    });
-    main.querySelectorAll('[data-approve]').forEach((b) => {
-      b.onclick = async () => {
-        try {
-          await api(`/api/time-entries/${b.dataset.approve}/approve`, { method: 'POST', body: '{}' });
-          $('#timeMsg').innerHTML = '<div class="ok-banner">Entry approved — ready for Billing.</div>';
-          await renderTime();
-        } catch (e) {
-          $('#timeMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-        }
-      };
-    });
 
     if (state.focusTimeEntry) {
       state.focusTimeEntry = false;
@@ -1879,7 +1856,7 @@
     main.innerHTML = `
       <div class="card stack">
         <h1>Billing</h1>
-        <p class="lead">Create a bill from approved time in one step.</p>
+        <p class="lead">Create a bill from saved time in one step.</p>
         ${canBill ? `
         <form id="billForm" class="grid two">
           <div class="field span-all">
@@ -1892,8 +1869,8 @@
               ),
             })}
             <span class="hint">${(ready || []).length
-              ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with approved time ready to bill.`
-              : 'Approve submitted time on Time Entry first, then create a bill here.'}</span>
+              ? `${ready.length} matter${ready.length === 1 ? '' : 's'} with time ready to bill.`
+              : 'Save time on Time Entry first, then create a bill here.'}</span>
           </div>
           <div class="row-actions span-all">
             <button class="primary" type="submit" ${(ready || []).length ? '' : 'disabled'}>Create bill</button>

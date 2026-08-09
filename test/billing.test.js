@@ -78,15 +78,14 @@ describe('time entry rules', () => {
     assert.deepEqual(b.duplicateWarnings, [a.id]);
   });
 
-  it('approval permissions: paralegal cannot; lead attorney can; clerk can', () => {
+  it('saved time is immediately ready to bill (no approval step)', () => {
     const e = timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: 15, description: 'x',
     });
-    timeSvc.submitEntry(ctx.db, ctx.para, e.id);
-    assert.throws(() => timeSvc.approveEntry(ctx.db, ctx.para, e.id), /not permitted/);
-    // re-submit path: still submitted
-    timeSvc.approveEntry(ctx.db, ctx.atty, e.id);
+    assert.equal(e.status, 'approved');
     assert.equal(ctx.db.prepare('SELECT status FROM time_entries WHERE id=?').get(e.id).status, 'approved');
+    const ready = invoiceSvc.listMattersReadyForBilling(ctx.db);
+    assert.ok(ready.some((m) => m.id === 2));
   });
 });
 
@@ -99,8 +98,6 @@ describe('invoice lifecycle', () => {
       matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: minutes,
       description: 'work', category: 'Discovery', subcategory: 'Review',
     });
-    timeSvc.submitEntry(ctx.db, ctx.para, e.id);
-    timeSvc.approveEntry(ctx.db, ctx.clerk, e.id);
     return e.id;
   }
 
@@ -170,12 +167,10 @@ describe('payments', () => {
   beforeEach(() => { ctx = setup(); });
 
   function sentInvoice(amountMinutes = 60) {
-    const e = timeSvc.createEntry(ctx.db, ctx.para, {
+    timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 1, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: amountMinutes,
       description: 'work', category: 'Discovery', subcategory: 'Review',
     });
-    timeSvc.submitEntry(ctx.db, ctx.para, e.id);
-    timeSvc.approveEntry(ctx.db, ctx.clerk, e.id);
     return invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
   }
 
