@@ -110,15 +110,15 @@
       .replace(/"/g, '&quot;');
   }
 
-  /** Core identity fields stay required in layout but are not listed in Manage fields. */
-  function isCoreIdentityField(field) {
+  /** Built-in fields (client, status, etc.) are not managed from Add field UI. */
+  function isBuiltInField(field) {
     const key = field?.fieldKey || field?.key || '';
-    return key === 'std:number' || key === 'std:name';
+    return String(key).startsWith('std:');
   }
 
   function fieldMgmtRows(fields) {
-    const rows = (fields || []).filter((f) => !isCoreIdentityField(f));
-    if (!rows.length) return '<p class="muted">No managed fields</p>';
+    const rows = (fields || []).filter((f) => !isBuiltInField(f));
+    if (!rows.length) return '<p class="muted">No custom fields yet</p>';
     return rows.map((f) => `
       <div class="field-mgmt-row">
         <div>
@@ -132,8 +132,8 @@
   }
 
   function typeFieldMgmtRows(fields, delAttr = 'data-del-type-field') {
-    const rows = (fields || []).filter((f) => !isCoreIdentityField(f));
-    if (!rows.length) return '<p class="muted">No managed fields</p>';
+    const rows = (fields || []).filter((f) => !isBuiltInField(f));
+    if (!rows.length) return '<p class="muted">No custom fields yet</p>';
     return rows.map((f) => `
       <div class="field-mgmt-row">
         <div>
@@ -242,19 +242,9 @@
         <div class="field-mgmt-list">
           ${typeFieldMgmtRows(typeLayout.fields)}
         </div>
-        ${(typeLayout.availableStandardFields || []).length ? `
-        <form id="addTypeStandardForm" class="field-mgmt-add">
-          <label>Add built-in matter field
-            <select name="fieldKey" required>
-              ${typeLayout.availableStandardFields.map((f) =>
-                `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
-            </select>
-          </label>
-          <button class="primary" type="submit">Add field</button>
-        </form>` : '<p class="muted">All optional built-in matter fields are on this layout.</p>'}
         <form id="typeFieldForm" class="grid two">
           <label>Custom field label
-            <input name="label" required />
+            <input name="label" required placeholder="e.g. Case stage" />
           </label>
           <label>Custom field type
             <select name="fieldType">
@@ -262,7 +252,7 @@
             </select>
           </label>
           <div class="row-actions span-all">
-            <button class="primary" type="submit">Add matter field</button>
+            <button class="primary" type="submit">Add field</button>
           </div>
         </form>`;
 
@@ -280,23 +270,6 @@
           }
         };
       });
-      const addStdType = bodyEl.querySelector('#addTypeStandardForm');
-      if (addStdType) {
-        addStdType.onsubmit = async (ev) => {
-          ev.preventDefault();
-          const fd = new FormData(addStdType);
-          try {
-            await api(`/api/record-types/${encodeURIComponent(key)}/standard-fields`, {
-              method: 'POST',
-              body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
-            });
-            setMsg('<div class="ok-banner">Matter field added.</div>');
-            await render();
-          } catch (e) {
-            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
-          }
-        };
-      }
       const typeFieldForm = bodyEl.querySelector('#typeFieldForm');
       if (typeFieldForm) {
         typeFieldForm.onsubmit = async (ev) => {
@@ -1370,36 +1343,26 @@
       ${canEdit ? `
       <div class="card stack">
         <h2>Manage fields</h2>
-        <p class="hint">Add or delete fields on this matter. Firm-wide defaults are managed in Settings.</p>
+        <p class="hint">Add custom fields with a label and type. Firm-wide defaults are managed in Settings.</p>
 
-        <h3>Matter fields</h3>
         <div class="field-mgmt-list">
           ${fieldMgmtRows(page.layoutFields)}
         </div>
-        ${(page.availableStandardFields || []).length ? `
-        <form id="addStandardFieldForm" class="field-mgmt-add">
-          <label>Add field
-            <select name="fieldKey" required>
-              ${(page.availableStandardFields || []).map((f) =>
-                `<option value="${escapeHtml(f.key)}">${escapeHtml(f.label)}</option>`).join('')}
-            </select>
-          </label>
-          <button class="primary" type="submit">Add to matter</button>
-        </form>` : '<p class="muted">All optional standard fields are on this matter.</p>'}
         <form id="recordFieldForm" class="grid two">
-          <label>Custom field label <input name="label" required /></label>
+          <label>Custom field label
+            <input name="label" required placeholder="e.g. Case stage" />
+          </label>
           <label>Custom field type
             <select name="fieldType">
               ${fieldFormatterOptions('text')}
             </select>
           </label>
           <div class="row-actions span-all">
-            <button class="primary" type="submit">Add custom field</button>
+            <button class="primary" type="submit">Add field</button>
             ${page.layout.source !== 'record' ? '<button type="button" id="useRecordLayout">Use default layout</button>' : ''}
           </div>
         </form>
         <div id="matterFieldMsg"></div>
-        <p class="hint">Firm-wide default fields are managed in <a href="#settings">Settings</a>.</p>
       </div>` : ''}
 
       <details class="onedrive-collapse" id="onedriveCard">
@@ -1656,23 +1619,6 @@
         }
       };
     });
-
-    const addStd = $('#addStandardFieldForm');
-    if (addStd) {
-      addStd.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const fd = new FormData(addStd);
-        try {
-          await api(`/api/matters/${m.id}/standard-fields`, {
-            method: 'POST',
-            body: JSON.stringify({ fieldKey: fd.get('fieldKey') }),
-          });
-          await renderMatterDetail();
-        } catch (e) {
-          $('#matterFieldMsg').innerHTML = `<div class="error">${e.message}</div>`;
-        }
-      };
-    }
 
     const rf = $('#recordFieldForm');
     if (rf) {
@@ -2384,7 +2330,7 @@
       ${canConfigureFields ? `
       <div class="card stack" id="defaultFieldsCard">
         <h2>Matter fields</h2>
-        <p class="hint">Shown on every matter. Add built-in fields or custom matter fields.</p>
+        <p class="hint">Shown on every matter. Add a custom field with a label and type.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
       </div>
