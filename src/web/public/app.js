@@ -16,9 +16,9 @@
     createMatterDraftName: '',
     createMatterRecordTypeKey: 'billable',
     createMatterClientId: '',
-    createMatterNewClient: { name: '', recordTypeKey: 'person', email: '' },
+    createMatterNewClient: { name: '', recordTypeKey: 'client', email: '' },
     settingsMatterRecordTypeKey: 'billable',
-    settingsContactRecordTypeKey: 'person',
+    settingsContactRecordTypeKey: 'client',
     settingsRoleKey: 'attorney',
     usersFlash: null,
     focusAddUser: false,
@@ -36,7 +36,7 @@
     createContactFieldMsg: null,
     createMatterFieldsOpen: false,
     createContactFieldsOpen: false,
-    createContactRecordTypeKey: 'person',
+    createContactRecordTypeKey: 'client',
     timeEntryRetain: null,
     matterTimeRetain: null,
     focusCustomReportId: null,
@@ -954,7 +954,7 @@
     if (!bodyEl) return;
     const entityAppliesTo = appliesTo === 'client' ? 'client' : 'matter';
     let key = recordTypeKey
-      || (entityAppliesTo === 'client' ? 'person' : 'billable');
+      || (entityAppliesTo === 'client' ? 'client' : 'billable');
     const firmWide = appliesTo === 'time_entry';
     const scopeLabel = appliesTo === 'client'
       ? 'contact'
@@ -2457,7 +2457,7 @@
     state.createMatterRecordTypeKey = 'billable';
     state.createMatterDraftName = '';
     state.createMatterClientId = '';
-    state.createMatterNewClient = { name: '', recordTypeKey: 'person', email: '' };
+    state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
     state.showCreateContact = false;
     state.view = 'matters';
     state.matterId = null;
@@ -2578,7 +2578,7 @@
               <span class="sidebar-action-mark" aria-hidden="true">${navIcon('contacts')}</span>
               <span class="sidebar-action-text">
                 <strong>Create Contact</strong>
-                <small>Add a person or company</small>
+                <small>Add a client or company</small>
               </span>
             </button>`
           : ''}
@@ -2723,12 +2723,12 @@
       : '';
     const addingNewClient = selectedClientId === '__new__';
     const newClientDraft = state.createMatterNewClient || {
-      name: '', recordTypeKey: 'person', email: '',
+      name: '', recordTypeKey: 'client', email: '',
     };
     const contactTypes = (contactRecordTypes || []).length
       ? contactRecordTypes
       : [
-        { key: 'person', label: 'Person' },
+        { key: 'client', label: 'Client' },
         { key: 'company', label: 'Company' },
       ];
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
@@ -2845,13 +2845,13 @@
                   <label>Client name *
                     <input name="newClientName" id="newClientName" required
                       value="${escapeHtml(newClientDraft.name || '')}"
-                      placeholder="Person or company name" />
+                      placeholder="Client or company name" />
                   </label>
                   <label>Client type
                     <select name="newClientRecordTypeKey" id="newClientRecordTypeKey">
                       ${contactTypes.map((t) => `
                         <option value="${escapeHtml(t.key)}" ${
-                          (newClientDraft.recordTypeKey || 'person') === t.key ? 'selected' : ''
+                          (newClientDraft.recordTypeKey || 'client') === t.key ? 'selected' : ''
                         }>${escapeHtml(t.label || t.key)}</option>`).join('')}
                     </select>
                   </label>
@@ -2935,7 +2935,7 @@
         state.createMatterDraftName = '';
         state.createMatterRecordTypeKey = 'billable';
         state.createMatterClientId = '';
-        state.createMatterNewClient = { name: '', recordTypeKey: 'person', email: '' };
+        state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
         state.createMatterFieldMsg = null;
         state.createMatterFieldsOpen = false;
         await renderMatters();
@@ -2945,7 +2945,7 @@
       const persistNewClientDraft = () => {
         state.createMatterNewClient = {
           name: String($('#newClientName')?.value || ''),
-          recordTypeKey: String($('#newClientRecordTypeKey')?.value || 'person'),
+          recordTypeKey: String($('#newClientRecordTypeKey')?.value || 'client'),
           email: String($('#newClientEmail')?.value || ''),
         };
       };
@@ -3156,7 +3156,7 @@
               method: 'POST',
               body: JSON.stringify({
                 name: newClientName,
-                recordTypeKey: String(fd.get('newClientRecordTypeKey') || 'person'),
+                recordTypeKey: String(fd.get('newClientRecordTypeKey') || 'client'),
                 email: String(fd.get('newClientEmail') || '').trim() || undefined,
               }),
             });
@@ -3179,7 +3179,7 @@
           state.createMatterDraftName = '';
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterClientId = '';
-          state.createMatterNewClient = { name: '', recordTypeKey: 'person', email: '' };
+          state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
           state.createMatterFieldMsg = null;
           state.createMatterFieldsOpen = false;
           state.matterSearch = { q: page.matter.name };
@@ -3201,14 +3201,12 @@
     const canEdit = canCreateMatter(state.user) && roleCanModify('contact');
     const showCreate = canEdit && state.showCreateContact;
     const q = state.contactSearch.q || '';
-    let createRecordTypeKey = state.createContactRecordTypeKey || 'person';
+    let createRecordTypeKey = state.createContactRecordTypeKey || 'client';
     const requestedCreateTypeKey = createRecordTypeKey;
     const [contacts, fieldConfig, recordTypes, createFieldsRaw] = await Promise.all([
       api(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`),
       api('/api/clients/field-config').catch(() => ({ enabledStandard: [], enabledKeys: [] })),
-      showCreate
-        ? api('/api/record-types?appliesTo=client').catch(() => [])
-        : Promise.resolve([]),
+      api('/api/record-types?appliesTo=client').catch(() => []),
       showCreate
         ? api(
           `/api/custom-fields?appliesTo=client&type=${encodeURIComponent(createRecordTypeKey)}`
@@ -3224,6 +3222,14 @@
     state.contactListFlash = null;
     const createFieldMsg = state.createContactFieldMsg;
     state.createContactFieldMsg = null;
+    const contactTypeLabel = (key) => {
+      const k = String(key || 'client');
+      const hit = (recordTypes || []).find((t) => t.key === k);
+      if (hit?.label) return hit.label;
+      if (k === 'client' || k === 'person') return 'Client';
+      if (k === 'company') return 'Company';
+      return k;
+    };
     if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
       createRecordTypeKey = recordTypes[0].key;
       state.createContactRecordTypeKey = createRecordTypeKey;
@@ -3276,7 +3282,7 @@
                     <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
                       ${escapeHtml(t.label || t.key)}
                     </option>`).join('') || `
-                    <option value="person" selected>Person</option>
+                    <option value="client" selected>Client</option>
                     <option value="company">Company</option>`}
                 </select>
               </label>
@@ -3335,7 +3341,7 @@
               ${(contacts || []).map((c) => `
                 <tr class="click-row" data-contact="${c.id}">
                   <td><strong>${escapeHtml(c.name)}</strong></td>
-                  <td>${escapeHtml(c.record_type || 'person')}</td>
+                  <td>${escapeHtml(contactTypeLabel(c.record_type))}</td>
                   ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
                 </tr>`).join('') || `<tr><td colspan="${2 + listCols.length}" class="muted">No contacts yet</td></tr>`}
             </tbody>
@@ -3349,7 +3355,7 @@
     if (cancelCreate) {
       cancelCreate.onclick = async () => {
         state.showCreateContact = false;
-        state.createContactRecordTypeKey = 'person';
+        state.createContactRecordTypeKey = 'client';
         state.createContactFieldMsg = null;
         state.createContactFieldsOpen = false;
         await renderContacts();
@@ -3359,7 +3365,7 @@
       const typeSelect = $('#createContactTypeSelect');
       if (typeSelect) {
         typeSelect.onchange = async () => {
-          state.createContactRecordTypeKey = typeSelect.value || 'person';
+          state.createContactRecordTypeKey = typeSelect.value || 'client';
           await renderContacts();
         };
       }
@@ -3369,7 +3375,7 @@
       if (createFieldForm) {
         createFieldForm.onsubmit = async (ev) => {
           ev.preventDefault();
-          const typeKey = state.createContactRecordTypeKey || 'person';
+          const typeKey = state.createContactRecordTypeKey || 'client';
           const fd = new FormData(createFieldForm);
           const { fieldType, options, body } = customFieldPayload(fd);
           if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
@@ -3434,7 +3440,7 @@
 
         const customValues = collectCustomFieldValues(form, createFieldDefs);
         const recordTypeKey = String(
-          fd.get('recordTypeKey') || state.createContactRecordTypeKey || 'person'
+          fd.get('recordTypeKey') || state.createContactRecordTypeKey || 'client'
         ).trim();
         const payload = { name, recordTypeKey, customValues };
         for (const field of enabledStd) {
@@ -3446,7 +3452,7 @@
             body: JSON.stringify(payload),
           });
           state.showCreateContact = false;
-          state.createContactRecordTypeKey = 'person';
+          state.createContactRecordTypeKey = 'client';
           state.createContactFieldMsg = null;
           state.createContactFieldsOpen = false;
           state.contactCreateFlash = {
@@ -3478,8 +3484,8 @@
     const createFlash = state.contactCreateFlash;
     const fieldPanelFlash = state.contactFieldPanelFlash;
     const showPostCreateFields = canEdit && !!state.showPostCreateContactFields;
-    const typeLabel = page.recordTypeLabel || c.record_type || 'Person';
-    const recordTypeKey = page.recordTypeKey || c.record_type || 'person';
+    const typeLabel = page.recordTypeLabel || c.record_type || 'Client';
+    const recordTypeKey = page.recordTypeKey || c.record_type || 'client';
     state.contactFlash = null;
     state.contactCreateFlash = null;
     state.contactFieldPanelFlash = null;
@@ -6905,7 +6911,7 @@
       </div>
       <div class="card stack" id="contactFieldsCard">
         <h2>Contact record pages</h2>
-        <p class="hint">Each contact record type (Person, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Person.</p>
+        <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
         <div id="contactFieldsBody" class="stack"></div>
         <div id="contactFieldMsg"></div>
       </div>
@@ -7155,7 +7161,7 @@
         bindDefaultFieldsEditor({
           bodyEl: $('#contactFieldsBody'),
           msgEl: $('#contactFieldMsg'),
-          recordTypeKey: state.settingsContactRecordTypeKey || 'person',
+          recordTypeKey: state.settingsContactRecordTypeKey || 'client',
           appliesTo: 'client',
           recordTypes: contactRecordTypes,
           onRecordTypeChange: (key) => {

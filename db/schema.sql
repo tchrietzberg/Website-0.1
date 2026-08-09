@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS clients (
   phone TEXT,
   company TEXT,
   notes TEXT,
-  record_type TEXT NOT NULL DEFAULT 'person',
+  record_type TEXT NOT NULL DEFAULT 'client',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );

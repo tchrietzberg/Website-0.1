@@ -81,7 +81,7 @@ describe('contacts and contact custom fields', () => {
     });
     assert.equal(page.customValues[field.id], 'Email');
     assert.ok(page.fields.some((f) => f.fieldId === field.id && f.required));
-    assert.equal(page.client.record_type, 'person');
+    assert.equal(page.client.record_type, 'client');
 
     const updated = clientsSvc.updateClient(db, admin, page.client.id, {
       phone: '555-9999',
@@ -90,7 +90,7 @@ describe('contacts and contact custom fields', () => {
     assert.equal(updated.client.phone, '555-9999');
     assert.equal(updated.customValues[field.id], 'Phone');
 
-    const defs = customFields.listClientFieldDefs(db, { recordTypeKey: 'person' });
+    const defs = customFields.listClientFieldDefs(db, { recordTypeKey: 'client' });
     assert.equal(defs.length, 1);
     assert.equal(defs[0].required, true);
 
@@ -99,19 +99,20 @@ describe('contacts and contact custom fields', () => {
     assert.equal(customFields.listCustomFields(db, { appliesTo: 'time_entry' }).length, 0);
   });
 
-  it('seeds Person and Company contact record types; fields depend on type', () => {
+  it('seeds Client and Company contact record types; fields depend on type', () => {
     const types = customFields.listRecordTypes(db, { appliesTo: 'client' });
     assert.ok(types.length >= 2);
-    assert.equal(types[0].key, 'person');
+    assert.equal(types[0].key, 'client');
+    assert.equal(types[0].label, 'Client');
     assert.equal(types[1].key, 'company');
     assert.ok(!customFields.listRecordTypes(db, { appliesTo: 'matter' })
-      .some((t) => t.key === 'person'));
+      .some((t) => t.key === 'client'));
 
-    const personField = customFields.createCustomField(db, admin, {
+    const clientField = customFields.createCustomField(db, admin, {
       label: 'Preferred name',
       fieldType: 'text',
       appliesTo: 'client',
-      recordTypeKey: 'person',
+      recordTypeKey: 'client',
       required: true,
     });
     const companyField = customFields.createCustomField(db, admin, {
@@ -121,22 +122,22 @@ describe('contacts and contact custom fields', () => {
       recordTypeKey: 'company',
       required: true,
     });
-    assert.equal(personField.record_type_key, 'person');
+    assert.equal(clientField.record_type_key, 'client');
     assert.equal(companyField.record_type_key, 'company');
 
     assert.throws(() => clientsSvc.createClient(db, admin, {
       name: 'Needs preferred',
-      recordTypeKey: 'person',
+      recordTypeKey: 'client',
     }), /Preferred name/);
 
-    const person = clientsSvc.createClient(db, admin, {
-      name: 'Alex Person',
-      recordTypeKey: 'person',
-      customValues: { [personField.id]: 'Alex' },
+    const clientContact = clientsSvc.createClient(db, admin, {
+      name: 'Alex Client',
+      recordTypeKey: 'client',
+      customValues: { [clientField.id]: 'Alex' },
     });
-    assert.equal(person.client.record_type, 'person');
-    assert.ok(person.fields.some((f) => f.fieldId === personField.id));
-    assert.ok(!person.fields.some((f) => f.fieldId === companyField.id));
+    assert.equal(clientContact.client.record_type, 'client');
+    assert.ok(clientContact.fields.some((f) => f.fieldId === clientField.id));
+    assert.ok(!clientContact.fields.some((f) => f.fieldId === companyField.id));
 
     assert.throws(() => clientsSvc.createClient(db, admin, {
       name: 'Needs industry',
@@ -150,7 +151,7 @@ describe('contacts and contact custom fields', () => {
     });
     assert.equal(company.client.record_type, 'company');
     assert.ok(company.fields.some((f) => f.fieldId === companyField.id));
-    assert.ok(!company.fields.some((f) => f.fieldId === personField.id));
+    assert.ok(!company.fields.some((f) => f.fieldId === clientField.id));
 
     const createdType = customFields.createRecordType(db, admin, {
       label: 'Vendor',
@@ -203,20 +204,20 @@ describe('contacts and contact custom fields', () => {
       label: 'Preferred name',
       fieldType: 'text',
       appliesTo: 'client',
-      recordTypeKey: 'person',
+      recordTypeKey: 'client',
       isDefault: true,
     });
     assert.equal(typeField.scope, 'record_type');
     assert.equal(typeField.isDefault, true);
 
-    const person = clientsSvc.createClient(db, admin, {
+    const clientContact = clientsSvc.createClient(db, admin, {
       name: 'Sam Contact',
-      recordTypeKey: 'person',
+      recordTypeKey: 'client',
       customValues: { [typeField.id]: 'Sammy' },
     });
     const other = clientsSvc.createClient(db, admin, {
       name: 'Other Person',
-      recordTypeKey: 'person',
+      recordTypeKey: 'client',
       customValues: { [typeField.id]: 'O' },
     });
 
@@ -224,18 +225,18 @@ describe('contacts and contact custom fields', () => {
       label: 'Private note',
       fieldType: 'textarea',
       appliesTo: 'client',
-      clientId: person.client.id,
+      clientId: clientContact.client.id,
     });
     assert.equal(contactField.scope, 'record');
-    assert.equal(contactField.clientId, person.client.id);
+    assert.equal(contactField.clientId, clientContact.client.id);
     assert.equal(contactField.isDefault, false);
     assert.equal(contactField.record_type_key, null);
 
-    clientsSvc.updateClient(db, admin, person.client.id, {
+    clientsSvc.updateClient(db, admin, clientContact.client.id, {
       customValues: { [contactField.id]: 'Only on Sam' },
     });
 
-    const samPage = clientsSvc.getClient(db, person.client.id, admin);
+    const samPage = clientsSvc.getClient(db, clientContact.client.id, admin);
     assert.ok(samPage.fields.some((f) => f.fieldId === typeField.id && f.scope === 'record_type'));
     assert.ok(samPage.fields.some((f) => f.fieldId === contactField.id && f.scope === 'record'));
     assert.equal(samPage.customValues[contactField.id], 'Only on Sam');
@@ -256,7 +257,7 @@ describe('contacts and contact custom fields', () => {
     // Type list (Settings) does not include contact-only fields
     const typeOnly = customFields.listCustomFields(db, {
       appliesTo: 'client',
-      recordTypeKey: 'person',
+      recordTypeKey: 'client',
     });
     assert.ok(typeOnly.some((f) => f.id === typeField.id));
     assert.ok(!typeOnly.some((f) => f.id === contactField.id));

@@ -9,16 +9,18 @@ const RECORD_TYPES = [
 ];
 /** Seeded default contact record types. */
 const CONTACT_RECORD_TYPES = [
-  { key: 'person', label: 'Person' },
+  { key: 'client', label: 'Client' },
   { key: 'company', label: 'Company' },
 ];
 const DEFAULT_RECORD_TYPE_KEY = 'billable';
 const DEFAULT_RECORD_TYPE_LABEL = 'Billable';
-const DEFAULT_CONTACT_RECORD_TYPE_KEY = 'person';
-const DEFAULT_CONTACT_RECORD_TYPE_LABEL = 'Person';
+const DEFAULT_CONTACT_RECORD_TYPE_KEY = 'client';
+const DEFAULT_CONTACT_RECORD_TYPE_LABEL = 'Client';
 const KNOWN_RECORD_TYPE_KEYS = RECORD_TYPES.map((t) => t.key);
 /** Old keys remapped onto Billable; firm-added types are preserved. */
 const LEGACY_RECORD_TYPE_KEYS = ['default', 'litigation', 'sw_admin', 'other'];
+/** Old contact type key remapped onto Client. */
+const LEGACY_CONTACT_RECORD_TYPE_KEYS = ['person'];
 
 const STANDARD_FIELDS = [
   { key: 'std:number', label: 'Matter number', type: 'text', readonly: true, width: 'half' },
@@ -237,16 +239,19 @@ function createTypeLayoutRow(db, recordTypeKey) {
 /** Move matters/fields/layout items from one type key onto another, then drop the old type. */
 function remapRecordTypeKey(db, fromKey, toKey) {
   if (fromKey === toKey) return;
-  const fromType = db.prepare('SELECT key FROM record_types WHERE key = ?').get(fromKey);
+  const fromType = db.prepare('SELECT key, applies_to FROM record_types WHERE key = ?').get(fromKey);
   if (!fromType) return;
-  upsertRecordTypeRow(
-    db,
-    toKey,
-    RECORD_TYPES.find((t) => t.key === toKey)?.label || toKey
-  );
+  const appliesTo = fromType.applies_to === 'client' ? 'client' : 'matter';
+  const label = (appliesTo === 'client' ? CONTACT_RECORD_TYPES : RECORD_TYPES)
+    .find((t) => t.key === toKey)?.label || toKey;
+  upsertRecordTypeRow(db, toKey, label, appliesTo);
   createTypeLayoutRow(db, toKey);
 
   db.prepare('UPDATE matters SET matter_type = ? WHERE matter_type = ?').run(toKey, fromKey);
+  const clientCols = db.prepare('PRAGMA table_info(clients)').all().map((c) => c.name);
+  if (clientCols.includes('record_type')) {
+    db.prepare('UPDATE clients SET record_type = ? WHERE record_type = ?').run(toKey, fromKey);
+  }
   db.prepare(`
     UPDATE custom_fields SET record_type_key = ? WHERE record_type_key = ?
   `).run(toKey, fromKey);
@@ -283,6 +288,15 @@ function ensureRecordTypes(db) {
   for (const fromKey of LEGACY_RECORD_TYPE_KEYS) {
     if (db.prepare('SELECT key FROM record_types WHERE key = ?').get(fromKey)) {
       remapRecordTypeKey(db, fromKey, DEFAULT_RECORD_TYPE_KEY);
+    }
+  }
+  // Remap Person → Client for contacts.
+  for (const fromKey of LEGACY_CONTACT_RECORD_TYPE_KEYS) {
+    if (db.prepare(`
+      SELECT key FROM record_types
+      WHERE key = ? AND IFNULL(applies_to, 'matter') = 'client'
+    `).get(fromKey)) {
+      remapRecordTypeKey(db, fromKey, DEFAULT_CONTACT_RECORD_TYPE_KEY);
     }
   }
 
@@ -355,8 +369,9 @@ function normalizeRecordTypeKey(db, key, { required = false, appliesTo = 'matter
     if (required) throw new Error('record type required');
     return defaultKey;
   }
-  // Legacy alias from the single-type era (matters only)
+  // Legacy aliases
   if (entity === 'matter' && raw === 'default') raw = DEFAULT_RECORD_TYPE_KEY;
+  if (entity === 'client' && raw === 'person') raw = DEFAULT_CONTACT_RECORD_TYPE_KEY;
   const row = db.prepare(`
     SELECT key FROM record_types
     WHERE key = ? AND active = 1 AND IFNULL(applies_to, 'matter') = ?
@@ -472,7 +487,7 @@ function listRecordTypes(db, { appliesTo = 'matter' } = {}) {
     ORDER BY CASE key
       WHEN 'billable' THEN 0
       WHEN 'non_billable' THEN 1
-      WHEN 'person' THEN 0
+      WHEN 'client' THEN 0
       WHEN 'company' THEN 1
       ELSE 2
     END, label

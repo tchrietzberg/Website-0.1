@@ -234,7 +234,7 @@ function migrateContactRecordTypes(db) {
   if (clients) {
     const cols = new Set(tableColumns(db, 'clients'));
     if (!cols.has('record_type')) {
-      db.exec(`ALTER TABLE clients ADD COLUMN record_type TEXT NOT NULL DEFAULT 'person'`);
+      db.exec(`ALTER TABLE clients ADD COLUMN record_type TEXT NOT NULL DEFAULT 'client'`);
     }
   }
 
