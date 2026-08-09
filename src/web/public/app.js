@@ -1694,7 +1694,7 @@
         `).join('') || '<p class="muted">No fields on this matter yet. Add one under Manage fields.</p>'}
         ${canEdit ? `
           <div class="row-actions">
-            <button class="primary" type="submit">Save matter fields</button>
+            <button class="primary" type="submit">Save</button>
           </div>` : ''}
         <div id="matterMsg">${matterFlash ? `<div class="ok-banner">${escapeHtml(matterFlash)}</div>` : ''}</div>
       </form>
