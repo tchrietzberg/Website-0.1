@@ -278,17 +278,22 @@
 
   function renderLogin() {
     if (sidebar) sidebar.hidden = true;
-    if (appEl) appEl.classList.remove('app-shell');
+    if (appEl) {
+      appEl.classList.remove('app-shell');
+      appEl.classList.add('login-mode');
+    }
+    document.body.classList.add('login-mode');
     if (nav) nav.innerHTML = '';
     if (userbar) userbar.textContent = '';
     if (sidebarActions) sidebarActions.innerHTML = '';
     main.innerHTML = `
-      <div class="login-wrap">
-        <div class="card stack">
-          <h1>Sign in</h1>
-          <p class="lead">Prototype auth: enter a demo email.</p>
-          <label>Email
-            <input id="email" list="emails" placeholder="avery@firm.example" value="avery@firm.example" />
+      <div class="login-stage">
+        <div class="login-panel">
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Sign in with your firm email</p>
+          <label class="login-field">Email
+            <input id="email" list="emails" autocomplete="username"
+              placeholder="avery@firm.example" value="avery@firm.example" />
           </label>
           <datalist id="emails">
             <option value="avery@firm.example">
@@ -297,12 +302,12 @@
             <option value="sam@firm.example">
             <option value="billie@firm.example">
           </datalist>
-          <button class="primary" id="loginBtn">Continue</button>
+          <button class="primary login-submit" id="loginBtn" type="button">Continue</button>
           <div id="loginErr"></div>
-          <p class="hint">Demo: avery@firm.example → Create Matter → Search matters → Add Time Entry → Billing.</p>
+          <p class="login-hint">Demo · avery@firm.example</p>
         </div>
       </div>`;
-    $('#loginBtn').onclick = async () => {
+    const submit = async () => {
       try {
         const data = await api('/api/login', {
           method: 'POST',
@@ -311,6 +316,8 @@
         state.token = data.token;
         localStorage.setItem('billing_token', data.token);
         state.user = data.user;
+        document.body.classList.remove('login-mode');
+        if (appEl) appEl.classList.remove('login-mode');
         await refreshRefs();
         renderShell();
         renderView();
@@ -318,6 +325,13 @@
         $('#loginErr').innerHTML = `<div class="error">${e.message}</div>`;
       }
     };
+    $('#loginBtn').onclick = submit;
+    $('#email').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        submit();
+      }
+    });
   }
 
   function goAddMatter() {
@@ -346,7 +360,11 @@
 
   function renderShell() {
     if (sidebar) sidebar.hidden = false;
-    if (appEl) appEl.classList.add('app-shell');
+    document.body.classList.remove('login-mode');
+    if (appEl) {
+      appEl.classList.remove('login-mode');
+      appEl.classList.add('app-shell');
+    }
     const items = [
       ['matters', 'Matters'],
       ['time', 'Time Entry'],
