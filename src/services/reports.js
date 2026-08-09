@@ -165,49 +165,30 @@ function hoursLabel(minutes) {
 
 function lodestarMatterDetailPdf(db, matterId) {
   const report = lodestarMatterDetail(db, matterId);
-  const { header } = report;
   const lines = [
-    header.title_line,
-    header.attorney_name ? `Responsible Attorney: ${header.attorney_name}` : null,
-    '',
-    'TIMEKEEPER ENTRY',
-    'DATE       HOURS    AMOUNT      DESCRIPTION',
+    'Date       Timekeeper                 Hours     Amount  Description',
     '--------------------------------------------------------------------------',
   ];
-  for (const g of report.timekeepers) {
-    lines.push(g.timekeeper);
-    for (const e of g.entries) {
+  const entries = report.timekeepers.flatMap((g) => g.entries || []);
+  if (!entries.length) {
+    lines.push('No billable time yet.');
+  } else {
+    for (const e of entries) {
       const date = String(e.service_date || '').padEnd(10);
+      const who = String(e.timekeeper || '').slice(0, 24).padEnd(24);
       const hours = hoursLabel(e.minutes).padStart(7);
-      const amount = formatCents(e.amount_cents).padStart(11);
-      lines.push(`${date} ${hours} ${amount}  ${e.description || ''}`);
+      const amount = formatCents(e.amount_cents).padStart(10);
+      const desc = String(e.description || '').slice(0, 40);
+      lines.push(`${date} ${who} ${hours} ${amount}  ${desc}`);
     }
+    lines.push('--------------------------------------------------------------------------');
     lines.push(
-      `Sub Total ${hoursLabel(g.minutes).padStart(7)} ${formatCents(g.amount_cents).padStart(11)}`
+      `Total${''.padEnd(35)}${hoursLabel(report.totals.minutes).padStart(7)} ${formatCents(report.totals.amount_cents).padStart(10)}`
     );
-    lines.push('');
   }
-  lines.push(
-    `${hoursLabel(report.totals.minutes)} ${formatCents(report.totals.amount_cents)} Total (billable entries)`
-  );
-  lines.push('');
-  lines.push('Timekeeper Summary');
-  lines.push('TIMEKEEPER                 TITLE              HOURS      RATE       TOTAL');
-  lines.push('--------------------------------------------------------------------------');
-  for (const s of report.summary) {
-    const name = String(s.timekeeper || '').slice(0, 24).padEnd(24);
-    const role = String(s.role || '').slice(0, 16).padEnd(16);
-    const hours = hoursLabel(s.minutes).padStart(7);
-    const rate = formatCents(s.rate_cents).padStart(10);
-    const total = formatCents(s.amount_cents).padStart(11);
-    lines.push(`${name} ${role} ${hours} ${rate} ${total}`);
-  }
-  lines.push(
-    `TOTAL${''.padEnd(37)}${hoursLabel(report.totals.minutes).padStart(7)} ${''.padStart(10)} ${formatCents(report.totals.amount_cents).padStart(11)}`
-  );
   return buildTextPdf({
-    title: `Lodestar Matter Detail — ${header.matter_name}`,
-    lines: lines.filter((l) => l != null),
+    title: 'Lodestar Detail',
+    lines,
   });
 }
 
@@ -242,71 +223,34 @@ function lodestarMatterSummaryPdf(db, matterId) {
 
 function lodestarMatterDetailXlsx(db, matterId) {
   const report = lodestarMatterDetail(db, matterId);
-  const { header } = report;
   const rows = [
-    [{ v: 'Lodestar Matter Detail', t: 's' }],
-    [{ v: 'Matter name', t: 's' }, { v: header.matter_name, t: 's' }],
-    [{ v: 'Matter number', t: 's' }, { v: header.matter_number, t: 's' }],
-    [{ v: 'Client', t: 's' }, { v: header.client_name, t: 's' }],
-    [{ v: 'Status', t: 's' }, { v: header.status, t: 's' }],
-    [{ v: 'Responsible attorney', t: 's' }, { v: header.attorney_name, t: 's' }],
+    [{ v: 'Lodestar Detail', t: 's' }],
     [],
     [
-      { v: 'Timekeeper', t: 's' },
-      { v: 'Role', t: 's' },
       { v: 'Date', t: 's' },
+      { v: 'Timekeeper', t: 's' },
       { v: 'Hours', t: 's' },
-      { v: 'Rate', t: 's' },
       { v: 'Amount', t: 's' },
       { v: 'Description', t: 's' },
     ],
   ];
-  for (const g of report.timekeepers) {
-    for (const e of g.entries) {
-      rows.push([
-        { v: e.timekeeper, t: 's' },
-        { v: e.role, t: 's' },
-        { v: e.service_date, t: 's' },
-        { v: e.hours, t: 'n' },
-        { v: e.rate_cents / 100, t: 'currency' },
-        { v: e.amount_cents / 100, t: 'currency' },
-        { v: e.description || '', t: 's' },
-      ]);
-    }
+  const entries = report.timekeepers.flatMap((g) => g.entries || []);
+  for (const e of entries) {
     rows.push([
-      { v: `${g.timekeeper} Sub Total`, t: 's' },
-      { v: '', t: 's' },
-      { v: '', t: 's' },
-      { v: g.minutes / 60, t: 'n' },
-      { v: '', t: 's' },
-      { v: g.amount_cents / 100, t: 'currency' },
-      { v: '', t: 's' },
+      { v: e.service_date || '', t: 's' },
+      { v: e.timekeeper || '', t: 's' },
+      { v: e.hours, t: 'n' },
+      { v: e.amount_cents / 100, t: 'currency' },
+      { v: e.description || '', t: 's' },
     ]);
   }
   rows.push([]);
-  rows.push([{ v: 'Timekeeper Summary', t: 's' }]);
   rows.push([
-    { v: 'Timekeeper', t: 's' },
-    { v: 'Role', t: 's' },
-    { v: 'Hours', t: 's' },
-    { v: 'Rate', t: 's' },
     { v: 'Total', t: 's' },
-  ]);
-  for (const s of report.summary) {
-    rows.push([
-      { v: s.timekeeper, t: 's' },
-      { v: s.role, t: 's' },
-      { v: s.hours, t: 'n' },
-      { v: s.rate_cents / 100, t: 'currency' },
-      { v: s.amount_cents / 100, t: 'currency' },
-    ]);
-  }
-  rows.push([
-    { v: 'TOTAL', t: 's' },
     { v: '', t: 's' },
     { v: report.totals.hours, t: 'n' },
-    { v: '', t: 's' },
     { v: report.totals.amount_cents / 100, t: 'currency' },
+    { v: '', t: 's' },
   ]);
   return buildXlsx(rows);
 }

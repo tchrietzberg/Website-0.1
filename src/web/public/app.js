@@ -1338,22 +1338,12 @@
       state.view = 'matters';
       return renderMatters();
     }
-    const [page, recordTypes, clients] = await Promise.all([
-      api(`/api/matters/${state.matterId}`),
-      api('/api/record-types'),
-      api('/api/clients'),
-    ]);
+    const page = await api(`/api/matters/${state.matterId}`);
     const m = page.matter;
     const canEdit = canCreateMatter(state.user);
-    // Matter number stays in the data model / layouts but is not shown on the matter page.
-    const sections = Object.entries(page.sections || {})
-      .map(([section, fields]) => [section, (fields || []).filter((f) => f.key !== 'std:number')])
-      .filter(([, fields]) => fields.length > 0);
-    // Matter page is view + reports; fields are not edited/saved here.
-    const fieldCtx = { canEdit: false, clients, recordTypes, users: state.users };
     const matterReports = [
-      ['lodestar-matter-detail', 'Lodestar Detail', 'Time entries for this matter by timekeeper'],
-      ['lodestar-matter-summary', 'Lodestar Summary', 'Timekeeper rates, hours, and lodestar totals'],
+      ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
+      ['lodestar-matter-summary', 'Lodestar Summary', 'Hours and amounts by timekeeper'],
     ];
 
     main.innerHTML = `
@@ -1361,10 +1351,6 @@
         <div class="row-actions">
           <button type="button" id="backMatters">← Matters</button>
         </div>
-        <h1>${escapeHtml(m.name || 'Matter')}</h1>
-      </div>
-
-      <div class="card stack">
         <h2>Time reports</h2>
         <p class="hint">Run Lodestar Detail or Summary for this matter.</p>
         <div id="matterReportMsg"></div>
@@ -1379,20 +1365,6 @@
             <button type="button" data-view-matter-report="${id}">View</button>
           </div>`).join('')}
         <div id="matterReportOut" hidden></div>
-      </div>
-
-      <div id="matterForm" class="card stack">
-        ${sections.map(([section, fields]) => `
-          <h2>${section.charAt(0).toUpperCase() + section.slice(1)}</h2>
-          <div class="grid two">
-            ${fields.map((f) => `
-              <label class="${f.width === 'full' ? 'span-all' : ''}">
-                ${f.label}${f.scope === 'record' ? ' <span class="muted">(record field)</span>' : ''}
-                ${f.scope === 'record_type' ? ' <span class="muted">(type field)</span>' : ''}
-                ${renderFieldInput(f, fieldCtx)}
-              </label>`).join('')}
-          </div>
-        `).join('') || '<p class="muted">No layout fields</p>'}
       </div>
 
       ${canEdit ? `
@@ -1572,51 +1544,48 @@
           const data = await api(`/api/reports/${reportId}?matterId=${m.id}`);
           const out = $('#matterReportOut');
           out.hidden = false;
-          const header = data.header || {};
           const summary = data.summary || [];
           const isDetail = reportId === 'lodestar-matter-detail';
-          const title = isDetail ? 'Lodestar Detail' : 'Lodestar Summary';
-          const entryBlocks = isDetail
-            ? (data.timekeepers || []).map((g) => `
-                <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">${escapeHtml(g.timekeeper)}
-                  <span class="muted">· ${escapeHtml(formatDuration(g.minutes))} · ${money(g.amount_cents)}</span>
-                </h3>
-                <div class="table-wrap"><table>
-                  <thead><tr><th>Date</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
-                  <tbody>
-                    ${(g.entries || []).map((e) => `
-                      <tr>
-                        <td>${escapeHtml(e.service_date || '')}</td>
-                        <td>${escapeHtml(formatDuration(e.minutes))}</td>
-                        <td>${money(e.amount_cents)}</td>
-                        <td>${escapeHtml(e.description || '')}</td>
-                      </tr>`).join('') || '<tr><td colspan="4" class="muted">No entries</td></tr>'}
-                  </tbody>
-                </table></div>`).join('')
-            : '';
-          out.innerHTML = `
-            <h2>${title}</h2>
-            <p class="lead">${escapeHtml(header.matter_name || m.name || '')}</p>
-            <p class="muted">${escapeHtml(header.client_name || '')}
-              ${header.attorney_name ? ` · Responsible attorney: ${escapeHtml(header.attorney_name)}` : ''}
-              ${header.status ? ` · ${escapeHtml(header.status)}` : ''}</p>
-            ${entryBlocks}
-            <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">Timekeeper summary</h3>
-            <div class="table-wrap"><table>
-              <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Lodestar</th></tr></thead>
-              <tbody>
-                ${summary.map((s) => `
-                  <tr>
-                    <td>${escapeHtml(s.timekeeper)}</td>
-                    <td>${escapeHtml(s.role || '')}</td>
-                    <td>${escapeHtml(formatDuration(s.minutes))}</td>
-                    <td>${money(s.rate_cents)}</td>
-                    <td>${money(s.amount_cents)}</td>
-                  </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time for this matter</td></tr>'}
-              </tbody>
-            </table></div>
-            <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
-              · ${money(data.totals?.amount_cents || 0)}</p>`;
+          if (isDetail) {
+            const entries = (data.timekeepers || []).flatMap((g) =>
+              (g.entries || []).map((e) => ({ ...e, timekeeper: e.timekeeper || g.timekeeper }))
+            );
+            out.innerHTML = `
+              <h2>Lodestar Detail</h2>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                <tbody>
+                  ${entries.map((e) => `
+                    <tr>
+                      <td>${escapeHtml(e.service_date || '')}</td>
+                      <td>${escapeHtml(e.timekeeper || '')}</td>
+                      <td>${escapeHtml(formatDuration(e.minutes))}</td>
+                      <td>${money(e.amount_cents)}</td>
+                      <td>${escapeHtml(e.description || '')}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
+                </tbody>
+              </table></div>
+              <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
+                · ${money(data.totals?.amount_cents || 0)}</p>`;
+          } else {
+            out.innerHTML = `
+              <h2>Lodestar Summary</h2>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Amount</th></tr></thead>
+                <tbody>
+                  ${summary.map((s) => `
+                    <tr>
+                      <td>${escapeHtml(s.timekeeper)}</td>
+                      <td>${escapeHtml(s.role || '')}</td>
+                      <td>${escapeHtml(formatDuration(s.minutes))}</td>
+                      <td>${money(s.rate_cents)}</td>
+                      <td>${money(s.amount_cents)}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
+                </tbody>
+              </table></div>
+              <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
+                · ${money(data.totals?.amount_cents || 0)}</p>`;
+          }
           $('#matterReportMsg').innerHTML = '';
         } catch (e) {
           $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -2248,51 +2217,48 @@
           const data = await api(`/api/reports/${reportId}?matterId=${matterId}`);
           const out = $('#reportOut');
           out.hidden = false;
-          const header = data.header || {};
           const summary = data.summary || [];
           const isDetail = reportId === 'lodestar-matter-detail';
-          const title = isDetail ? 'Lodestar Detail' : 'Lodestar Summary';
-          const entryBlocks = isDetail
-            ? (data.timekeepers || []).map((g) => `
-                <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">${escapeHtml(g.timekeeper)}
-                  <span class="muted">· ${escapeHtml(formatDuration(g.minutes))} · ${money(g.amount_cents)}</span>
-                </h3>
-                <div class="table-wrap"><table>
-                  <thead><tr><th>Date</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
-                  <tbody>
-                    ${(g.entries || []).map((e) => `
-                      <tr>
-                        <td>${escapeHtml(e.service_date || '')}</td>
-                        <td>${escapeHtml(formatDuration(e.minutes))}</td>
-                        <td>${money(e.amount_cents)}</td>
-                        <td>${escapeHtml(e.description || '')}</td>
-                      </tr>`).join('') || '<tr><td colspan="4" class="muted">No entries</td></tr>'}
-                  </tbody>
-                </table></div>`).join('')
-            : '';
-          out.innerHTML = `
-            <h2>${title}</h2>
-            <p class="lead">${escapeHtml(header.matter_name || selectedMatter()?.name || '')}</p>
-            <p class="muted">${escapeHtml(header.client_name || '')}
-              ${header.attorney_name ? ` · Responsible attorney: ${escapeHtml(header.attorney_name)}` : ''}
-              ${header.status ? ` · ${escapeHtml(header.status)}` : ''}</p>
-            ${entryBlocks}
-            <h3 style="margin:1rem 0 .35rem;font-family:var(--font)">Timekeeper summary</h3>
-            <div class="table-wrap"><table>
-              <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Lodestar</th></tr></thead>
-              <tbody>
-                ${summary.map((s) => `
-                  <tr>
-                    <td>${escapeHtml(s.timekeeper)}</td>
-                    <td>${escapeHtml(s.role || '')}</td>
-                    <td>${escapeHtml(formatDuration(s.minutes))}</td>
-                    <td>${money(s.rate_cents)}</td>
-                    <td>${money(s.amount_cents)}</td>
-                  </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time for this matter</td></tr>'}
-              </tbody>
-            </table></div>
-            <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
-              · ${money(data.totals?.amount_cents || 0)}</p>`;
+          if (isDetail) {
+            const entries = (data.timekeepers || []).flatMap((g) =>
+              (g.entries || []).map((e) => ({ ...e, timekeeper: e.timekeeper || g.timekeeper }))
+            );
+            out.innerHTML = `
+              <h2>Lodestar Detail</h2>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                <tbody>
+                  ${entries.map((e) => `
+                    <tr>
+                      <td>${escapeHtml(e.service_date || '')}</td>
+                      <td>${escapeHtml(e.timekeeper || '')}</td>
+                      <td>${escapeHtml(formatDuration(e.minutes))}</td>
+                      <td>${money(e.amount_cents)}</td>
+                      <td>${escapeHtml(e.description || '')}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
+                </tbody>
+              </table></div>
+              <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
+                · ${money(data.totals?.amount_cents || 0)}</p>`;
+          } else {
+            out.innerHTML = `
+              <h2>Lodestar Summary</h2>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Amount</th></tr></thead>
+                <tbody>
+                  ${summary.map((s) => `
+                    <tr>
+                      <td>${escapeHtml(s.timekeeper)}</td>
+                      <td>${escapeHtml(s.role || '')}</td>
+                      <td>${escapeHtml(formatDuration(s.minutes))}</td>
+                      <td>${money(s.rate_cents)}</td>
+                      <td>${money(s.amount_cents)}</td>
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
+                </tbody>
+              </table></div>
+              <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
+                · ${money(data.totals?.amount_cents || 0)}</p>`;
+          }
         } catch (e) {
           $('#matterReportMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }

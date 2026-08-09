@@ -38,7 +38,7 @@ describe('matters report', () => {
     assert.deepEqual(Object.keys(rows[0]), ['matter_name']);
   });
 
-  it('builds lodestar matter detail and summary PDF/Excel with matter name', () => {
+  it('builds friendly lodestar matter detail and summary PDF/Excel', () => {
     const entry = timeSvc.createEntry(db, para, {
       matterId: 1,
       timekeeperId: 2,
@@ -51,7 +51,6 @@ describe('matters report', () => {
 
     const detail = reports.lodestarMatterDetail(db, 1);
     assert.equal(detail.header.matter_name, 'Alpha Matter');
-    assert.equal(detail.header.client_name, 'Client A');
     assert.equal(detail.summary.length, 1);
     assert.equal(detail.summary[0].timekeeper, 'Para');
     assert.equal(detail.totals.minutes, 60);
@@ -59,8 +58,11 @@ describe('matters report', () => {
     const pdf = reports.lodestarMatterDetailPdf(db, 1);
     assert.ok(Buffer.isBuffer(pdf));
     assert.equal(pdf.slice(0, 5).toString(), '%PDF-');
-    assert.match(pdf.toString('latin1'), /Alpha Matter/);
-    assert.match(pdf.toString('latin1'), /Lodestar Matter Detail/);
+    const pdfText = pdf.toString('latin1');
+    assert.match(pdfText, /Lodestar Detail/);
+    assert.match(pdfText, /Timekeeper/);
+    assert.match(pdfText, /Research/);
+    assert.doesNotMatch(pdfText, /Alpha Matter/);
 
     const summaryPdf = reports.lodestarMatterSummaryPdf(db, 1);
     assert.match(summaryPdf.toString('latin1'), /Alpha Matter/);
