@@ -756,6 +756,7 @@
   /** Collect cf_* values including multiselect, geo, checkbox, and system types. */
   function collectCustomFieldValues(form, fieldDefs = []) {
     const values = {};
+    if (!form) return values;
     const defs = fieldDefs || [];
     const byId = new Map(defs.map((f) => [Number(f.fieldId ?? f.id), f]));
     if (!defs.length) {
@@ -1065,6 +1066,7 @@
     const render = async () => {
       if (firmWide) {
         const fields = await api(`/api/custom-fields?appliesTo=${encodeURIComponent(appliesTo)}`);
+        if (!bodyEl.isConnected || !stillOnView('settings')) return;
         const editing = editingId
           ? (fields || []).find((f) => Number(f.id) === Number(editingId))
           : null;
@@ -1073,6 +1075,7 @@
         let contactConfig = null;
         if (appliesTo === 'client') {
           contactConfig = await api('/api/clients/field-config');
+          if (!bodyEl.isConnected || !stillOnView('settings')) return;
         }
         const enabledStdKeys = new Set(contactConfig?.enabledKeys || []);
         const builtinRows = appliesTo === 'client'
@@ -1223,8 +1226,10 @@
       const types = await api(
         `/api/record-types?appliesTo=${encodeURIComponent(entityAppliesTo)}`
       ).catch(() => recordTypes || []);
+      if (!bodyEl.isConnected || !stillOnView('settings')) return;
       if (!types.some((t) => t.key === key) && types[0]) key = types[0].key;
       const typeLayout = await api(`/api/record-types/${encodeURIComponent(key)}/layout`);
+      if (!bodyEl.isConnected || !stillOnView('settings')) return;
       const editing = editingId
         ? (typeLayout.fields || []).find((f) => Number(fieldIdFromMgmt(f)) === Number(editingId))
           || (typeLayout.customFields || []).find((f) => Number(f.id) === Number(editingId))
@@ -6520,10 +6525,12 @@
   }
 
   function wireChoiceGroup(root, name) {
+    if (!root) return;
     const rows = [...root.querySelectorAll(`.choice[data-name="${name}"]`)];
     const sync = () => {
       rows.forEach((row) => {
         const input = row.querySelector('input');
+        if (!input) return;
         row.classList.toggle('is-selected', !!input.checked);
       });
     };
@@ -6532,6 +6539,7 @@
         ev.preventDefault();
         if (row.dataset.disabled === '1') return;
         const input = row.querySelector('input');
+        if (!input) return;
         input.checked = true;
         sync();
         row.dispatchEvent(new CustomEvent('choice-change', { bubbles: true, detail: { name, value: input.value } }));
@@ -7394,6 +7402,7 @@
         config: settings.matterNameFormula,
         recordTypes: matterRecordTypes,
       });
+      if (!stillOnView('settings')) return;
     }
 
     if (canConfigureFields) {
@@ -7415,6 +7424,7 @@
           appliesTo: 'time_entry',
         }),
       ]);
+      if (!stillOnView('settings')) return;
     }
 
     if (isAdmin && settings.permissions) {
@@ -7430,9 +7440,11 @@
           permissions: settings.permissions,
         }),
       ]);
+      if (!stillOnView('settings')) return;
     }
 
     const form = $('#settingsForm');
+    if (!form) return;
     const interval = $('#roundIncrementMinutes');
     const syncInterval = () => {
       const mode = form.querySelector('input[name="roundMode"]:checked')?.value;
@@ -7450,18 +7462,20 @@
         const roundMode = form.querySelector('input[name="roundMode"]:checked')?.value;
         const roundIncrementMinutes = Number(
           interval?.disabled
-            ? form.roundIncrementMinutesFallback.value
-            : interval.value
+            ? form.roundIncrementMinutesFallback?.value
+            : interval?.value
         );
         try {
           state.settings = await api('/api/settings', {
             method: 'PATCH',
             body: JSON.stringify({ durationFormat, roundMode, roundIncrementMinutes }),
           });
-          $('#settingsMsg').innerHTML = '<div class="ok-banner">Time &amp; billing settings saved.</div>';
+          const msg = $('#settingsMsg');
+          if (msg) msg.innerHTML = '<div class="ok-banner">Time &amp; billing settings saved.</div>';
           await renderSettings();
         } catch (e) {
-          $('#settingsMsg').innerHTML = `<div class="error">${e.message}</div>`;
+          const msg = $('#settingsMsg');
+          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }
@@ -7584,13 +7598,16 @@
     }
 
     const params = new URLSearchParams(window.location.search);
+    const odMsg = $('#onedriveSettingsMsg');
     if (params.get('onedrive') === 'connected') {
-      $('#onedriveSettingsMsg').innerHTML = '<div class="ok-banner">Microsoft account connected.</div>';
+      if (odMsg) odMsg.innerHTML = '<div class="ok-banner">Microsoft account connected.</div>';
       params.delete('onedrive');
       const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash || '#settings'}`;
       window.history.replaceState({}, '', next);
     } else if (params.get('onedrive') === 'error') {
-      $('#onedriveSettingsMsg').innerHTML = `<div class="error">${escapeHtml(params.get('msg') || 'Microsoft sign-in failed')}</div>`;
+      if (odMsg) {
+        odMsg.innerHTML = `<div class="error">${escapeHtml(params.get('msg') || 'Microsoft sign-in failed')}</div>`;
+      }
       params.delete('onedrive');
       params.delete('msg');
       window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}#settings`);
