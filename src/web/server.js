@@ -425,7 +425,38 @@ function createServer(db = openDb()) {
         return json(res, 200, ratesAdmin.timekeeperRatesSummary(db, asOf));
       }
       if (req.method === 'GET' && pathname === '/api/clients') {
-        return json(res, 200, matterSvc.listClients(db));
+        const clientsSvc = require('../services/clients');
+        return json(res, 200, clientsSvc.listClients(db, {
+          q: url.searchParams.get('q') || '',
+        }));
+      }
+      if (req.method === 'POST' && pathname === '/api/clients') {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const clientsSvc = require('../services/clients');
+          const body = await parseBody(req);
+          return json(res, 201, clientsSvc.createClient(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/clients\/\d+$/)) {
+        const clientsSvc = require('../services/clients');
+        const id = Number(pathname.split('/')[3]);
+        const page = clientsSvc.getClient(db, id);
+        if (!page) return json(res, 404, { error: 'not found' });
+        return json(res, 200, page);
+      }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/clients\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const clientsSvc = require('../services/clients');
+          const id = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          return json(res, 200, clientsSvc.updateClient(db, user, id, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
       }
       if (req.method === 'GET' && pathname === '/api/record-types') {
         return json(res, 200, customFields.listRecordTypes(db));

@@ -46,7 +46,12 @@ CREATE INDEX IF NOT EXISTS idx_auth_tokens_expires ON auth_tokens(expires_at);
 CREATE TABLE IF NOT EXISTS clients (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  email TEXT,
+  phone TEXT,
+  company TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE TABLE IF NOT EXISTS matters (
@@ -81,7 +86,7 @@ CREATE TABLE IF NOT EXISTS record_types (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
--- Custom fields: matter (type/record scoped) or time-entry (firm-wide)
+-- Custom fields: matter (type/record), time-entry (firm-wide), or client/contact (firm-wide)
 CREATE TABLE IF NOT EXISTS custom_fields (
   id INTEGER PRIMARY KEY,
   api_name TEXT NOT NULL,
@@ -90,7 +95,7 @@ CREATE TABLE IF NOT EXISTS custom_fields (
     CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
   options_json TEXT,
   applies_to TEXT NOT NULL DEFAULT 'matter'
-    CHECK (applies_to IN ('matter','time_entry')),
+    CHECK (applies_to IN ('matter','time_entry','client')),
   record_type_key TEXT REFERENCES record_types(key),
   matter_id INTEGER REFERENCES matters(id),
   required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
@@ -98,7 +103,7 @@ CREATE TABLE IF NOT EXISTS custom_fields (
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (
-    (applies_to = 'time_entry' AND matter_id IS NULL AND record_type_key IS NULL)
+    (applies_to IN ('time_entry','client') AND matter_id IS NULL AND record_type_key IS NULL)
     OR (applies_to = 'matter' AND (
       (matter_id IS NOT NULL AND record_type_key IS NULL)
       OR (matter_id IS NULL)
@@ -121,6 +126,15 @@ CREATE TABLE IF NOT EXISTS custom_field_values (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_by INTEGER REFERENCES users(id),
   PRIMARY KEY (matter_id, field_id)
+);
+
+CREATE TABLE IF NOT EXISTS client_custom_field_values (
+  client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+  value_text TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_by INTEGER REFERENCES users(id),
+  PRIMARY KEY (client_id, field_id)
 );
 
 -- Page layouts: one per record type, optional per-matter override

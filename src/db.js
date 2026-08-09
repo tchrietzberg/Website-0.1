@@ -21,6 +21,7 @@ function migrate(db) {
   migrateOneDriveColumns(db);
   migrateAuthColumns(db);
   migrateCustomFieldAppliesTo(db);
+  migrateClientContacts(db);
   migrateCustomReports(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
@@ -95,6 +96,81 @@ function migrateCustomFieldAppliesTo(db) {
         IFNULL(matter_id, 0)
       )
   `);
+}
+
+/** Contacts (= clients) columns, client custom fields, and applies_to='client'. */
+function migrateClientContacts(db) {
+  const clients = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='clients'"
+  ).get();
+  if (!clients) return;
+
+  const cols = new Set(tableColumns(db, 'clients'));
+  for (const col of ['email', 'phone', 'company', 'notes']) {
+    if (!cols.has(col)) db.exec(`ALTER TABLE clients ADD COLUMN ${col} TEXT`);
+  }
+  if (!cols.has('updated_at')) {
+    // SQLite ALTER ADD COLUMN only allows constant defaults
+    db.exec(`ALTER TABLE clients ADD COLUMN updated_at TEXT`);
+    db.exec(`UPDATE clients SET updated_at = IFNULL(created_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE updated_at IS NULL`);
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS client_custom_field_values (
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      field_id INTEGER NOT NULL REFERENCES custom_fields(id),
+      value_text TEXT,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_by INTEGER REFERENCES users(id),
+      PRIMARY KEY (client_id, field_id)
+    )
+  `);
+
+  const cfSql = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='custom_fields'"
+  ).get()?.sql || '';
+  if (cfSql && !cfSql.includes("'client'")) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    db.exec(`
+      CREATE TABLE custom_fields_mig (
+        id INTEGER PRIMARY KEY,
+        api_name TEXT NOT NULL,
+        label TEXT NOT NULL,
+        field_type TEXT NOT NULL
+          CHECK (field_type IN ('text','textarea','number','date','select','checkbox')),
+        options_json TEXT,
+        applies_to TEXT NOT NULL DEFAULT 'matter'
+          CHECK (applies_to IN ('matter','time_entry','client')),
+        record_type_key TEXT REFERENCES record_types(key),
+        matter_id INTEGER REFERENCES matters(id),
+        required INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        CHECK (
+          (applies_to IN ('time_entry','client') AND matter_id IS NULL AND record_type_key IS NULL)
+          OR (applies_to = 'matter' AND (
+            (matter_id IS NOT NULL AND record_type_key IS NULL)
+            OR (matter_id IS NULL)
+          ))
+        )
+      );
+      INSERT INTO custom_fields_mig
+        SELECT id, api_name, label, field_type, options_json, applies_to, record_type_key,
+               matter_id, required, active, created_by, created_at
+        FROM custom_fields;
+      DROP TABLE custom_fields;
+      ALTER TABLE custom_fields_mig RENAME TO custom_fields;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_scope_name
+        ON custom_fields(
+          api_name,
+          IFNULL(applies_to, 'matter'),
+          IFNULL(record_type_key, ''),
+          IFNULL(matter_id, 0)
+        );
+    `);
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
 }
 
 function tableColumns(db, table) {

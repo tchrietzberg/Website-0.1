@@ -22,6 +22,11 @@
     matterTimeRetain: null,
     focusCustomReportId: null,
     editingMatterFieldId: null,
+    contactId: null,
+    showCreateContact: false,
+    contactSearch: { q: '' },
+    contactFlash: null,
+    contactCreateFlash: null,
   };
 
   function canCreateMatter(user) {
@@ -381,7 +386,12 @@
   } = {}) {
     if (!bodyEl) return;
     const key = recordTypeKey || 'default';
-    const isTime = appliesTo === 'time_entry';
+    const firmWide = appliesTo === 'time_entry' || appliesTo === 'client';
+    const scopeLabel = appliesTo === 'client'
+      ? 'contact'
+      : appliesTo === 'time_entry'
+        ? 'time entry'
+        : 'matter';
     let editingId = null;
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
@@ -407,7 +417,7 @@
             method: 'POST',
             body: JSON.stringify({ ...body, ...createBody }),
           });
-          setMsg(`<div class="ok-banner">${isTime ? 'Time field added.' : 'Matter field added.'}</div>`);
+          setMsg(`<div class="ok-banner">${scopeLabel.charAt(0).toUpperCase()}${scopeLabel.slice(1)} field added.</div>`);
         }
         await render();
       } catch (e) {
@@ -416,48 +426,49 @@
     };
 
     const render = async () => {
-      if (isTime) {
-        const fields = await api('/api/custom-fields?appliesTo=time_entry');
+      if (firmWide) {
+        const fields = await api(`/api/custom-fields?appliesTo=${encodeURIComponent(appliesTo)}`);
         const editing = editingId
           ? (fields || []).find((f) => Number(f.id) === Number(editingId))
           : null;
+        const formId = appliesTo === 'client' ? 'contactFieldForm' : 'timeFieldForm';
         const rows = (fields || []).map((f) => `
           <div class="field-mgmt-row">
             <div>
               <strong>${escapeHtml(f.label)}</strong>
-              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · time entry${f.required ? ' · required' : ''}</div>
+              <div class="muted">${escapeHtml(fieldTypeLabel(f.field_type))} · ${escapeHtml(scopeLabel)}${f.required ? ' · required' : ''}</div>
             </div>
             <div class="row-actions">
-              <button type="button" data-edit-time-field="${f.id}">Edit</button>
-              <button type="button" data-del-time-field="${f.id}">Remove</button>
+              <button type="button" data-edit-firm-field="${f.id}">Edit</button>
+              <button type="button" data-del-firm-field="${f.id}">Remove</button>
             </div>
-          </div>`).join('') || '<p class="muted">No time-entry fields yet.</p>';
+          </div>`).join('') || `<p class="muted">No ${escapeHtml(scopeLabel)} fields yet.</p>`;
         bodyEl.innerHTML = `
           <div class="field-mgmt-list">${rows}</div>
           ${editing
-            ? `<h3 class="field-edit-title">Edit time field</h3>${customFieldFormHtml({
-              formId: 'timeFieldForm',
+            ? `<h3 class="field-edit-title">Edit ${escapeHtml(scopeLabel)} field</h3>${customFieldFormHtml({
+              formId,
               submitLabel: 'Save changes',
               field: editing,
               showCancel: true,
             })}`
             : customFieldFormHtml({
-              formId: 'timeFieldForm',
-              submitLabel: 'Add time field',
+              formId,
+              submitLabel: `Add ${scopeLabel} field`,
             })}`;
-        bodyEl.querySelectorAll('[data-edit-time-field]').forEach((btn) => {
+        bodyEl.querySelectorAll('[data-edit-firm-field]').forEach((btn) => {
           btn.onclick = () => {
-            editingId = Number(btn.dataset.editTimeField);
+            editingId = Number(btn.dataset.editFirmField);
             setMsg('');
             render();
           };
         });
-        bodyEl.querySelectorAll('[data-del-time-field]').forEach((btn) => {
+        bodyEl.querySelectorAll('[data-del-firm-field]').forEach((btn) => {
           btn.onclick = async () => {
             try {
-              await api(`/api/custom-fields/${btn.dataset.delTimeField}`, { method: 'DELETE' });
-              if (Number(editingId) === Number(btn.dataset.delTimeField)) editingId = null;
-              setMsg('<div class="ok-banner">Time field removed.</div>');
+              await api(`/api/custom-fields/${btn.dataset.delFirmField}`, { method: 'DELETE' });
+              if (Number(editingId) === Number(btn.dataset.delFirmField)) editingId = null;
+              setMsg(`<div class="ok-banner">${scopeLabel.charAt(0).toUpperCase()}${scopeLabel.slice(1)} field removed.</div>`);
               await render();
             } catch (e) {
               setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
@@ -472,12 +483,12 @@
             render();
           };
         }
-        const timeFieldForm = bodyEl.querySelector('#timeFieldForm');
-        wireDropdownOptionsToggle(timeFieldForm);
-        if (timeFieldForm) {
-          timeFieldForm.onsubmit = async (ev) => {
+        const firmForm = bodyEl.querySelector(`#${formId}`);
+        wireDropdownOptionsToggle(firmForm);
+        if (firmForm) {
+          firmForm.onsubmit = async (ev) => {
             ev.preventDefault();
-            await submitFieldForm(timeFieldForm, { createBody: { appliesTo: 'time_entry' } });
+            await submitFieldForm(firmForm, { createBody: { appliesTo } });
           };
         }
         return;
@@ -1090,6 +1101,7 @@
       return;
     }
     state.showCreateMatter = true;
+    state.showCreateContact = false;
     state.view = 'matters';
     state.matterId = null;
     renderShell();
@@ -1101,8 +1113,32 @@
     state.view = 'time';
     state.matterId = null;
     state.showCreateMatter = false;
+    state.showCreateContact = false;
     renderShell();
     renderView();
+  }
+
+  function goAddContact() {
+    if (!canCreateMatter(state.user)) {
+      state.view = 'contacts';
+      renderShell();
+      renderView();
+      return;
+    }
+    state.showCreateContact = true;
+    state.view = 'contacts';
+    state.contactId = null;
+    state.showCreateMatter = false;
+    renderShell();
+    renderView();
+  }
+
+  async function openContact(id) {
+    state.contactId = Number(id);
+    state.view = 'contact';
+    state.showCreateContact = false;
+    renderShell();
+    await renderView();
   }
 
   /** Inline SVG marks for sidebar nav / quick actions (no icon font deps). */
@@ -1110,6 +1146,7 @@
     const common = 'class="nav-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
     const icons = {
       matters: `<svg ${common}><rect x="3.5" y="7" width="17" height="13" rx="2"/><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7"/><path d="M3.5 12h17"/></svg>`,
+      contacts: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><circle cx="16.5" cy="9" r="2.5"/><path d="M14.2 18.5c.4-2.1 1.9-3.3 3.5-3.3 1.1 0 2.1.5 2.8 1.4"/></svg>`,
       time: `<svg ${common}><circle cx="12" cy="12" r="8.25"/><path d="M12 7.5V12l3 2"/></svg>`,
       billing: `<svg ${common}><rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/><circle cx="16.5" cy="16" r="1.2" fill="currentColor" stroke="none"/></svg>`,
       reports: `<svg ${common}><path d="M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M14 3.5V9h5.5M9 13h6M9 16.5h4"/></svg>`,
@@ -1129,6 +1166,7 @@
     }
     const items = [
       ['matters', 'Matters', 'matters', 'Matters & search'],
+      ['contacts', 'Contacts', 'contacts', 'People & companies'],
       ['time', 'Time Entry', 'time', 'Log & review time'],
       ['billing', 'Billing', 'billing', 'Create bills'],
       ['reports', 'Reports', 'reports', 'Lodestar & custom'],
@@ -1139,7 +1177,11 @@
     if (['approvals', 'payments', 'audit', 'wip'].includes(state.view)) {
       state.view = 'matters';
     }
-    const activeView = state.view === 'matter' ? 'matters' : state.view;
+    const activeView = state.view === 'matter'
+      ? 'matters'
+      : state.view === 'contact'
+        ? 'contacts'
+        : state.view;
 
     if (sidebarActions) {
       sidebarActions.innerHTML = `
@@ -1183,6 +1225,8 @@
         state.view = b.dataset.view;
         if (state.view !== 'matter') state.matterId = null;
         if (state.view !== 'matters') state.showCreateMatter = false;
+        if (state.view !== 'contact') state.contactId = null;
+        if (state.view !== 'contacts') state.showCreateContact = false;
         renderShell();
         renderView();
       };
@@ -1203,6 +1247,8 @@
     try {
       if (state.view === 'matters') await renderMatters();
       else if (state.view === 'matter') await renderMatterDetail();
+      else if (state.view === 'contacts') await renderContacts();
+      else if (state.view === 'contact') await renderContactDetail();
       else if (state.view === 'time') await renderTime();
       else if (state.view === 'billing') await renderBilling();
       else if (state.view === 'reports') await renderReports();
@@ -1397,6 +1443,272 @@
           await openMatter(page.matter.id);
         } catch (e) {
           $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+  }
+
+  async function renderContacts() {
+    const canEdit = canCreateMatter(state.user);
+    const showCreate = canEdit && state.showCreateContact;
+    const q = state.contactSearch.q || '';
+    const [contacts, createFields] = await Promise.all([
+      api(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+      showCreate
+        ? api('/api/custom-fields?appliesTo=client').catch(() => [])
+        : Promise.resolve([]),
+    ]);
+    state.clients = contacts || state.clients || [];
+    const createFieldDefs = (createFields || []).map((f) => ({
+      key: `cf:${f.id}`,
+      label: f.label,
+      type: f.field_type,
+      options: f.options,
+      required: !!f.required,
+      fieldId: f.id,
+      kind: 'custom',
+      width: f.field_type === 'textarea' ? 'full' : 'half',
+      value: null,
+    }));
+
+    main.innerHTML = `
+      <div class="card stack page-card">
+        <div class="page-head matters-toolbar">
+          <h1>${showCreate ? 'Create Contact' : 'Contacts'}</h1>
+          ${canEdit && !showCreate ? `
+            <button type="button" class="primary" id="startCreateContact">Create contact</button>` : ''}
+        </div>
+
+        ${showCreate ? `
+        <div id="createContactSection" class="create-matter-panel page-section">
+          <form id="newContactForm" class="stack">
+            <div class="grid two">
+              <label>Name *
+                <input name="name" required placeholder="Contact name" />
+              </label>
+              <label>Company
+                <input name="company" placeholder="Company or organization" />
+              </label>
+              <label>Email
+                <input name="email" type="email" placeholder="name@example.com" />
+              </label>
+              <label>Phone
+                <input name="phone" placeholder="Phone" />
+              </label>
+              <label class="span-all">Notes
+                <textarea name="notes" rows="2" placeholder="Optional"></textarea>
+              </label>
+              ${createFieldDefs.map((field) => `
+                <label class="${field.width === 'full' ? 'span-all' : ''}">
+                  ${escapeHtml(field.label)}${field.required ? ' *' : ''}
+                  ${renderFieldInput(field, { canEdit: true })}
+                </label>`).join('')}
+            </div>
+            <div class="row-actions">
+              <button class="primary" type="submit">Create</button>
+              <button type="button" id="cancelCreateContact">Cancel</button>
+            </div>
+          </form>
+          <div id="newContactMsg"></div>
+        </div>` : ''}
+
+        <div class="page-section">
+          <h2>Search contacts</h2>
+          <form id="contactSearch" class="matter-search-bar">
+            <input name="q" value="${escapeHtml(q)}"
+              placeholder="Search by name, email, phone, or company…" aria-label="Search contacts" />
+            <button class="primary" type="submit">Search</button>
+            <button type="button" id="clearContactSearch">Clear</button>
+          </form>
+        </div>
+
+        <div class="page-section">
+          <h2>All contacts</h2>
+          <div class="table-wrap"><table>
+            <thead>
+              <tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th></tr>
+            </thead>
+            <tbody>
+              ${(contacts || []).map((c) => `
+                <tr class="click-row" data-contact="${c.id}">
+                  <td><strong>${escapeHtml(c.name)}</strong></td>
+                  <td>${escapeHtml(c.company || '—')}</td>
+                  <td>${escapeHtml(c.email || '—')}</td>
+                  <td>${escapeHtml(c.phone || '—')}</td>
+                </tr>`).join('') || '<tr><td colspan="4" class="muted">No contacts yet</td></tr>'}
+            </tbody>
+          </table></div>
+        </div>
+      </div>`;
+
+    const startCreate = $('#startCreateContact');
+    if (startCreate) startCreate.onclick = () => goAddContact();
+    const cancelCreate = $('#cancelCreateContact');
+    if (cancelCreate) {
+      cancelCreate.onclick = async () => {
+        state.showCreateContact = false;
+        await renderContacts();
+      };
+    }
+    $('#contactSearch').onsubmit = async (ev) => {
+      ev.preventDefault();
+      state.contactSearch = { q: String(new FormData(ev.target).get('q') || '').trim() };
+      await renderContacts();
+    };
+    $('#clearContactSearch').onclick = async () => {
+      state.contactSearch = { q: '' };
+      await renderContacts();
+    };
+    main.querySelectorAll('[data-contact]').forEach((row) => {
+      row.onclick = () => openContact(Number(row.dataset.contact));
+    });
+
+    const form = $('#newContactForm');
+    if (form) {
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(form);
+        const name = String(fd.get('name') || '').trim();
+        if (!name) {
+          $('#newContactMsg').innerHTML = '<div class="error">Enter a contact name to continue.</div>';
+          return;
+        }
+        const sure = await confirmAction({
+          title: 'Create this contact?',
+          message: `Create “${name}”? You can edit details and custom fields after it’s created.`,
+          confirmLabel: 'Yes, create contact',
+          cancelLabel: 'Not yet',
+        });
+        if (!sure) return;
+
+        const customValues = {};
+        for (const [key, value] of fd.entries()) {
+          if (String(key).startsWith('cf_')) customValues[key.slice(3)] = value;
+        }
+        createFieldDefs.forEach((f) => {
+          if (f.type === 'checkbox' && customValues[f.fieldId] == null) {
+            customValues[f.fieldId] = '0';
+          }
+        });
+        try {
+          const page = await api('/api/clients', {
+            method: 'POST',
+            body: JSON.stringify({
+              name,
+              email: fd.get('email'),
+              phone: fd.get('phone'),
+              company: fd.get('company'),
+              notes: fd.get('notes'),
+              customValues,
+            }),
+          });
+          state.showCreateContact = false;
+          state.contactCreateFlash = {
+            title: 'Contact created',
+            detail: page.client.name,
+          };
+          await openContact(page.client.id);
+        } catch (e) {
+          $('#newContactMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+    }
+  }
+
+  async function renderContactDetail() {
+    if (!state.contactId) {
+      state.view = 'contacts';
+      return renderContacts();
+    }
+    const canEdit = canCreateMatter(state.user);
+    const page = await api(`/api/clients/${state.contactId}`);
+    const c = page.client;
+    const fields = page.fields || [];
+    const flash = state.contactFlash;
+    const createFlash = state.contactCreateFlash;
+    state.contactFlash = null;
+    state.contactCreateFlash = null;
+
+    main.innerHTML = `
+      <div class="card">
+        <div class="row-actions" style="margin-bottom:.75rem">
+          <button type="button" id="backContacts">← Contacts</button>
+        </div>
+        <h1>${escapeHtml(c.name || 'Contact')}</h1>
+        ${createFlash ? successNoticeHtml(createFlash) : ''}
+      </div>
+
+      <form id="contactForm" class="card stack">
+        <div class="grid two">
+          <label>Name *
+            <input name="name" required value="${escapeHtml(c.name || '')}" ${canEdit ? '' : 'disabled'} />
+          </label>
+          <label>Company
+            <input name="company" value="${escapeHtml(c.company || '')}" ${canEdit ? '' : 'disabled'} />
+          </label>
+          <label>Email
+            <input name="email" type="email" value="${escapeHtml(c.email || '')}" ${canEdit ? '' : 'disabled'} />
+          </label>
+          <label>Phone
+            <input name="phone" value="${escapeHtml(c.phone || '')}" ${canEdit ? '' : 'disabled'} />
+          </label>
+          <label class="span-all">Notes
+            <textarea name="notes" rows="2" ${canEdit ? '' : 'disabled'}>${escapeHtml(c.notes || '')}</textarea>
+          </label>
+          ${fields.map((f) => `
+            <label class="${f.width === 'full' ? 'span-all' : ''}">
+              ${escapeHtml(f.label)}${f.required ? ' *' : ''}
+              ${renderFieldInput(f, { canEdit })}
+            </label>`).join('')}
+        </div>
+        ${canEdit ? `
+          <div class="row-actions">
+            <button class="primary" type="submit">Save</button>
+          </div>` : ''}
+        <div id="contactMsg">${flash ? successNoticeHtml(flash) : ''}</div>
+      </form>`;
+
+    $('#backContacts').onclick = () => {
+      state.view = 'contacts';
+      state.contactId = null;
+      renderShell();
+      renderView();
+    };
+
+    const form = $('#contactForm');
+    if (form && canEdit) {
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(form);
+        const customValues = {};
+        for (const [key, value] of fd.entries()) {
+          if (String(key).startsWith('cf_')) {
+            customValues[key.slice(3)] = value;
+          }
+        }
+        form.querySelectorAll('input[type="checkbox"][name^="cf_"]').forEach((cb) => {
+          customValues[cb.name.slice(3)] = cb.checked ? '1' : '0';
+        });
+        try {
+          await api(`/api/clients/${c.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: fd.get('name'),
+              email: fd.get('email'),
+              phone: fd.get('phone'),
+              company: fd.get('company'),
+              notes: fd.get('notes'),
+              customValues,
+            }),
+          });
+          state.contactFlash = {
+            title: 'Contact saved',
+            detail: 'Details and custom fields are up to date.',
+          };
+          await renderContactDetail();
+          await refreshRefs();
+        } catch (e) {
+          $('#contactMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
     }
@@ -3167,7 +3479,7 @@
     main.innerHTML = `
       <div class="card stack">
         <h1>Settings</h1>
-        <p class="lead">Matter and time fields, plus billing preferences${isAdmin ? ', email, and integrations' : ''}.</p>
+        <p class="lead">Matter, contact, and time fields, plus billing preferences${isAdmin ? ', email, and integrations' : ''}.</p>
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
       </div>
 
@@ -3177,6 +3489,12 @@
         <p class="hint">Shown on every matter. Add a custom field with a label and type.</p>
         <div id="defaultFieldsBody" class="stack"></div>
         <div id="typeFieldMsg"></div>
+      </div>
+      <div class="card stack" id="contactFieldsCard">
+        <h2>Contact fields</h2>
+        <p class="hint">Shown when creating or editing contacts. Custom fields apply to all contacts.</p>
+        <div id="contactFieldsBody" class="stack"></div>
+        <div id="contactFieldMsg"></div>
       </div>
       <div class="card stack" id="timeFieldsCard">
         <h2>Time entry fields</h2>
@@ -3457,6 +3775,11 @@
         msgEl: $('#typeFieldMsg'),
         recordTypeKey: 'default',
         appliesTo: 'matter',
+      });
+      await bindDefaultFieldsEditor({
+        bodyEl: $('#contactFieldsBody'),
+        msgEl: $('#contactFieldMsg'),
+        appliesTo: 'client',
       });
       await bindDefaultFieldsEditor({
         bodyEl: $('#timeFieldsBody'),

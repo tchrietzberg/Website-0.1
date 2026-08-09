@@ -90,13 +90,16 @@ function assertRequiredCustomValues(db, {
   values = {},
 } = {}) {
   const target = normalizeAppliesTo(appliesTo);
-  const fields = target === 'time_entry'
-    ? listCustomFields(db, { appliesTo: 'time_entry' })
-    : listCustomFields(db, {
+  let fields;
+  if (target === 'time_entry' || target === 'client') {
+    fields = listCustomFields(db, { appliesTo: target });
+  } else {
+    fields = listCustomFields(db, {
       recordTypeKey: recordTypeKey || DEFAULT_RECORD_TYPE_KEY,
       matterId: matterId != null ? Number(matterId) : null,
       appliesTo: 'matter',
     });
+  }
   const required = fields.filter((f) => !!f.required);
   const missing = [];
   for (const f of required) {
@@ -266,8 +269,9 @@ function slugify(label) {
 }
 
 function normalizeAppliesTo(value) {
-  const v = String(value || 'matter').trim();
+  const v = String(value || 'matter').trim().toLowerCase();
   if (v === 'time' || v === 'time_entry' || v === 'time-entry') return 'time_entry';
+  if (v === 'client' || v === 'contact' || v === 'contacts') return 'client';
   return 'matter';
 }
 
@@ -306,8 +310,8 @@ function createCustomField(db, actor, input) {
   let recordTypeKey = input.recordTypeKey || null;
   let matterId = input.matterId != null ? Number(input.matterId) : null;
 
-  if (appliesTo === 'time_entry') {
-    // Firm-wide time-entry fields — not tied to a matter layout.
+  if (appliesTo === 'time_entry' || appliesTo === 'client') {
+    // Firm-wide time-entry / contact fields — not tied to a matter layout.
     recordTypeKey = null;
     matterId = null;
   } else if (matterId) {
@@ -418,8 +422,8 @@ function getCustomField(db, id) {
     applies_to: appliesTo,
     appliesTo,
     options: f.options_json ? JSON.parse(f.options_json) : null,
-    scope: appliesTo === 'time_entry'
-      ? 'time_entry'
+    scope: appliesTo === 'time_entry' || appliesTo === 'client'
+      ? appliesTo
       : (f.matter_id ? 'record' : (f.record_type_key ? 'record_type' : 'global')),
   };
 }
@@ -430,13 +434,13 @@ function listCustomFields(db, {
   appliesTo = 'matter',
 } = {}) {
   const target = normalizeAppliesTo(appliesTo);
-  if (target === 'time_entry') {
+  if (target === 'time_entry' || target === 'client') {
     return db.prepare(`
       SELECT * FROM custom_fields
       WHERE active = 1
-        AND IFNULL(applies_to, 'matter') = 'time_entry'
+        AND IFNULL(applies_to, 'matter') = ?
       ORDER BY label, id
-    `).all().map((f) => getCustomField(db, f.id));
+    `).all(target).map((f) => getCustomField(db, f.id));
   }
   return db.prepare(`
     SELECT * FROM custom_fields
@@ -556,6 +560,51 @@ function listTimeEntryFieldDefs(db) {
     width: f.field_type === 'textarea' ? 'full' : 'half',
     value: null,
   }));
+}
+
+function listClientFieldDefs(db) {
+  return listCustomFields(db, { appliesTo: 'client' }).map((f) => ({
+    key: `cf:${f.id}`,
+    label: f.label,
+    type: f.field_type,
+    options: f.options,
+    required: !!f.required,
+    scope: 'client',
+    fieldId: f.id,
+    kind: 'custom',
+    width: f.field_type === 'textarea' ? 'full' : 'half',
+    value: null,
+  }));
+}
+
+function setClientCustomValues(db, actor, clientId, customValues) {
+  const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(clientId);
+  if (!client) throw new Error('contact not found');
+  const upsert = db.prepare(`
+    INSERT INTO client_custom_field_values(client_id, field_id, value_text, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(client_id, field_id) DO UPDATE SET
+      value_text = excluded.value_text,
+      updated_by = excluded.updated_by,
+      updated_at = excluded.updated_at
+  `);
+  for (const [fieldId, value] of Object.entries(customValues || {})) {
+    const id = Number(fieldId);
+    const field = db.prepare(`
+      SELECT * FROM custom_fields
+      WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'client'
+    `).get(id);
+    if (!field) continue;
+    const text = value == null ? null : String(value);
+    upsert.run(clientId, id, text, actor?.id || null);
+  }
+}
+
+function getClientCustomValues(db, clientId) {
+  return db.prepare(`
+    SELECT field_id, value_text FROM client_custom_field_values
+    WHERE client_id = ?
+  `).all(clientId);
 }
 
 function setTimeCustomValues(db, actor, timeEntryId, customValues) {
@@ -862,8 +911,11 @@ module.exports = {
   listCustomFields,
   deactivateCustomField,
   listTimeEntryFieldDefs,
+  listClientFieldDefs,
   setTimeCustomValues,
   getTimeCustomValues,
+  setClientCustomValues,
+  getClientCustomValues,
   assertRequiredCustomValues,
   isBlankCustomValue,
   getMatterPage,

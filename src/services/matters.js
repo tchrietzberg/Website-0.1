@@ -303,7 +303,7 @@ function getMatter(db, id) {
 }
 
 function listClients(db) {
-  return db.prepare('SELECT * FROM clients ORDER BY name').all();
+  return require('./clients').listClients(db);
 }
 
 module.exports = {
