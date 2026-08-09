@@ -285,6 +285,41 @@ describe('invoice lifecycle', () => {
       /No rate for Atty on 2026-03-01/
     );
   });
+
+  it('deletes a bill from the ledger and returns time to unbilled', () => {
+    approvedEntry(60);
+    const inv = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
+    invoiceSvc.createCreditNote(ctx.db, ctx.clerk, inv.id, 1000, 'adjust');
+    paymentSvc.recordPayment(ctx.db, ctx.clerk, {
+      clientId: 1,
+      amountCents: 5000,
+      receivedOn: '2026-04-01',
+      applications: [{ invoiceId: inv.id, amountCents: 5000 }],
+    });
+
+    const result = invoiceSvc.deleteInvoice(ctx.db, ctx.clerk, inv.id);
+    assert.equal(result.ok, true);
+    assert.equal(invoiceSvc.getInvoice(ctx.db, inv.id), null);
+
+    const entry = ctx.db.prepare('SELECT status, invoice_id FROM time_entries LIMIT 1').get();
+    assert.equal(entry.status, 'approved');
+    assert.equal(entry.invoice_id, null);
+
+    assert.equal(
+      ctx.db.prepare('SELECT COUNT(*) AS n FROM payment_applications WHERE invoice_id = ?').get(inv.id).n,
+      0
+    );
+    assert.equal(
+      ctx.db.prepare('SELECT COUNT(*) AS n FROM credit_notes WHERE invoice_id = ?').get(inv.id).n,
+      0
+    );
+    // Payment itself remains (only applications were cleared).
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM payments').get().n, 1);
+
+    // Time can be billed again.
+    const again = invoiceSvc.createBill(ctx.db, ctx.clerk, 1);
+    assert.equal(again.lines.length, 1);
+  });
 });
 
 describe('payments', () => {

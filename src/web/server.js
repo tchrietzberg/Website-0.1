@@ -1324,6 +1324,16 @@ function createServer(db = openDb()) {
         const body = await parseBody(req);
         return json(res, 200, invoiceSvc.setStatus(db, user, id, body.status));
       }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/invoices\/\d+$/)) {
+        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        const id = Number(pathname.split('/')[3]);
+        try {
+          return json(res, 200, invoiceSvc.deleteInvoice(db, user, id));
+        } catch (e) {
+          const status = /not found/i.test(e.message) ? 404 : 400;
+          return json(res, status, { error: e.message, message: e.message });
+        }
+      }
 
       // Payments
       if (req.method === 'GET' && pathname === '/api/payments') {

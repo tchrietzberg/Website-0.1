@@ -5988,7 +5988,10 @@
                 <td>${escapeHtml(i.matter_name || i.matter_number)}<div class="muted">${escapeHtml(i.client_name || '')}</div></td>
                 <td><span class="pill" data-status="${escapeHtml(i.status)}">${escapeHtml(invoiceStageLabel(i.status))}</span></td>
                 <td>${money(i.total_cents)}</td>
-                <td><button data-open="${i.id}">Open</button></td>
+                <td class="row-actions">
+                  <button type="button" data-open="${i.id}">Open</button>
+                  ${canBill ? `<button type="button" class="danger" data-delete-invoice="${i.id}" data-invoice-number="${escapeHtml(i.number)}">Delete</button>` : ''}
+                </td>
               </tr>`).join('') || '<tr><td colspan="5" class="muted">No bills yet</td></tr>'}
           </tbody>
         </table></div>
@@ -6135,6 +6138,34 @@
     main.querySelectorAll('[data-open]').forEach((b) => {
       b.onclick = () => showInvoice(Number(b.dataset.open));
     });
+    main.querySelectorAll('[data-delete-invoice]').forEach((b) => {
+      b.onclick = () => deleteInvoiceFromLedger(Number(b.dataset.deleteInvoice), b.dataset.invoiceNumber);
+    });
+  }
+
+  async function deleteInvoiceFromLedger(id, number) {
+    const label = number || `bill #${id}`;
+    const ok = await confirmAction({
+      title: 'Delete bill?',
+      message: `Delete ${label} from the ledger? Time entries return to unbilled. Payment applications on this bill are removed.`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/invoices/${id}`, { method: 'DELETE' });
+      const detail = $('#invoiceDetail');
+      if (detail && Number(detail.dataset.invoiceId) === Number(id)) {
+        detail.innerHTML = '';
+        delete detail.dataset.invoiceId;
+      }
+      await renderBilling();
+      const msg = $('#billMsg');
+      if (msg) msg.innerHTML = `<div class="ok-banner">Deleted ${escapeHtml(label)}.</div>`;
+    } catch (e) {
+      const msg = $('#billMsg') || $('#invMsg');
+      if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+    }
   }
 
   async function showInvoice(id) {
@@ -6226,6 +6257,14 @@
         }
       };
       actions.appendChild(voidBtn);
+    }
+    if (canBill && actions) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = 'Delete from ledger';
+      del.className = 'danger';
+      del.onclick = () => deleteInvoiceFromLedger(id, inv.number);
+      actions.appendChild(del);
     }
   }
 

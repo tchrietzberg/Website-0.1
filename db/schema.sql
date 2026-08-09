@@ -400,23 +400,10 @@ BEGIN
   SELECT RAISE(ABORT, 'lines on sent invoices are immutable');
 END;
 
-CREATE TRIGGER IF NOT EXISTS invoice_lines_sent_no_delete
-BEFORE DELETE ON invoice_lines
-WHEN (SELECT status FROM invoices WHERE id = OLD.invoice_id) = 'sent'
-BEGIN
-  SELECT RAISE(ABORT, 'lines on sent invoices cannot be deleted');
-END;
-
 CREATE TRIGGER IF NOT EXISTS payments_no_delete
 BEFORE DELETE ON payments
 BEGIN
   SELECT RAISE(ABORT, 'payments cannot be deleted');
-END;
-
-CREATE TRIGGER IF NOT EXISTS invoices_no_delete
-BEFORE DELETE ON invoices
-BEGIN
-  SELECT RAISE(ABORT, 'invoices cannot be deleted; void instead');
 END;
 
 CREATE TRIGGER IF NOT EXISTS time_entries_link_invoice

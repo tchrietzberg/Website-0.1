@@ -1623,6 +1623,18 @@ h3 {
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28) inset, 0 12px 18px rgba(15, 39, 68, 0.32), 0 3px 0 #0a1c33;
 }
 
+.btn.danger, button.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.btn.danger:hover, button.danger:hover {
+  background: color-mix(in srgb, var(--danger-soft) 70%, #fff);
+  border-color: var(--danger);
+}
+.btn.danger:active, button.danger:active {
+  background: color-mix(in srgb, var(--danger) 12%, #fff);
+}
 .btn.primary:active, button.primary:active {
   -webkit-transform: translateY(1px);
   transform: translateY(1px);

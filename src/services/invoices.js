@@ -390,6 +390,49 @@ function setStatus(db, actor, invoiceId, status) {
   return getInvoice(db, invoiceId);
 }
 
+/**
+ * Permanently remove a bill from the ledger.
+ * Unlinks time entries (back to approved), removes payment applications /
+ * write-downs / credit notes / lines, then deletes the invoice.
+ */
+function deleteInvoice(db, actor, invoiceId) {
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+  if (!inv) throw new Error('invoice not found');
+
+  const detail = {
+    number: inv.number,
+    status: inv.status,
+    matterId: inv.matter_id,
+    totalCents: inv.total_cents,
+  };
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(`
+      UPDATE time_entries SET status = 'approved', invoice_id = NULL
+      WHERE invoice_id = ?
+    `).run(invoiceId);
+    db.prepare('DELETE FROM payment_applications WHERE invoice_id = ?').run(invoiceId);
+    db.prepare('DELETE FROM write_downs WHERE invoice_id = ?').run(invoiceId);
+    db.prepare('DELETE FROM credit_notes WHERE invoice_id = ?').run(invoiceId);
+    db.prepare('DELETE FROM invoice_lines WHERE invoice_id = ?').run(invoiceId);
+    db.prepare('DELETE FROM invoices WHERE id = ?').run(invoiceId);
+    db.exec('COMMIT');
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+    throw e;
+  }
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'invoice.delete',
+    entityType: 'invoice',
+    entityId: invoiceId,
+    detail,
+  });
+  return { ok: true, id: invoiceId, number: inv.number };
+}
+
 function createCreditNote(db, actor, invoiceId, amountCents, reason) {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
   if (!inv) throw new Error('invoice not found');
@@ -639,6 +682,7 @@ module.exports = {
   generatePrebill,
   writeDownLine,
   setStatus,
+  deleteInvoice,
   createCreditNote,
   getInvoice,
   listInvoices,

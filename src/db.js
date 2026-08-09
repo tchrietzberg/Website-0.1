@@ -28,6 +28,7 @@ function migrate(db) {
   migrateExpandCustomFieldTypes(db);
   migrateCustomReports(db);
   migrateCustomReportChartTypes(db);
+  migrateAllowInvoiceDelete(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -551,6 +552,14 @@ function migrateMatterTypeCheck(db) {
     ALTER TABLE matters_mig RENAME TO matters;
   `);
   db.exec('PRAGMA foreign_keys = ON;');
+}
+
+/** Allow deleting bills from the ledger (time entries are unlinked by the service). */
+function migrateAllowInvoiceDelete(db) {
+  db.exec(`
+    DROP TRIGGER IF EXISTS invoices_no_delete;
+    DROP TRIGGER IF EXISTS invoice_lines_sent_no_delete;
+  `);
 }
 
 /** SQLite cannot ALTER CHECK; rebuild time_entries if still on rounded_minutes > 0. */
