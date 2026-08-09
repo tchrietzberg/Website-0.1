@@ -3686,18 +3686,19 @@
         })}` : ''}
 
         <div class="page-section">
-          <h2>Search contacts</h2>
+          <h2>Contacts</h2>
           <form id="contactSearch" class="matter-search-bar">
             <input name="q" value="${escapeHtml(q)}"
               placeholder="Search by ${escapeHtml(searchBits.join(', '))}…" aria-label="Search contacts" />
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearContactSearch">Clear</button>
           </form>
-        </div>
-
-        <div class="page-section">
-          <h2>All contacts</h2>
-          <div class="table-wrap"><table>
+          ${q ? `<p class="muted" style="margin:.55rem 0 0">${
+            (contacts || []).length
+              ? `${(contacts || []).length} match${(contacts || []).length === 1 ? '' : 'es'} for “${escapeHtml(q)}”`
+              : `No contacts match “${escapeHtml(q)}”`
+          }</p>` : ''}
+          <div class="table-wrap" style="margin-top:.65rem"><table>
             <thead>
               <tr>
                 <th>Name</th>
@@ -3711,7 +3712,9 @@
                   <td><strong>${escapeHtml(c.name)}</strong></td>
                   <td>${escapeHtml(contactTypeLabel(c.record_type))}</td>
                   ${listCols.map((f) => `<td>${escapeHtml(c[f.key] || '—')}</td>`).join('')}
-                </tr>`).join('') || `<tr><td colspan="${2 + listCols.length}" class="muted">No contacts yet</td></tr>`}
+                </tr>`).join('') || `<tr><td colspan="${2 + listCols.length}" class="muted">${
+                  q ? 'No contacts match this search' : 'No contacts yet'
+                }</td></tr>`}
             </tbody>
           </table></div>
         </div>
