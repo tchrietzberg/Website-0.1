@@ -806,29 +806,18 @@ button.client-typeahead-clear:active {
   border-color: transparent;
 }
 
-button.client-typeahead-add,
-.client-typeahead-add {
-  margin-top: 0.35rem;
-  padding: 0;
-  font-size: 0.88rem;
-  box-shadow: none;
-  -webkit-transform: none;
-  transform: none;
-}
-
 .client-typeahead .hint {
   margin: 0.35rem 0 0;
 }
 
-.create-matter-new-client {
-  margin-top: 0.15rem;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--border, #d0d5dd) 85%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface, #fff) 92%, var(--ink, #111) 4%);
+.client-typeahead-new-note {
+  margin: 0.2rem 0 0;
+  color: var(--accent);
+  font-weight: 600;
 }
-.create-matter-new-client > .hint {
-  margin: 0 0 0.65rem;
+
+.client-typeahead.is-new .client-typeahead-input {
+  border-color: rgba(26, 58, 107, 0.35);
 }
 .create-matter-row {
   display: -webkit-flex;
