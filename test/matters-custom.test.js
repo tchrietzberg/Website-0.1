@@ -45,8 +45,10 @@ describe('matter search and record-based fields', () => {
     const byClient = matterSvc.searchMatters(db, { q: 'acme' });
     assert.equal(byClient.length, 2);
 
-    // Matter numbers are not indexed / searchable
-    assert.equal(matterSvc.searchMatters(db, { q: byName[0].number }).length, 0);
+    // Matter numbers remain searchable even when UI hides them
+    const byNumber = matterSvc.searchMatters(db, { q: byName[0].number });
+    assert.equal(byNumber.length, 1);
+    assert.equal(byNumber[0].id, byName[0].id);
 
     // Full list still available for dropdowns
     assert.equal(matterSvc.listMatters(db).length, 2);

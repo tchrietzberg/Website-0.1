@@ -323,7 +323,9 @@
   }
 
   function matterSearchText(m) {
+    // Numbers stay searchable but are not shown in picker labels/results.
     return [
+      m.number,
       m.name,
       m.client_name,
       m.status,
