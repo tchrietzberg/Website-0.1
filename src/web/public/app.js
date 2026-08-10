@@ -6743,6 +6743,8 @@
             <button type="button" data-bill-report="lodestar-matter-detail">Lodestar Detail</button>
             <button type="button" data-bill-report-format="pdf" data-bill-report="lodestar-matter-summary">Summary PDF</button>
             <button type="button" data-bill-report-format="pdf" data-bill-report="lodestar-matter-detail">Detail PDF</button>
+            <button type="button" data-bill-report-format="xlsx" data-bill-report="lodestar-matter-summary">Summary Excel</button>
+            <button type="button" data-bill-report-format="xlsx" data-bill-report="lodestar-matter-detail">Detail Excel</button>
             <button class="primary" type="submit">Create bill</button>
           </div>
         </form>
@@ -6851,31 +6853,42 @@
           out.hidden = false;
           const totalHours = formatDuration(data.totals?.minutes || 0);
           const totalAmount = money(data.totals?.amount_cents || 0);
+          const billableHours = formatDuration(data.totals?.billable_minutes || 0);
+          const nonBillableHours = formatDuration(data.totals?.nonbillable_minutes || 0);
+          const entryCount = Number(data.totals?.entry_count || 0);
+          const period = data.header?.period
+            || ((from || to) ? [from || '…', to || '…'].join(' → ') : 'All dates');
           const totalsUnderLabel = `
             <p class="lodestar-report-totals">
               <span><span class="muted">Total hours</span> <strong>${escapeHtml(totalHours)}</strong></span>
               <span><span class="muted">Total amount</span> <strong>${totalAmount}</strong></span>
-            </p>`;
-          const matterLine = `<p class="muted">${escapeHtml(data.header?.matter_name || '')}${
-            from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''
-          }</p>`;
+              <span><span class="muted">Entries</span> <strong>${entryCount}</strong></span>
+            </p>
+            <p class="hint">Billable ${escapeHtml(billableHours)} · Non-billable ${escapeHtml(nonBillableHours)} at $0</p>`;
+          const matterLine = `<p class="muted">${escapeHtml(data.header?.matter_number || '')}
+            ${data.header?.matter_number ? ' — ' : ''}${escapeHtml(data.header?.matter_name || '')}
+            ${data.header?.client_name ? ` · ${escapeHtml(data.header.client_name)}` : ''}
+            · ${escapeHtml(period)}</p>`;
           if (reportId === 'lodestar-matter-summary') {
             const rows = data.summary || [];
             out.innerHTML = `
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Summary</h3>
               ${totalsUnderLabel}
               ${matterLine}
+              <p class="hint">Rows split when a timekeeper’s rate changes in the period.</p>
               <div class="table-wrap"><table>
-                <thead><tr><th>Timekeeper</th><th>Role</th><th>Rate</th><th>Hours</th><th>Amount</th></tr></thead>
+                <thead><tr><th>Timekeeper</th><th>Role</th><th>Billable</th><th>Rate</th><th>Hours</th><th>Amount</th><th>Entries</th></tr></thead>
                 <tbody>
                   ${rows.map((r) => `
                     <tr>
                       <td>${escapeHtml(r.timekeeper)}</td>
                       <td>${escapeHtml(r.role || '')}</td>
+                      <td>${r.billable ? 'Yes' : '<span class="muted">No</span>'}</td>
                       <td>${money(r.rate_cents)}</td>
                       <td>${escapeHtml(formatDuration(r.minutes))}</td>
                       <td>${money(r.amount_cents)}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No time entries in this range</td></tr>'}
+                      <td>${Number(r.entry_count || 0)}</td>
+                    </tr>`).join('') || '<tr><td colspan="7" class="muted">No time entries in this range</td></tr>'}
                 </tbody>
               </table></div>`;
           } else {
@@ -6884,24 +6897,29 @@
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Detail</h3>
               ${totalsUnderLabel}
               ${matterLine}
-              <p class="hint">Includes non-billable time at $0.</p>
               <div class="table-wrap"><table>
-                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Billable</th><th>Description</th></tr></thead>
+                <thead><tr><th>Date</th><th>Timekeeper</th><th>Role</th><th>Hours</th><th>Rate</th><th>Amount</th><th>Billable</th><th>Description</th></tr></thead>
                 <tbody>
                   ${entries.map((e) => `
                     <tr>
                       <td>${escapeHtml(e.service_date || '')}</td>
                       <td>${escapeHtml(e.timekeeper || '')}</td>
+                      <td>${escapeHtml(e.role || '')}</td>
                       <td>${escapeHtml(formatDuration(e.minutes))}</td>
+                      <td>${money(e.rate_cents)}</td>
                       <td>${money(e.amount_cents)}</td>
                       <td>${e.billable ? 'Yes' : '<span class="muted">No</span>'}</td>
                       <td>${escapeHtml(e.description || '')}</td>
-                    </tr>`).join('') || '<tr><td colspan="6" class="muted">No time entries in this range</td></tr>'}
+                    </tr>`).join('') || '<tr><td colspan="8" class="muted">No time entries in this range</td></tr>'}
                 </tbody>
               </table></div>`;
           }
           if (msg) msg.innerHTML = '';
         } catch (e) {
+          if (out) {
+            out.hidden = false;
+            out.innerHTML = `<div class="error">${escapeHtml(e.message || 'Could not load Lodestar report')}</div>`;
+          }
           if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
@@ -7016,10 +7034,12 @@
               </tr>`).join('') || `<tr><td colspan="${Math.max(lineKeys.length, 1)}" class="muted">No lines</td></tr>`}
           </tbody>
         </table></div>
-        <div class="row-actions">
+        <div class="row-actions" style="flex-wrap:wrap;gap:.5rem">
           <button type="button" class="primary" data-export-invoice="pdf">Download PDF</button>
           <button type="button" data-export-invoice="xlsx">Download Excel</button>
+          <button type="button" data-export-invoice="template">Download with template</button>
         </div>
+        <p class="hint">“Download with template” uses your default Word/Adobe invoice template from Settings (merge fields).</p>
         <div class="row-actions" id="invActions"></div>
         <div id="invMsg"></div>
       </div>`;
@@ -7028,11 +7048,16 @@
       b.onclick = async () => {
         try {
           const fmt = b.dataset.exportInvoice;
-          const res = await api(`/api/invoices/${id}/export?format=${fmt}`);
+          const qs = fmt === 'template' ? 'format=docx&useTemplate=1' : `format=${fmt}`;
+          const res = await api(`/api/invoices/${id}/export?${qs}`);
           const blob = await res.blob();
           const tmp = document.createElement('a');
           tmp.href = URL.createObjectURL(blob);
-          tmp.download = `${inv.number || `invoice-${id}`}.${fmt === 'xlsx' ? 'xlsx' : 'pdf'}`;
+          const ext = fmt === 'xlsx' ? 'xlsx' : (fmt === 'template' ? 'docx' : 'pdf');
+          // Template may be pdf/docx — prefer server filename when present.
+          const dispo = res.headers?.get?.('content-disposition') || '';
+          const match = /filename="([^"]+)"/i.exec(dispo);
+          tmp.download = match?.[1] || `${inv.number || `invoice-${id}`}.${ext}`;
           document.body.appendChild(tmp);
           tmp.click();
           tmp.remove();
@@ -8457,15 +8482,23 @@
     const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
     // Billing clerks manage rates here; admins use Navigate → Add a user.
     const showClerkRates = canManageRates() && !canManageUsers();
-    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers, mfaStatus] = await Promise.all([
+    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers, mfaStatus, invoiceTemplatePayload] = await Promise.all([
       api('/api/settings'),
       canConfigureMatterDefaults ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
       canConfigureFields ? api('/api/record-types?appliesTo=client').catch(() => []) : Promise.resolve([]),
       showClerkRates ? api('/api/timekeepers').catch(() => []) : Promise.resolve([]),
       api('/api/mfa/status').catch(() => ({ enabled: false, backupCodesRemaining: 0 })),
+      canEditBilling
+        ? Promise.all([
+          api('/api/invoice-templates').catch(() => ({ templates: [] })),
+          api('/api/invoice-templates/merge-fields').catch(() => ({ fields: [] })),
+        ]).then(([t, f]) => ({ templates: t.templates || [], fields: f.fields || [] }))
+        : Promise.resolve({ templates: [], fields: [] }),
     ]);
     if (!stillOnView('settings')) return;
     state.settings = settings;
+    const invoiceTemplatesList = invoiceTemplatePayload.templates || [];
+    const mergeFields = invoiceTemplatePayload.fields || [];
     const today = firmToday(settings.firmTimezone || firmTimeZone());
     const selectedTz = settings.firmTimezone || 'America/New_York';
     let tzGroups = listBrowserTimeZoneGroups();
@@ -8547,6 +8580,71 @@
         <p class="hint">Control which matter and contact fields each role can see or edit.</p>
         <div id="fieldPermissionsBody" class="stack"></div>
         <div id="fieldPermissionsMsg"></div>
+      </div>` : ''}
+
+      ${canEditBilling ? `
+      <div class="card stack" id="invoiceTemplatesCard">
+        <h2>Invoice templates</h2>
+        <p class="hint">Upload a Microsoft Word (.docx) or Adobe PDF template with merge fields like <code>{{client_name}}</code>. Set one as default for “Download with template” on bills.</p>
+        <div class="row-actions" style="flex-wrap:wrap;gap:.5rem">
+          <a class="linkish" href="/api/invoice-templates/sample?format=docx" id="sampleDocxLink">Download Word sample</a>
+          <a class="linkish" href="/api/invoice-templates/sample?format=pdf" id="samplePdfLink">Download Adobe PDF sample</a>
+        </div>
+        <details class="onedrive-collapse settings-collapse">
+          <summary class="onedrive-collapse-summary">
+            <span class="onedrive-collapse-title">Merge fields</span>
+            <span class="onedrive-collapse-meta muted">${mergeFields.length} fields</span>
+          </summary>
+          <div class="onedrive-collapse-body">
+            <div class="table-wrap"><table>
+              <thead><tr><th>Field</th><th>Token</th><th>Example</th></tr></thead>
+              <tbody>
+                ${mergeFields.map((f) => `
+                  <tr>
+                    <td>${escapeHtml(f.label)}</td>
+                    <td><code>${escapeHtml(f.token)}</code></td>
+                    <td class="muted">${escapeHtml(f.example || '')}</td>
+                  </tr>`).join('') || '<tr><td colspan="3" class="muted">No fields</td></tr>'}
+              </tbody>
+            </table></div>
+          </div>
+        </details>
+        <form id="invoiceTemplateForm" class="stack">
+          <label>Template name
+            <input name="name" required placeholder="Firm letterhead bill" />
+          </label>
+          <label>Description
+            <input name="description" placeholder="Optional" />
+          </label>
+          <label>Word (.docx) or Adobe PDF file
+            <input name="file" type="file" accept=".docx,.pdf,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" required />
+          </label>
+          <label class="choice" style="display:flex;gap:.5rem;align-items:center">
+            <input type="checkbox" name="isDefault" />
+            <span>Make default for bill downloads</span>
+          </label>
+          <div class="row-actions">
+            <button class="primary" type="submit">Upload template</button>
+          </div>
+        </form>
+        <div id="invoiceTemplateMsg"></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Name</th><th>Format</th><th>Size</th><th>Default</th><th></th></tr></thead>
+          <tbody>
+            ${invoiceTemplatesList.map((t) => `
+              <tr>
+                <td>${escapeHtml(t.name)}<div class="muted">${escapeHtml(t.description || '')}</div></td>
+                <td>${escapeHtml(String(t.format || '').toUpperCase())}</td>
+                <td class="muted">${Math.round(Number(t.size_bytes || 0) / 1024)} KB</td>
+                <td>${t.is_default ? 'Yes' : '—'}</td>
+                <td class="row-actions">
+                  <button type="button" data-tpl-download="${t.id}">Download</button>
+                  ${t.is_default ? '' : `<button type="button" data-tpl-default="${t.id}">Set default</button>`}
+                  <button type="button" class="danger" data-tpl-delete="${t.id}">Remove</button>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="5" class="muted">No custom templates yet — upload a Word or Adobe file above.</td></tr>'}
+          </tbody>
+        </table></div>
       </div>` : ''}
 
       <form id="settingsForm" class="card stack">
@@ -8657,6 +8755,115 @@
 
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
+
+    const authFetchBlob = async (path, filename) => {
+      const headers = { 'X-App-Origin': window.location.origin };
+      if (state.token && !state.cookieOnlyAuth) headers.Authorization = `Bearer ${state.token}`;
+      if (state.csrf) headers['X-CSRF-Token'] = state.csrf;
+      const res = await fetch(path, { credentials: 'include', headers });
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const data = await res.json();
+          msg = data.message || data.error || msg;
+        } catch { /* ignore */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const tmp = document.createElement('a');
+      tmp.href = URL.createObjectURL(blob);
+      tmp.download = filename;
+      document.body.appendChild(tmp);
+      tmp.click();
+      tmp.remove();
+      URL.revokeObjectURL(tmp.href);
+    };
+
+    const tplMsg = (html) => {
+      const el = $('#invoiceTemplateMsg');
+      if (el) el.innerHTML = html || '';
+    };
+    $('#sampleDocxLink')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      authFetchBlob('/api/invoice-templates/sample?format=docx', 'invoice-template-sample.docx')
+        .catch((e) => tplMsg(`<div class="error">${escapeHtml(e.message)}</div>`));
+    });
+    $('#samplePdfLink')?.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      authFetchBlob('/api/invoice-templates/sample?format=pdf', 'invoice-template-sample.pdf')
+        .catch((e) => tplMsg(`<div class="error">${escapeHtml(e.message)}</div>`));
+    });
+    $('#invoiceTemplateForm')?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const form = ev.currentTarget;
+      const fd = new FormData(form);
+      const file = fd.get('file');
+      if (!(file instanceof File) || !file.size) {
+        tplMsg('<div class="error">Choose a .docx or .pdf file.</div>');
+        return;
+      }
+      try {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+        const contentBase64 = btoa(binary);
+        await api('/api/invoice-templates', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: String(fd.get('name') || '').trim(),
+            description: String(fd.get('description') || '').trim(),
+            fileName: file.name,
+            contentBase64,
+            isDefault: Boolean(fd.get('isDefault')),
+          }),
+        });
+        tplMsg('<div class="ok">Template uploaded.</div>');
+        await renderSettings();
+      } catch (e) {
+        tplMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+      }
+    });
+    main.querySelectorAll('[data-tpl-download]').forEach((btn) => {
+      btn.onclick = () => {
+        const id = btn.getAttribute('data-tpl-download');
+        authFetchBlob(`/api/invoice-templates/${id}/download`, `template-${id}`)
+          .catch((e) => tplMsg(`<div class="error">${escapeHtml(e.message)}</div>`));
+      };
+    });
+    main.querySelectorAll('[data-tpl-default]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api(`/api/invoice-templates/${btn.getAttribute('data-tpl-default')}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isDefault: true }),
+          });
+          await renderSettings();
+        } catch (e) {
+          tplMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
+    main.querySelectorAll('[data-tpl-delete]').forEach((btn) => {
+      btn.onclick = async () => {
+        const ok = await confirmAction({
+          title: 'Remove template?',
+          message: 'This removes the template from Settings. Existing bills are unchanged.',
+          confirmLabel: 'Remove',
+          cancelLabel: 'Cancel',
+        });
+        if (!ok) return;
+        try {
+          await api(`/api/invoice-templates/${btn.getAttribute('data-tpl-delete')}`, {
+            method: 'DELETE',
+            body: '{}',
+          });
+          await renderSettings();
+        } catch (e) {
+          tplMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
 
     const mfaMsg = (html) => {
       const el = $('#mfaMsg');

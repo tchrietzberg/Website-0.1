@@ -385,6 +385,23 @@ CREATE TABLE IF NOT EXISTS mfa_challenges (
 );
 CREATE INDEX IF NOT EXISTS idx_mfa_challenges_expires ON mfa_challenges(expires_at);
 
+-- Firm invoice templates (Word .docx / Adobe PDF) with {{merge_field}} tokens
+CREATE TABLE IF NOT EXISTS invoice_templates (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  format TEXT NOT NULL CHECK (format IN ('docx','pdf','txt')),
+  description TEXT,
+  file_name TEXT NOT NULL,
+  content BLOB NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0,1)),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_invoice_templates_active
+  ON invoice_templates(active, is_default);
+
 -- Append-only audit log
 CREATE TRIGGER IF NOT EXISTS audit_log_no_update
 BEFORE UPDATE ON audit_log

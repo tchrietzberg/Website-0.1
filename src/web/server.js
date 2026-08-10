@@ -26,6 +26,7 @@ const permissions = require('../services/permissions');
 const timezones = require('../services/timezones');
 const mail = require('../mail');
 const mfa = require('../mfa');
+const invoiceTemplates = require('../services/invoiceTemplates');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -1496,6 +1497,33 @@ function createServer(db = openDb()) {
         const fields = invoiceSvc.getBillFields(db);
         const fmt = String(url.searchParams.get('format') || 'pdf').toLowerCase();
         const safeName = String(inv.number || `invoice-${id}`).replace(/[^\w.-]+/g, '_');
+        const templateIdRaw = url.searchParams.get('templateId');
+        const useTemplate = fmt === 'docx' || fmt === 'template'
+          || url.searchParams.get('useTemplate') === '1'
+          || templateIdRaw;
+        if (useTemplate) {
+          let template = null;
+          if (templateIdRaw) template = invoiceTemplates.getTemplate(db, Number(templateIdRaw));
+          else template = invoiceTemplates.getDefaultTemplate(db);
+          if (!template || !template.active) {
+            return json(res, 404, {
+              error: 'template_not_found',
+              message: 'No invoice template selected. Upload one under Settings → Invoice templates.',
+            }, req);
+          }
+          try {
+            const rendered = invoiceTemplates.renderInvoiceWithTemplate(db, inv, template);
+            res.writeHead(200, {
+              'Content-Type': rendered.contentType,
+              'Content-Disposition': `attachment; filename="${rendered.fileName}"`,
+              'Content-Length': rendered.buffer.length,
+            });
+            res.end(rendered.buffer);
+            return;
+          } catch (e) {
+            return json(res, 400, { error: e.message, message: e.message }, req);
+          }
+        }
         if (fmt === 'xlsx' || fmt === 'excel') {
           const buf = invoiceSvc.toInvoiceXlsx(inv, fields);
           res.writeHead(200, {
@@ -1516,7 +1544,105 @@ function createServer(db = openDb()) {
           res.end(buf);
           return;
         }
-        return json(res, 400, { error: 'unsupported_format', message: 'Use format=pdf or format=xlsx' });
+        return json(res, 400, {
+          error: 'unsupported_format',
+          message: 'Use format=pdf, xlsx, or docx (with a Word/Adobe template)',
+        });
+      }
+
+      // Invoice templates (Word / Adobe merge fields)
+      if (req.method === 'GET' && pathname === '/api/invoice-templates/merge-fields') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        return json(res, 200, { fields: invoiceTemplates.listMergeFields() }, req);
+      }
+      if (req.method === 'GET' && pathname === '/api/invoice-templates/sample') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        const kind = String(url.searchParams.get('format') || 'docx').toLowerCase();
+        let buf;
+        let type;
+        let filename;
+        if (kind === 'pdf') {
+          buf = invoiceTemplates.samplePdfBuffer();
+          type = 'application/pdf';
+          filename = 'invoice-template-sample.pdf';
+        } else if (kind === 'txt') {
+          buf = invoiceTemplates.sampleTxtBuffer();
+          type = 'text/plain; charset=utf-8';
+          filename = 'invoice-template-sample.txt';
+        } else {
+          buf = invoiceTemplates.sampleDocxBuffer();
+          type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          filename = 'invoice-template-sample.docx';
+        }
+        res.writeHead(200, {
+          'Content-Type': type,
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Content-Length': buf.length,
+        });
+        res.end(buf);
+        return;
+      }
+      if (req.method === 'GET' && pathname === '/api/invoice-templates') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        return json(res, 200, { templates: invoiceTemplates.listTemplates(db) }, req);
+      }
+      if (req.method === 'POST' && pathname === '/api/invoice-templates') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        let body;
+        try {
+          body = await security.parseBodyLimited(req, {
+            limit: Math.max(security.MAX_BODY_BYTES, invoiceTemplates.MAX_TEMPLATE_BYTES + 64_000),
+          });
+        } catch (e) {
+          if (e.code === 'PAYLOAD_TOO_LARGE') {
+            return json(res, 413, { error: 'payload_too_large', message: 'Template file too large' }, req);
+          }
+          throw e;
+        }
+        try {
+          const created = invoiceTemplates.createTemplate(db, user, body);
+          return json(res, 201, created, req);
+        } catch (e) {
+          return json(res, e.status || 400, { error: e.code || 'error', message: e.message }, req);
+        }
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/invoice-templates\/\d+\/download$/)) {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        const id = Number(pathname.split('/')[3]);
+        const row = invoiceTemplates.getTemplate(db, id);
+        if (!row || !row.active) return json(res, 404, { error: 'not found' }, req);
+        const buf = Buffer.isBuffer(row.content) ? row.content : Buffer.from(row.content);
+        const types = {
+          docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          pdf: 'application/pdf',
+          txt: 'text/plain; charset=utf-8',
+        };
+        res.writeHead(200, {
+          'Content-Type': types[row.format] || 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${String(row.file_name || 'template').replace(/[^\w.\-]+/g, '_')}"`,
+          'Content-Length': buf.length,
+        });
+        res.end(buf);
+        return;
+      }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/invoice-templates\/\d+\/?$/)) {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        const id = Number(pathname.split('/').filter(Boolean)[2]);
+        const body = await parseBody(req);
+        try {
+          return json(res, 200, invoiceTemplates.updateTemplate(db, user, id, body), req);
+        } catch (e) {
+          return json(res, e.status || 400, { error: e.message, message: e.message }, req);
+        }
+      }
+      if (req.method === 'DELETE' && pathname.match(/^\/api\/invoice-templates\/\d+\/?$/)) {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'], req)) return;
+        const id = Number(pathname.split('/').filter(Boolean)[2]);
+        try {
+          return json(res, 200, invoiceTemplates.deleteTemplate(db, user, id), req);
+        } catch (e) {
+          return json(res, e.status || 400, { error: e.message, message: e.message }, req);
+        }
       }
       if (
         req.method === 'POST'
@@ -1684,19 +1810,24 @@ function createServer(db = openDb()) {
           return;
         }
         if (fmt === 'pdf') {
-          const titles = {
-            matters: 'Matters Report',
-            'lodestar-summary': 'Lodestar Summary (all matters)',
-            'lodestar-detail': 'Lodestar Detail (all matters)',
-            'ar-aging': 'AR Aging',
-            'write-offs': 'Write-offs',
-            realization: 'Realization',
-            'unapplied-cash': 'Unapplied Cash',
-          };
-          const buf = reports.toPdf(rows, {
-            title: titles[name] || name,
-            currencyKeys,
-          });
+          let buf;
+          if (name === 'lodestar-summary') {
+            buf = reports.lodestarFirmSummaryPdf(db, { matterId, dateFrom, dateTo });
+          } else if (name === 'lodestar-detail') {
+            buf = reports.lodestarFirmDetailPdf(db, { matterId, dateFrom, dateTo });
+          } else {
+            const titles = {
+              matters: 'Matters Report',
+              'ar-aging': 'AR Aging',
+              'write-offs': 'Write-offs',
+              realization: 'Realization',
+              'unapplied-cash': 'Unapplied Cash',
+            };
+            buf = reports.toPdf(rows, {
+              title: titles[name] || name,
+              currencyKeys,
+            });
+          }
           res.writeHead(200, {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `attachment; filename="${name}.pdf"`,
