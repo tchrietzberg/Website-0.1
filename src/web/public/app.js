@@ -2052,16 +2052,30 @@
       .toLowerCase();
   }
 
-  /** Undecorated matter name for duplicate checks (strips " - Status - Year"). */
+  /** Undecorated matter name for duplicate checks (strips Status/Year, No Client, month-year). */
   function matterBaseName(name) {
     let base = String(name || '').trim();
     let m = base.match(/^(.*?)(?:\s+[—-]\s+.+?\s+[—-]\s+\d{4})$/);
-    if (m) return m[1].trim();
-    m = base.match(/^(.*?)\s+[—-]\s+(\d{4})$/);
-    if (m) return m[1].trim();
-    m = base.match(/^(.*?)\s+[—-]\s+(.+)$/);
-    if (m && !/^\d{4}$/.test(m[2].trim())) return m[1].trim();
-    return base;
+    if (m) base = m[1].trim();
+    else {
+      m = base.match(/^(.*?)\s+[—-]\s+(\d{4})$/);
+      if (m) base = m[1].trim();
+      else {
+        m = base.match(/^(.*?)\s+[—-]\s+(.+)$/);
+        if (m && !/^\d{4}$/.test(m[2].trim())) base = m[1].trim();
+      }
+    }
+    // Match server cleanMatterBaseName: no client placeholder / billing month on matter names.
+    const months = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+    base = base.replace(/\bNo\s*[-_]?\s*Client\b/gi, ' ');
+    base = base.replace(new RegExp(`\\b${months}\\s+\\d{4}\\b`, 'gi'), ' ');
+    base = base.replace(new RegExp(`\\b${months}[-/]\\d{4}\\b`, 'gi'), ' ');
+    return base
+      .replace(/\s+/g, ' ')
+      .replace(/\s*[—-]\s*/g, ' - ')
+      .replace(/^(?: - )+|(?: - )+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function clientSearchText(c) {

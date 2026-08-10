@@ -216,9 +216,31 @@ function stripNameDecorations(name) {
   return base;
 }
 
+const MONTH_NAME_RE = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+
+/**
+ * Matter-level names omit client placeholders and billing-period month/year.
+ * Client stays on the Client field; periods like "Aug 2026" belong on bills, not the matter name.
+ */
+function cleanMatterBaseName(name) {
+  let base = stripNameDecorations(name);
+  // Drop "No Client" / "no-client" placeholders when a matter has no client.
+  base = base.replace(/\bNo\s*[-_]?\s*Client\b/gi, ' ');
+  // Drop month + year tokens (Aug 2026, August-2026, etc.).
+  base = base.replace(new RegExp(`\\b${MONTH_NAME_RE}\\s+\\d{4}\\b`, 'gi'), ' ');
+  base = base.replace(new RegExp(`\\b${MONTH_NAME_RE}[-/]\\d{4}\\b`, 'gi'), ' ');
+  base = base.replace(/\s+/g, ' ').trim();
+  base = base
+    .replace(/\s*[—-]\s*/g, ' - ')
+    .replace(/^(?: - )+|(?: - )+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return base;
+}
+
 /** Matter Name - Status - Year */
 function composeMatterName(baseName, statusLabel, openedOn) {
-  const base = stripNameDecorations(baseName);
+  const base = cleanMatterBaseName(baseName);
   const status = String(statusLabel || '').trim();
   const year = yearFromOpenedOn(openedOn);
   const parts = [base];
@@ -229,12 +251,12 @@ function composeMatterName(baseName, statusLabel, openedOn) {
 
 /** Case-insensitive match on the undecorated matter name (ignores Status - Year suffix). */
 function findDuplicateMatter(db, name, { excludeId = null } = {}) {
-  const base = stripNameDecorations(name).toLowerCase();
+  const base = cleanMatterBaseName(name).toLowerCase();
   if (!base) return null;
   const rows = db.prepare('SELECT id, name, number FROM matters').all();
   for (const row of rows) {
     if (excludeId != null && Number(row.id) === Number(excludeId)) continue;
-    if (stripNameDecorations(row.name).toLowerCase() === base) return row;
+    if (cleanMatterBaseName(row.name).toLowerCase() === base) return row;
   }
   return null;
 }
@@ -360,6 +382,9 @@ function createMatter(db, actor, input = {}) {
   } else if (!baseName) {
     throw new Error('name required');
   }
+  // Matter names never carry "No Client" or billing-month text (e.g. Aug 2026).
+  baseName = cleanMatterBaseName(baseName);
+  if (!baseName) throw new Error('name required');
 
   assertUniqueMatterName(db, baseName);
 
@@ -604,6 +629,7 @@ module.exports = {
   getMatterNameFormulaConfig,
   buildNameFromFormula,
   stripNameDecorations,
+  cleanMatterBaseName,
   findDuplicateMatter,
   MATTER_NAME_FORMULA_SETTING,
 };

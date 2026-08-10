@@ -242,6 +242,21 @@ describe('matter search and record-based fields', () => {
     );
   });
 
+  it('omits No Client and month-year from matter-level names', () => {
+    const page = matterSvc.createMatter(db, admin, {
+      name: 'Test Matter No Client Aug 2026',
+      openedOn: '2026-08-09',
+    });
+    assert.equal(page.matter.name, 'Test Matter - Open - 2026');
+    assert.equal(page.matter.client_id, null);
+
+    const again = matterSvc.createMatter(db, admin, {
+      name: 'Retainer no-client August 2026',
+      openedOn: '2026-08-09',
+    });
+    assert.equal(again.matter.name, 'Retainer - Open - 2026');
+  });
+
   it('names matters as Name - Status - Year on create and status changes', () => {
     const page = matterSvc.createMatter(db, admin, {
       name: 'Alpha Matter',
