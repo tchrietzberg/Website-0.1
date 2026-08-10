@@ -7,6 +7,7 @@ const {
 const { getSetting, setSetting, audit } = require('../db');
 const customFields = require('./customFields');
 const permissions = require('./permissions');
+const timezones = require('./timezones');
 
 function evaluateRules(db, entry) {
   const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
@@ -98,10 +99,14 @@ function createEntry(db, actor, input) {
     billable = (billable === true || billable === 1 || billable === '1' || billable === 'on') ? 1 : 0;
   }
 
+  const firmTz = timezones.normalizeTimeZone(
+    getSetting(db, 'firm_timezone', timezones.DEFAULT_TIMEZONE)
+  );
+  const serviceDate = String(input.serviceDate || timezones.todayInTimeZone(firmTz)).slice(0, 10);
   const candidate = {
     matterId: input.matterId,
     timekeeperId,
-    serviceDate: input.serviceDate,
+    serviceDate,
     rawMinutes: input.rawMinutes,
     roundedMinutes: rounded,
     description: input.description,

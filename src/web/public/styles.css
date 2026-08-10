@@ -2653,6 +2653,29 @@ a.btn {
   max-width: 28rem;
 }
 
+.tz-filter-label {
+  max-width: 28rem;
+  margin-bottom: 0.55rem;
+}
+
+#firmTimezoneSelect {
+  width: 100%;
+  max-width: 36rem;
+  min-height: 14rem;
+  padding: 0.35rem;
+  font-size: 0.9rem;
+}
+
+#firmTimezoneSelect option,
+#firmTimezoneSelect optgroup {
+  padding: 0.2rem 0.35rem;
+}
+
+#firmTimezoneSelect option[hidden],
+#firmTimezoneSelect optgroup[hidden] {
+  display: none !important;
+}
+
 .settings-block:disabled,
 .settings-block[disabled] {
   opacity: 0.72;

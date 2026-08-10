@@ -23,6 +23,7 @@ const customFields = require('../services/customFields');
 const customReports = require('../services/customReports');
 const authEmail = require('../services/authEmail');
 const permissions = require('../services/permissions');
+const timezones = require('../services/timezones');
 const mail = require('../mail');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -141,10 +142,15 @@ function readSettings(db) {
   const msAuth = require('../services/msAuth');
   const clientsSvc = require('../services/clients');
   const permissions = require('../services/permissions');
+  const firmTimezone = timezones.normalizeTimeZone(
+    getSetting(db, 'firm_timezone', timezones.DEFAULT_TIMEZONE)
+  );
   return {
     roundIncrementMinutes: Number(getSetting(db, 'round_increment_minutes', '15')),
     roundMode: getSetting(db, 'round_mode', 'up'),
     durationFormat: getSetting(db, 'duration_format', 'decimal'),
+    firmTimezone,
+    firmTimezoneLabel: timezones.formatTimeZoneLabel(firmTimezone),
     roundingIncrements: ROUNDING_INCREMENTS,
     durationFormats: DURATION_FORMATS,
     roundingModes: ROUNDING_MODES,
@@ -1011,6 +1017,10 @@ function createServer(db = openDb()) {
         }
         if (body.durationFormat != null) {
           setSetting(db, 'duration_format', assertDurationFormat(body.durationFormat));
+        }
+        if (body.firmTimezone != null || body.firm_timezone != null) {
+          const tz = timezones.assertTimeZone(body.firmTimezone ?? body.firm_timezone);
+          setSetting(db, 'firm_timezone', tz);
         }
         if (body.msGraphAccessToken !== undefined) {
           if (!roleGate(user, res, ['admin'])) return;

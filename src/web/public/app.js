@@ -2938,6 +2938,79 @@
     return neg ? `-${core}` : core;
   }
 
+  function firmTimeZone() {
+    return state.settings?.firmTimezone || 'America/New_York';
+  }
+
+  /** Calendar YYYY-MM-DD in the firm timezone (not browser/UTC midnight). */
+  function firmToday(tz = firmTimeZone()) {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz || 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  function firmTimeZoneLabel() {
+    return state.settings?.firmTimezoneLabel
+      || String(firmTimeZone()).replace(/_/g, ' ');
+  }
+
+  function listBrowserTimeZoneGroups() {
+    let zones = [];
+    try {
+      if (typeof Intl.supportedValuesOf === 'function') {
+        zones = Intl.supportedValuesOf('timeZone');
+      }
+    } catch {
+      zones = [];
+    }
+    if (!zones.length) {
+      zones = [
+        'UTC',
+        'America/New_York',
+        'America/Chicago',
+        'America/Denver',
+        'America/Los_Angeles',
+        'Europe/London',
+        'Asia/Tokyo',
+        'Australia/Sydney',
+      ];
+    }
+    const now = new Date();
+    const offsetOf = (tz) => {
+      try {
+        return new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          timeZoneName: 'shortOffset',
+        }).formatToParts(now).find((p) => p.type === 'timeZoneName')?.value || '';
+      } catch {
+        return '';
+      }
+    };
+    const groups = new Map();
+    for (const id of zones) {
+      const region = id.includes('/') ? id.split('/')[0] : 'Other';
+      const offset = offsetOf(id);
+      const label = offset
+        ? `${id.replace(/_/g, ' ')} (${offset})`
+        : id.replace(/_/g, ' ');
+      if (!groups.has(region)) groups.set(region, []);
+      groups.get(region).push({ id, label });
+    }
+    return [...groups.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([region, list]) => ({
+        region,
+        zones: list.sort((a, b) => a.id.localeCompare(b.id)),
+      }));
+  }
+
   function roundModeLabel(id) {
     return ({
       up: 'Round up to',
@@ -4926,6 +4999,7 @@
     return `
       <label>Date
         <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
+        <span class="hint">Firm timezone · ${escapeHtml(firmTimeZoneLabel())}</span>
       </label>
       <label>Hours
         <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
@@ -5129,7 +5203,7 @@
       ['lodestar-matter-detail', 'Lodestar Detail', 'Simple list of time worked on this matter'],
       ['lodestar-matter-summary', 'Lodestar Summary', 'Hours and amounts by timekeeper'],
     ];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = firmToday();
     const retain = state.matterTimeRetain || {};
     const addAnother = !!retain.addAnother;
     const formDate = retain.serviceDate || today;
@@ -5905,7 +5979,7 @@
     if (!stillOnView('time')) return;
     state.settings = settings;
     state.matters = matters;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = firmToday();
     const retain = state.timeEntryRetain || {};
     const addAnother = !!retain.addAnother;
     const preferredMatterId = retain.matterId
@@ -6230,7 +6304,7 @@
   }
 
   async function applyBillingMatterDateDefaults(matterId, { force = false } = {}) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = firmToday();
     const key = matterId != null && matterId !== '' ? String(matterId) : '';
     if (!state.billingForm) {
       state.billingForm = { matterId: '', dateFrom: '', dateTo: today, defaultsForMatterId: '' };
@@ -6262,7 +6336,7 @@
     ]);
     if (!stillOnView('billing')) return;
     state.matters = matters || [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = firmToday();
     if (!state.billingForm) {
       state.billingForm = { matterId: '', dateFrom: '', dateTo: today, defaultsForMatterId: '' };
     }
@@ -7871,7 +7945,7 @@
       ? await api('/api/timekeepers').catch(() => [])
       : [];
     if (!stillOnView('users')) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = firmToday();
     const flash = state.usersFlash;
     state.usersFlash = null;
 
@@ -8002,7 +8076,17 @@
     ]);
     if (!stillOnView('settings')) return;
     state.settings = settings;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = firmToday(settings.firmTimezone || firmTimeZone());
+    const selectedTz = settings.firmTimezone || 'America/New_York';
+    let tzGroups = listBrowserTimeZoneGroups();
+    if (selectedTz && !tzGroups.some((g) => (g.zones || []).some((z) => z.id === selectedTz))) {
+      const region = selectedTz.includes('/') ? selectedTz.split('/')[0] : 'Other';
+      const label = settings.firmTimezoneLabel || selectedTz.replace(/_/g, ' ');
+      const existing = tzGroups.find((g) => g.region === region);
+      if (existing) existing.zones.unshift({ id: selectedTz, label });
+      else tzGroups = [{ region, zones: [{ id: selectedTz, label }] }, ...tzGroups];
+    }
+    const tzCount = tzGroups.reduce((n, g) => n + (g.zones?.length || 0), 0);
 
     setMainHtml(`
       <div class="card stack">
@@ -8060,7 +8144,39 @@
 
       <form id="settingsForm" class="card stack">
         <h2>Time and Billing</h2>
-        <p class="hint">Duration display and rounding for new time entries.</p>
+        <p class="hint">Firm timezone, duration display, and rounding for new time entries.</p>
+
+        <details class="onedrive-collapse settings-collapse" open>
+          <summary class="onedrive-collapse-summary">
+            <span class="onedrive-collapse-title">Timezone</span>
+            <span class="onedrive-collapse-meta muted">${escapeHtml(settings.firmTimezoneLabel || selectedTz)}</span>
+          </summary>
+          <div class="onedrive-collapse-body">
+            <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Firm timezone</h3>
+              <p class="hint">Time entry dates and billing “today” use this timezone (${tzCount} zones).</p>
+              <label class="tz-filter-label">Filter
+                <input type="search" id="firmTimezoneFilter" placeholder="Search city or region…"
+                  autocomplete="off" ${canEditBilling ? '' : 'disabled'} />
+              </label>
+              <label>Timezone
+                <select name="firmTimezone" id="firmTimezoneSelect" size="12" ${canEditBilling ? '' : 'disabled'}>
+                  ${tzGroups.map((group) => `
+                    <optgroup label="${escapeHtml(group.region)}" data-tz-region="${escapeHtml(group.region)}">
+                      ${(group.zones || []).map((z) => `
+                        <option value="${escapeHtml(z.id)}"
+                          data-tz-label="${escapeHtml((z.label || z.id).toLowerCase())}"
+                          ${z.id === selectedTz ? 'selected' : ''}>
+                          ${escapeHtml(z.label || z.id)}
+                        </option>`).join('')}
+                    </optgroup>`).join('') || `
+                    <option value="${escapeHtml(selectedTz)}" selected>${escapeHtml(selectedTz)}</option>`}
+                </select>
+              </label>
+              <p class="hint">Current firm date: <strong>${escapeHtml(today)}</strong></p>
+            </div>
+          </div>
+        </details>
 
         <details class="onedrive-collapse settings-collapse">
           <summary class="onedrive-collapse-summary">
@@ -8204,11 +8320,29 @@
     });
     syncInterval();
 
+    const tzSelect = $('#firmTimezoneSelect');
+    const tzFilter = $('#firmTimezoneFilter');
+    if (tzSelect && tzFilter) {
+      const applyTzFilter = () => {
+        const q = String(tzFilter.value || '').trim().toLowerCase();
+        tzSelect.querySelectorAll('option').forEach((opt) => {
+          const hay = `${opt.value} ${opt.getAttribute('data-tz-label') || opt.textContent || ''}`.toLowerCase();
+          opt.hidden = !!(q && !hay.includes(q));
+        });
+        tzSelect.querySelectorAll('optgroup').forEach((group) => {
+          const anyVisible = [...group.querySelectorAll('option')].some((opt) => !opt.hidden);
+          group.hidden = !anyVisible;
+        });
+      };
+      tzFilter.addEventListener('input', applyTzFilter);
+    }
+
     if (canEditBilling) {
       form.onsubmit = async (ev) => {
         ev.preventDefault();
         const durationFormat = form.querySelector('input[name="durationFormat"]:checked')?.value;
         const roundMode = form.querySelector('input[name="roundMode"]:checked')?.value;
+        const firmTimezone = tzSelect?.value || form.firmTimezone?.value;
         const roundIncrementMinutes = Number(
           interval?.disabled
             ? form.roundIncrementMinutesFallback?.value
@@ -8217,7 +8351,7 @@
         try {
           state.settings = await api('/api/settings', {
             method: 'PATCH',
-            body: JSON.stringify({ durationFormat, roundMode, roundIncrementMinutes }),
+            body: JSON.stringify({ durationFormat, roundMode, roundIncrementMinutes, firmTimezone }),
           });
           const msg = $('#settingsMsg');
           if (msg) msg.innerHTML = '<div class="ok-banner">Time &amp; billing settings saved.</div>';
