@@ -883,13 +883,21 @@ button.client-typeahead-clear:active {
 .create-matter-row {
   display: -webkit-flex;
   display: flex;
-  -webkit-align-items: flex-start;
-  align-items: flex-start;
+  -webkit-align-items: flex-end;
+  align-items: flex-end;
   gap: 0.45rem;
   -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
   width: 100%;
   min-width: 0;
+}
+
+.create-matter-row .create-matter-type-field {
+  -webkit-flex: 0 1 11.5rem;
+  flex: 0 1 11.5rem;
+  width: 11.5rem;
+  min-width: 9.5rem;
+  margin: 0;
 }
 
 .create-matter-form input,
