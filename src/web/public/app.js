@@ -4088,6 +4088,17 @@
                 <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
                   role="listbox" hidden></ul>
               </div>
+              <label class="create-matter-type-field">Record type
+                <select name="recordTypeKey" id="createMatterTypeSelect" required>
+                  ${(recordTypes || []).map((t) => `
+                    <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
+                      ${escapeHtml(t.label || t.key)}
+                    </option>`).join('') || `
+                    <option value="billable" selected>Billable</option>
+                    <option value="non_billable">Non-Billable</option>
+                    <option value="do_not_charge">Do not charge</option>`}
+                </select>
+              </label>
               <button class="primary" type="submit">Create</button>
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
@@ -4101,17 +4112,6 @@
                   allowAddNew: roleCanModify('contact'),
                   newClientName: newClientDraft.name || '',
                 })}
-              </label>
-              <label class="create-matter-type-field">Record type
-                <select name="recordTypeKey" id="createMatterTypeSelect" required>
-                  ${(recordTypes || []).map((t) => `
-                    <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
-                      ${escapeHtml(t.label || t.key)}
-                    </option>`).join('') || `
-                    <option value="billable" selected>Billable</option>
-                    <option value="non_billable">Non-Billable</option>
-                    <option value="do_not_charge">Do not charge</option>`}
-                </select>
               </label>
             </div>
             <div class="grid two create-matter-custom">
