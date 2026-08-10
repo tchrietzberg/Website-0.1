@@ -73,12 +73,23 @@ function requireUser(db, req, res) {
   return session.user;
 }
 
-function requireRoles(user, res, roles, req = null) {
-  if (!roles.includes(user.role)) {
+function requireRoles(user, res, roles, req = null, dbRef = null) {
+  if (!user?.role) {
     json(res, 403, { error: 'forbidden' }, req);
     return false;
   }
-  return true;
+  if (roles.includes(user.role)) return true;
+  // Custom firm roles share the general staff gate; object-level permissions still apply.
+  if (
+    dbRef
+    && roles.includes('attorney')
+    && roles.includes('paralegal')
+    && permissions.isKnownRole(dbRef, user.role)
+  ) {
+    return true;
+  }
+  json(res, 403, { error: 'forbidden' }, req);
+  return false;
 }
 
 function requireCsrf(req, res, session) {
@@ -152,6 +163,7 @@ function createServer(db = openDb()) {
   security.sessionSecret(db);
   security.ensureSessionTables(db);
   authEmail.ensureAuthTokenTables(db);
+  const roleGate = (user, res, roles, req = null) => requireRoles(user, res, roles, req, db);
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -417,19 +429,19 @@ function createServer(db = openDb()) {
         return json(res, 201, created);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/users\/\d+\/send-reset$/)) {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         const id = Number(pathname.split('/')[3]);
         const result = await authEmail.adminSendPasswordReset(db, user, req, id);
         return json(res, 200, result);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/users\/\d+\/active$/)) {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         const id = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, usersSvc.setUserActive(db, user, id, !!body.active));
       }
       if (req.method === 'GET' && pathname === '/api/rates') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const scope = url.searchParams.get('scope');
         const scopeId = url.searchParams.get('scopeId');
         return json(res, 200, ratesAdmin.listRates(db, {
@@ -438,12 +450,12 @@ function createServer(db = openDb()) {
         }));
       }
       if (req.method === 'POST' && pathname === '/api/rates') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
         return json(res, 201, ratesAdmin.addRate(db, user, body));
       }
       if (req.method === 'GET' && pathname === '/api/timekeepers') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const asOf = url.searchParams.get('asOf') || undefined;
         return json(res, 200, ratesAdmin.timekeeperRatesSummary(db, asOf));
       }
@@ -475,7 +487,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname === '/api/clients') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const clientsSvc = require('../services/clients');
           const body = await parseBody(req);
@@ -496,7 +508,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/clients\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const clientsSvc = require('../services/clients');
           const id = Number(pathname.split('/')[3]);
@@ -507,7 +519,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/clients\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const clientsSvc = require('../services/clients');
           const id = Number(pathname.split('/')[3]);
@@ -517,7 +529,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/clients\/\d+\/custom-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const clientsSvc = require('../services/clients');
           const clientId = Number(pathname.split('/')[3]);
@@ -537,7 +549,7 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.listRecordTypes(db, { appliesTo }));
       }
       if (req.method === 'POST' && pathname === '/api/record-types') {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 201, customFields.createRecordType(db, user, body));
@@ -569,7 +581,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname === '/api/matters/reindex') {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         const matterIndex = require('../services/matterIndex');
         matterIndex.reindexAllMatters(db);
         const count = db.prepare('SELECT COUNT(*) AS n FROM matter_search_index').get().n;
@@ -586,7 +598,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname === '/api/matters') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 201, matterSvc.createMatter(db, user, body));
@@ -595,7 +607,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'PATCH' && pathname.match(/^\/api\/matters\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const id = Number(pathname.split('/')[3]);
           const body = await parseBody(req);
@@ -605,7 +617,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/matters\/\d+$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const id = Number(pathname.split('/')[3]);
           return json(res, 200, matterSvc.deleteMatter(db, user, id));
@@ -614,7 +626,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/custom-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         try {
           const matterId = Number(pathname.split('/')[3]);
           const body = await parseBody(req);
@@ -626,19 +638,19 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/use-record-layout$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const matterId = Number(pathname.split('/')[3]);
         const layout = customFields.ensureMatterLayout(db, matterId);
         return json(res, 200, { layout, page: matterSvc.getMatter(db, matterId) });
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/standard-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const matterId = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, customFields.addStandardFieldToMatter(db, user, matterId, body.fieldKey));
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/matters\/\d+\/layout-fields$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const matterId = Number(pathname.split('/')[3]);
         const fieldKey = url.searchParams.get('fieldKey');
         if (!fieldKey) return json(res, 400, { error: 'fieldKey required' });
@@ -652,7 +664,7 @@ function createServer(db = openDb()) {
         return json(res, 200, onedrive.getMatterOneDrive(db, matterId));
       }
       if (req.method === 'PUT' && pathname.match(/^\/api\/matters\/\d+\/onedrive$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const onedrive = require('../services/onedrive');
         const matterIndex = require('../services/matterIndex');
         const matterId = Number(pathname.split('/')[3]);
@@ -666,7 +678,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/matters\/\d+\/onedrive$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const onedrive = require('../services/onedrive');
         const matterIndex = require('../services/matterIndex');
         const matterId = Number(pathname.split('/')[3]);
@@ -685,7 +697,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/onedrive\/sync$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const onedrive = require('../services/onedrive');
         const matterId = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
@@ -699,7 +711,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/onedrive\/demo-seed$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const onedrive = require('../services/onedrive');
         const matterId = Number(pathname.split('/')[3]);
         try {
@@ -720,12 +732,12 @@ function createServer(db = openDb()) {
           appliesTo = customFields.getTypeLayout(db, key).appliesTo || 'matter';
         } catch (_) { /* unknown type → admin gate below */ }
         const allowed = appliesTo === 'client' ? ['admin', 'billing_clerk'] : ['admin'];
-        if (!requireRoles(user, res, allowed)) return;
+        if (!roleGate(user, res, allowed)) return;
         const body = await parseBody(req);
         return json(res, 200, customFields.addStandardFieldToType(db, user, key, body.fieldKey));
       }
       if (req.method === 'DELETE' && pathname.match(/^\/api\/record-types\/[^/]+\/layout-fields$/)) {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         const key = decodeURIComponent(pathname.split('/')[3]);
         const fieldKey = url.searchParams.get('fieldKey');
         if (!fieldKey) return json(res, 400, { error: 'fieldKey required' });
@@ -752,7 +764,7 @@ function createServer(db = openDb()) {
             : appliesTo === 'time_entry'
               ? ['admin', 'billing_clerk']
               : ['admin'];
-          if (!requireRoles(user, res, allowed)) return;
+          if (!roleGate(user, res, allowed)) return;
           return json(res, 201, customFields.createCustomField(db, user, body));
         } catch (e) {
           const status = e.code === 'FORBIDDEN' ? 403 : 400;
@@ -772,7 +784,7 @@ function createServer(db = openDb()) {
             : appliesTo === 'matter'
               ? ['admin']
               : ['admin', 'billing_clerk'];
-          if (!requireRoles(user, res, allowed)) return;
+          if (!roleGate(user, res, allowed)) return;
           const body = await parseBody(req);
           return json(res, 200, customFields.updateCustomField(db, user, fieldId, body));
         } catch (e) {
@@ -787,7 +799,7 @@ function createServer(db = openDb()) {
         const allowed = isRecordOnly
           ? ['admin', 'billing_clerk', 'attorney', 'paralegal']
           : ['admin'];
-        if (!requireRoles(user, res, allowed)) return;
+        if (!roleGate(user, res, allowed)) return;
         return json(res, 200, customFields.deactivateCustomField(db, user, fieldId));
       }
 
@@ -937,7 +949,7 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'PUT' && pathname.match(/^\/api\/layouts\/\d+\/items$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const layoutId = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, customFields.saveLayoutItems(db, user, layoutId, body.items || []));
@@ -972,7 +984,7 @@ function createServer(db = openDb()) {
         return json(res, 200, readSettings(db));
       }
       if (req.method === 'PATCH' && pathname === '/api/settings') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
         if (body.roundIncrementMinutes != null) {
           const minutes = assertAllowedIncrement(Number(body.roundIncrementMinutes));
@@ -985,12 +997,12 @@ function createServer(db = openDb()) {
           setSetting(db, 'duration_format', assertDurationFormat(body.durationFormat));
         }
         if (body.msGraphAccessToken !== undefined) {
-          if (!requireRoles(user, res, ['admin'])) return;
+          if (!roleGate(user, res, ['admin'])) return;
           const onedrive = require('../services/onedrive');
           onedrive.setGraphToken(db, user, body.msGraphAccessToken);
         }
         if (body.msClientId !== undefined || body.msTenantId !== undefined || body.msClientSecret !== undefined) {
-          if (!requireRoles(user, res, ['admin'])) return;
+          if (!roleGate(user, res, ['admin'])) return;
           const msAuth = require('../services/msAuth');
           msAuth.saveAppConfig(db, user, {
             clientId: body.msClientId,
@@ -999,7 +1011,7 @@ function createServer(db = openDb()) {
           });
         }
         if (body.emailConfig) {
-          if (!requireRoles(user, res, ['admin'])) return;
+          if (!roleGate(user, res, ['admin'])) return;
           if (!mail.outboundEmailEnabled()) {
             return json(res, 503, {
               error: 'mail_deferred',
@@ -1013,11 +1025,11 @@ function createServer(db = openDb()) {
           clientsSvc.setEnabledContactStandardKeys(db, user, body.contactStandardFields);
         }
         if (body.billFields !== undefined) {
-          if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+          if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
           invoiceSvc.setBillFields(db, user, body.billFields);
         }
         if (body.matterNameFormula !== undefined) {
-          if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+          if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
           matterSvc.setMatterNameFormula(db, user, body.matterNameFormula);
         }
         if (
@@ -1025,9 +1037,17 @@ function createServer(db = openDb()) {
           || body.profilePermissions !== undefined
           || body.recordPageLayout !== undefined
           || body.fieldPermissions !== undefined
+          || body.addRole !== undefined
         ) {
-          if (!requireRoles(user, res, ['admin'])) return;
+          if (!roleGate(user, res, ['admin'])) return;
           const permissions = require('../services/permissions');
+          if (body.addRole !== undefined) {
+            try {
+              permissions.addCustomRole(db, user, body.addRole || {});
+            } catch (e) {
+              return json(res, 400, { error: e.message, message: e.message }, req);
+            }
+          }
           if (body.rolePermissions !== undefined) {
             permissions.setRolePermissions(db, user, body.rolePermissions);
           } else if (body.profilePermissions !== undefined) {
@@ -1043,7 +1063,7 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'POST' && pathname === '/api/settings/email/test') {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         if (!mail.outboundEmailEnabled()) {
           return json(res, 503, {
             error: 'mail_deferred',
@@ -1068,7 +1088,7 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'POST' && pathname === '/api/onedrive/connect/start') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const msAuth = require('../services/msAuth');
         try {
           return json(res, 200, await msAuth.startDeviceCode(db, user));
@@ -1081,7 +1101,7 @@ function createServer(db = openDb()) {
       }
       // One-click: optional first-time clientId save, then return browser login URL
       if (req.method === 'POST' && pathname === '/api/onedrive/connect/quick') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const msAuth = require('../services/msAuth');
         const body = await parseBody(req);
         try {
@@ -1114,7 +1134,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname === '/api/onedrive/connect/poll') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const msAuth = require('../services/msAuth');
         const body = await parseBody(req);
         try {
@@ -1124,7 +1144,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'GET' && pathname === '/api/onedrive/connect/login') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const msAuth = require('../services/msAuth');
         try {
           const redirectUri = security.oauthRedirectUri(req);
@@ -1137,7 +1157,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname === '/api/onedrive/disconnect') {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         const msAuth = require('../services/msAuth');
         return json(res, 200, { microsoft: msAuth.disconnect(db, user), ...readSettings(db) });
       }
@@ -1241,16 +1261,16 @@ function createServer(db = openDb()) {
         return json(res, 200, timeSvc.submitEntry(db, user, id));
       }
       if (req.method === 'GET' && pathname === '/api/approval-queue') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         return json(res, 200, timeSvc.listQueue(db));
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/time-entries\/\d+\/approve$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         const id = Number(pathname.split('/')[3]);
         return json(res, 200, timeSvc.approveEntry(db, user, id));
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/time-entries\/\d+\/reject$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney'])) return;
         const id = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, timeSvc.rejectEntry(db, user, id, body.reason));
@@ -1261,14 +1281,14 @@ function createServer(db = openDb()) {
         return json(res, 200, invoiceSvc.listInvoices(db));
       }
       if (req.method === 'GET' && pathname === '/api/billing/ready') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         return json(res, 200, invoiceSvc.listMattersReadyForBilling(db));
       }
       if (req.method === 'GET' && pathname === '/api/billing/fields') {
         return json(res, 200, invoiceSvc.getBillFieldConfig(db));
       }
       if (req.method === 'POST' && pathname === '/api/billing/fields') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 200, invoiceSvc.addBillField(db, user, body));
@@ -1277,7 +1297,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'DELETE' && pathname === '/api/billing/fields') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         try {
           const group = url.searchParams.get('group');
           const key = url.searchParams.get('key');
@@ -1287,7 +1307,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'PUT' && pathname === '/api/billing/fields') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         try {
           const body = await parseBody(req);
           return json(res, 200, invoiceSvc.setBillFields(db, user, body));
@@ -1334,7 +1354,7 @@ function createServer(db = openDb()) {
         req.method === 'POST'
         && (pathname === '/api/invoices/bill' || pathname === '/api/invoices/prebill')
       ) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
         try {
           return json(res, 201, invoiceSvc.createBill(db, user, Number(body.matterId), {
@@ -1347,13 +1367,13 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/invoice-lines\/\d+\/write-down$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const id = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, invoiceSvc.writeDownLine(db, user, id, Number(body.deltaCents), body.reason));
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/invoices\/\d+\/status$/)) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const id = Number(pathname.split('/')[3]);
         const body = await parseBody(req);
         return json(res, 200, invoiceSvc.setStatus(db, user, id, body.status));
@@ -1362,7 +1382,7 @@ function createServer(db = openDb()) {
         (req.method === 'DELETE' && pathname.match(/^\/api\/invoices\/\d+\/?$/))
         || (req.method === 'POST' && pathname.match(/^\/api\/invoices\/\d+\/delete\/?$/))
       ) {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const id = Number(pathname.split('/').filter(Boolean)[2]);
         if (!Number.isFinite(id) || id <= 0) {
           return json(res, 400, { error: 'invalid_id', message: 'Invalid invoice id' }, req);
@@ -1380,7 +1400,7 @@ function createServer(db = openDb()) {
         return json(res, 200, paymentSvc.listPayments(db));
       }
       if (req.method === 'POST' && pathname === '/api/payments') {
-        if (!requireRoles(user, res, ['admin', 'billing_clerk'])) return;
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
         const body = await parseBody(req);
         return json(res, 201, paymentSvc.recordPayment(db, user, {
           clientId: Number(body.clientId),
@@ -1521,7 +1541,7 @@ function createServer(db = openDb()) {
       }
 
       if (req.method === 'GET' && pathname === '/api/audit-log') {
-        if (!requireRoles(user, res, ['admin'])) return;
+        if (!roleGate(user, res, ['admin'])) return;
         return json(res, 200, db.prepare(`
           SELECT a.*, u.email AS actor_email
           FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id

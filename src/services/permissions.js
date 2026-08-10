@@ -1,18 +1,159 @@
 const { getSetting, setSetting, audit } = require('../db');
 
-const ROLES = [
+const BUILTIN_ROLES = [
   { key: 'admin', label: 'Admin' },
   { key: 'attorney', label: 'Attorney' },
   { key: 'paralegal', label: 'Paralegal' },
-  { key: 'billing_clerk', label: 'Billing clerk' },
+  { key: 'billing_clerk', label: 'Billing Clerk' },
 ];
 
+/** @deprecated use listRoles(db) — built-in roles only (no firm custom roles). */
+const ROLES = BUILTIN_ROLES;
 /** @deprecated use ROLES */
 const PROFILES = ROLES;
 
-const ROLE_KEYS = ROLES.map((r) => r.key);
+const BUILTIN_ROLE_KEYS = BUILTIN_ROLES.map((r) => r.key);
+/** @deprecated use getRoleKeys(db) */
+const ROLE_KEYS = BUILTIN_ROLE_KEYS;
 /** @deprecated use ROLE_KEYS */
 const PROFILE_KEYS = ROLE_KEYS;
+
+const CUSTOM_ROLES_KEY = 'custom_roles';
+
+function titleCaseRoleLabel(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function slugifyRoleKey(label) {
+  const slug = String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  return slug;
+}
+
+function readCustomRoles(db) {
+  const raw = getSetting(db, CUSTOM_ROLES_KEY, null);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const out = [];
+    const seen = new Set(BUILTIN_ROLE_KEYS);
+    for (const row of parsed) {
+      if (!row || typeof row !== 'object') continue;
+      const key = slugifyRoleKey(row.key || row.label);
+      if (!key || seen.has(key) || key === 'admin') continue;
+      seen.add(key);
+      out.push({
+        key,
+        label: titleCaseRoleLabel(row.label || key),
+        custom: true,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function writeCustomRoles(db, actor, roles) {
+  const cleaned = [];
+  const seen = new Set(BUILTIN_ROLE_KEYS);
+  for (const row of roles || []) {
+    if (!row || typeof row !== 'object') continue;
+    const key = slugifyRoleKey(row.key || row.label);
+    if (!key || seen.has(key) || key === 'admin') continue;
+    seen.add(key);
+    cleaned.push({
+      key,
+      label: titleCaseRoleLabel(row.label || key),
+    });
+  }
+  setSetting(db, CUSTOM_ROLES_KEY, JSON.stringify(cleaned));
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'custom_roles.update',
+    entityType: 'firm_settings',
+    entityId: null,
+    detail: { roles: cleaned },
+  });
+  return cleaned.map((r) => ({ ...r, custom: true }));
+}
+
+/** Built-in + firm custom roles (labels title-cased). */
+function listRoles(db) {
+  const builtin = BUILTIN_ROLES.map((r) => ({
+    key: r.key,
+    label: titleCaseRoleLabel(r.label),
+    custom: false,
+  }));
+  return [...builtin, ...readCustomRoles(db)];
+}
+
+function getRoleKeys(db) {
+  return listRoles(db).map((r) => r.key);
+}
+
+function isKnownRole(db, role) {
+  return getRoleKeys(db).includes(role);
+}
+
+function addCustomRole(db, actor, input = {}) {
+  const label = titleCaseRoleLabel(input.label || input.name || '');
+  if (!label) throw new Error('Role name is required');
+  let key = slugifyRoleKey(input.key || label);
+  if (!key) throw new Error('Role name is required');
+  if (key === 'admin' || BUILTIN_ROLE_KEYS.includes(key)) {
+    throw new Error(`Role “${titleCaseRoleLabel(key)}” already exists`);
+  }
+  const existing = readCustomRoles(db);
+  if (existing.some((r) => r.key === key)) {
+    throw new Error(`Role “${label}” already exists`);
+  }
+  // Avoid colliding with a near-duplicate slug by appending a counter.
+  let candidate = key;
+  let n = 2;
+  const used = new Set([...BUILTIN_ROLE_KEYS, ...existing.map((r) => r.key)]);
+  while (used.has(candidate)) {
+    candidate = `${key}_${n}`;
+    n += 1;
+  }
+  key = candidate;
+  const nextRoles = [...existing, { key, label }];
+  writeCustomRoles(db, actor, nextRoles);
+
+  // Seed default permissions for the new role (view/find on, edit/delete off).
+  const perms = getRolePermissions(db);
+  perms[key] = normalizeRoleEntry({
+    objects: Object.fromEntries(
+      OBJECT_KEYS.map((o) => [o, {
+        viewAll: true,
+        search: true,
+        modifyAll: false,
+        delete: false,
+        ...(o === 'time' ? {
+          selectTimekeeper: false,
+          viewOthers: true,
+          modifyOthers: false,
+          deleteOthers: false,
+        } : {}),
+      }])
+    ),
+    addUsers: false,
+  }, null, key);
+  setRolePermissions(db, actor, perms);
+  return listRoles(db).find((r) => r.key === key);
+}
 
 const OBJECT_KEYS = ['matter', 'contact', 'time', 'report'];
 const OBJECT_LABELS = {
@@ -58,9 +199,9 @@ function defaultAddUsers(roleKey) {
   return roleKey === 'admin';
 }
 
-function defaultRolePermissions(full = true) {
+function defaultRolePermissions(full = true, roleKeys = BUILTIN_ROLE_KEYS) {
   return Object.fromEntries(
-    ROLE_KEYS.map((key) => [
+    roleKeys.map((key) => [
       key,
       {
         objects: Object.fromEntries(
@@ -173,9 +314,10 @@ function readRawRolePermissions(db) {
 
 function getRolePermissions(db) {
   const parsed = readRawRolePermissions(db) || {};
-  const defaults = defaultRolePermissions(true);
+  const roleKeys = getRoleKeys(db);
+  const defaults = defaultRolePermissions(true, roleKeys);
   const out = {};
-  for (const key of ROLE_KEYS) {
+  for (const key of roleKeys) {
     out[key] = normalizeRoleEntry(parsed[key], defaults[key], key);
   }
   // Admin always keeps full access so settings cannot lock the firm out.
@@ -190,25 +332,25 @@ function getRolePermissions(db) {
 
 /** @deprecated use getRolePermissions */
 function getProfilePermissions(db) {
-  const roles = getRolePermissions(db);
-  const legacy = {};
-  for (const key of ROLE_KEYS) {
-    const objs = roles[key].objects;
-    const canModify = OBJECT_KEYS.every((o) => objs[o].modifyAll);
-    legacy[key] = canModify ? 'read_write' : 'read_only';
-  }
-  return legacy;
+  return getProfilePermissionsFromRoles(getRolePermissions(db), getRoleKeys(db));
 }
 
 function setRolePermissions(db, actor, input = {}) {
   const current = getRolePermissions(db);
+  const roleKeys = getRoleKeys(db);
   const next = {};
-  for (const key of ROLE_KEYS) {
+  for (const key of roleKeys) {
     if (input[key] !== undefined) {
       next[key] = normalizeRoleEntry(input[key], current[key], key);
     } else {
       next[key] = current[key];
     }
+  }
+  // Also accept brand-new custom role keys present in the save payload.
+  for (const key of Object.keys(input || {})) {
+    if (next[key] || key === 'admin') continue;
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) continue;
+    next[key] = normalizeRoleEntry(input[key], null, key);
   }
   next.admin = {
     objects: Object.fromEntries(
@@ -218,7 +360,9 @@ function setRolePermissions(db, actor, input = {}) {
   };
   setSetting(db, ROLE_PERMISSIONS_KEY, JSON.stringify(next));
   // Keep legacy key in sync for older readers.
-  setSetting(db, PROFILE_PERMISSIONS_KEY, JSON.stringify(getProfilePermissionsFromRoles(next)));
+  setSetting(db, PROFILE_PERMISSIONS_KEY, JSON.stringify(
+    getProfilePermissionsFromRoles(next, Object.keys(next))
+  ));
   audit(db, {
     actorId: actor?.id || null,
     action: 'role_permissions.update',
@@ -229,10 +373,11 @@ function setRolePermissions(db, actor, input = {}) {
   return next;
 }
 
-function getProfilePermissionsFromRoles(roles) {
+function getProfilePermissionsFromRoles(roles, roleKeys = BUILTIN_ROLE_KEYS) {
   const legacy = {};
-  for (const key of ROLE_KEYS) {
-    const objs = roles[key].objects;
+  for (const key of roleKeys) {
+    const objs = roles[key]?.objects;
+    if (!objs) continue;
     const canModify = OBJECT_KEYS.every((o) => objs[o].modifyAll);
     legacy[key] = canModify ? 'read_write' : 'read_only';
   }
@@ -246,11 +391,10 @@ function setProfilePermissions(db, actor, input = {}) {
 }
 
 function getRoleObjectAccess(db, role, objectKey) {
-  const key = ROLE_KEYS.includes(role) ? role : null;
-  if (!key || !OBJECT_KEYS.includes(objectKey)) {
+  if (!isKnownRole(db, role) || !OBJECT_KEYS.includes(objectKey)) {
     return defaultObjectPerms(false);
   }
-  return getRolePermissions(db)[key].objects[objectKey];
+  return getRolePermissions(db)[role].objects[objectKey];
 }
 
 function canViewAll(db, role, objectKey) {
@@ -290,9 +434,8 @@ function canDeleteOthersTime(db, role) {
 /** Invite / Add a user — admin always; other roles only when granted. */
 function canAddUsers(db, role) {
   if (role === 'admin') return true;
-  const key = ROLE_KEYS.includes(role) ? role : null;
-  if (!key) return false;
-  return !!getRolePermissions(db)[key].addUsers;
+  if (!isKnownRole(db, role)) return false;
+  return !!getRolePermissions(db)[role].addUsers;
 }
 
 function assertCanAddUsers(db, actor) {
@@ -303,9 +446,8 @@ function assertCanAddUsers(db, actor) {
 
 /** Legacy: read_write if modifyAll on all objects, else read_only. */
 function getProfileAccess(db, role) {
-  const key = ROLE_KEYS.includes(role) ? role : null;
-  if (!key) return 'read_only';
-  const objs = getRolePermissions(db)[key].objects;
+  if (!isKnownRole(db, role)) return 'read_only';
+  const objs = getRolePermissions(db)[role].objects;
   return OBJECT_KEYS.every((o) => objs[o].modifyAll) ? 'read_write' : 'read_only';
 }
 
@@ -388,8 +530,8 @@ function normalizeFieldAccessMap(input) {
     if (!key) continue;
     const row = {};
     const src = roleMap && typeof roleMap === 'object' ? roleMap : {};
-    for (const role of ROLE_KEYS) {
-      if (src[role] === undefined) continue;
+    for (const role of Object.keys(src)) {
+      if (!/^[a-z][a-z0-9_]*$/.test(role)) continue;
       row[role] = normalizeFieldMode(src[role], 'write');
     }
     if (Object.keys(row).length) out[key] = row;
@@ -433,7 +575,7 @@ function getFieldAccess(db, page, role, fieldKey) {
   const pageMap = layout[page] || {};
   const row = pageMap[key];
   if (!row || typeof row !== 'object') return 'write';
-  if (!ROLE_KEYS.includes(role)) return 'write';
+  if (!isKnownRole(db, role)) return 'write';
   if (row[role] === undefined) return 'write';
   return normalizeFieldMode(row[role], 'write');
 }
@@ -565,13 +707,14 @@ function catalogContactLayoutFields(db) {
 
 function getPermissionsSettings(db) {
   const layout = getRecordPageLayout(db);
+  const roles = listRoles(db);
   const rolePermissions = getRolePermissions(db);
   return {
-    roles: ROLES,
-    profiles: ROLES, // compat
+    roles,
+    profiles: roles, // compat
     objects: OBJECT_KEYS.map((key) => ({ key, label: OBJECT_LABELS[key] })),
     rolePermissions,
-    profilePermissions: getProfilePermissionsFromRoles(rolePermissions), // compat
+    profilePermissions: getProfilePermissionsFromRoles(rolePermissions, getRoleKeys(db)), // compat
     fieldPermissions: layout,
     recordPageLayout: layout, // compat
     matterFields: catalogMatterLayoutFields(db),
@@ -581,13 +724,20 @@ function getPermissionsSettings(db) {
 
 module.exports = {
   ROLES,
+  BUILTIN_ROLES,
   PROFILES,
   ROLE_KEYS,
+  BUILTIN_ROLE_KEYS,
   PROFILE_KEYS,
   OBJECT_KEYS,
   OBJECT_LABELS,
   FIELD_MODES,
   ACCESS_MODES,
+  titleCaseRoleLabel,
+  listRoles,
+  getRoleKeys,
+  isKnownRole,
+  addCustomRole,
   getRolePermissions,
   setRolePermissions,
   getProfilePermissions,

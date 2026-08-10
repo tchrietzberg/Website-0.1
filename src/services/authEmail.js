@@ -315,7 +315,8 @@ function inviteUser(db, actor, input) {
   const role = input.role || 'attorney';
   if (!email || !email.includes('@')) throw new Error('valid email required');
   if (!name) throw new Error('name required');
-  if (!['admin', 'attorney', 'paralegal', 'billing_clerk'].includes(role)) {
+  const permissions = require('./permissions');
+  if (!permissions.isKnownRole(db, role)) {
     throw new Error('invalid role');
   }
   const existing = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);

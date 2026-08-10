@@ -17,7 +17,8 @@ function createUser(db, actor, input) {
   const password = input.password;
   if (!email || !email.includes('@')) throw new Error('valid email required');
   if (!name) throw new Error('name required');
-  if (!['admin', 'attorney', 'paralegal', 'billing_clerk'].includes(role)) {
+  const permissions = require('./permissions');
+  if (!permissions.isKnownRole(db, role)) {
     throw new Error('invalid role');
   }
   if (!password) throw new Error('password required');

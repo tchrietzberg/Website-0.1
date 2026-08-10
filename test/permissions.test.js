@@ -24,6 +24,21 @@ describe('role permissions and field permissions', () => {
     customFields.ensureRecordTypes(db);
   });
 
+  it('title-cases role labels and supports adding custom roles', () => {
+    const listed = permissions.listRoles(db);
+    assert.equal(listed.find((r) => r.key === 'billing_clerk').label, 'Billing Clerk');
+    const created = permissions.addCustomRole(db, admin, { label: 'intake specialist' });
+    assert.equal(created.key, 'intake_specialist');
+    assert.equal(created.label, 'Intake Specialist');
+    assert.equal(permissions.isKnownRole(db, 'intake_specialist'), true);
+    assert.equal(permissions.canViewAll(db, 'intake_specialist', 'matter'), true);
+    assert.equal(permissions.canModifyAll(db, 'intake_specialist', 'matter'), false);
+    assert.throws(
+      () => permissions.addCustomRole(db, admin, { label: 'Intake Specialist' }),
+      /already exists/
+    );
+  });
+
   it('defaults roles to full access and keeps admin locked on', () => {
     const defaults = permissions.getRolePermissions(db);
     assert.equal(defaults.paralegal.objects.matter.modifyAll, true);

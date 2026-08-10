@@ -1529,10 +1529,33 @@
     };
   }
 
+  function formatRoleLabel(roleOrLabel) {
+    if (roleOrLabel && typeof roleOrLabel === 'object') {
+      return String(roleOrLabel.label || roleOrLabel.key || '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .split(' ')
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+    return String(roleOrLabel || '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+
   async function bindRolePermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
     if (!bodyEl || !permissions) return;
-    const roles = permissions.roles || permissions.profiles || [];
-    const editableRoles = roles.filter((r) => r.key !== 'admin');
+    let roles = (permissions.roles || permissions.profiles || []).map((r) => ({
+      ...r,
+      label: formatRoleLabel(r),
+    }));
     const objects = permissions.objects || [
       { key: 'matter', label: 'Matters' },
       { key: 'contact', label: 'Contacts' },
@@ -1572,16 +1595,24 @@
       },
     ];
     const current = {};
-    for (const role of roles) {
-      current[role.key] = normalizeRolePermEntry(
-        (permissions.rolePermissions || {})[role.key]
-          ?? (permissions.profilePermissions || {})[role.key],
-        role.key
-      );
-    }
-    let activeRole = editableRoles.some((r) => r.key === state.settingsRoleKey)
+    const syncRolesFromPermissions = (perms) => {
+      roles = (perms?.roles || perms?.profiles || roles).map((r) => ({
+        ...r,
+        label: formatRoleLabel(r),
+      }));
+      for (const role of roles) {
+        current[role.key] = normalizeRolePermEntry(
+          (perms?.rolePermissions || permissions.rolePermissions || {})[role.key]
+            ?? (perms?.profilePermissions || permissions.profilePermissions || {})[role.key],
+          role.key
+        );
+      }
+    };
+    syncRolesFromPermissions(permissions);
+    const editableRolesOf = () => roles.filter((r) => r.key !== 'admin');
+    let activeRole = editableRolesOf().some((r) => r.key === state.settingsRoleKey)
       ? state.settingsRoleKey
-      : (editableRoles[0]?.key || 'attorney');
+      : (editableRolesOf()[0]?.key || 'attorney');
     let dirty = false;
     let cascadeNote = '';
     const setMsg = (html) => {
@@ -1671,6 +1702,7 @@
       render();
     };
     const render = () => {
+      const editableRoles = editableRolesOf();
       state.settingsRoleKey = activeRole;
       const role = editableRoles.find((r) => r.key === activeRole) || editableRoles[0];
       if (!role) {
@@ -1678,6 +1710,7 @@
         return;
       }
       const roleKey = role.key;
+      const roleLabel = formatRoleLabel(role);
       const objs = current[roleKey].objects;
       const timePerms = objs.time || {};
       const showTimeExtras = !!(timePerms.viewAll);
@@ -1688,19 +1721,26 @@
             <strong>Admin</strong> always has full access and isn’t shown here.
             <strong>Add users</strong> is on for Admin by default — grant it to other roles below if they should invite people.
           </p>
+          <form id="addRoleForm" class="role-perms-add">
+            <label class="role-perms-add-label" for="newRoleName">Add role
+              <input id="newRoleName" name="label" type="text" maxlength="40"
+                placeholder="e.g. Intake Specialist" autocomplete="off" />
+            </label>
+            <button type="submit" class="primary">Add role</button>
+          </form>
           <div class="role-perms-tabs" role="tablist" aria-label="Choose a role">
             ${editableRoles.map((r) => `
               <button type="button" class="role-perms-tab${r.key === roleKey ? ' is-active' : ''}"
                 role="tab" aria-selected="${r.key === roleKey ? 'true' : 'false'}"
                 data-role-tab="${escapeHtml(r.key)}">
-                ${escapeHtml(r.label)}
+                ${escapeHtml(formatRoleLabel(r))}
               </button>`).join('')}
           </div>
           <div class="role-perm-panel" data-role="${escapeHtml(roleKey)}" role="tabpanel">
             <div class="role-perm-panel-head">
               <div>
-                <h3>${escapeHtml(role.label)}</h3>
-                <p class="hint">What can ${escapeHtml(role.label.toLowerCase())}s do?</p>
+                <h3>${escapeHtml(roleLabel)}</h3>
+                <p class="hint">What can people with the ${escapeHtml(roleLabel)} role do?</p>
               </div>
               <div class="role-perm-presets" aria-label="Quick setups">
                 <span class="muted role-perm-presets-label">Quick setup</span>
@@ -1800,6 +1840,37 @@
             ${dirty ? '<span class="muted">Unsaved changes</span>' : ''}
           </div>
         </div>`;
+      const addRoleForm = $('#addRoleForm', bodyEl);
+      if (addRoleForm) {
+        addRoleForm.onsubmit = async (ev) => {
+          ev.preventDefault();
+          const label = String(new FormData(addRoleForm).get('label') || '').trim();
+          if (!label) {
+            setMsg('<div class="error">Enter a role name to continue.</div>');
+            $('#newRoleName', bodyEl)?.focus();
+            return;
+          }
+          try {
+            const updated = await api('/api/settings', {
+              method: 'PATCH',
+              body: JSON.stringify({ addRole: { label } }),
+            });
+            state.settings = updated;
+            syncRolesFromPermissions(updated.permissions || {});
+            const created = (updated.permissions?.roles || []).find(
+              (r) => formatRoleLabel(r).toLowerCase() === formatRoleLabel(label).toLowerCase()
+            ) || editableRolesOf().slice(-1)[0];
+            if (created?.key) activeRole = created.key;
+            dirty = false;
+            cascadeNote = '';
+            setMsg(`<div class="ok-banner">Role “${escapeHtml(formatRoleLabel(created || { label }))}” added. Adjust permissions below, then Save.</div>`);
+            render();
+            renderShell({ force: true });
+          } catch (e) {
+            setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      }
       bodyEl.querySelectorAll('[data-role-tab]').forEach((btn) => {
         btn.onclick = () => {
           activeRole = btn.dataset.roleTab;
@@ -1885,10 +1956,7 @@
               body: JSON.stringify({ rolePermissions: current }),
             });
             state.settings = updated;
-            const next = updated.permissions?.rolePermissions || current;
-            for (const r of roles) {
-              current[r.key] = normalizeRolePermEntry(next[r.key], r.key);
-            }
+            syncRolesFromPermissions(updated.permissions || {});
             dirty = false;
             cascadeNote = '';
             setMsg('<div class="ok-banner">Role permissions saved.</div>');
@@ -1907,7 +1975,10 @@
 
   async function bindFieldPermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
     if (!bodyEl || !permissions) return;
-    const roles = permissions.roles || permissions.profiles || [];
+    const roles = (permissions.roles || permissions.profiles || []).map((r) => ({
+      ...r,
+      label: formatRoleLabel(r),
+    }));
     let page = state.settingsLayoutPage || 'matter';
     const source = permissions.fieldPermissions || permissions.recordPageLayout || {};
     const layout = {
@@ -7688,10 +7759,15 @@
             <label>Email <input name="email" type="email" required placeholder="alex@firm.example" /></label>
             <label>Role
               <select name="role">
-                <option value="attorney">Attorney</option>
-                <option value="paralegal">Paralegal</option>
-                <option value="billing_clerk">Billing clerk</option>
-                <option value="admin">Admin</option>
+                ${(state.settings?.permissions?.roles || [
+                  { key: 'attorney', label: 'Attorney' },
+                  { key: 'paralegal', label: 'Paralegal' },
+                  { key: 'billing_clerk', label: 'Billing Clerk' },
+                  { key: 'admin', label: 'Admin' },
+                ]).map((r) => `
+                  <option value="${escapeHtml(r.key)}" ${r.key === 'attorney' ? 'selected' : ''}>
+                    ${escapeHtml(formatRoleLabel(r))}
+                  </option>`).join('')}
               </select>
             </label>
             <label>Default rate ($/hr)

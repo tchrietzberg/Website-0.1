@@ -887,6 +887,32 @@ button.client-typeahead-clear:active {
   color: var(--ink);
   font-weight: 600;
 }
+.role-perms-add {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: flex-end;
+  align-items: flex-end;
+  gap: 0.55rem 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff 0%, #f5f8fc 100%);
+}
+.role-perms-add-label {
+  -webkit-flex: 1 1 14rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+}
+.role-perms-add-label input {
+  margin-top: 0.3rem;
+}
+.role-perms-add button {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+}
 .role-perms-tabs {
   display: -webkit-flex;
   display: flex;
