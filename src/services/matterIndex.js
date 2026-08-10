@@ -100,11 +100,37 @@ function searchMatters(db, filters = {}) {
 
   const status = filters.status || null;
   const matterType = filters.matterType || filters.recordType || null;
-  const clientId = filters.clientId != null ? Number(filters.clientId) : null;
+  const clientId = filters.clientId != null && String(filters.clientId).trim() !== ''
+    ? Number(filters.clientId)
+    : null;
+  const rawFieldId = filters.fieldId != null ? filters.fieldId : filters.customFieldId;
+  const fieldId = rawFieldId != null && String(rawFieldId).trim() !== ''
+    ? Number(rawFieldId)
+    : null;
+  const rawFieldValue = filters.fieldValue != null ? filters.fieldValue : filters.customFieldValue;
+  const fieldValue = rawFieldValue != null && String(rawFieldValue).trim() !== ''
+    ? String(rawFieldValue).trim()
+    : null;
+  const useCustom = fieldId != null && Number.isFinite(fieldId) && fieldId > 0 && !!fieldValue;
 
   // AND all tokens against the indexed body
   const tokenClauses = tokens.map(() => 'idx.body LIKE ?').join(' AND ');
   const tokenParams = tokens.map((t) => `%${t}%`);
+  const join = useCustom
+    ? `JOIN custom_field_values cfv
+         ON cfv.matter_id = m.id
+        AND cfv.field_id = ?
+        AND lower(IFNULL(cfv.value_text, '')) LIKE '%' || lower(?) || '%'`
+    : '';
+  // Bind order follows SQL appearance: JOIN params, then WHERE token/status filters.
+  const params = [];
+  if (useCustom) params.push(fieldId, fieldValue);
+  params.push(
+    ...tokenParams,
+    status, status,
+    matterType, matterType,
+    clientId, clientId
+  );
 
   return db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
@@ -112,17 +138,13 @@ function searchMatters(db, filters = {}) {
     JOIN matters m ON m.id = idx.matter_id
     LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
+    ${join}
     WHERE ${tokenClauses}
       AND (? IS NULL OR m.status = ?)
       AND (? IS NULL OR m.matter_type = ?)
       AND (? IS NULL OR m.client_id = ?)
     ORDER BY m.number DESC
-  `).all(
-    ...tokenParams,
-    status, status,
-    matterType, matterType,
-    clientId, clientId
-  );
+  `).all(...params);
 }
 
 module.exports = {

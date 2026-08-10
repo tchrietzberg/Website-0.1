@@ -563,6 +563,15 @@ function createServer(db = openDb()) {
           return json(res, 400, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'GET' && pathname === '/api/matters/filter-fields') {
+        try {
+          const permissions = require('../services/permissions');
+          permissions.assertCanViewRecords(db, user, 'matter');
+          return json(res, 200, matterSvc.listMatterBrowseFilters(db));
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/matters') {
         try {
           const permissions = require('../services/permissions');
@@ -573,13 +582,19 @@ function createServer(db = openDb()) {
             status: url.searchParams.get('status'),
             matterType: url.searchParams.get('type'),
             clientId: url.searchParams.get('clientId'),
+            fieldId: url.searchParams.get('fieldId'),
+            fieldValue: url.searchParams.get('fieldValue'),
           };
-          // Matter Search (indexed) when q is present; otherwise full list for dropdowns
+          // Matter Search (indexed) when q is present; otherwise full/filtered list
           if (q != null && String(q).trim() !== '') {
             return json(res, 200, matterSvc.searchMatters(db, filters));
           }
           if (url.searchParams.get('search') === '1') {
-            return json(res, 200, []); // indexed search with empty query → no hits
+            // Indexed search mode with empty query: still allow status/custom-field browse filters.
+            const hasBrowseFilter = !!(filters.status
+              || (filters.fieldId && String(filters.fieldId).trim()
+                && filters.fieldValue && String(filters.fieldValue).trim()));
+            if (!hasBrowseFilter) return json(res, 200, []);
           }
           return json(res, 200, matterSvc.listMatters(db, filters));
         } catch (e) {
