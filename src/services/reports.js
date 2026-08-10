@@ -48,6 +48,8 @@ function matterHeader(db, matterId) {
 
 function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } = {}) {
   const range = normalizeReportDates({ dateFrom, dateTo });
+  // Include billable and non-billable time so every saved entry appears.
+  // Non-billable lines keep hours but charge $0.
   const entries = db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, u.role AS timekeeper_role,
            m.number AS matter_number, m.name AS matter_name, m.status AS matter_status,
@@ -58,7 +60,7 @@ function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } 
     JOIN matters m ON m.id = te.matter_id
     LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users atty ON atty.id = m.responsible_attorney_id
-    WHERE te.billable = 1 AND te.status IN ('draft','submitted','approved','invoiced')
+    WHERE te.status IN ('draft','submitted','approved','invoiced')
       AND (? IS NULL OR te.matter_id = ?)
       AND (? IS NULL OR te.service_date >= ?)
       AND (? IS NULL OR te.service_date <= ?)
@@ -70,14 +72,19 @@ function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } 
   );
 
   return entries.map((e) => {
-    const rate = resolveRate(db, {
-      matterId: e.mid,
-      clientId: e.client_id,
-      timekeeperId: e.timekeeper_id,
-      serviceDate: e.service_date,
-    });
-    const rateCents = rate?.amountCents ?? 0;
-    const amount = amountFromMinutes(e.rounded_minutes, rateCents);
+    const isBillable = !!e.billable;
+    let rateCents = 0;
+    let amount = 0;
+    if (isBillable) {
+      const rate = resolveRate(db, {
+        matterId: e.mid,
+        clientId: e.client_id,
+        timekeeperId: e.timekeeper_id,
+        serviceDate: e.service_date,
+      });
+      rateCents = rate?.amountCents ?? 0;
+      amount = amountFromMinutes(e.rounded_minutes, rateCents);
+    }
     return {
       matter_number: e.matter_number,
       matter_name: e.matter_name,
@@ -92,6 +99,7 @@ function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } 
       minutes: e.rounded_minutes,
       rate_cents: rateCents,
       amount_cents: amount,
+      billable: isBillable ? 1 : 0,
       category: e.category,
       subcategory: e.subcategory,
     };
@@ -190,14 +198,15 @@ function lodestarMatterDetailPdf(db, matterId, opts = {}) {
   ];
   const entries = report.timekeepers.flatMap((g) => g.entries || []);
   if (!entries.length) {
-    lines.push('No billable time yet.');
+    lines.push('No time entries yet.');
   } else {
     for (const e of entries) {
       const date = String(e.service_date || '').padEnd(10);
       const who = String(e.timekeeper || '').slice(0, 24).padEnd(24);
       const hours = hoursLabel(e.minutes).padStart(7);
       const amount = formatCents(e.amount_cents).padStart(10);
-      const desc = String(e.description || '').slice(0, 40);
+      const nb = e.billable ? '' : ' [non-billable]';
+      const desc = String(`${e.description || ''}${nb}`).slice(0, 40);
       lines.push(`${date} ${who} ${hours} ${amount}  ${desc}`);
     }
     lines.push('--------------------------------------------------------------------------');
@@ -250,6 +259,7 @@ function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
       { v: 'Timekeeper', t: 's' },
       { v: 'Hours', t: 's' },
       { v: 'Amount', t: 's' },
+      { v: 'Billable', t: 's' },
       { v: 'Description', t: 's' },
     ],
   ];
@@ -260,6 +270,7 @@ function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
       { v: e.timekeeper || '', t: 's' },
       { v: e.hours, t: 'n' },
       { v: e.amount_cents / 100, t: 'currency' },
+      { v: e.billable ? 'Yes' : 'No', t: 's' },
       { v: e.description || '', t: 's' },
     ]);
   }
@@ -269,6 +280,7 @@ function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
     { v: '', t: 's' },
     { v: report.totals.hours, t: 'n' },
     { v: report.totals.amount_cents / 100, t: 'currency' },
+    { v: '', t: 's' },
     { v: '', t: 's' },
   ]);
   return buildXlsx(rows);

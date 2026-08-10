@@ -5492,6 +5492,7 @@
         && (isOwn || roleCanModifyOthersTime());
       const deletable = canDeleteTime && (isOwn || roleCanDeleteOthersTime());
       const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
+      const isBillable = !!Number(e.billable);
       if (editable) {
         const entryId = Number(e.id);
         return `
@@ -5509,6 +5510,12 @@
                 inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
                 aria-label="Hours" />
             </td>
+            <td>
+              <label class="check-inline">
+                <input type="checkbox" data-field="billable" value="1" ${isBillable ? 'checked' : ''} />
+                <span>Yes</span>
+              </label>
+            </td>
             <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
             <td class="row-actions">
               <button type="button" class="primary" data-save-time="${entryId}">Save</button>
@@ -5523,12 +5530,13 @@
             <div class="muted">${escapeHtml(timekeeperDisplayName(e))}</div></td>
           <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
             <span class="muted">hrs</span></td>
+          <td>${isBillable ? 'Yes' : '<span class="muted">No</span>'}</td>
           <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
           <td>${deletable
             ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
             : ''}</td>
         </tr>`;
-    }).join('') || '<tr><td colspan="5" class="muted">No entries yet</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="muted">No entries yet</td></tr>';
 
     setMainHtml(`
       <div class="card matter-top">
@@ -5627,12 +5635,14 @@
       </div>` : `<div class="card"><h1>Time Entry</h1>${flash ? successNoticeHtml(flash) : ''}<p class="muted">Your role can view time entries but not create them.</p></div>`}
       <div class="card">
         <h2>Recent entries</h2>
+        <p class="hint">All saved time on this matter. Non-billable rows still appear in Lodestar with hours at $0.</p>
         <div class="table-wrap"><table class="time-entries-table">
           <thead>
             <tr>
               <th>Date</th>
               <th>Description</th>
               <th>Hours</th>
+              <th>Billable</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -5858,6 +5868,8 @@
         const serviceDate = String(row.querySelector('[data-field="serviceDate"]')?.value || '').slice(0, 10);
         const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
         const hours = Number(row.querySelector('[data-field="hours"]')?.value);
+        const billableEl = row.querySelector('[data-field="billable"]');
+        const billable = billableEl ? (billableEl.checked ? 1 : 0) : undefined;
         if (!serviceDate) {
           matterListMsg('<div class="error">Enter a service date.</div>');
           return;
@@ -5879,6 +5891,7 @@
               matterId: Number(m.id),
               description,
               hours,
+              ...(billable !== undefined ? { billable } : {}),
             }),
           });
           state.matterTimeFlash = {
@@ -5987,8 +6000,9 @@
             );
             out.innerHTML = `
               <h2>Lodestar Detail</h2>
+              <p class="hint">Includes non-billable time at $0 so every saved entry is listed.</p>
               <div class="table-wrap"><table>
-                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Billable</th><th>Description</th></tr></thead>
                 <tbody>
                   ${entries.map((e) => `
                     <tr>
@@ -5996,8 +6010,9 @@
                       <td>${escapeHtml(e.timekeeper || '')}</td>
                       <td>${escapeHtml(formatDuration(e.minutes))}</td>
                       <td>${money(e.amount_cents)}</td>
+                      <td>${e.billable ? 'Yes' : '<span class="muted">No</span>'}</td>
                       <td>${escapeHtml(e.description || '')}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
+                    </tr>`).join('') || '<tr><td colspan="6" class="muted">No time entries yet</td></tr>'}
                 </tbody>
               </table></div>
               <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
@@ -6015,7 +6030,7 @@
                       <td>${escapeHtml(formatDuration(s.minutes))}</td>
                       <td>${money(s.rate_cents)}</td>
                       <td>${money(s.amount_cents)}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time yet</td></tr>'}
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No time entries yet</td></tr>'}
                 </tbody>
               </table></div>
               <p><strong>Total</strong> ${escapeHtml(formatDuration(data.totals?.minutes || 0))}
@@ -6240,6 +6255,7 @@
               <th>Matter</th>
               <th>Description</th>
               <th>Hours</th>
+              <th>Billable</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -6260,6 +6276,7 @@
                 && (isOwn || roleCanModifyOthersTime());
               const deletable = canDelete && (isOwn || roleCanDeleteOthersTime());
               const hoursVal = formatDuration(e.rounded_minutes, 'decimal');
+              const isBillable = !!Number(e.billable);
               if (editable) {
                 const entryId = Number(e.id);
                 const matterChoices = Array.isArray(matters) ? [...matters] : [];
@@ -6295,6 +6312,12 @@
                     inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
                     aria-label="Hours" />
                 </td>
+                <td>
+                  <label class="check-inline">
+                    <input type="checkbox" data-field="billable" value="1" ${isBillable ? 'checked' : ''} />
+                    <span>Yes</span>
+                  </label>
+                </td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td class="row-actions">
                   <button type="button" class="primary" data-save-time="${entryId}">Save</button>
@@ -6309,12 +6332,13 @@
                 <td>${escapeHtml(e.description || '—')}</td>
                 <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">hrs</span></td>
+                <td>${isBillable ? 'Yes' : '<span class="muted">No</span>'}</td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
                   ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
                   : ''}</td>
               </tr>`;
-            }).join('') || '<tr><td colspan="6" class="muted">No entries yet</td></tr>'}
+            }).join('') || '<tr><td colspan="7" class="muted">No entries yet</td></tr>'}
           </tbody>
         </table></div>
         <div id="timeListMsg" style="margin-top:.75rem"></div>
@@ -6341,6 +6365,8 @@
         const matterId = Number(row.querySelector('[data-field="matterId"]')?.value);
         const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
         const hours = Number(row.querySelector('[data-field="hours"]')?.value);
+        const billableEl = row.querySelector('[data-field="billable"]');
+        const billable = billableEl ? (billableEl.checked ? 1 : 0) : undefined;
         if (!serviceDate) {
           listMsg('<div class="error">Enter a service date.</div>');
           return;
@@ -6361,7 +6387,13 @@
         try {
           const updated = await api(`/api/time-entries/${id}`, {
             method: 'PATCH',
-            body: JSON.stringify({ serviceDate, matterId, description, hours }),
+            body: JSON.stringify({
+              serviceDate,
+              matterId,
+              description,
+              hours,
+              ...(billable !== undefined ? { billable } : {}),
+            }),
           });
           state.timeFlash = {
             title: 'Time entry updated',
@@ -6731,8 +6763,9 @@
             out.innerHTML = `
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Detail</h3>
               <p class="muted">${escapeHtml(data.header?.matter_name || '')}${from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''}</p>
+              <p class="hint">Includes non-billable time at $0.</p>
               <div class="table-wrap"><table>
-                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Description</th></tr></thead>
+                <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Billable</th><th>Description</th></tr></thead>
                 <tbody>
                   ${entries.map((e) => `
                     <tr>
@@ -6740,8 +6773,9 @@
                       <td>${escapeHtml(e.timekeeper || '')}</td>
                       <td>${escapeHtml(formatDuration(e.minutes))}</td>
                       <td>${money(e.amount_cents)}</td>
+                      <td>${e.billable ? 'Yes' : '<span class="muted">No</span>'}</td>
                       <td>${escapeHtml(e.description || '')}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time in this range</td></tr>'}
+                    </tr>`).join('') || '<tr><td colspan="6" class="muted">No time entries in this range</td></tr>'}
                 </tbody>
               </table></div>`;
           }
