@@ -3527,6 +3527,22 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   to { opacity: 1; transform: none; }
 }
 
+.lodestar-report-totals {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.lodestar-report-totals strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
