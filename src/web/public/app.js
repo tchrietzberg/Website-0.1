@@ -3792,6 +3792,7 @@
       settings: `<svg ${common}><circle cx="12" cy="12" r="3.1"/><path d="M12 3.5v2.2M12 18.3v2.2M4.9 6.5l1.6 1.6M17.5 15.9l1.6 1.6M3.5 12h2.2M18.3 12h2.2M4.9 17.5l1.6-1.6M17.5 8.1l1.6-1.6"/></svg>`,
       users: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><path d="M17 8v6M14 11h6"/></svg>`,
       plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
+      briefcase: `<svg ${common}><rect x="3.5" y="7.5" width="17" height="12.5" rx="2"/><path d="M9 7.5V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7.5"/><path d="M3.5 12.25h17"/><path d="M12 11.25v2.25"/></svg>`,
     };
     return icons[name] || icons.matters;
   }
@@ -3846,7 +3847,7 @@
         <p class="sidebar-label">Quick actions</p>
         ${canCreateMatter(state.user) && roleCanModify('matter')
           ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">
-              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('plus')}</span>
+              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('briefcase')}</span>
               <span class="sidebar-action-text">
                 <strong>Create Matter</strong>
                 <small>Open create + search</small>
@@ -3863,7 +3864,7 @@
             </button>`
           : ''}
         ${roleCanModify('time') ? `
-        <button type="button" class="sidebar-action secondary" id="sideAddTime">
+        <button type="button" class="sidebar-action primary" id="sideAddTime">
           <span class="sidebar-action-mark" aria-hidden="true">${navIcon('time')}</span>
           <span class="sidebar-action-text">
             <strong>Add Time Entry</strong>
