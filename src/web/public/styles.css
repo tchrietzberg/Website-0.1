@@ -2668,6 +2668,7 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   background:
     linear-gradient(180deg, #ffffff 0%, #f5f8fc 100%);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  max-width: 100%;
 }
 
 .matter-details-panel-head h2 {
@@ -2680,12 +2681,86 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 }
 
 .matter-details-panel-head .hint {
-  margin: 0.2rem 0 0.75rem;
+  margin: 0.2rem 0 0.55rem;
   font-size: 0.82rem;
 }
 
+.matter-details-scroll {
+  max-height: min(22rem, 48vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.15rem 0.2rem 0.35rem 0;
+  margin-right: -0.15rem;
+  scrollbar-gutter: stable;
+}
+
 .matter-details-grid {
-  gap: 0.7rem 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem 0.75rem;
+  align-items: start;
+}
+
+.matter-detail-field {
+  position: relative;
+  min-width: 0;
+  padding: 0.35rem 0.4rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.matter-detail-field--full {
+  grid-column: 1 / -1;
+}
+
+.matter-detail-field--half {
+  grid-column: span 1;
+}
+
+.matter-detail-field[draggable="true"] {
+  cursor: default;
+}
+
+.matter-detail-drag {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.25rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  color: var(--soft);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.matter-detail-drag:hover {
+  color: var(--accent);
+  background: rgba(26, 58, 107, 0.08);
+}
+
+.matter-detail-field.is-dragging {
+  opacity: 0.55;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 6px 18px rgba(20, 36, 64, 0.12);
+}
+
+.matter-detail-field.is-drop-target {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: rgba(232, 238, 247, 0.65);
+}
+
+.matter-detail-field label {
+  padding-right: 1.4rem;
 }
 
 .matter-details-panel label {
@@ -2699,8 +2774,9 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   padding: 0.5rem 0.65rem;
 }
 
-.matter-details-panel .row-actions {
-  margin-top: 0.25rem;
+.matter-details-panel .row-actions,
+.matter-details-actions {
+  margin-top: 0.35rem;
 }
 
 .matter-reports-aside {
@@ -2808,7 +2884,19 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
     position: static;
   }
   .matter-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .matter-details-scroll {
+    max-height: min(20rem, 42vh);
+  }
+}
+
+@media (max-width: 560px) {
+  .matter-details-grid {
     grid-template-columns: 1fr;
+  }
+  .matter-detail-field label {
+    padding-right: 0;
   }
 }
 

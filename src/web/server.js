@@ -643,6 +643,22 @@ function createServer(db = openDb()) {
         const layout = customFields.ensureMatterLayout(db, matterId);
         return json(res, 200, { layout, page: matterSvc.getMatter(db, matterId) });
       }
+      if (req.method === 'PUT' && pathname.match(/^\/api\/matters\/\d+\/layout-items$/)) {
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const matterId = Number(pathname.split('/')[3]);
+          const body = await parseBody(req);
+          return json(res, 200, customFields.saveMatterLayoutItems(
+            db,
+            user,
+            matterId,
+            body.items || []
+          ));
+        } catch (e) {
+          const status = e.code === 'FORBIDDEN' ? 403 : 400;
+          return json(res, status, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/standard-fields$/)) {
         if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
         const matterId = Number(pathname.split('/')[3]);

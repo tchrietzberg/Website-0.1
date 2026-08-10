@@ -5006,6 +5006,99 @@
     };
   }
 
+  function bindMatterDetailsFieldDrag(formEl, matterId) {
+    if (!formEl || !matterId) return;
+    const grids = [...formEl.querySelectorAll('[data-matter-details-grid]')];
+    if (!grids.length) return;
+
+    let dragEl = null;
+    let saving = false;
+
+    const collectItems = () => [...formEl.querySelectorAll('.matter-detail-field[data-field-key]')].map((el, i) => ({
+      fieldKey: el.getAttribute('data-field-key'),
+      section: el.getAttribute('data-section') || 'details',
+      width: el.getAttribute('data-width') || 'half',
+      sortOrder: i,
+    }));
+
+    const persistOrder = async () => {
+      if (saving) return;
+      saving = true;
+      const msg = formEl.querySelector('#matterMsg');
+      try {
+        await api(`/api/matters/${matterId}/layout-items`, {
+          method: 'PUT',
+          body: JSON.stringify({ items: collectItems() }),
+        });
+        if (msg) {
+          msg.innerHTML = successNoticeHtml({
+            title: 'Layout updated',
+            detail: 'Field order saved for this matter.',
+          });
+        }
+      } catch (e) {
+        if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      } finally {
+        saving = false;
+      }
+    };
+
+    grids.forEach((grid) => {
+      grid.querySelectorAll('.matter-detail-field[draggable="true"]').forEach((tile) => {
+        // Only start drags from the grip so inputs/selects stay usable.
+        tile.addEventListener('mousedown', (ev) => {
+          const fromHandle = !!ev.target.closest?.('.matter-detail-drag');
+          tile.draggable = fromHandle;
+        });
+        tile.addEventListener('dragstart', (ev) => {
+          if (!tile.draggable) {
+            ev.preventDefault();
+            return;
+          }
+          dragEl = tile;
+          tile.classList.add('is-dragging');
+          try {
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', tile.getAttribute('data-field-key') || '');
+          } catch (_) { /* ignore */ }
+        });
+        tile.addEventListener('dragend', () => {
+          tile.classList.remove('is-dragging');
+          tile.draggable = true;
+          grid.querySelectorAll('.matter-detail-field.is-drop-target').forEach((el) => {
+            el.classList.remove('is-drop-target');
+          });
+          dragEl = null;
+        });
+      });
+
+      grid.addEventListener('dragover', (ev) => {
+        if (!dragEl || !grid.contains(dragEl)) return;
+        ev.preventDefault();
+        try { ev.dataTransfer.dropEffect = 'move'; } catch (_) { /* ignore */ }
+        const over = ev.target.closest?.('.matter-detail-field');
+        if (!over || over === dragEl || !grid.contains(over)) return;
+        grid.querySelectorAll('.matter-detail-field.is-drop-target').forEach((el) => {
+          if (el !== over) el.classList.remove('is-drop-target');
+        });
+        over.classList.add('is-drop-target');
+        const rect = over.getBoundingClientRect();
+        const before = ev.clientX < rect.left + rect.width / 2;
+        if (before) grid.insertBefore(dragEl, over);
+        else grid.insertBefore(dragEl, over.nextSibling);
+      });
+
+      grid.addEventListener('drop', async (ev) => {
+        if (!dragEl || !grid.contains(dragEl)) return;
+        ev.preventDefault();
+        grid.querySelectorAll('.matter-detail-field.is-drop-target').forEach((el) => {
+          el.classList.remove('is-drop-target');
+        });
+        await persistOrder();
+      });
+    });
+  }
+
   async function renderMatterDetail() {
     if (!state.matterId) {
       state.view = 'matters';
@@ -5177,19 +5270,33 @@
             <form id="matterForm" class="matter-details-panel stack">
               <div class="matter-details-panel-head">
                 <h2>Matter details</h2>
-                <p class="hint">Core facts for this matter</p>
+                <p class="hint">${canEdit
+                  ? 'Core facts for this matter. Drag fields to rearrange; the list scrolls when it grows.'
+                  : 'Core facts for this matter'}</p>
               </div>
-              ${sections.map(([section, fields]) => `
-                <div class="grid two matter-details-grid">
-                  ${fields.map((f) => `
-                    <label class="${f.width === 'full' ? 'span-all' : ''}">
-                      ${escapeHtml(f.label)}${f.required ? ' *' : ''}
-                      ${renderFieldInput(f, fieldCtx)}
-                    </label>`).join('')}
-                </div>
-              `).join('') || '<p class="muted">No fields on this matter yet. Add one under Add custom fields below.</p>'}
+              <div class="matter-details-scroll">
+                ${sections.map(([section, fields]) => `
+                  <div class="matter-details-grid" data-matter-details-grid data-section="${escapeHtml(section)}">
+                    ${fields.map((f) => {
+                      const width = f.width === 'full' ? 'full' : 'half';
+                      return `
+                    <div class="matter-detail-field matter-detail-field--${width}"
+                      data-field-key="${escapeHtml(f.key)}"
+                      data-width="${width}"
+                      data-section="${escapeHtml(section)}"
+                      ${canEdit ? 'draggable="true"' : ''}>
+                      ${canEdit ? '<span class="matter-detail-drag" title="Drag to reorder" aria-hidden="true">⋮⋮</span>' : ''}
+                      <label>
+                        ${escapeHtml(f.label)}${f.required ? ' *' : ''}
+                        ${renderFieldInput(f, fieldCtx)}
+                      </label>
+                    </div>`;
+                    }).join('')}
+                  </div>
+                `).join('') || '<p class="muted">No fields on this matter yet. Add one under Add custom fields below.</p>'}
+              </div>
               ${canEdit ? `
-                <div class="row-actions">
+                <div class="row-actions matter-details-actions">
                   <button class="primary" type="submit">Save</button>
                 </div>` : ''}
               <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
@@ -5447,6 +5554,7 @@
           $('#matterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
         }
       };
+      bindMatterDetailsFieldDrag(matterForm, m.id);
     }
 
     const matterListMsg = (html) => {

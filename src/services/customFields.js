@@ -1034,13 +1034,8 @@ function resolveLayout(db, matter) {
   return { layout: typeLayout, source: 'record_type' };
 }
 
-/** Display items = record-type page layout + matter-only custom fields. */
-function buildMatterDisplayItems(db, matter) {
-  const typeLayout = ensureTypeLayout(db, matter.matter_type || DEFAULT_RECORD_TYPE_KEY);
-  const typeItems = layoutItems(db, typeLayout.id);
-  const items = typeItems.map((item) => ({ ...item }));
+function appendMissingMatterOnlyFields(db, matter, items, layoutId) {
   const present = new Set(items.map((i) => i.field_key));
-
   const recordFields = db.prepare(`
     SELECT id, field_type FROM custom_fields
     WHERE matter_id = ? AND active = 1
@@ -1052,7 +1047,7 @@ function buildMatterDisplayItems(db, matter) {
     if (present.has(key)) continue;
     items.push({
       id: null,
-      layout_id: typeLayout.id,
+      layout_id: layoutId,
       field_key: key,
       section: 'details',
       sort_order: order++,
@@ -1060,7 +1055,69 @@ function buildMatterDisplayItems(db, matter) {
     });
     present.add(key);
   }
-  return { items, typeLayout, source: 'record_type' };
+  return items;
+}
+
+/** Display items = matter layout (if customized) or record-type layout + matter-only fields. */
+function buildMatterDisplayItems(db, matter) {
+  const typeLayout = ensureTypeLayout(db, matter.matter_type || DEFAULT_RECORD_TYPE_KEY);
+  const matterLayout = db.prepare('SELECT * FROM page_layouts WHERE matter_id = ?').get(matter.id);
+
+  if (matterLayout) {
+    // Pull in any new type-layout fields added since this matter layout was cloned.
+    const typeItems = layoutItems(db, typeLayout.id);
+    for (const item of typeItems) {
+      addFieldToLayout(db, matterLayout.id, item.field_key, item.width || 'half');
+    }
+    const items = layoutItems(db, matterLayout.id).map((item) => ({ ...item }));
+    appendMissingMatterOnlyFields(db, matter, items, matterLayout.id);
+    return {
+      items,
+      typeLayout,
+      matterLayout,
+      layout: matterLayout,
+      source: 'matter',
+    };
+  }
+
+  const typeItems = layoutItems(db, typeLayout.id);
+  const items = typeItems.map((item) => ({ ...item }));
+  appendMissingMatterOnlyFields(db, matter, items, typeLayout.id);
+  return {
+    items,
+    typeLayout,
+    matterLayout: null,
+    layout: typeLayout,
+    source: 'record_type',
+  };
+}
+
+/** Persist field order/widths on a matter-specific layout (clones type layout on first save). */
+function saveMatterLayoutItems(db, actor, matterId, items) {
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
+  if (!matter) throw new Error('matter not found');
+  const layout = ensureMatterLayout(db, matterId);
+  const incoming = Array.isArray(items) ? items : [];
+  const incomingKeys = new Set(incoming.map((item) => item.fieldKey).filter(Boolean));
+  // Keep layout fields the UI may hide (e.g. std:number) so they are not dropped.
+  const preserved = layoutItems(db, layout.id)
+    .filter((row) => row.field_key && !incomingKeys.has(row.field_key))
+    .map((row) => ({
+      fieldKey: row.field_key,
+      section: row.section || 'details',
+      width: row.width || 'half',
+    }));
+  const merged = [
+    ...preserved,
+    ...incoming.filter((item) => item && item.fieldKey),
+  ].map((item, i) => ({
+    fieldKey: item.fieldKey,
+    section: item.section || 'details',
+    width: item.width || 'half',
+    sortOrder: i,
+  }));
+  saveLayoutItems(db, actor, layout.id, merged);
+  return getMatterPage(db, matterId, actor);
 }
 
 function layoutItems(db, layoutId) {
@@ -1117,7 +1174,7 @@ function getMatterPage(db, matterId, actor = null) {
   `).get(matterId);
   if (!matter) return null;
 
-  const { items, typeLayout, source } = buildMatterDisplayItems(db, matter);
+  const { items, typeLayout, layout: activeLayout, source } = buildMatterDisplayItems(db, matter);
   const defs = fieldDefsForMatter(db, matter);
   const values = db.prepare(
     'SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?'
@@ -1210,7 +1267,12 @@ function getMatterPage(db, matterId, actor = null) {
   const onedrive = require('./onedrive');
   return {
     matter,
-    layout: { id: typeLayout.id, name: typeLayout.name, source },
+    layout: {
+      id: activeLayout.id,
+      name: activeLayout.name,
+      source,
+      typeLayoutId: typeLayout.id,
+    },
     sections,
     layoutFields: [...typeLayoutFields, ...matterOnlyFields],
     availableFields: [...defs.values()],
@@ -1371,6 +1433,7 @@ module.exports = {
   getTypeLayout,
   setCustomValues,
   saveLayoutItems,
+  saveMatterLayoutItems,
   resolveLayout,
   addStandardFieldToMatter,
   removeFieldFromMatter,
