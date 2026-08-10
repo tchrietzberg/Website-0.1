@@ -892,12 +892,19 @@ button.client-typeahead-clear:active {
   min-width: 0;
 }
 
+.create-matter-row .create-matter-name-typeahead {
+  -webkit-flex: 1 1 12rem;
+  flex: 1 1 12rem;
+  max-width: 28rem;
+}
+
 .create-matter-row .create-matter-type-field {
   -webkit-flex: 0 1 11.5rem;
   flex: 0 1 11.5rem;
   width: 11.5rem;
   min-width: 9.5rem;
   margin: 0;
+  margin-left: 0.35rem;
 }
 
 .create-matter-form input,
