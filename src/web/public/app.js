@@ -8637,10 +8637,11 @@
     {
       id: 'matter',
       label: 'Create a matter',
-      keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case'],
-      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name (or, if [[Matter name formula|settings-name-formula]] is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. The matter opens so you can add time and details.',
+      keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case', 'search matters', 'filter matters', 'matter list'],
+      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name (or, if [[Matter name formula|settings-name-formula]] is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it.',
       links: [
         { label: 'Go to Create Matter', target: 'create-matter' },
+        { label: 'Browse Matters', target: 'matters' },
         { label: 'Matter name formula', target: 'settings-name-formula' },
       ],
     },
