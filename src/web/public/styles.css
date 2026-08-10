@@ -427,9 +427,8 @@ body {
 }
 
 .lookup-bar {
-  position: -webkit-sticky;
-  position: sticky;
-  top: 0;
+  /* Scrolls with the page — not sticky/fixed. */
+  position: relative;
   z-index: 30;
   padding: 0.75rem clamp(1rem, 2.5vw, 1.75rem) 0.55rem;
   /* Opaque wash — avoid backdrop-filter on this node (blurs result text inside). */
