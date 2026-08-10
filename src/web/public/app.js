@@ -1294,7 +1294,7 @@
               <input name="label" required maxlength="80"
                 placeholder="e.g. ${escapeHtml(typeExample)}" autocomplete="off" />
             </label>
-            <button class="primary" type="submit">Create record page</button>
+            <button class="primary" type="submit">Create a New Record Page</button>
           </form>` : ''}
         </div>
         <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every ${escapeHtml(entityNoun)} of this type.${
