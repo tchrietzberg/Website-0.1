@@ -1,0 +1,55 @@
+# Secrets and environment (never index)
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*.keystore
+
+# Production / deployment secrets
+.env.production
+.env.staging
+.env.local
+**/secrets/**
+**/secret/**
+**/credentials/**
+**/service-account*.json
+**/google-credentials*.json
+
+# Local databases and dumps
+data/
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite
+**/*.sqlite3
+**/*.dump
+**/*.sql.gz
+**/backups/**
+**/backup/**
+
+# Dependency and build noise
+node_modules/
+**/node_modules/
+.npm/
+dist/
+build/
+coverage/
+.turbo/
+
+# Logs and crash dumps that may contain PII
+*.log
+logs/
+**/logs/**
+*.core
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
