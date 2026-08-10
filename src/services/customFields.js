@@ -587,7 +587,7 @@ function createCustomField(db, actor, input) {
     );
   }
 
-  // Default / record-type matter fields are admin-managed (Settings → Matter record pages).
+  // Default / record-type matter fields are admin-managed (Settings → Matter page).
   if (appliesTo === 'matter' && recordTypeKey && !matterId && actor?.role !== 'admin') {
     const err = new Error('Only admins can add default matter fields');
     err.code = 'FORBIDDEN';

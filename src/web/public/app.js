@@ -678,7 +678,7 @@
     { value: 'textarea', label: 'Text Area' },
   ];
 
-  /** End-user matter-only fields (Settings → Matter record pages keeps the full admin set). */
+  /** End-user matter-only fields (Settings → Matter page keeps the full admin set). */
   const MATTER_ONLY_FIELD_FORMATTERS = TIME_ENTRY_FIELD_FORMATTERS;
 
   const SYSTEM_FIELD_TYPES = new Set(['auto_number', 'formula']);
@@ -4611,7 +4611,7 @@
     const contactFieldMgmtPanelHtml = (opts = {}) => {
       const {
         title = 'Manage fields',
-        hint = `Choose whether a new field is for this contact only, or for every <strong>${escapeHtml(typeLabel)}</strong> contact (record type default). Record type fields can also be managed in Settings → Contact record pages.`,
+        hint = `Choose whether a new field is for this contact only, or for every <strong>${escapeHtml(typeLabel)}</strong> contact (record type default). Record type fields can also be managed in Settings → Contact page.`,
         formId = 'contactRecordFieldForm',
         panelId = '',
         showDismiss = false,
@@ -5532,7 +5532,7 @@
           <h2 style="margin:0">Add custom fields</h2>
           ${scrollToMatterFields ? '<button type="button" id="dismissPostCreateFields">Done</button>' : ''}
         </div>
-        <p class="hint">Add a field for <strong>this matter only</strong>. Admins set shared defaults for all matters in Settings → Matter record pages.</p>
+        <p class="hint">Add a field for <strong>this matter only</strong>. Admins set shared defaults for all matters in Settings → Matter page.</p>
         <div class="field-mgmt-list">
           ${fieldMgmtRows(matterOnlyFields, {
             canDelete: true,
@@ -8573,9 +8573,6 @@
     const mfaMeta = mfaStatus.enabled
       ? `On · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes`
       : 'Off';
-    const formulaMeta = settings.matterNameFormula?.enabled
-      ? escapeHtml(settings.matterNameFormula.previewExample || 'On')
-      : 'Off — type a name on create';
     const billingMeta = `${escapeHtml(settings.firmTimezoneLabel || selectedTz)} · ${escapeHtml(settings.durationFormat || '')}`;
 
     setMainHtml(`
@@ -8629,7 +8626,7 @@
               id="defaultFieldsCard" data-settings-tab="matter-record-pages"
               ${settingsTabOpen('matter-record-pages') ? 'open' : ''}>
               <summary class="onedrive-collapse-summary">
-                <span class="onedrive-collapse-title">Matter record pages</span>
+                <span class="onedrive-collapse-title">Matter page</span>
                 <span class="onedrive-collapse-meta muted">Admin</span>
               </summary>
               <div class="onedrive-collapse-body stack">
@@ -8637,24 +8634,13 @@
                 <div id="defaultFieldsBody" class="stack"></div>
                 <div id="typeFieldMsg"></div>
               </div>
-            </details>
-            <details class="onedrive-collapse settings-collapse settings-subtab record-page-tab"
-              id="matterNameFormulaCard" data-settings-tab="matter-name-formula"
-              ${settingsTabOpen('matter-name-formula') ? 'open' : ''}>
-              <summary class="onedrive-collapse-summary">
-                <span class="onedrive-collapse-title">Matter name formula</span>
-                <span class="onedrive-collapse-meta muted">${formulaMeta}</span>
-              </summary>
-              <div class="onedrive-collapse-body stack">
-                <div id="matterNameFormulaBody" class="stack"></div>
-              </div>
             </details>` : ''}
             ${canConfigureFields ? `
             <details class="onedrive-collapse settings-collapse settings-subtab record-page-tab"
               id="contactFieldsCard" data-settings-tab="contact-record-pages"
               ${settingsTabOpen('contact-record-pages') ? 'open' : ''}>
               <summary class="onedrive-collapse-summary">
-                <span class="onedrive-collapse-title">Contact record pages</span>
+                <span class="onedrive-collapse-title">Contact page</span>
                 <span class="onedrive-collapse-meta muted">Clients &amp; companies</span>
               </summary>
               <div class="onedrive-collapse-body stack">
@@ -9097,12 +9083,6 @@
         },
       });
       if (!stillOnView('settings')) return;
-      await bindMatterNameFormulaEditor({
-        bodyEl: $('#matterNameFormulaBody'),
-        config: settings.matterNameFormula,
-        recordTypes: matterRecordTypes,
-      });
-      if (!stillOnView('settings')) return;
     }
 
     if (canConfigureFields) {
@@ -9239,21 +9219,11 @@
       id: 'matter',
       label: 'Create a matter',
       keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case', 'search matters', 'filter matters', 'matter list'],
-      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name (or, if [[Matter name formula|settings-name-formula]] is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it.',
+      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name, complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it.',
       links: [
         { label: 'Go to Create Matter', target: 'create-matter' },
         { label: 'Browse Matters', target: 'matters' },
-        { label: 'Matter name formula', target: 'settings-name-formula' },
-      ],
-    },
-    {
-      id: 'matter-name-formula',
-      label: 'Matter name formula',
-      keywords: ['matter name', 'formula', 'concatenate', 'ticker', 'create matter name', 'name parts'],
-      answer: 'Open [[Matter name formula|settings-name-formula]] in Settings: turn it on, set a separator (e.g. -), add custom fields and Year in order, or create fields there. On [[Create Matter|create-matter]] those fields appear and the matter name is built by concatenating them.',
-      links: [
-        { label: 'Open Matter name formula', target: 'settings-name-formula' },
-        { label: 'Create Matter', target: 'create-matter' },
+        { label: 'Matter page', target: 'settings-matter-fields' },
       ],
     },
     {
@@ -9270,10 +9240,10 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
-      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. Roles with Contacts → Delete (Admin always) can use Delete contact at the bottom of the contact page — linked matters become client-less. [[Contact record pages|settings-contact-fields]] in Settings manages type layouts.',
+      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. Roles with Contacts → Delete (Admin always) can use Delete contact at the bottom of the contact page — linked matters become client-less. [[Contact page|settings-contact-fields]] in Settings manages type layouts.',
       links: [
         { label: 'Go to Create Contact', target: 'create-contact' },
-        { label: 'Contact record pages', target: 'settings-contact-fields' },
+        { label: 'Contact page', target: 'settings-contact-fields' },
         { label: 'Role permissions', target: 'settings' },
       ],
     },
@@ -9281,11 +9251,11 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure layouts under [[Record pages|settings-record-pages]] in Settings — [[Matter record pages|settings-matter-fields]] and [[Contact record pages|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter, Add custom fields (bottom of the page) adds a field for that matter only.',
+      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure layouts under [[Record pages|settings-record-pages]] in Settings — [[Matter page|settings-matter-fields]] and [[Contact page|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter, Add custom fields (bottom of the page) adds a field for that matter only.',
       links: [
         { label: 'Record pages', target: 'settings-record-pages' },
-        { label: 'Matter record pages', target: 'settings-matter-fields' },
-        { label: 'Contact record pages', target: 'settings-contact-fields' },
+        { label: 'Matter page', target: 'settings-matter-fields' },
+        { label: 'Contact page', target: 'settings-contact-fields' },
         { label: 'Time entry fields', target: 'settings-time-fields' },
       ],
     },
@@ -9472,17 +9442,17 @@
           state.focusAddUser = true;
           await goAppView('users');
         }
-      } else if (key === 'settings-matter-fields' || key === 'settings-record-pages') {
+      } else if (key === 'settings-record-pages') {
         await focusSettings('#recordPagesSection');
+      } else if (key === 'settings-matter-fields') {
         await focusSettings('#defaultFieldsCard');
       } else if (key === 'settings-contact-fields') {
-        await focusSettings('#recordPagesSection');
         await focusSettings('#contactFieldsCard');
       } else if (key === 'settings-time-fields') {
         await focusSettings('#timeFieldsCard');
       } else if (key === 'settings-name-formula') {
-        await focusSettings('#recordPagesSection');
-        await focusSettings('#matterNameFormulaCard', { openDetails: true });
+        // Matter name formula UI is temporarily hidden; land on Matter page instead.
+        await focusSettings('#defaultFieldsCard');
       } else {
         return;
       }
