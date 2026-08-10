@@ -1,6 +1,12 @@
 data/
 node_modules/
 .env
+.env.*
+!.env.example
 *.db
 *.db-wal
 *.db-shm
+*.pem
+*.key
+*.log
+backups/
