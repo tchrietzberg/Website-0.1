@@ -2213,9 +2213,9 @@ button.matter-picker-trigger:focus-visible {
 .matter-picker-option span {
   font-weight: 600;
   font-size: 0.92rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   -webkit-font-smoothing: antialiased;
 }
 
