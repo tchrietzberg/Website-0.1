@@ -2348,11 +2348,6 @@ td .muted {
   margin: 0;
 }
 
-.time-entry-date-hours .time-entry-tz-hint {
-  grid-column: 1 / -1;
-  margin: -0.35rem 0 0;
-}
-
 .time-entry-billable.check-inline {
   margin-top: 1.65rem;
   align-self: start;
