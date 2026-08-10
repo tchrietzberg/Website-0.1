@@ -665,6 +665,18 @@ button.lookup-result.is-active,
   margin: 0;
 }
 
+.matters-list-actions-col,
+.matters-list-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.matters-list-actions .danger {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.65rem;
+}
+
 .matters-list-scroll thead th {
   position: sticky;
   top: 0;
