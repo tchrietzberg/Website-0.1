@@ -8612,39 +8612,61 @@
           <div id="mfaMsg"></div>`,
       })}
 
-      ${canConfigureMatterDefaults ? `
-      ${settingsCollapseTab({
-        id: 'defaultFieldsCard',
-        tabKey: 'matter-record-pages',
-        title: 'Matter record pages',
-        meta: 'Admin',
-        open: settingsTabOpen('matter-record-pages'),
+      ${(canConfigureMatterDefaults || canConfigureFields) ? settingsCollapseTab({
+        id: 'recordPagesSection',
+        tabKey: 'record-pages',
+        title: 'Record pages',
+        meta: [
+          canConfigureMatterDefaults ? 'Matters' : null,
+          canConfigureFields ? 'Contacts' : null,
+        ].filter(Boolean).join(' · '),
+        open: settingsTabOpen('record-pages', true),
         bodyHtml: `
-          <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Add custom fields at the bottom. New matters default to Billable.</p>
-          <div id="defaultFieldsBody" class="stack"></div>
-          <div id="typeFieldMsg"></div>`,
-      })}
-      ${settingsCollapseTab({
-        id: 'matterNameFormulaCard',
-        tabKey: 'matter-name-formula',
-        title: 'Matter name formula',
-        meta: formulaMeta,
-        open: settingsTabOpen('matter-name-formula'),
-        bodyHtml: `<div id="matterNameFormulaBody" class="stack"></div>`,
-      })}` : ''}
+          <p class="hint">Field layouts for each record page. Open a page below to edit its types and fields — more record pages can be added here later.</p>
+          <div class="record-pages-list stack">
+            ${canConfigureMatterDefaults ? `
+            <details class="onedrive-collapse settings-collapse settings-subtab record-page-tab"
+              id="defaultFieldsCard" data-settings-tab="matter-record-pages"
+              ${settingsTabOpen('matter-record-pages') ? 'open' : ''}>
+              <summary class="onedrive-collapse-summary">
+                <span class="onedrive-collapse-title">Matter record pages</span>
+                <span class="onedrive-collapse-meta muted">Admin</span>
+              </summary>
+              <div class="onedrive-collapse-body stack">
+                <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Add custom fields at the bottom. New matters default to Billable.</p>
+                <div id="defaultFieldsBody" class="stack"></div>
+                <div id="typeFieldMsg"></div>
+              </div>
+            </details>
+            <details class="onedrive-collapse settings-collapse settings-subtab record-page-tab"
+              id="matterNameFormulaCard" data-settings-tab="matter-name-formula"
+              ${settingsTabOpen('matter-name-formula') ? 'open' : ''}>
+              <summary class="onedrive-collapse-summary">
+                <span class="onedrive-collapse-title">Matter name formula</span>
+                <span class="onedrive-collapse-meta muted">${formulaMeta}</span>
+              </summary>
+              <div class="onedrive-collapse-body stack">
+                <div id="matterNameFormulaBody" class="stack"></div>
+              </div>
+            </details>` : ''}
+            ${canConfigureFields ? `
+            <details class="onedrive-collapse settings-collapse settings-subtab record-page-tab"
+              id="contactFieldsCard" data-settings-tab="contact-record-pages"
+              ${settingsTabOpen('contact-record-pages') ? 'open' : ''}>
+              <summary class="onedrive-collapse-summary">
+                <span class="onedrive-collapse-title">Contact record pages</span>
+                <span class="onedrive-collapse-meta muted">Clients &amp; companies</span>
+              </summary>
+              <div class="onedrive-collapse-body stack">
+                <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
+                <div id="contactFieldsBody" class="stack"></div>
+                <div id="contactFieldMsg"></div>
+              </div>
+            </details>` : ''}
+          </div>`,
+      }) : ''}
 
-      ${canConfigureFields ? `
-      ${settingsCollapseTab({
-        id: 'contactFieldsCard',
-        tabKey: 'contact-record-pages',
-        title: 'Contact record pages',
-        open: settingsTabOpen('contact-record-pages'),
-        bodyHtml: `
-          <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
-          <div id="contactFieldsBody" class="stack"></div>
-          <div id="contactFieldMsg"></div>`,
-      })}
-      ${settingsCollapseTab({
+      ${canConfigureFields ? settingsCollapseTab({
         id: 'timeFieldsCard',
         tabKey: 'time-entry-fields',
         title: 'Time entry fields',
@@ -8653,7 +8675,7 @@
           <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
           <div id="timeFieldsBody" class="stack"></div>
           <div id="timeFieldMsg"></div>`,
-      })}` : ''}
+      }) : ''}
 
       ${isAdmin ? `
       ${settingsCollapseTab({
@@ -9259,8 +9281,9 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure matter type layouts in [[Matter record pages|settings-matter-fields]]; contact layouts are in [[Contact record pages|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter, Add custom fields (bottom of the page) adds a field for that matter only.',
+      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure layouts under [[Record pages|settings-record-pages]] in Settings — [[Matter record pages|settings-matter-fields]] and [[Contact record pages|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter, Add custom fields (bottom of the page) adds a field for that matter only.',
       links: [
+        { label: 'Record pages', target: 'settings-record-pages' },
         { label: 'Matter record pages', target: 'settings-matter-fields' },
         { label: 'Contact record pages', target: 'settings-contact-fields' },
         { label: 'Time entry fields', target: 'settings-time-fields' },
@@ -9449,13 +9472,16 @@
           state.focusAddUser = true;
           await goAppView('users');
         }
-      } else if (key === 'settings-matter-fields') {
+      } else if (key === 'settings-matter-fields' || key === 'settings-record-pages') {
+        await focusSettings('#recordPagesSection');
         await focusSettings('#defaultFieldsCard');
       } else if (key === 'settings-contact-fields') {
+        await focusSettings('#recordPagesSection');
         await focusSettings('#contactFieldsCard');
       } else if (key === 'settings-time-fields') {
         await focusSettings('#timeFieldsCard');
       } else if (key === 'settings-name-formula') {
+        await focusSettings('#recordPagesSection');
         await focusSettings('#matterNameFormulaCard', { openDetails: true });
       } else {
         return;

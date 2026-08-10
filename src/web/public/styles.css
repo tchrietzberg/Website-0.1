@@ -1334,6 +1334,19 @@ details.create-matter-fields-panel .onedrive-collapse-meta {
   background: linear-gradient(180deg, #fbfcfe 0%, #f0f4f8 100%);
 }
 
+.record-pages-list {
+  gap: 0.65rem;
+}
+
+.record-pages-list > .record-page-tab.settings-collapse {
+  margin: 0;
+  border-color: color-mix(in srgb, var(--line) 85%, var(--accent, #1a3a6b) 15%);
+}
+
+.record-pages-list > .record-page-tab > .onedrive-collapse-summary .onedrive-collapse-title {
+  font-size: 0.98rem;
+}
+
 #matterNameFormulaCard {
   margin-top: 0;
 }
