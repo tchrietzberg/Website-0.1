@@ -483,6 +483,7 @@
   function confirmAction({
     title = 'Are you sure?',
     message = '',
+    name = '',
     confirmLabel = 'Confirm',
     cancelLabel = 'Cancel',
   } = {}) {
@@ -491,11 +492,19 @@
       if (existing) existing.remove();
       const overlay = document.createElement('div');
       overlay.className = 'confirm-overlay';
+      const nameBlock = name
+        ? `<strong class="confirm-name">${escapeHtml(name)}</strong>`
+        : '';
       overlay.innerHTML = `
         <div class="confirm-dialog" role="alertdialog" aria-modal="true"
           aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
           <h2 id="confirmTitle">${escapeHtml(title)}</h2>
-          ${message ? `<p id="confirmMessage">${escapeHtml(message)}</p>` : '<p id="confirmMessage" hidden></p>'}
+          ${message || nameBlock
+            ? `<div id="confirmMessage">
+                ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+                ${nameBlock}
+              </div>`
+            : '<div id="confirmMessage" hidden></div>'}
           <div class="confirm-actions">
             <button type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
             <button type="button" class="primary" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
@@ -2551,7 +2560,8 @@
   async function deleteMatterFromList(id, name) {
     const sure = await confirmAction({
       title: 'Delete this matter?',
-      message: `Are you sure you want to delete “${name || 'this matter'}”? This cannot be undone.`,
+      message: 'Are you sure you want to delete this matter? This cannot be undone.',
+      name: name || 'this matter',
       confirmLabel: 'Yes, delete matter',
       cancelLabel: 'Cancel',
     });
@@ -6060,7 +6070,8 @@
       deleteMatterBtn.onclick = async () => {
         const sure = await confirmAction({
           title: 'Delete this matter?',
-          message: `Are you sure you want to delete “${m.name || 'this matter'}”? This cannot be undone.`,
+          message: 'Are you sure you want to delete this matter? This cannot be undone.',
+          name: m.name || 'this matter',
           confirmLabel: 'Yes, delete matter',
           cancelLabel: 'Cancel',
         });
