@@ -8882,9 +8882,11 @@
         tabKey: 'time-billing',
         title: 'Time and Billing',
         meta: billingMeta,
-        open: settingsTabOpen('time-billing', true),
+        open: settingsTabOpen('time-billing', true)
+          || settingsTabOpen('time-entry-settings')
+          || settingsTabOpen('time-entry-fields'),
         bodyHtml: `
-          <p class="hint">Firm timezone, duration display, and rounding for new time entries.</p>
+          <p class="hint">Firm timezone, duration display, rounding, and time entry fields.</p>
           <form id="settingsForm" class="stack">
             <details class="onedrive-collapse settings-collapse settings-subtab" data-settings-tab="timezone" ${settingsTabOpen('timezone', true) ? 'open' : ''}>
               <summary class="onedrive-collapse-summary">
@@ -8979,7 +8981,21 @@
               </div>
             </details>
             <div id="settingsMsg">${billingFlash?.scope === 'billing' ? `<div class="ok-banner">${escapeHtml(billingFlash.text)}</div>` : ''}</div>
-          </form>`,
+          </form>
+          ${canConfigureFields ? `
+          <details class="onedrive-collapse settings-collapse settings-subtab" id="timeFieldsCard"
+            data-settings-tab="time-entry-settings"
+            ${settingsTabOpen('time-entry-settings') || settingsTabOpen('time-entry-fields') ? 'open' : ''}>
+            <summary class="onedrive-collapse-summary">
+              <span class="onedrive-collapse-title">Time entry settings</span>
+              <span class="onedrive-collapse-meta muted">Fields</span>
+            </summary>
+            <div class="onedrive-collapse-body stack">
+              <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
+              <div id="timeFieldsBody" class="stack"></div>
+              <div id="timeFieldMsg"></div>
+            </div>
+          </details>` : ''}`,
       })}
 
       ${showClerkRates ? settingsCollapseTab({
@@ -8991,18 +9007,6 @@
         bodyHtml: `
           <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates. Invite users from Navigate → Add a user (Admin by default; grant Add users under Role permissions to allow other roles).</p>
           ${timekeeperRatesTableHtml(timekeepers, { today, showReset: false })}`,
-      }) : ''}
-
-      ${canConfigureFields ? settingsCollapseTab({
-        id: 'timeFieldsCard',
-        tabKey: 'time-entry-settings',
-        title: 'Time entry settings',
-        open: settingsTabOpen('time-entry-settings')
-          || settingsTabOpen('time-entry-fields'),
-        bodyHtml: `
-          <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
-          <div id="timeFieldsBody" class="stack"></div>
-          <div id="timeFieldMsg"></div>`,
       }) : ''}
       </div>`);
 
@@ -9431,7 +9435,8 @@
         { label: 'Record pages', target: 'settings-record-pages' },
         { label: 'Matter page', target: 'settings-matter-fields' },
         { label: 'Contact page', target: 'settings-contact-fields' },
-        { label: 'Time entry settings', target: 'settings-time-fields' },
+        { label: 'Time entry settings', target: 'settings-time-billing-fields' },
+        { label: 'Time and Billing', target: 'settings-time-billing' },
       ],
     },
     {
@@ -9623,8 +9628,10 @@
         await focusSettings('#defaultFieldsCard');
       } else if (key === 'settings-contact-fields') {
         await focusSettings('#contactFieldsCard');
-      } else if (key === 'settings-time-fields') {
+      } else if (key === 'settings-time-fields' || key === 'settings-time-billing-fields') {
         await focusSettings('#timeFieldsCard');
+      } else if (key === 'settings-time-billing') {
+        await focusSettings('#timeBillingCard');
       } else if (key === 'settings-name-formula') {
         // Matter name formula UI is temporarily hidden; land on Matter page instead.
         await focusSettings('#defaultFieldsCard');
