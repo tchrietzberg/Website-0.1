@@ -8464,7 +8464,7 @@
               </label>
               <label class="tz-select-label">Timezone
                 <div class="tz-select-scroll" role="presentation">
-                  <select name="firmTimezone" id="firmTimezoneSelect" size="14" ${canEditBilling ? '' : 'disabled'}>
+                  <select name="firmTimezone" id="firmTimezoneSelect" size="28" ${canEditBilling ? '' : 'disabled'}>
                     ${tzGroups.map((group) => `
                       <optgroup label="${escapeHtml(group.region)}" data-tz-region="${escapeHtml(group.region)}">
                         ${(group.zones || []).map((z) => `

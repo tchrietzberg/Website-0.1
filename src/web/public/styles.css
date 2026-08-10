@@ -2755,16 +2755,17 @@ a.btn {
 
 #firmTimezoneSelect {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 16rem;
-  height: auto;
-  max-height: none;
+  /* Tall listbox so the wrapper (not the native control) owns the visible scrollbar. */
+  min-height: 28rem;
+  height: 28rem;
   margin: 0;
   padding: 0.25rem;
   border: none;
   background: transparent;
   font-size: 0.9rem;
-  overflow: visible;
+  overflow: hidden;
 }
 
 #firmTimezoneSelect:focus {
