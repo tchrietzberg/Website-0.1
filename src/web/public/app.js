@@ -1296,14 +1296,9 @@
             : ''
         }</p>
         <form id="addRecordTypeForm" class="stack" hidden>
-          <div class="grid two">
-            <label>Label *
-              <input name="label" required placeholder="e.g. ${escapeHtml(typeExample)}" />
-            </label>
-            <label>Key
-              <input name="key" placeholder="auto from label" />
-            </label>
-          </div>
+          <label>Label *
+            <input name="label" required placeholder="e.g. ${escapeHtml(typeExample)}" />
+          </label>
           <div class="row-actions">
             <button class="primary" type="submit">Create record page</button>
             <button type="button" id="cancelAddRecordType">Cancel</button>
@@ -1374,14 +1369,11 @@
         addTypeForm.onsubmit = async (ev) => {
           ev.preventDefault();
           const fd = new FormData(addTypeForm);
-          const payload = {
-            label: String(fd.get('label') || '').trim(),
-            key: String(fd.get('key') || '').trim() || undefined,
-          };
+          const label = String(fd.get('label') || '').trim();
           try {
             const created = await api('/api/record-types', {
               method: 'POST',
-              body: JSON.stringify({ ...payload, appliesTo: entityAppliesTo }),
+              body: JSON.stringify({ label, appliesTo: entityAppliesTo }),
             });
             key = created.key;
             editingId = null;
