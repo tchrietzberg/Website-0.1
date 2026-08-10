@@ -1303,8 +1303,39 @@ details.create-matter-fields-panel .onedrive-collapse-meta {
   overflow: hidden;
 }
 
+.settings-page-head .settings-tab-toolbar {
+  margin-top: 0.15rem;
+  gap: 1rem;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-tabs > .settings-tab.settings-collapse {
+  margin-bottom: 0;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+  box-shadow: 0 1px 0 rgba(20, 40, 70, 0.04);
+}
+
+.settings-tabs > .settings-tab > .onedrive-collapse-summary {
+  padding: 0.85rem 1.1rem;
+}
+
+.settings-tabs > .settings-tab > .onedrive-collapse-summary .onedrive-collapse-title {
+  font-size: 1.02rem;
+}
+
+.settings-tab .settings-subtab.settings-collapse {
+  margin-top: 0.35rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(180deg, #fbfcfe 0%, #f0f4f8 100%);
+}
+
 #matterNameFormulaCard {
-  margin-top: 0.25rem;
+  margin-top: 0;
 }
 
 .create-matter-custom .name-formula-field {

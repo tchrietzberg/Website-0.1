@@ -48,6 +48,7 @@
     contactCreateFlash: null,
     contactListFlash: null,
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
+    settingsTabOpen: {},
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -8475,6 +8476,48 @@
     }
   }
 
+  function settingsTabOpen(tabKey, fallback = false) {
+    if (!state.settingsTabOpen) state.settingsTabOpen = {};
+    if (Object.prototype.hasOwnProperty.call(state.settingsTabOpen, tabKey)) {
+      return Boolean(state.settingsTabOpen[tabKey]);
+    }
+    return fallback;
+  }
+
+  function settingsCollapseTab({
+    id,
+    tabKey,
+    title,
+    meta = '',
+    open = false,
+    bodyHtml = '',
+  }) {
+    return `
+      <details class="onedrive-collapse settings-collapse settings-tab"
+        id="${escapeHtml(id)}" data-settings-tab="${escapeHtml(tabKey)}"
+        ${open ? 'open' : ''}>
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">${title}</span>
+          ${meta ? `<span class="onedrive-collapse-meta muted">${meta}</span>` : ''}
+        </summary>
+        <div class="onedrive-collapse-body stack">
+          ${bodyHtml}
+        </div>
+      </details>`;
+  }
+
+  function wireSettingsCollapseTabs(root = main) {
+    if (!root) return;
+    if (!state.settingsTabOpen) state.settingsTabOpen = {};
+    root.querySelectorAll('details[data-settings-tab]').forEach((el) => {
+      el.addEventListener('toggle', () => {
+        const key = el.getAttribute('data-settings-tab');
+        if (!key) return;
+        state.settingsTabOpen[key] = el.open;
+      });
+    });
+  }
+
   async function renderSettings() {
     const isAdmin = state.user.role === 'admin';
     const canEditBilling = isAdmin || state.user.role === 'billing_clerk';
@@ -8510,248 +8553,311 @@
       else tzGroups = [{ region, zones: [{ id: selectedTz, label }] }, ...tzGroups];
     }
     const tzCount = tzGroups.reduce((n, g) => n + (g.zones?.length || 0), 0);
+    const mfaMeta = mfaStatus.enabled
+      ? `On · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes`
+      : 'Off';
+    const formulaMeta = settings.matterNameFormula?.enabled
+      ? escapeHtml(settings.matterNameFormula.previewExample || 'On')
+      : 'Off — type a name on create';
+    const billingMeta = `${escapeHtml(settings.firmTimezoneLabel || selectedTz)} · ${escapeHtml(settings.durationFormat || '')}`;
 
     setMainHtml(`
-      <div class="card stack">
+      <div class="card stack settings-page-head">
         <h1>Settings</h1>
-        <p class="lead">Matter, contact, and time fields, plus billing preferences.</p>
+        <p class="lead">Open a tab below to edit. Collapse any section when you’re done.</p>
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
+        <div class="row-actions settings-tab-toolbar">
+          <button type="button" id="settingsExpandAll" class="linkish">Expand all</button>
+          <button type="button" id="settingsCollapseAll" class="linkish">Collapse all</button>
+        </div>
       </div>
 
-      <div class="card stack" id="mfaSecurityCard">
-        <h2>Sign-in security</h2>
-        <p class="hint">Authenticator MFA (TOTP) protects billing access. Enable it before go-live — required for admins and billing on a live domain.</p>
-        <p class="muted" id="mfaStatusLine">${
-          mfaStatus.enabled
-            ? `MFA is <strong>on</strong>${mfaStatus.enabledAt ? ` · since ${escapeHtml(String(mfaStatus.enabledAt).slice(0, 10))}` : ''} · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes left`
-            : 'MFA is <strong>off</strong> for your account'
-        }</p>
-        <div class="row-actions" id="mfaActions">
-          ${mfaStatus.enabled
-            ? `<button type="button" id="mfaDisableBtn">Disable MFA…</button>`
-            : `<button type="button" class="primary" id="mfaSetupBtn">Set up authenticator</button>`}
-        </div>
-        <div id="mfaSetupPanel" class="stack" hidden></div>
-        <div id="mfaMsg"></div>
-      </div>
+      <div class="settings-tabs">
+      ${settingsCollapseTab({
+        id: 'mfaSecurityCard',
+        tabKey: 'sign-in-security',
+        title: 'Sign-in security',
+        meta: mfaMeta,
+        open: settingsTabOpen('sign-in-security'),
+        bodyHtml: `
+          <p class="hint">Authenticator MFA (TOTP) protects billing access. Enable it before go-live — required for admins and billing on a live domain.</p>
+          <p class="muted" id="mfaStatusLine">${
+            mfaStatus.enabled
+              ? `MFA is <strong>on</strong>${mfaStatus.enabledAt ? ` · since ${escapeHtml(String(mfaStatus.enabledAt).slice(0, 10))}` : ''} · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes left`
+              : 'MFA is <strong>off</strong> for your account'
+          }</p>
+          <div class="row-actions" id="mfaActions">
+            ${mfaStatus.enabled
+              ? `<button type="button" id="mfaDisableBtn">Disable MFA…</button>`
+              : `<button type="button" class="primary" id="mfaSetupBtn">Set up authenticator</button>`}
+          </div>
+          <div id="mfaSetupPanel" class="stack" hidden></div>
+          <div id="mfaMsg"></div>`,
+      })}
 
       ${canConfigureMatterDefaults ? `
-      <div class="card stack" id="defaultFieldsCard">
-        <h2>Matter record pages</h2>
-        <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Add custom fields at the bottom. New matters default to Billable.</p>
-        <div id="defaultFieldsBody" class="stack"></div>
-        <div id="typeFieldMsg"></div>
-      </div>
-      <details class="onedrive-collapse settings-collapse" id="matterNameFormulaCard">
-        <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">Matter name formula</span>
-          <span class="onedrive-collapse-meta muted">${
-            settings.matterNameFormula?.enabled
-              ? escapeHtml(settings.matterNameFormula.previewExample || 'On')
-              : 'Off — type a name on create'
-          }</span>
-        </summary>
-        <div class="onedrive-collapse-body stack" id="matterNameFormulaBody"></div>
-      </details>` : ''}
+      ${settingsCollapseTab({
+        id: 'defaultFieldsCard',
+        tabKey: 'matter-record-pages',
+        title: 'Matter record pages',
+        meta: 'Admin',
+        open: settingsTabOpen('matter-record-pages'),
+        bodyHtml: `
+          <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Add custom fields at the bottom. New matters default to Billable.</p>
+          <div id="defaultFieldsBody" class="stack"></div>
+          <div id="typeFieldMsg"></div>`,
+      })}
+      ${settingsCollapseTab({
+        id: 'matterNameFormulaCard',
+        tabKey: 'matter-name-formula',
+        title: 'Matter name formula',
+        meta: formulaMeta,
+        open: settingsTabOpen('matter-name-formula'),
+        bodyHtml: `<div id="matterNameFormulaBody" class="stack"></div>`,
+      })}` : ''}
 
       ${canConfigureFields ? `
-      <div class="card stack" id="contactFieldsCard">
-        <h2>Contact record pages</h2>
-        <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
-        <div id="contactFieldsBody" class="stack"></div>
-        <div id="contactFieldMsg"></div>
-      </div>
-      <div class="card stack" id="timeFieldsCard">
-        <h2>Time entry fields</h2>
-        <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
-        <div id="timeFieldsBody" class="stack"></div>
-        <div id="timeFieldMsg"></div>
-      </div>` : ''}
+      ${settingsCollapseTab({
+        id: 'contactFieldsCard',
+        tabKey: 'contact-record-pages',
+        title: 'Contact record pages',
+        open: settingsTabOpen('contact-record-pages'),
+        bodyHtml: `
+          <p class="hint">Each contact record type (Client, Company, or ones you add) has its own field layout. Fields you add here are record-type fields — they appear on every contact of that type. New contacts default to Client.</p>
+          <div id="contactFieldsBody" class="stack"></div>
+          <div id="contactFieldMsg"></div>`,
+      })}
+      ${settingsCollapseTab({
+        id: 'timeFieldsCard',
+        tabKey: 'time-entry-fields',
+        title: 'Time entry fields',
+        open: settingsTabOpen('time-entry-fields'),
+        bodyHtml: `
+          <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
+          <div id="timeFieldsBody" class="stack"></div>
+          <div id="timeFieldMsg"></div>`,
+      })}` : ''}
 
       ${isAdmin ? `
-      <div class="card stack" id="rolePermissionsCard">
-        <h2>Role permissions</h2>
-        <p class="hint">Pick a role, then choose what they can view, find in search, edit, or delete. Use Quick setup for common patterns.</p>
-        <div id="rolePermissionsBody" class="stack"></div>
-        <div id="rolePermissionsMsg"></div>
-      </div>
-      <div class="card stack" id="fieldPermissionsCard">
-        <h2>Field permissions</h2>
-        <p class="hint">Control which matter and contact fields each role can see or edit.</p>
-        <div id="fieldPermissionsBody" class="stack"></div>
-        <div id="fieldPermissionsMsg"></div>
-      </div>` : ''}
+      ${settingsCollapseTab({
+        id: 'rolePermissionsCard',
+        tabKey: 'role-permissions',
+        title: 'Role permissions',
+        meta: 'Admin',
+        open: settingsTabOpen('role-permissions'),
+        bodyHtml: `
+          <p class="hint">Pick a role, then choose what they can view, find in search, edit, or delete. Use Quick setup for common patterns.</p>
+          <div id="rolePermissionsBody" class="stack"></div>
+          <div id="rolePermissionsMsg"></div>`,
+      })}
+      ${settingsCollapseTab({
+        id: 'fieldPermissionsCard',
+        tabKey: 'field-permissions',
+        title: 'Field permissions',
+        meta: 'Admin',
+        open: settingsTabOpen('field-permissions'),
+        bodyHtml: `
+          <p class="hint">Control which matter and contact fields each role can see or edit.</p>
+          <div id="fieldPermissionsBody" class="stack"></div>
+          <div id="fieldPermissionsMsg"></div>`,
+      })}` : ''}
 
-      ${canEditBilling ? `
-      <div class="card stack" id="invoiceTemplatesCard">
-        <h2>Invoice templates</h2>
-        <p class="hint">Upload a Microsoft Word (.docx) or Adobe PDF template with merge fields like <code>{{client_name}}</code>. Set one as default for “Download with template” on bills.</p>
-        <div class="row-actions" style="flex-wrap:wrap;gap:.5rem">
-          <a class="linkish" href="/api/invoice-templates/sample?format=docx" id="sampleDocxLink">Download Word sample</a>
-          <a class="linkish" href="/api/invoice-templates/sample?format=pdf" id="samplePdfLink">Download Adobe PDF sample</a>
-        </div>
-        <details class="onedrive-collapse settings-collapse">
-          <summary class="onedrive-collapse-summary">
-            <span class="onedrive-collapse-title">Merge fields</span>
-            <span class="onedrive-collapse-meta muted">${mergeFields.length} fields</span>
-          </summary>
-          <div class="onedrive-collapse-body">
-            <div class="table-wrap"><table>
-              <thead><tr><th>Field</th><th>Token</th><th>Example</th></tr></thead>
-              <tbody>
-                ${mergeFields.map((f) => `
-                  <tr>
-                    <td>${escapeHtml(f.label)}</td>
-                    <td><code>${escapeHtml(f.token)}</code></td>
-                    <td class="muted">${escapeHtml(f.example || '')}</td>
-                  </tr>`).join('') || '<tr><td colspan="3" class="muted">No fields</td></tr>'}
-              </tbody>
-            </table></div>
+      ${canEditBilling ? settingsCollapseTab({
+        id: 'invoiceTemplatesCard',
+        tabKey: 'invoice-templates',
+        title: 'Invoice templates',
+        meta: `${invoiceTemplatesList.length} template${invoiceTemplatesList.length === 1 ? '' : 's'}`,
+        open: settingsTabOpen('invoice-templates'),
+        bodyHtml: `
+          <p class="hint">Upload a Microsoft Word (.docx) or Adobe PDF template with merge fields like <code>{{client_name}}</code>. Set one as default for “Download with template” on bills.</p>
+          <div class="row-actions" style="flex-wrap:wrap;gap:.5rem">
+            <a class="linkish" href="/api/invoice-templates/sample?format=docx" id="sampleDocxLink">Download Word sample</a>
+            <a class="linkish" href="/api/invoice-templates/sample?format=pdf" id="samplePdfLink">Download Adobe PDF sample</a>
           </div>
-        </details>
-        <form id="invoiceTemplateForm" class="stack">
-          <label>Template name
-            <input name="name" required placeholder="Firm letterhead bill" />
-          </label>
-          <label>Description
-            <input name="description" placeholder="Optional" />
-          </label>
-          <label>Word (.docx) or Adobe PDF file
-            <input name="file" type="file" accept=".docx,.pdf,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" required />
-          </label>
-          <label class="choice" style="display:flex;gap:.5rem;align-items:center">
-            <input type="checkbox" name="isDefault" />
-            <span>Make default for bill downloads</span>
-          </label>
-          <div class="row-actions">
-            <button class="primary" type="submit">Upload template</button>
-          </div>
-        </form>
-        <div id="invoiceTemplateMsg"></div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Name</th><th>Format</th><th>Size</th><th>Default</th><th></th></tr></thead>
-          <tbody>
-            ${invoiceTemplatesList.map((t) => `
-              <tr>
-                <td>${escapeHtml(t.name)}<div class="muted">${escapeHtml(t.description || '')}</div></td>
-                <td>${escapeHtml(String(t.format || '').toUpperCase())}</td>
-                <td class="muted">${Math.round(Number(t.size_bytes || 0) / 1024)} KB</td>
-                <td>${t.is_default ? 'Yes' : '—'}</td>
-                <td class="row-actions">
-                  <button type="button" data-tpl-download="${t.id}">Download</button>
-                  ${t.is_default ? '' : `<button type="button" data-tpl-default="${t.id}">Set default</button>`}
-                  <button type="button" class="danger" data-tpl-delete="${t.id}">Remove</button>
-                </td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No custom templates yet — upload a Word or Adobe file above.</td></tr>'}
-          </tbody>
-        </table></div>
-      </div>` : ''}
+          <details class="onedrive-collapse settings-collapse settings-subtab" data-settings-tab="invoice-merge-fields" ${settingsTabOpen('invoice-merge-fields') ? 'open' : ''}>
+            <summary class="onedrive-collapse-summary">
+              <span class="onedrive-collapse-title">Merge fields</span>
+              <span class="onedrive-collapse-meta muted">${mergeFields.length} fields</span>
+            </summary>
+            <div class="onedrive-collapse-body">
+              <div class="table-wrap"><table>
+                <thead><tr><th>Field</th><th>Token</th><th>Example</th></tr></thead>
+                <tbody>
+                  ${mergeFields.map((f) => `
+                    <tr>
+                      <td>${escapeHtml(f.label)}</td>
+                      <td><code>${escapeHtml(f.token)}</code></td>
+                      <td class="muted">${escapeHtml(f.example || '')}</td>
+                    </tr>`).join('') || '<tr><td colspan="3" class="muted">No fields</td></tr>'}
+                </tbody>
+              </table></div>
+            </div>
+          </details>
+          <form id="invoiceTemplateForm" class="stack">
+            <label>Template name
+              <input name="name" required placeholder="Firm letterhead bill" />
+            </label>
+            <label>Description
+              <input name="description" placeholder="Optional" />
+            </label>
+            <label>Word (.docx) or Adobe PDF file
+              <input name="file" type="file" accept=".docx,.pdf,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" required />
+            </label>
+            <label class="choice" style="display:flex;gap:.5rem;align-items:center">
+              <input type="checkbox" name="isDefault" />
+              <span>Make default for bill downloads</span>
+            </label>
+            <div class="row-actions">
+              <button class="primary" type="submit">Upload template</button>
+            </div>
+          </form>
+          <div id="invoiceTemplateMsg"></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Name</th><th>Format</th><th>Size</th><th>Default</th><th></th></tr></thead>
+            <tbody>
+              ${invoiceTemplatesList.map((t) => `
+                <tr>
+                  <td>${escapeHtml(t.name)}<div class="muted">${escapeHtml(t.description || '')}</div></td>
+                  <td>${escapeHtml(String(t.format || '').toUpperCase())}</td>
+                  <td class="muted">${Math.round(Number(t.size_bytes || 0) / 1024)} KB</td>
+                  <td>${t.is_default ? 'Yes' : '—'}</td>
+                  <td class="row-actions">
+                    <button type="button" data-tpl-download="${t.id}">Download</button>
+                    ${t.is_default ? '' : `<button type="button" data-tpl-default="${t.id}">Set default</button>`}
+                    <button type="button" class="danger" data-tpl-delete="${t.id}">Remove</button>
+                  </td>
+                </tr>`).join('') || '<tr><td colspan="5" class="muted">No custom templates yet — upload a Word or Adobe file above.</td></tr>'}
+            </tbody>
+          </table></div>`,
+      }) : ''}
 
-      <form id="settingsForm" class="card stack">
-        <h2>Time and Billing</h2>
-        <p class="hint">Firm timezone, duration display, and rounding for new time entries.</p>
-
-        <details class="onedrive-collapse settings-collapse" open>
-          <summary class="onedrive-collapse-summary">
-            <span class="onedrive-collapse-title">Timezone</span>
-            <span class="onedrive-collapse-meta muted">${escapeHtml(settings.firmTimezoneLabel || selectedTz)}</span>
-          </summary>
-          <div class="onedrive-collapse-body">
-            <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
-              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Firm timezone</h3>
-              <p class="hint">Time entry dates and billing “today” use this timezone (${tzCount} zones). Scroll the list to browse all zones.</p>
-              <label class="tz-filter-label">Filter
-                <input type="search" id="firmTimezoneFilter" placeholder="Search city or region…"
-                  autocomplete="off" ${canEditBilling ? '' : 'disabled'} />
-              </label>
-              <label class="tz-select-label">Timezone
-                <div class="tz-select-scroll" role="presentation">
-                  <select name="firmTimezone" id="firmTimezoneSelect" size="28" ${canEditBilling ? '' : 'disabled'}>
-                    ${tzGroups.map((group) => `
-                      <optgroup label="${escapeHtml(group.region)}" data-tz-region="${escapeHtml(group.region)}">
-                        ${(group.zones || []).map((z) => `
-                          <option value="${escapeHtml(z.id)}"
-                            data-tz-label="${escapeHtml((z.label || z.id).toLowerCase())}"
-                            ${z.id === selectedTz ? 'selected' : ''}>
-                            ${escapeHtml(z.label || z.id)}
-                          </option>`).join('')}
-                      </optgroup>`).join('') || `
-                      <option value="${escapeHtml(selectedTz)}" selected>${escapeHtml(selectedTz)}</option>`}
-                  </select>
+      ${settingsCollapseTab({
+        id: 'timeBillingCard',
+        tabKey: 'time-billing',
+        title: 'Time and Billing',
+        meta: billingMeta,
+        open: settingsTabOpen('time-billing', true),
+        bodyHtml: `
+          <p class="hint">Firm timezone, duration display, and rounding for new time entries.</p>
+          <form id="settingsForm" class="stack">
+            <details class="onedrive-collapse settings-collapse settings-subtab" data-settings-tab="timezone" ${settingsTabOpen('timezone', true) ? 'open' : ''}>
+              <summary class="onedrive-collapse-summary">
+                <span class="onedrive-collapse-title">Timezone</span>
+                <span class="onedrive-collapse-meta muted">${escapeHtml(settings.firmTimezoneLabel || selectedTz)}</span>
+              </summary>
+              <div class="onedrive-collapse-body">
+                <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+                  <h3 style="margin:0 0 .35rem;font-family:var(--font)">Firm timezone</h3>
+                  <p class="hint">Time entry dates and billing “today” use this timezone (${tzCount} zones). Scroll the list to browse all zones.</p>
+                  <label class="tz-filter-label">Filter
+                    <input type="search" id="firmTimezoneFilter" placeholder="Search city or region…"
+                      autocomplete="off" ${canEditBilling ? '' : 'disabled'} />
+                  </label>
+                  <label class="tz-select-label">Timezone
+                    <div class="tz-select-scroll" role="presentation">
+                      <select name="firmTimezone" id="firmTimezoneSelect" size="28" ${canEditBilling ? '' : 'disabled'}>
+                        ${tzGroups.map((group) => `
+                          <optgroup label="${escapeHtml(group.region)}" data-tz-region="${escapeHtml(group.region)}">
+                            ${(group.zones || []).map((z) => `
+                              <option value="${escapeHtml(z.id)}"
+                                data-tz-label="${escapeHtml((z.label || z.id).toLowerCase())}"
+                                ${z.id === selectedTz ? 'selected' : ''}>
+                                ${escapeHtml(z.label || z.id)}
+                              </option>`).join('')}
+                          </optgroup>`).join('') || `
+                          <option value="${escapeHtml(selectedTz)}" selected>${escapeHtml(selectedTz)}</option>`}
+                      </select>
+                    </div>
+                  </label>
+                  <p class="hint">Current firm date: <strong>${escapeHtml(today)}</strong></p>
                 </div>
-              </label>
-              <p class="hint">Current firm date: <strong>${escapeHtml(today)}</strong></p>
-            </div>
-          </div>
-        </details>
+              </div>
+            </details>
 
-        <details class="onedrive-collapse settings-collapse">
-          <summary class="onedrive-collapse-summary">
-            <span class="onedrive-collapse-title">Duration &amp; rounding</span>
-            <span class="onedrive-collapse-meta muted">${escapeHtml(settings.durationFormat || '')} · ${escapeHtml(settings.roundMode || '')}${settings.roundMode !== 'none' ? ` / ${settings.roundIncrementMinutes}m` : ''}</span>
-          </summary>
-          <div class="onedrive-collapse-body">
-            <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
-              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Duration Format</h3>
-              <p class="hint">How timers and time entries are shown.</p>
-              ${(settings.durationFormats || []).map((f) => `
-                <div class="choice ${settings.durationFormat === f.id ? 'is-selected' : ''}"
-                     data-name="durationFormat" data-disabled="${canEditBilling ? '0' : '1'}">
-                  <input type="radio" name="durationFormat" value="${f.id}"
-                    ${settings.durationFormat === f.id ? 'checked' : ''}
-                    ${canEditBilling ? '' : 'disabled'} />
-                  <span>
-                    <strong>${f.label}</strong>
-                    <span class="muted">${f.description}</span>
-                  </span>
-                </div>`).join('')}
-            </div>
+            <details class="onedrive-collapse settings-collapse settings-subtab" data-settings-tab="duration-rounding" ${settingsTabOpen('duration-rounding') ? 'open' : ''}>
+              <summary class="onedrive-collapse-summary">
+                <span class="onedrive-collapse-title">Duration &amp; rounding</span>
+                <span class="onedrive-collapse-meta muted">${escapeHtml(settings.durationFormat || '')} · ${escapeHtml(settings.roundMode || '')}${settings.roundMode !== 'none' ? ` / ${settings.roundIncrementMinutes}m` : ''}</span>
+              </summary>
+              <div class="onedrive-collapse-body">
+                <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+                  <h3 style="margin:0 0 .35rem;font-family:var(--font)">Duration Format</h3>
+                  <p class="hint">How timers and time entries are shown.</p>
+                  ${(settings.durationFormats || []).map((f) => `
+                    <div class="choice ${settings.durationFormat === f.id ? 'is-selected' : ''}"
+                         data-name="durationFormat" data-disabled="${canEditBilling ? '0' : '1'}">
+                      <input type="radio" name="durationFormat" value="${f.id}"
+                        ${settings.durationFormat === f.id ? 'checked' : ''}
+                        ${canEditBilling ? '' : 'disabled'} />
+                      <span>
+                        <strong>${f.label}</strong>
+                        <span class="muted">${f.description}</span>
+                      </span>
+                    </div>`).join('')}
+                </div>
 
-            <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
-              <h3 style="margin:0 0 .35rem;font-family:var(--font)">Time Rounding</h3>
-              <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
-                Nearest rounds up if the duration is exactly in the middle of the interval.</p>
-              ${(settings.roundingModes || []).map((m) => `
-                <div class="choice ${settings.roundMode === m.id ? 'is-selected' : ''}"
-                     data-name="roundMode" data-disabled="${canEditBilling ? '0' : '1'}">
-                  <input type="radio" name="roundMode" value="${m.id}"
-                    ${settings.roundMode === m.id ? 'checked' : ''}
-                    ${canEditBilling ? '' : 'disabled'} />
-                  <span>
-                    <strong>${m.label}</strong>
-                    <span class="muted">${m.description}</span>
-                  </span>
-                </div>`).join('')}
+                <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
+                  <h3 style="margin:0 0 .35rem;font-family:var(--font)">Time Rounding</h3>
+                  <p class="hint">Round time entries up, down, to the nearest X minutes, or not at all.
+                    Nearest rounds up if the duration is exactly in the middle of the interval.</p>
+                  ${(settings.roundingModes || []).map((m) => `
+                    <div class="choice ${settings.roundMode === m.id ? 'is-selected' : ''}"
+                         data-name="roundMode" data-disabled="${canEditBilling ? '0' : '1'}">
+                      <input type="radio" name="roundMode" value="${m.id}"
+                        ${settings.roundMode === m.id ? 'checked' : ''}
+                        ${canEditBilling ? '' : 'disabled'} />
+                      <span>
+                        <strong>${m.label}</strong>
+                        <span class="muted">${m.description}</span>
+                      </span>
+                    </div>`).join('')}
 
-              <label class="interval-label">Interval (X minutes)
-                <select name="roundIncrementMinutes" id="roundIncrementMinutes" ${canEditBilling ? '' : 'disabled'}>
-                  ${(settings.roundingIncrements || []).map((r) => `
-                    <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
-                      ${r.label}
-                    </option>`).join('')}
-                </select>
-              </label>
-              <input type="hidden" name="roundIncrementMinutesFallback" value="${settings.roundIncrementMinutes}" />
-              <p class="hint">Interval applies to Round up / Nearest / Down. Ignored when Do Not Round is selected.</p>
-            </div>
+                  <label class="interval-label">Interval (X minutes)
+                    <select name="roundIncrementMinutes" id="roundIncrementMinutes" ${canEditBilling ? '' : 'disabled'}>
+                      ${(settings.roundingIncrements || []).map((r) => `
+                        <option value="${r.minutes}" ${r.minutes === settings.roundIncrementMinutes ? 'selected' : ''}>
+                          ${r.label}
+                        </option>`).join('')}
+                    </select>
+                  </label>
+                  <input type="hidden" name="roundIncrementMinutesFallback" value="${settings.roundIncrementMinutes}" />
+                  <p class="hint">Interval applies to Round up / Nearest / Down. Ignored when Do Not Round is selected.</p>
+                </div>
 
-            ${canEditBilling ? '<div class="row-actions"><button class="primary" type="submit">Save time &amp; billing settings</button></div>' : ''}
-          </div>
-        </details>
-        <div id="settingsMsg"></div>
-      </form>
+                ${canEditBilling ? '<div class="row-actions"><button class="primary" type="submit">Save time &amp; billing settings</button></div>' : ''}
+              </div>
+            </details>
+            <div id="settingsMsg"></div>
+          </form>`,
+      })}
 
-      ${showClerkRates ? `
-      <details class="onedrive-collapse settings-collapse" id="tkRatesSection" ${state.tkSearch.q ? 'open' : ''}>
-        <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">Timekeepers &amp; Rates</span>
-          <span class="onedrive-collapse-meta muted">${timekeepers.length} timekeeper${timekeepers.length === 1 ? '' : 's'}</span>
-        </summary>
-        <div class="onedrive-collapse-body stack">
+      ${showClerkRates ? settingsCollapseTab({
+        id: 'tkRatesSection',
+        tabKey: 'timekeepers-rates',
+        title: 'Timekeepers &amp; Rates',
+        meta: `${timekeepers.length} timekeeper${timekeepers.length === 1 ? '' : 's'}`,
+        open: settingsTabOpen('timekeepers-rates', Boolean(state.tkSearch.q)),
+        bodyHtml: `
           <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates. Invite users from Navigate → Add a user (Admin by default; grant Add users under Role permissions to allow other roles).</p>
-          ${timekeeperRatesTableHtml(timekeepers, { today, showReset: false })}
-        </div>
-      </details>` : ''}`);
+          ${timekeeperRatesTableHtml(timekeepers, { today, showReset: false })}`,
+      }) : ''}
+      </div>`);
+
+    wireSettingsCollapseTabs(main);
+    $('#settingsExpandAll')?.addEventListener('click', () => {
+      main.querySelectorAll('details.settings-tab, details.settings-subtab').forEach((el) => {
+        el.open = true;
+        const key = el.getAttribute('data-settings-tab');
+        if (key) state.settingsTabOpen[key] = true;
+      });
+    });
+    $('#settingsCollapseAll')?.addEventListener('click', () => {
+      main.querySelectorAll('details.settings-tab, details.settings-subtab').forEach((el) => {
+        el.open = false;
+        const key = el.getAttribute('data-settings-tab');
+        if (key) state.settingsTabOpen[key] = false;
+      });
+    });
 
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
@@ -9275,7 +9381,26 @@
       await goAppView('settings');
       const el = typeof selector === 'string' ? $(selector) : selector;
       if (!el) return;
-      if (openDetails && 'open' in el) el.open = true;
+      if ('open' in el) {
+        el.open = true;
+        const key = el.getAttribute?.('data-settings-tab');
+        if (key) {
+          if (!state.settingsTabOpen) state.settingsTabOpen = {};
+          state.settingsTabOpen[key] = true;
+        }
+      } else if (openDetails) {
+        const details = el.closest?.('details');
+        if (details) details.open = true;
+      }
+      const parentTab = el.closest?.('details.settings-tab');
+      if (parentTab && parentTab !== el) {
+        parentTab.open = true;
+        const parentKey = parentTab.getAttribute('data-settings-tab');
+        if (parentKey) {
+          if (!state.settingsTabOpen) state.settingsTabOpen = {};
+          state.settingsTabOpen[parentKey] = true;
+        }
+      }
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
