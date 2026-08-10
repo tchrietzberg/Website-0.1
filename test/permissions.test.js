@@ -263,6 +263,22 @@ describe('role permissions and field permissions', () => {
     assert.ok(asAdmin.fields.some((f) => f.fieldId === field.id));
   });
 
+  it('includes type-scoped contact custom fields in field permissions catalog', () => {
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Email',
+      fieldType: 'email',
+      appliesTo: 'client',
+      recordTypeKey: 'client',
+    });
+    const catalog = permissions.catalogContactLayoutFields(db);
+    assert.ok(
+      catalog.some((f) => f.key === `cf:${field.id}` && f.label === 'Email'),
+      'Settings → Contact page fields must appear under Field permissions → Contact fields'
+    );
+    const settings = permissions.getPermissionsSettings(db);
+    assert.ok(settings.contactFields.some((f) => f.key === `cf:${field.id}`));
+  });
+
   it('includes time entry fields in field permissions catalog and enforces writes', () => {
     const settings = permissions.getPermissionsSettings(db);
     assert.ok(settings.timeFields.some((f) => f.key === 'std:billable'));

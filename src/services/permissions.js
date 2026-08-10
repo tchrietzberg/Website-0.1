@@ -712,7 +712,7 @@ function catalogMatterLayoutFields(db) {
       group: 'Matter fields',
     }));
   const customs = [];
-  for (const type of customFields.listRecordTypes(db)) {
+  for (const type of customFields.listRecordTypes(db, { appliesTo: 'matter' })) {
     for (const f of customFields.listCustomFields(db, {
       appliesTo: 'matter',
       recordTypeKey: type.key,
@@ -738,6 +738,7 @@ function catalogMatterLayoutFields(db) {
 function catalogContactLayoutFields(db) {
   const clientsSvc = require('./clients');
   const customFields = require('./customFields');
+  customFields.ensureRecordTypes(db);
   const config = clientsSvc.getContactFieldConfig(db);
   const standards = [
     ...config.core.map((f) => ({
@@ -753,13 +754,34 @@ function catalogContactLayoutFields(db) {
       group: 'Contact fields',
     })),
   ];
-  const customs = customFields.listCustomFields(db, { appliesTo: 'client' }).map((f) => ({
-    key: `cf:${f.id}`,
-    label: f.label,
-    kind: 'custom',
-    group: 'Custom fields',
-    fieldId: f.id,
-  }));
+  // listCustomFields({ appliesTo: 'client' }) alone only returns firm-wide
+  // fields (null record type). Settings → Contact page fields are type-scoped
+  // (Client, Company, …), so walk each contact record type too.
+  const customs = [];
+  const seen = new Set();
+  const pushField = (f) => {
+    const key = `cf:${f.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    customs.push({
+      key,
+      label: f.label,
+      kind: 'custom',
+      group: 'Custom fields',
+      fieldId: f.id,
+    });
+  };
+  for (const f of customFields.listCustomFields(db, { appliesTo: 'client' })) {
+    pushField(f);
+  }
+  for (const type of customFields.listRecordTypes(db, { appliesTo: 'client' })) {
+    for (const f of customFields.listCustomFields(db, {
+      appliesTo: 'client',
+      recordTypeKey: type.key,
+    })) {
+      pushField(f);
+    }
+  }
   return [...standards, ...customs];
 }
 
