@@ -4436,7 +4436,6 @@
         <div class="page-head matters-toolbar" style="margin-bottom:.75rem">
           <div class="row-actions">
             <button type="button" id="backContacts">← Contacts</button>
-            ${canDelete ? '<button type="button" id="deleteContact">Delete contact</button>' : ''}
           </div>
           ${canCreate
             ? '<button type="button" class="primary" id="createContactFromDetail">Create contact</button>'
@@ -4487,7 +4486,17 @@
 
       ${canEdit && !showPostCreateFields ? contactFieldMgmtPanelHtml({
         msgHtml: fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : '',
-      }) : ''}`);
+      }) : ''}
+
+      ${canDelete ? `
+      <div class="card stack contact-delete-panel">
+        <h2 style="margin:0">Delete contact</h2>
+        <p class="hint">Remove this contact from the firm. Linked matters keep their data and become client-less. This cannot be undone.</p>
+        <div class="row-actions">
+          <button type="button" class="danger" id="deleteContact">Delete contact</button>
+        </div>
+        <div id="contactDeleteMsg"></div>
+      </div>` : ''}`);
 
     $('#backContacts').onclick = () => {
       state.view = 'contacts';
@@ -4528,6 +4537,7 @@
           cancelLabel: 'Cancel',
         });
         if (!sure) return;
+        const deleteMsg = $('#contactDeleteMsg');
         try {
           const result = await api(`/api/clients/${c.id}`, { method: 'DELETE' });
           state.contactId = null;
@@ -4546,7 +4556,9 @@
           renderShell();
           await renderContacts();
         } catch (e) {
-          $('#contactMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          if (deleteMsg) {
+            deleteMsg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          }
         }
       };
     }
@@ -8498,7 +8510,7 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
-      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. Roles with Contacts → Delete (Admin always) can use Delete contact on the contact page — linked matters become client-less. [[Contact record pages|settings-contact-fields]] in Settings manages type layouts.',
+      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. Roles with Contacts → Delete (Admin always) can use Delete contact at the bottom of the contact page — linked matters become client-less. [[Contact record pages|settings-contact-fields]] in Settings manages type layouts.',
       links: [
         { label: 'Go to Create Contact', target: 'create-contact' },
         { label: 'Contact record pages', target: 'settings-contact-fields' },
