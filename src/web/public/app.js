@@ -1292,8 +1292,8 @@
         </div>
         <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every ${escapeHtml(entityNoun)} of this type.${
           entityAppliesTo === 'matter'
-            ? ' For a field on one matter only, open that matter and use Add custom fields at the bottom of the page.'
-            : ''
+            ? ' For a field on one matter only, open that matter and use Matter level fields at the bottom of the page.'
+            : ' For a field on one contact only, open that contact and use Contact level fields.'
         }</p>
         <form id="addRecordTypeForm" class="stack" hidden>
           <label>Label *
@@ -4313,8 +4313,8 @@
     const searchBits = ['name', ...enabledStd.map((f) => f.label.toLowerCase())];
     const listFlash = state.contactListFlash;
     state.contactListFlash = null;
-    const createFieldMsg = state.createContactFieldMsg;
     state.createContactFieldMsg = null;
+    state.createContactFieldsOpen = false;
     const contactTypeLabel = (key) => {
       const k = String(key || 'client');
       const hit = (recordTypes || []).find((t) => t.key === k);
@@ -4334,8 +4334,6 @@
       ).catch(() => []);
       if (!stillOnView('contacts')) return;
     }
-    const createTypeLabel = ((recordTypes || []).find((t) => t.key === createRecordTypeKey) || {}).label
-      || createRecordTypeKey;
     const createFieldDefs = (createFields || []).map((f) => ({
       key: `cf:${f.id}`,
       label: f.label,
@@ -4351,7 +4349,6 @@
       value: null,
       readonly: SYSTEM_FIELD_TYPES.has(String(f.field_type)),
     }));
-    const createCustomRows = (createFields || []).filter((f) => f.id != null);
 
     setMainHtml(`
       <div class="card stack page-card">
@@ -4396,20 +4393,7 @@
             </div>
           </form>
           <div id="newContactMsg"></div>
-        </div>
-
-        ${createRecordTypeFieldsPanelHtml({
-          panelId: 'createContactFieldsPanel',
-          formId: 'createContactFieldForm',
-          msgId: 'createContactFieldMsg',
-          typeLabel: createTypeLabel,
-          fields: createCustomRows,
-          open: !!(state.createContactFieldsOpen || createFieldMsg),
-          entityNoun: 'contact',
-          appliesTo: 'client',
-          title: 'Add custom fields',
-          msgHtml: createFieldMsg ? successNoticeHtml(createFieldMsg) : '',
-        })}` : ''}
+        </div>` : ''}
 
         <div class="page-section">
           <h2>Contacts</h2>
@@ -4467,43 +4451,6 @@
         typeSelect.onchange = async () => {
           state.createContactRecordTypeKey = typeSelect.value || 'client';
           await renderContacts();
-        };
-      }
-      wireCreateRecordTypeFieldsPanel('createContactFieldsPanel', 'createContactFieldsOpen');
-      const createFieldForm = $('#createContactFieldForm');
-      wireDropdownOptionsToggle(createFieldForm);
-      if (createFieldForm) {
-        createFieldForm.onsubmit = async (ev) => {
-          ev.preventDefault();
-          const typeKey = state.createContactRecordTypeKey || 'client';
-          const fd = new FormData(createFieldForm);
-          const { fieldType, options, body } = customFieldPayload(fd);
-          if ((fieldType === 'dropdown' || fieldType === 'select' || fieldType === 'multiselect') && !options.length) {
-            state.createContactFieldsOpen = true;
-            $('#createContactFieldMsg').innerHTML = '<div class="error">Add at least one dropdown option.</div>';
-            return;
-          }
-          try {
-            await api('/api/custom-fields', {
-              method: 'POST',
-              body: JSON.stringify({
-                ...body,
-                recordTypeKey: typeKey,
-                appliesTo: 'client',
-              }),
-            });
-            state.createContactFieldsOpen = true;
-            state.createContactFieldMsg = {
-              title: 'Record type field added',
-              detail: `${body.label || 'Field'} added to the ${createTypeLabel} record type.`,
-            };
-            await renderContacts();
-            const panel = $('#createContactFieldsPanel');
-            if (panel?.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          } catch (e) {
-            state.createContactFieldsOpen = true;
-            $('#createContactFieldMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
-          }
         };
       }
     }
@@ -4671,32 +4618,31 @@
     const fieldPanelFlash = state.contactFieldPanelFlash;
     const showPostCreateFields = canEdit && !!state.showPostCreateContactFields;
     const typeLabel = page.recordTypeLabel || c.record_type || 'Client';
-    const recordTypeKey = page.recordTypeKey || c.record_type || 'client';
     state.contactFlash = null;
     state.contactCreateFlash = null;
     state.contactFieldPanelFlash = null;
 
+    const isContactOnlyField = (f) => !!(
+      f
+      && !isBuiltInField(f)
+      && (f.scope === 'record' || f.clientId || f.client_id)
+    );
+    const contactOnlyFields = (fields || []).filter(isContactOnlyField);
     const editingField = state.editingContactFieldId
-      ? (fields || []).find(
+      ? contactOnlyFields.find(
         (f) => Number(fieldIdFromMgmt(f)) === Number(state.editingContactFieldId)
       )
-      : null;
-    const editingFieldScope = editingField
-      ? (editingField.scope === 'record' || editingField.clientId || editingField.client_id
-        ? 'record'
-        : 'record_type')
       : null;
 
     const contactFieldMgmtPanelHtml = (opts = {}) => {
       const {
-        title = 'Manage fields',
-        hint = `Choose whether a new field is for this contact only, or for every <strong>${escapeHtml(typeLabel)}</strong> contact (record type default). Record type fields can also be managed in Settings → Contact page.`,
+        title = 'Contact level fields',
+        hint = 'Add a field for <strong>this contact only</strong>. Shared defaults for all contacts are managed in Settings → Contact page.',
         formId = 'contactRecordFieldForm',
         panelId = '',
         showDismiss = false,
         msgHtml = '',
       } = opts;
-      const isEditingContactOnly = editingFieldScope === 'record';
       return `
       <div class="card stack${showDismiss ? ' post-create-fields-panel' : ''}"${panelId ? ` id="${panelId}"` : ''}>
         <div class="page-head matters-toolbar" style="margin:0">
@@ -4705,38 +4651,26 @@
         </div>
         <p class="hint">${hint}</p>
         <div class="field-mgmt-list">
-          ${fieldMgmtRows(fields, { editAttr: 'data-edit-contact-field', showScope: true })}
+          ${fieldMgmtRows(contactOnlyFields, { editAttr: 'data-edit-contact-field', showScope: false })}
         </div>
         ${editingField
-          ? `<h3 class="field-edit-title">Edit ${isEditingContactOnly ? 'contact' : 'record type'} field</h3>${customFieldFormHtml({
+          ? `<h3 class="field-edit-title">Edit contact field</h3>${customFieldFormHtml({
             formId,
             submitLabel: 'Save changes',
             field: editingField,
             showCancel: true,
-            showDefault: !isEditingContactOnly,
-            defaultLabel: 'Record type default field',
-            requiredLabel: isEditingContactOnly ? 'Required on this contact' : 'Record type required field',
+            showDefault: false,
+            requiredLabel: 'Required on this contact',
             appliesTo: 'client',
-            formHint: isEditingContactOnly
-              ? 'This field is for <strong>this contact only</strong> (not type-dependent).'
-              : `This field is on the <strong>${escapeHtml(typeLabel)}</strong> record type (all contacts of this type).`,
+            formHint: 'This field stays on <strong>this contact only</strong>.',
           })}`
           : customFieldFormHtml({
             formId,
-            submitLabel: 'Add field',
+            submitLabel: 'Add to this contact',
             showDefault: false,
-            defaultLabel: 'Record type default field',
-            requiredLabel: 'Required field',
+            requiredLabel: 'Required on this contact',
             appliesTo: 'client',
-            scopeField: {
-              selectId: `${formId}Scope`,
-              selected: 'record',
-              options: [
-                { value: 'record', label: 'This contact only' },
-                { value: 'record_type', label: `All ${typeLabel} contacts (record type)` },
-              ],
-              hint: 'This contact only = one contact. Record type = every contact of this type (default fields for the type).',
-            },
+            formHint: 'New fields apply to this contact only — not to other contacts.',
           })}
         <div id="contactFieldMsg">${msgHtml}</div>
       </div>`;
@@ -4788,8 +4722,8 @@
       </form>
 
       ${showPostCreateFields ? contactFieldMgmtPanelHtml({
-        title: 'Add custom fields',
-        hint: `Optional — add a field for <strong>this contact only</strong>, or for every <strong>${escapeHtml(typeLabel)}</strong> contact (record type). Keep adding as needed, then press Done.`,
+        title: 'Contact level fields',
+        hint: 'Optional — add a field for <strong>this contact only</strong>. Keep adding as needed, then press Done. Shared contact defaults stay in Settings → Contact page.',
         formId: 'contactRecordFieldForm',
         panelId: 'postCreateContactFieldsPanel',
         showDismiss: true,
@@ -4943,41 +4877,7 @@
 
     const rf = $('#contactRecordFieldForm');
     wireDropdownOptionsToggle(rf);
-    const syncContactFieldScopeUi = () => {
-      if (!rf || state.editingContactFieldId) return;
-      const scopeSelect = rf.querySelector('[name="fieldScope"]');
-      const defaultWrap = rf.querySelector('[data-default-field-wrap]');
-      if (!scopeSelect) return;
-      const isRecordType = scopeSelect.value === 'record_type';
-      if (defaultWrap) {
-        defaultWrap.hidden = !isRecordType;
-        if (!isRecordType) {
-          const box = defaultWrap.querySelector('input[name="isDefault"]');
-          if (box) box.checked = false;
-        } else {
-          const defaultText = defaultWrap.querySelector('[data-default-label-text]');
-          if (defaultText) defaultText.textContent = 'Record type default field';
-        }
-      }
-      const requiredText = rf.querySelector('[data-required-label-text]');
-      if (requiredText) {
-        requiredText.textContent = isRecordType
-          ? 'Record type required field'
-          : 'Required on this contact';
-      }
-      const submitBtn = rf.querySelector('button[type="submit"]');
-      if (submitBtn) {
-        submitBtn.textContent = isRecordType
-          ? 'Add to record type'
-          : 'Add to this contact';
-      }
-    };
     if (rf && canEdit) {
-      const scopeSelect = rf.querySelector('[name="fieldScope"]');
-      if (scopeSelect) {
-        scopeSelect.onchange = syncContactFieldScopeUi;
-        syncContactFieldScopeUi();
-      }
       rf.onsubmit = async (ev) => {
         ev.preventDefault();
         const fd = new FormData(rf);
@@ -4994,34 +4894,18 @@
             });
             state.editingContactFieldId = null;
             state.contactFieldPanelFlash = {
-              title: 'Custom field updated',
-              detail: `${body.label || 'Field'} saved.`,
+              title: 'Contact field updated',
+              detail: `${body.label || 'Field'} was saved for this contact.`,
             };
           } else {
-            const scope = String(fd.get('fieldScope') || 'record');
-            if (scope === 'record_type') {
-              await api('/api/custom-fields', {
-                method: 'POST',
-                body: JSON.stringify({
-                  ...body,
-                  recordTypeKey,
-                  appliesTo: 'client',
-                }),
-              });
-              state.contactFieldPanelFlash = {
-                title: 'Record type field added',
-                detail: `${body.label || 'Field'} added to every ${typeLabel} contact.`,
-              };
-            } else {
-              await api(`/api/clients/${c.id}/custom-fields`, {
-                method: 'POST',
-                body: JSON.stringify(body),
-              });
-              state.contactFieldPanelFlash = {
-                title: 'Contact field added',
-                detail: `${body.label || 'Field'} is available on this contact only.`,
-              };
-            }
+            await api(`/api/clients/${c.id}/custom-fields`, {
+              method: 'POST',
+              body: JSON.stringify(body),
+            });
+            state.contactFieldPanelFlash = {
+              title: 'Contact field added',
+              detail: `${body.label || 'Field'} is available on this contact only.`,
+            };
           }
           await renderContactDetail();
         } catch (e) {
@@ -5629,10 +5513,10 @@
     const matterOnlyFieldsPanelHtml = () => `
       <div class="card stack${scrollToMatterFields ? ' post-create-fields-panel' : ''}" id="matterOnlyFieldsPanel">
         <div class="page-head matters-toolbar" style="margin:0">
-          <h2 style="margin:0">Add custom fields</h2>
+          <h2 style="margin:0">Matter level fields</h2>
           ${scrollToMatterFields ? '<button type="button" id="dismissPostCreateFields">Done</button>' : ''}
         </div>
-        <p class="hint">Add a field for <strong>this matter only</strong>. Admins set shared defaults for all matters in Settings → Matter page.</p>
+        <p class="hint">Add a field for <strong>this matter only</strong>. Shared defaults for all matters are managed in Settings → Matter page.</p>
         <div class="field-mgmt-list">
           ${fieldMgmtRows(matterOnlyFields, {
             canDelete: true,
@@ -5648,14 +5532,15 @@
             showDefault: false,
             requiredLabel: 'Required on this matter',
             appliesTo: 'matter_only',
-            formHint: 'This field stays on this matter only.',
+            formHint: 'This field stays on <strong>this matter only</strong>.',
           })}`
           : customFieldFormHtml({
             formId: 'recordFieldForm',
-            submitLabel: 'Add field',
+            submitLabel: 'Add to this matter',
             showDefault: false,
             requiredLabel: 'Required on this matter',
             appliesTo: 'matter_only',
+            formHint: 'New fields apply to this matter only — not to other matters.',
           })}
         <div id="matterFieldMsg">${fieldPanelFlash ? successNoticeHtml(fieldPanelFlash) : ''}</div>
       </div>`;
@@ -5772,7 +5657,7 @@
                     </div>`;
                     }).join('')}
                   </div>
-                `).join('') || '<p class="muted">No fields on this matter yet. Add one under Add custom fields below.</p>'}
+                `).join('') || '<p class="muted">No fields on this matter yet. Add one under Matter level fields below.</p>'}
               </div>
               ${canEdit ? `
                 <div class="row-actions matter-details-actions">
@@ -8742,7 +8627,7 @@
                 <span class="onedrive-collapse-meta muted">Admin</span>
               </summary>
               <div class="onedrive-collapse-body stack">
-                <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Add custom fields at the bottom. New matters default to Billable.</p>
+                <p class="hint">Admin only. Each record type (Billable, Non-Billable, or ones you add) has its own field layout. Fields you add here appear on every matter of that type. For a field on one matter only, open the matter and use Matter level fields at the bottom. New matters default to Billable.</p>
                 <div id="defaultFieldsBody" class="stack"></div>
                 <div id="typeFieldMsg"></div>
               </div>
@@ -9394,7 +9279,7 @@
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
-      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Add custom fields lets you add more; Manage fields is also on the contact page. Roles with Contacts → Delete (Admin always) can use Delete contact at the bottom of the contact page — linked matters become client-less. [[Contact page|settings-contact-fields]] in Settings manages type layouts.',
+      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Contact level fields lets you add fields for that contact only. Roles with Contacts → Delete (Admin always) can use Delete contact at the bottom of the contact page — linked matters become client-less. [[Contact page|settings-contact-fields]] in Settings manages shared type layouts.',
       links: [
         { label: 'Go to Create Contact', target: 'create-contact' },
         { label: 'Contact page', target: 'settings-contact-fields' },
@@ -9405,7 +9290,7 @@
       id: 'fields',
       label: 'Custom fields',
       keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure layouts under [[Record pages|settings-record-pages]] in Settings — [[Matter page|settings-matter-fields]] and [[Contact page|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter, Add custom fields (bottom of the page) adds a field for that matter only.',
+      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure shared layouts under [[Record pages|settings-record-pages]] in Settings — [[Matter page|settings-matter-fields]] and [[Contact page|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter or contact page, Matter level fields / Contact level fields add a field for that record only.',
       links: [
         { label: 'Record pages', target: 'settings-record-pages' },
         { label: 'Matter page', target: 'settings-matter-fields' },
