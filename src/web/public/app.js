@@ -8784,17 +8784,6 @@
           </div>`,
       }) : ''}
 
-      ${canConfigureFields ? settingsCollapseTab({
-        id: 'timeFieldsCard',
-        tabKey: 'time-entry-fields',
-        title: 'Time entry fields',
-        open: settingsTabOpen('time-entry-fields'),
-        bodyHtml: `
-          <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
-          <div id="timeFieldsBody" class="stack"></div>
-          <div id="timeFieldMsg"></div>`,
-      }) : ''}
-
       ${isAdmin ? `
       ${settingsCollapseTab({
         id: 'rolePermissionsCard',
@@ -9002,6 +8991,18 @@
         bodyHtml: `
           <p class="hint">Default rates are timekeeper-scoped and effective-dated. Historical invoices keep snapshotted rates. Invite users from Navigate → Add a user (Admin by default; grant Add users under Role permissions to allow other roles).</p>
           ${timekeeperRatesTableHtml(timekeepers, { today, showReset: false })}`,
+      }) : ''}
+
+      ${canConfigureFields ? settingsCollapseTab({
+        id: 'timeFieldsCard',
+        tabKey: 'time-entry-settings',
+        title: 'Time entry settings',
+        open: settingsTabOpen('time-entry-settings')
+          || settingsTabOpen('time-entry-fields'),
+        bodyHtml: `
+          <p class="hint">Shown when logging time. Custom fields apply to all time entries.</p>
+          <div id="timeFieldsBody" class="stack"></div>
+          <div id="timeFieldMsg"></div>`,
       }) : ''}
       </div>`);
 
@@ -9430,7 +9431,7 @@
         { label: 'Record pages', target: 'settings-record-pages' },
         { label: 'Matter page', target: 'settings-matter-fields' },
         { label: 'Contact page', target: 'settings-contact-fields' },
-        { label: 'Time entry fields', target: 'settings-time-fields' },
+        { label: 'Time entry settings', target: 'settings-time-fields' },
       ],
     },
     {
