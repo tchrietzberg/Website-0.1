@@ -54,6 +54,33 @@ describe('matters report', () => {
     assert.equal(detail.timekeepers[0].entries[0].description, 'TZ skew entry');
   });
 
+  it('includes non-billable time in lodestar at $0', () => {
+    timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-03-01',
+      rawMinutes: 60,
+      description: 'Billable research',
+      billable: 1,
+    });
+    timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-03-01',
+      rawMinutes: 60,
+      description: 'Non-billable admin',
+      billable: 0,
+    });
+    const detail = reports.lodestarMatterDetail(db, 1);
+    assert.equal(detail.timekeepers[0].entries.length, 2);
+    assert.equal(detail.totals.minutes, 120);
+    const nonBillable = detail.timekeepers[0].entries.find((e) => !e.billable);
+    assert.ok(nonBillable);
+    assert.equal(nonBillable.amount_cents, 0);
+    assert.equal(nonBillable.rate_cents, 0);
+    assert.equal(detail.totals.amount_cents, 20000);
+  });
+
   it('builds friendly lodestar matter detail and summary PDF/Excel', () => {
     const entry = timeSvc.createEntry(db, para, {
       matterId: 1,
