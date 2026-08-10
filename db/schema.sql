@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('admin','attorney','paralegal','billing_clerk')),
   password_hash TEXT,
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  mfa_enabled INTEGER NOT NULL DEFAULT 0 CHECK (mfa_enabled IN (0,1)),
+  mfa_secret TEXT,
+  mfa_backup_hashes TEXT,
+  mfa_enabled_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -363,8 +367,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   entity_type TEXT NOT NULL,
   entity_id INTEGER,
   detail_json TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  state_hash TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+-- Short-lived MFA login challenges (password verified, TOTP pending)
+CREATE TABLE IF NOT EXISTS mfa_challenges (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  ip TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mfa_challenges_expires ON mfa_challenges(expires_at);
 
 -- Append-only audit log
 CREATE TRIGGER IF NOT EXISTS audit_log_no_update

@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 require('../loadEnv').loadEnvFile();
-const { openDb, migrate, DEFAULT_DB, getSetting, setSetting } = require('../db');
+const { openDb, migrate, DEFAULT_DB, getSetting, setSetting, audit } = require('../db');
 const security = require('../security');
 const {
   ROUNDING_INCREMENTS,
@@ -25,6 +25,7 @@ const authEmail = require('../services/authEmail');
 const permissions = require('../services/permissions');
 const timezones = require('../services/timezones');
 const mail = require('../mail');
+const mfa = require('../mfa');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -95,13 +96,18 @@ function requireRoles(user, res, roles, req = null, dbRef = null) {
 
 function requireCsrf(req, res, session) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
-  // CSRF token is the primary check (unguessable per session). Origin is best-effort
-  // because some previews/proxies rewrite Host and would false-fail same-origin checks.
+  // CSRF token is the primary check (unguessable per session).
   if (!security.assertCsrf(req, session)) {
     json(res, 403, { error: 'invalid_csrf', message: 'Missing or invalid CSRF token' }, req);
     return false;
   }
-  if (req.headers.origin && !security.assertSameOrigin(req)) {
+  // On live domain / production / ALLOWED_ORIGINS, reject cross-origin mutating requests.
+  if (security.strictOriginEnforcement()) {
+    if (!security.assertSameOrigin(req)) {
+      json(res, 403, { error: 'invalid_origin', message: 'Cross-origin request blocked' }, req);
+      return false;
+    }
+  } else if (req.headers.origin && !security.assertSameOrigin(req)) {
     const allow = String(process.env.ALLOWED_ORIGINS || '').trim();
     if (allow) {
       json(res, 403, { error: 'invalid_origin', message: 'Cross-origin request blocked' }, req);
@@ -109,6 +115,41 @@ function requireCsrf(req, res, session) {
     }
   }
   return true;
+}
+
+function authSessionPayload(session, user) {
+  const body = {
+    user,
+    csrf: session.csrf,
+  };
+  // Omit opaque session token from JSON when cookie-only mode is active (live/prod).
+  if (!security.cookieOnlyAuth()) body.token = session.token;
+  return body;
+}
+
+function issueSessionResponse(res, req, db, userRow) {
+  const session = security.createSession(db, userRow.id, req);
+  security.auditLogin(db, userRow.id, true, { email: userRow.email, ip: security.clientIp(req) }, req);
+  const user = { id: userRow.id, email: userRow.email, name: userRow.name, role: userRow.role };
+  return json(res, 200, authSessionPayload(session, user), req, {
+    'Set-Cookie': security.sessionSetCookie(session.token, req),
+  });
+}
+
+function beginMfaLogin(res, req, db, userRow) {
+  const challenge = mfa.createChallenge(db, userRow.id, req);
+  audit(db, {
+    actorId: userRow.id,
+    action: 'auth.mfa_challenge',
+    entityType: 'session',
+    detail: { email: userRow.email },
+    req,
+  });
+  return json(res, 200, {
+    mfaRequired: true,
+    mfaToken: challenge.mfaToken,
+    expiresInSec: challenge.expiresInSec,
+  }, req);
 }
 
 function serveStatic(req, res) {
@@ -166,9 +207,10 @@ function readSettings(db) {
 
 function createServer(db = openDb()) {
   migrate(db);
-  security.sessionSecret(db);
+  const secret = security.sessionSecret(db);
   security.ensureSessionTables(db);
   authEmail.ensureAuthTokenTables(db);
+  mfa.ensureMfaSchema(db);
   const roleGate = (user, res, roles, req = null) => requireRoles(user, res, roles, req, db);
 
   const server = http.createServer(async (req, res) => {
@@ -196,6 +238,11 @@ function createServer(db = openDb()) {
         return text(res, 404, 'not found', 'text/plain; charset=utf-8', req);
       }
 
+      // Public security posture for the SPA (cookie-only / MFA availability)
+      if (req.method === 'GET' && pathname === '/api/security-config') {
+        return json(res, 200, security.publicSecurityConfig(), req);
+      }
+
       // Auth
       if (req.method === 'POST' && pathname === '/api/login') {
         const limit = security.checkLoginRateLimit(req);
@@ -210,33 +257,55 @@ function createServer(db = openDb()) {
         const email = String(body.email || '').trim().toLowerCase();
         const password = String(body.password || '');
         const row = db.prepare(
-          'SELECT id, email, name, role, password_hash FROM users WHERE lower(email) = ? AND active = 1'
+          `SELECT id, email, name, role, password_hash, mfa_enabled, mfa_secret
+           FROM users WHERE lower(email) = ? AND active = 1`
         ).get(email);
         const ok = row && row.password_hash && security.verifyPassword(password, row.password_hash);
         if (!ok) {
           security.recordLoginFailure(req);
-          security.auditLogin(db, row?.id || null, false, { email, ip: security.clientIp(req) });
+          security.auditLogin(db, row?.id || null, false, { email, ip: security.clientIp(req) }, req);
           return json(res, 401, { error: 'invalid_credentials', message: 'Invalid email or password' }, req);
         }
         security.clearLoginFailures(req);
-        const session = security.createSession(db, row.id, req);
-        security.auditLogin(db, row.id, true, { email: row.email, ip: security.clientIp(req) });
-        const secure = security.requestIsSecure(req);
-        const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
-        const user = { id: row.id, email: row.email, name: row.name, role: row.role };
-        // Return session token for Bearer fallback when proxies strip Set-Cookie.
-        return json(res, 200, {
-          user,
-          csrf: session.csrf,
-          token: session.token,
-        }, req, {
-          'Set-Cookie': security.cookieHeader('session', session.token, {
-            maxAgeSec: maxAge,
-            secure,
-            httpOnly: true,
-            sameSite: 'Lax',
-          }),
-        });
+        if (mfa.userHasMfa(row)) return beginMfaLogin(res, req, db, row);
+        return issueSessionResponse(res, req, db, row);
+      }
+
+      if (req.method === 'POST' && pathname === '/api/login/mfa') {
+        const limit = security.checkLoginRateLimit(req);
+        if (!limit.ok) {
+          return json(res, 429, {
+            error: 'rate_limited',
+            message: 'Too many sign-in attempts. Try again later.',
+            retryAfterSec: limit.retryAfterSec,
+          }, req, { 'Retry-After': String(limit.retryAfterSec) });
+        }
+        const body = await parseBody(req);
+        const challenge = mfa.consumeChallenge(db, body.mfaToken);
+        if (!challenge) {
+          security.recordLoginFailure(req);
+          return json(res, 401, { error: 'invalid_mfa', message: 'MFA challenge expired. Sign in again.' }, req);
+        }
+        const verified = mfa.verifyUserMfaCode(challenge, body.code, secret);
+        if (!verified.ok) {
+          mfa.bumpChallengeAttempt(db, challenge.token);
+          security.recordLoginFailure(req);
+          audit(db, {
+            actorId: challenge.user_id,
+            action: 'auth.mfa_failed',
+            entityType: 'session',
+            detail: { email: challenge.email },
+            req,
+          });
+          return json(res, 401, { error: 'invalid_mfa', message: 'Invalid authenticator code' }, req);
+        }
+        if (verified.usedBackup) {
+          db.prepare('UPDATE users SET mfa_backup_hashes = ? WHERE id = ?')
+            .run(JSON.stringify(verified.remainingBackupHashes || []), challenge.user_id);
+        }
+        mfa.deleteChallenge(db, challenge.token);
+        security.clearLoginFailures(req);
+        return issueSessionResponse(res, req, db, challenge);
       }
 
       if (req.method === 'POST' && pathname === '/api/logout') {
@@ -249,7 +318,7 @@ function createServer(db = openDb()) {
           }
         }
         security.destroySession(db, token);
-        const secure = security.requestIsSecure(req);
+        const secure = security.sessionCookieOptions(req).secure;
         return json(res, 200, { ok: true }, req, {
           'Set-Cookie': security.clearCookie('session', { secure }),
         });
@@ -317,19 +386,10 @@ function createServer(db = openDb()) {
             password: body.password,
           });
           security.clearLoginFailures(req);
-          const secure = security.requestIsSecure(req);
-          const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
-          return json(res, 200, {
-            user: u,
-            csrf: session.csrf,
-            token: session.token,
-          }, req, {
-            'Set-Cookie': security.cookieHeader('session', session.token, {
-              maxAgeSec: maxAge,
-              secure,
-              httpOnly: true,
-              sameSite: 'Lax',
-            }),
+          // Fresh password set: session already created by authEmail; re-issue cookie options.
+          const payload = authSessionPayload(session, u);
+          return json(res, 200, payload, req, {
+            'Set-Cookie': security.sessionSetCookie(session.token, req),
           });
         } catch (e) {
           const status = e.code === 'INVALID_TOKEN' || e.code === 'WRONG_PURPOSE' ? 400 : 400;
@@ -344,20 +404,18 @@ function createServer(db = openDb()) {
           const { user: u, session } = authEmail.completeMagicLogin(db, req, {
             token: body.token,
           });
+          const full = db.prepare(
+            'SELECT id, email, name, role, mfa_enabled, mfa_secret FROM users WHERE id = ?'
+          ).get(u.id);
+          if (mfa.userHasMfa(full)) {
+            // Drop the premature session; require TOTP before a lasting session.
+            security.destroySession(db, session.token);
+            security.clearLoginFailures(req);
+            return beginMfaLogin(res, req, db, full);
+          }
           security.clearLoginFailures(req);
-          const secure = security.requestIsSecure(req);
-          const maxAge = Math.floor(security.SESSION_TTL_MS / 1000);
-          return json(res, 200, {
-            user: u,
-            csrf: session.csrf,
-            token: session.token,
-          }, req, {
-            'Set-Cookie': security.cookieHeader('session', session.token, {
-              maxAgeSec: maxAge,
-              secure,
-              httpOnly: true,
-              sameSite: 'Lax',
-            }),
+          return json(res, 200, authSessionPayload(session, u), req, {
+            'Set-Cookie': security.sessionSetCookie(session.token, req),
           });
         } catch (e) {
           return json(res, 400, { error: e.code || 'error', message: e.message }, req);
@@ -388,6 +446,71 @@ function createServer(db = openDb()) {
       const user = requireUser(db, req, res);
       if (!user) return;
       if (!requireCsrf(req, res, req.session)) return;
+
+      // MFA enrollment (any signed-in user for their own account)
+      if (req.method === 'GET' && pathname === '/api/mfa/status') {
+        return json(res, 200, mfa.mfaStatus(db, user.id), req);
+      }
+      if (req.method === 'POST' && pathname === '/api/mfa/setup') {
+        const setup = mfa.beginSetup(db, user.id, user.email, secret);
+        audit(db, {
+          actorId: user.id,
+          action: 'auth.mfa_setup',
+          entityType: 'user',
+          entityId: user.id,
+          req,
+        });
+        return json(res, 200, {
+          secret: setup.secret,
+          otpauthUrl: setup.otpauthUrl,
+          backupCodes: setup.backupCodes,
+        }, req);
+      }
+      if (req.method === 'POST' && pathname === '/api/mfa/enable') {
+        const body = await parseBody(req);
+        try {
+          mfa.enableMfa(db, user.id, body.code, secret);
+          audit(db, {
+            actorId: user.id,
+            action: 'auth.mfa_enabled',
+            entityType: 'user',
+            entityId: user.id,
+            req,
+          });
+          return json(res, 200, { ok: true, ...mfa.mfaStatus(db, user.id) }, req);
+        } catch (e) {
+          const status = e.status || 400;
+          return json(res, status, {
+            error: e.code || 'error',
+            message: e.message || 'MFA enable failed',
+          }, req);
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/mfa/disable') {
+        const body = await parseBody(req);
+        const row = db.prepare(
+          'SELECT id, email, password_hash, mfa_enabled, mfa_secret, mfa_backup_hashes FROM users WHERE id = ?'
+        ).get(user.id);
+        const password = String(body.password || '');
+        if (!row?.password_hash || !security.verifyPassword(password, row.password_hash)) {
+          return json(res, 401, { error: 'invalid_credentials', message: 'Password required to disable MFA' }, req);
+        }
+        if (mfa.userHasMfa(row)) {
+          const verified = mfa.verifyUserMfaCode(row, body.code, secret);
+          if (!verified.ok) {
+            return json(res, 401, { error: 'invalid_mfa', message: 'Invalid authenticator code' }, req);
+          }
+        }
+        mfa.disableMfa(db, user.id);
+        audit(db, {
+          actorId: user.id,
+          action: 'auth.mfa_disabled',
+          entityType: 'user',
+          entityId: user.id,
+          req,
+        });
+        return json(res, 200, { ok: true, enabled: false }, req);
+      }
 
       // Reference data
       if (req.method === 'GET' && pathname === '/api/users') {
@@ -1599,10 +1722,32 @@ function createServer(db = openDb()) {
       if (err.code === 'PAYLOAD_TOO_LARGE') {
         return json(res, 413, { error: 'payload_too_large', message: 'Request body too large' }, req);
       }
-      const status = err.code === 'FORBIDDEN' ? 403
-        : err.code === 'BILLING_RULE' ? 400
-          : 400;
-      json(res, status, { error: err.message, errors: err.errors }, req);
+      const status = err.status || (
+        err.code === 'FORBIDDEN' ? 403
+          : err.code === 'BILLING_RULE' ? 400
+            : 400
+      );
+      if (status >= 500 || security.isProduction() || security.liveDomainConfigured()) {
+        if (status >= 500) {
+          console.error('[server]', err && err.stack ? err.stack : err);
+        }
+      }
+      const payload = security.clientErrorPayload(
+        { ...err, status, message: err.message, code: err.code, errors: err.errors },
+        'Request failed'
+      );
+      // Preserve legacy shape for 4xx billing/validation in non-live envs
+      if (status < 500 && !(security.isProduction() || security.liveDomainConfigured())) {
+        return json(res, status, { error: err.message, message: err.message, errors: err.errors }, req);
+      }
+      if (status < 500) {
+        return json(res, status, {
+          error: payload.error,
+          message: payload.message || err.message,
+          errors: err.errors,
+        }, req);
+      }
+      json(res, status >= 400 ? status : 500, payload, req);
     }
   });
 
@@ -1619,8 +1764,12 @@ if (require.main === module) {
   server.listen(PORT, bindHost, () => {
     console.log(`Firm billing listening on http://${bindHost}:${PORT}`);
     console.log(`DB: ${DEFAULT_DB}`);
-    if (security.isProduction()) {
-      console.log('NODE_ENV=production — password auth, CSRF, secure cookies, security headers enabled');
+    if (security.isProduction() || security.liveDomainConfigured()) {
+      console.log(
+        `Hardened mode — cookieOnly=${security.cookieOnlyAuth()} `
+        + `strictOrigin=${security.strictOriginEnforcement()} `
+        + `liveDomain=${security.liveDomainConfigured()}`
+      );
     }
   });
 }

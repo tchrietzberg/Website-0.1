@@ -58,9 +58,12 @@ See `.env.example` for a full public-deploy checklist. Important:
 | `SESSION_SECRET` | (dev auto) | **Required in production** — signs/derives session crypto material |
 | `NODE_ENV` | — | Set `production` for Secure cookies / stricter checks |
 | `ALLOWED_ORIGINS` | — | Comma-separated origins for CSRF/OAuth host checks |
-| `PUBLIC_ORIGIN` | — | Canonical https origin for OAuth redirect URI |
+| `PUBLIC_ORIGIN` | — | Canonical https origin; enables live-domain hardening when `https://` |
+| `COOKIE_ONLY_AUTH` | auto | `1`/`0`; default on in production or with https `PUBLIC_ORIGIN` |
 | `TRUST_PROXY` | — | `1` when behind TLS-terminating proxy |
 | `MS_CLIENT_ID` | — | Azure app id for OneDrive (server-owned) |
+
+On a live domain, set `NODE_ENV=production`, `SESSION_SECRET`, `PUBLIC_ORIGIN`, `ALLOWED_ORIGINS`, `TRUST_PROXY=1`, `FORCE_SECURE_COOKIES=1`, and `FORCE_HSTS=1`. Users can enroll authenticator MFA under **Settings → Sign-in security**.
 
 ## Architecture
 

@@ -16,6 +16,74 @@ function isProduction() {
   return IS_PROD;
 }
 
+/** True when PUBLIC_ORIGIN is an https live domain (go-live signal). */
+function liveDomainConfigured() {
+  const origin = String(process.env.PUBLIC_ORIGIN || '').trim();
+  return /^https:\/\//i.test(origin);
+}
+
+/**
+ * Cookie-only auth: disable Bearer + sessionStorage token fallback.
+ * On by default in production or when a live https PUBLIC_ORIGIN is set.
+ */
+function cookieOnlyAuth() {
+  if (process.env.COOKIE_ONLY_AUTH === '0') return false;
+  if (process.env.COOKIE_ONLY_AUTH === '1') return true;
+  return isProduction() || liveDomainConfigured();
+}
+
+/** Enforce Origin/Referer against ALLOWED_ORIGINS / PUBLIC_ORIGIN for mutating requests. */
+function strictOriginEnforcement() {
+  if (process.env.STRICT_ORIGIN_CHECK === '0') return false;
+  if (process.env.STRICT_ORIGIN_CHECK === '1') return true;
+  return isProduction() || liveDomainConfigured() || Boolean(String(process.env.ALLOWED_ORIGINS || '').trim());
+}
+
+function sessionCookieOptions(req = null) {
+  const secure =
+    process.env.FORCE_SECURE_COOKIES === '1'
+    || isProduction()
+    || liveDomainConfigured()
+    || (req ? requestIsSecure(req) : false);
+  return {
+    httpOnly: true,
+    sameSite: (liveDomainConfigured() || isProduction()) ? 'Strict' : 'Lax',
+    secure,
+    path: '/',
+    maxAgeSec: Math.floor(SESSION_TTL_MS / 1000),
+  };
+}
+
+function publicSecurityConfig() {
+  return {
+    cookieOnlyAuth: cookieOnlyAuth(),
+    mfaAvailable: true,
+    liveDomain: liveDomainConfigured(),
+    production: isProduction(),
+  };
+}
+
+/** Avoid leaking internal errors to browsers on live/production. */
+function clientErrorPayload(err, fallback = 'Request failed') {
+  const status = Number(err && err.status) || 500;
+  const code = err && err.code;
+  if (status < 500 && err && err.message) {
+    return {
+      error: code || 'error',
+      message: String(err.message).slice(0, 300),
+      ...(err.errors ? { errors: err.errors } : {}),
+    };
+  }
+  if (isProduction() || liveDomainConfigured()) {
+    return { error: 'server_error', message: fallback };
+  }
+  return {
+    error: code || 'error',
+    message: (err && err.message) || fallback,
+    ...(err && err.errors ? { errors: err.errors } : {}),
+  };
+}
+
 function requireSessionSecret() {
   const fromEnv = String(process.env.SESSION_SECRET || '').trim();
   if (fromEnv) return fromEnv;
@@ -101,9 +169,21 @@ function cookieHeader(name, value, {
 } = {}) {
   let c = `${name}=${encodeURIComponent(value)}; Path=${path}; SameSite=${sameSite}`;
   if (httpOnly) c += '; HttpOnly';
-  if (secure || IS_PROD) c += '; Secure';
+  if (secure || IS_PROD || liveDomainConfigured()) c += '; Secure';
   if (maxAgeSec != null) c += `; Max-Age=${maxAgeSec}`;
   return c;
+}
+
+/** Build Set-Cookie for a new session using live-domain-aware defaults. */
+function sessionSetCookie(token, req) {
+  const opts = sessionCookieOptions(req);
+  return cookieHeader('session', token, {
+    maxAgeSec: opts.maxAgeSec,
+    httpOnly: opts.httpOnly,
+    secure: opts.secure,
+    sameSite: opts.sameSite,
+    path: opts.path,
+  });
 }
 
 function clearCookie(name, { secure = false } = {}) {
@@ -203,7 +283,8 @@ function readSession(db, token) {
 function getSessionToken(req) {
   const cookies = parseCookies(req);
   if (cookies.session) return cookies.session;
-  // Optional bearer for non-browser clients (same opaque session token)
+  // Bearer fallback is disabled for live/production cookie-only mode.
+  if (cookieOnlyAuth()) return null;
   const h = req.headers.authorization || '';
   if (h.startsWith('Bearer ')) return h.slice(7).trim();
   return null;
@@ -340,8 +421,11 @@ function securityHeaders(req, { isHtml = false } = {}) {
       "object-src 'none'",
     ].join('; '),
   };
-  if (IS_PROD || process.env.FORCE_HSTS === '1' || requestIsSecure(req)) {
-    headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+  if (IS_PROD || process.env.FORCE_HSTS === '1' || liveDomainConfigured() || requestIsSecure(req)) {
+    const preload = (IS_PROD || liveDomainConfigured() || process.env.HSTS_PRELOAD === '1')
+      ? '; preload'
+      : '';
+    headers['Strict-Transport-Security'] = `max-age=31536000; includeSubDomains${preload}`;
   }
   if (isHtml) {
     headers['Cache-Control'] = 'no-store';
@@ -404,19 +488,27 @@ function oauthRedirectUri(req) {
   return `${origin}/api/onedrive/oauth/callback`;
 }
 
-function auditLogin(db, actorId, ok, detail) {
+function auditLogin(db, actorId, ok, detail, req = null) {
   audit(db, {
     actorId: actorId || null,
     action: ok ? 'auth.login' : 'auth.login_failed',
     entityType: 'session',
     entityId: null,
     detail,
+    req,
+    ip: detail && detail.ip,
   });
 }
 
 module.exports = {
   IS_PROD,
   isProduction,
+  liveDomainConfigured,
+  cookieOnlyAuth,
+  strictOriginEnforcement,
+  sessionCookieOptions,
+  publicSecurityConfig,
+  clientErrorPayload,
   sessionSecret,
   hashPassword,
   verifyPassword,
@@ -437,6 +529,7 @@ module.exports = {
   parseBodyLimited,
   cookieHeader,
   clearCookie,
+  sessionSetCookie,
   requestIsSecure,
   clientIp,
   safeStaticPath,

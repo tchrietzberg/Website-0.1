@@ -2455,6 +2455,17 @@ button.primary.login-submit {
   margin: 0;
 }
 
+.mfa-backup-codes {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: rgba(15, 35, 55, 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   body.login-mode::before,
   .login-panel,

@@ -4,6 +4,8 @@
     token: null,
     csrf: null,
     user: null,
+    cookieOnlyAuth: false,
+    securityConfig: null,
     view: 'matters',
     matters: [],
     users: [],
@@ -335,11 +337,17 @@
   try { state.token = sessionStorage.getItem(TOKEN_KEY) || null; } catch { state.token = null; }
 
   function persistSession(token, csrf) {
+    if (csrf) state.csrf = csrf;
+    if (state.cookieOnlyAuth) {
+      // Live/production: HttpOnly cookie only — never keep the opaque token in JS storage.
+      state.token = null;
+      try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+      return;
+    }
     if (token) {
       state.token = token;
       try { sessionStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
     }
-    if (csrf) state.csrf = csrf;
   }
 
   function clearSession() {
@@ -355,7 +363,9 @@
     const p = String(path || '').split('?')[0];
     return [
       '/api/login',
+      '/api/login/mfa',
       '/api/me',
+      '/api/security-config',
       '/api/auth/token-info',
       '/api/auth/set-password',
       '/api/password-reset/request',
@@ -378,7 +388,7 @@
       'X-App-Origin': window.location.origin,
       ...(opts.headers || {}),
     };
-    if (state.token) headers.Authorization = `Bearer ${state.token}`;
+    if (state.token && !state.cookieOnlyAuth) headers.Authorization = `Bearer ${state.token}`;
     if (state.csrf && !['GET', 'HEAD', 'OPTIONS'].includes(method) && !isPublicAuthPath(path)) {
       headers['X-CSRF-Token'] = state.csrf;
     }
@@ -3218,6 +3228,9 @@
   }
 
   async function finishAuthSession(data) {
+    if (data && data.mfaRequired && data.mfaToken) {
+      return renderMfaChallenge(data.mfaToken);
+    }
     persistSession(data.token, data.csrf);
     state.user = data.user;
     clearAuthTokenFromUrl();
@@ -3231,8 +3244,24 @@
       .forEach((v) => prefetchView(v));
   }
 
+  async function loadSecurityConfig() {
+    try {
+      const cfg = await api('/api/security-config', { cache: false });
+      state.securityConfig = cfg;
+      state.cookieOnlyAuth = Boolean(cfg && cfg.cookieOnlyAuth);
+      if (state.cookieOnlyAuth) {
+        state.token = null;
+        try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+      }
+    } catch {
+      state.securityConfig = { cookieOnlyAuth: false, mfaAvailable: true };
+      state.cookieOnlyAuth = false;
+    }
+  }
+
   async function boot() {
     const params = new URLSearchParams(window.location.search);
+    await loadSecurityConfig();
     const authToken = readAuthTokenFromUrl();
     if (authToken) {
       return renderAuthToken(authToken);
@@ -3344,6 +3373,52 @@
         $('#password').focus();
       }
     });
+  }
+
+  function renderMfaChallenge(mfaToken) {
+    enterLoginChrome();
+    setMainHtml(`
+      <div class="login-stage">
+        <div class="login-panel">
+          <p class="login-brand">Firm Billing</p>
+          <p class="login-lead">Enter the 6-digit code from your authenticator app</p>
+          <label class="login-field">Authenticator code
+            <input id="mfaCode" type="text" inputmode="numeric" autocomplete="one-time-code"
+              maxlength="16" placeholder="123456" />
+          </label>
+          <button class="primary login-submit" id="mfaBtn" type="button">Verify</button>
+          <button class="linkish" id="mfaBack" type="button">Back to sign in</button>
+          <div id="loginErr"></div>
+          <p class="login-hint">You can also use a one-time backup code.</p>
+        </div>
+      </div>`);
+    const err = (msg) => {
+      const el = $('#loginErr');
+      if (el) el.innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
+    };
+    const submit = async () => {
+      try {
+        $('#mfaBtn').disabled = true;
+        err('');
+        const data = await api('/api/login/mfa', {
+          method: 'POST',
+          body: JSON.stringify({ mfaToken, code: $('#mfaCode').value.trim() }),
+        });
+        await finishAuthSession(data);
+      } catch (e) {
+        $('#mfaBtn').disabled = false;
+        err(e.message);
+      }
+    };
+    $('#mfaBtn').onclick = submit;
+    $('#mfaBack').onclick = () => renderLogin('password');
+    $('#mfaCode').addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        submit();
+      }
+    });
+    $('#mfaCode').focus();
   }
 
   async function renderAuthToken(rawToken) {
@@ -8382,11 +8457,12 @@
     const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
     // Billing clerks manage rates here; admins use Navigate → Add a user.
     const showClerkRates = canManageRates() && !canManageUsers();
-    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers] = await Promise.all([
+    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers, mfaStatus] = await Promise.all([
       api('/api/settings'),
       canConfigureMatterDefaults ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
       canConfigureFields ? api('/api/record-types?appliesTo=client').catch(() => []) : Promise.resolve([]),
       showClerkRates ? api('/api/timekeepers').catch(() => []) : Promise.resolve([]),
+      api('/api/mfa/status').catch(() => ({ enabled: false, backupCodesRemaining: 0 })),
     ]);
     if (!stillOnView('settings')) return;
     state.settings = settings;
@@ -8407,6 +8483,23 @@
         <h1>Settings</h1>
         <p class="lead">Matter, contact, and time fields, plus billing preferences.</p>
         ${canEditBilling ? '' : '<div class="error">Sign in as an admin (avery@firm.example) or billing clerk (billie@firm.example) to edit these settings.</div>'}
+      </div>
+
+      <div class="card stack" id="mfaSecurityCard">
+        <h2>Sign-in security</h2>
+        <p class="hint">Authenticator MFA (TOTP) protects billing access. Enable it before go-live — required for admins and billing on a live domain.</p>
+        <p class="muted" id="mfaStatusLine">${
+          mfaStatus.enabled
+            ? `MFA is <strong>on</strong>${mfaStatus.enabledAt ? ` · since ${escapeHtml(String(mfaStatus.enabledAt).slice(0, 10))}` : ''} · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes left`
+            : 'MFA is <strong>off</strong> for your account'
+        }</p>
+        <div class="row-actions" id="mfaActions">
+          ${mfaStatus.enabled
+            ? `<button type="button" id="mfaDisableBtn">Disable MFA…</button>`
+            : `<button type="button" class="primary" id="mfaSetupBtn">Set up authenticator</button>`}
+        </div>
+        <div id="mfaSetupPanel" class="stack" hidden></div>
+        <div id="mfaMsg"></div>
       </div>
 
       ${canConfigureMatterDefaults ? `
@@ -8564,6 +8657,80 @@
 
     wireChoiceGroup(main, 'durationFormat');
     wireChoiceGroup(main, 'roundMode');
+
+    const mfaMsg = (html) => {
+      const el = $('#mfaMsg');
+      if (el) el.innerHTML = html || '';
+    };
+    const showMfaSetup = async () => {
+      try {
+        mfaMsg('');
+        const setup = await api('/api/mfa/setup', { method: 'POST', body: '{}' });
+        const panel = $('#mfaSetupPanel');
+        if (!panel) return;
+        panel.hidden = false;
+        panel.innerHTML = `
+          <p class="hint">Add this account in Google Authenticator, 1Password, or Authy, then enter a code to confirm.</p>
+          <label class="login-field">Secret key
+            <input type="text" readonly value="${escapeHtml(setup.secret)}" id="mfaSecret" />
+          </label>
+          <p class="hint muted" style="word-break:break-all">otpauth: ${escapeHtml(setup.otpauthUrl)}</p>
+          <p class="hint"><strong>Backup codes</strong> (store offline — each works once):</p>
+          <pre class="mfa-backup-codes">${escapeHtml((setup.backupCodes || []).join('\n'))}</pre>
+          <label class="login-field">Authenticator code
+            <input id="mfaEnableCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="16" />
+          </label>
+          <div class="row-actions">
+            <button type="button" class="primary" id="mfaEnableBtn">Confirm and enable MFA</button>
+          </div>`;
+        $('#mfaEnableBtn').onclick = async () => {
+          try {
+            await api('/api/mfa/enable', {
+              method: 'POST',
+              body: JSON.stringify({ code: $('#mfaEnableCode').value.trim() }),
+            });
+            mfaMsg('<div class="ok">MFA enabled.</div>');
+            await renderSettings();
+          } catch (e) {
+            mfaMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+          }
+        };
+      } catch (e) {
+        mfaMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+      }
+    };
+    $('#mfaSetupBtn')?.addEventListener('click', showMfaSetup);
+    $('#mfaDisableBtn')?.addEventListener('click', () => {
+      const panel = $('#mfaSetupPanel');
+      if (!panel) return;
+      panel.hidden = false;
+      panel.innerHTML = `
+        <p class="hint">Disabling MFA requires your password and a current authenticator (or backup) code.</p>
+        <label class="login-field">Password
+          <input id="mfaDisablePassword" type="password" autocomplete="current-password" />
+        </label>
+        <label class="login-field">Authenticator or backup code
+          <input id="mfaDisableCode" type="text" inputmode="numeric" autocomplete="one-time-code" />
+        </label>
+        <div class="row-actions">
+          <button type="button" id="mfaDisableConfirm">Disable MFA</button>
+        </div>`;
+      $('#mfaDisableConfirm').onclick = async () => {
+        try {
+          await api('/api/mfa/disable', {
+            method: 'POST',
+            body: JSON.stringify({
+              password: $('#mfaDisablePassword').value,
+              code: $('#mfaDisableCode').value.trim(),
+            }),
+          });
+          mfaMsg('<div class="ok">MFA disabled.</div>');
+          await renderSettings();
+        } catch (e) {
+          mfaMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
 
     if (canConfigureMatterDefaults) {
       const matterRecordTypes = matterRecordTypesPrefetch || [];

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
 const ROOT = path.join(__dirname, '..');
@@ -29,6 +30,8 @@ function migrate(db) {
   migrateCustomReports(db);
   migrateCustomReportChartTypes(db);
   migrateAllowInvoiceDelete(db);
+  migrateAuditHardening(db);
+  migrateMfa(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -98,6 +101,22 @@ function migrateAuthColumns(db) {
   security.ensureSessionTables(db);
   const authEmail = require('./services/authEmail');
   authEmail.ensureAuthTokenTables(db);
+}
+
+function migrateAuditHardening(db) {
+  const tables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'"
+  ).get();
+  if (!tables) return;
+  const cols = new Set(tableColumns(db, 'audit_log'));
+  if (!cols.has('ip')) db.exec('ALTER TABLE audit_log ADD COLUMN ip TEXT');
+  if (!cols.has('user_agent')) db.exec('ALTER TABLE audit_log ADD COLUMN user_agent TEXT');
+  if (!cols.has('state_hash')) db.exec('ALTER TABLE audit_log ADD COLUMN state_hash TEXT');
+}
+
+function migrateMfa(db) {
+  const mfa = require('./mfa');
+  mfa.ensureMfaSchema(db);
 }
 
 /** Matter vs time-entry custom fields + time value storage. */
@@ -624,11 +643,53 @@ function setSetting(db, key, value) {
   `).run(key, String(value));
 }
 
-function audit(db, { actorId, action, entityType, entityId = null, detail = null }) {
+function audit(db, {
+  actorId,
+  action,
+  entityType,
+  entityId = null,
+  detail = null,
+  ip = null,
+  userAgent = null,
+  req = null,
+} = {}) {
+  migrateAuditHardening(db);
+  let resolvedIp = ip;
+  let resolvedUa = userAgent;
+  if (req) {
+    try {
+      const security = require('./security');
+      if (resolvedIp == null) resolvedIp = security.clientIp(req);
+      if (resolvedUa == null) resolvedUa = String(req.headers['user-agent'] || '').slice(0, 240);
+    } catch {
+      /* ignore */
+    }
+  }
+  const detailJson = detail != null ? JSON.stringify(detail) : null;
+  const createdAt = new Date().toISOString();
+  const stateHash = crypto.createHash('sha256').update(JSON.stringify({
+    actorId: actorId ?? null,
+    action,
+    entityType,
+    entityId,
+    detail: detailJson,
+    ip: resolvedIp || null,
+    createdAt,
+  })).digest('hex');
   db.prepare(`
-    INSERT INTO audit_log(actor_id, action, entity_type, entity_id, detail_json)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(actorId ?? null, action, entityType, entityId, detail ? JSON.stringify(detail) : null);
+    INSERT INTO audit_log(actor_id, action, entity_type, entity_id, detail_json, ip, user_agent, state_hash, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    actorId ?? null,
+    action,
+    entityType,
+    entityId,
+    detailJson,
+    resolvedIp || null,
+    resolvedUa || null,
+    stateHash,
+    createdAt
+  );
 }
 
 function allocateNumber(db, name, year, prefix) {
