@@ -2276,9 +2276,8 @@
   function formatMatterStatusLabel(status) {
     const s = String(status || '').trim();
     if (!s) return '—';
-    if (s.toLowerCase() === 'open') return 'Open';
-    if (s.toLowerCase() === 'closed') return 'Closed';
-    return s;
+    // Display with an initial capital (stored values stay lowercase: open/closed).
+    return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
   function matterListHtml(hits, { q = '', filterKey = '', filterValue = '' } = {}) {
@@ -2571,7 +2570,7 @@
         ${matches.map((m) => `
           <li role="option" class="client-typeahead-option" data-matter-pick="${m.id}">
             <span>${escapeHtml(m.name)}</span>
-            <small>${escapeHtml([m.client_name, m.status].filter(Boolean).join(' · ') || 'Matter')}</small>
+            <small>${escapeHtml([m.client_name, m.status ? formatMatterStatusLabel(m.status) : ''].filter(Boolean).join(' · ') || 'Matter')}</small>
           </li>`).join('')}`;
       list.hidden = false;
       nameInput.setAttribute('aria-expanded', 'true');
@@ -3046,7 +3045,7 @@
         <li role="option" class="matter-picker-option ${i === activeIndex ? 'is-active' : ''}"
           data-id="${m.id}" aria-selected="${i === activeIndex ? 'true' : 'false'}">
           <span>${escapeHtml(m.name)}</span>
-          <small>${escapeHtml(m.client_name || '—')}${m.status ? ` · ${escapeHtml(m.status)}` : ''}</small>
+          <small>${escapeHtml(m.client_name || '—')}${m.status ? ` · ${escapeHtml(formatMatterStatusLabel(m.status))}` : ''}</small>
         </li>`).join('') + (total > 5
         ? `<li class="matter-picker-more muted" aria-hidden="true">Showing 5 of ${total} — type to narrow</li>`
         : '');
@@ -4979,6 +4978,22 @@
       ).join('');
       return `<select name="${name}" ${disabled}>
         <option value="">—</option>${opts}
+      </select>`;
+    }
+    if (field.key === 'std:status') {
+      const options = (field.options && field.options.length) ? field.options : ['open', 'closed'];
+      const opts = options.map((o) => {
+        const value = typeof o === 'string' ? o : (o.value ?? o);
+        const label = typeof o === 'string'
+          ? formatMatterStatusLabel(o)
+          : (o.label || formatMatterStatusLabel(o.value));
+        return `<option value="${escapeHtml(value)}" ${String(val) === String(value) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+      }).join('');
+      const orphan = val && !options.some((o) => String(typeof o === 'string' ? o : (o.value ?? o)) === String(val))
+        ? `<option value="${escapeHtml(val)}" selected>${escapeHtml(formatMatterStatusLabel(val))}</option>`
+        : '';
+      return `<select name="${name}" ${disabled} ${req}>
+        <option value=""></option>${opts}${orphan}
       </select>`;
     }
 
