@@ -838,36 +838,43 @@
     typeLabel,
     fields = [],
     open = false,
-    hint = '',
+    hint = null,
     msgHtml = '',
     entityNoun = 'record',
     appliesTo = 'matter',
+    title = 'Add custom fields',
+    showEmptyList = false,
   } = {}) {
     const count = (fields || []).length;
     const meta = count
-      ? `${count} field${count === 1 ? '' : 's'} on ${typeLabel}`
-      : `None on ${typeLabel} yet`;
+      ? `${count} field${count === 1 ? '' : 's'}`
+      : '';
     const list = count
       ? fields.map((f) => `
           <div class="field-mgmt-row">
             <div>
               <strong>${escapeHtml(f.label)}</strong>
-              <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type || f.fieldType))} · record type${
+              <span class="muted"> · ${escapeHtml(fieldTypeLabel(f.field_type || f.fieldType))}${
                 f.required ? ' · required' : ''
               }</span>
             </div>
           </div>`).join('')
-      : `<p class="muted">No custom fields for ${escapeHtml(typeLabel)} yet</p>`;
+      : (showEmptyList
+        ? `<p class="muted">No custom fields for ${escapeHtml(typeLabel)} yet</p>`
+        : '');
+    const hintHtml = hint
+      ? `<p class="hint">${hint}</p>`
+      : '';
     return `
       <details class="onedrive-collapse settings-collapse create-matter-fields-panel page-section"
         id="${escapeHtml(panelId)}"${open ? ' open' : ''}>
         <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">Add record type fields</span>
-          <span class="onedrive-collapse-meta muted">${escapeHtml(meta)}</span>
+          <span class="onedrive-collapse-title">${escapeHtml(title)}</span>
+          ${meta ? `<span class="onedrive-collapse-meta muted">${escapeHtml(meta)}</span>` : ''}
         </summary>
         <div class="onedrive-collapse-body stack create-rt-fields-body">
-          <p class="hint">${hint || `Fields added here apply to every <strong>${escapeHtml(typeLabel)}</strong> ${escapeHtml(entityNoun)}.`}</p>
-          <div class="field-mgmt-list create-rt-fields-list">${list}</div>
+          ${hintHtml}
+          ${list ? `<div class="field-mgmt-list create-rt-fields-list">${list}</div>` : ''}
           ${customFieldFormHtml({
             formId,
             submitLabel: 'Add field',
@@ -4074,7 +4081,7 @@
           open: !!(state.createContactFieldsOpen || createFieldMsg),
           entityNoun: 'contact',
           appliesTo: 'client',
-          hint: `Adds fields to the <strong>${escapeHtml(createTypeLabel)}</strong> record type (defaults for every contact of that type). For a field on one contact only, create the contact first, then use Add custom fields / Manage fields.`,
+          title: 'Add custom fields',
           msgHtml: createFieldMsg ? successNoticeHtml(createFieldMsg) : '',
         })}` : ''}
 
