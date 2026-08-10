@@ -700,9 +700,58 @@ function assertCanWriteTimeFields(db, actor, patch = {}) {
   }
 }
 
-function catalogMatterLayoutFields(db) {
+/** Fields on one matter record page (type layout + type customs). */
+function catalogMatterFieldsForRecordType(db, recordTypeKey) {
+  const customFields = require('./customFields');
+  const typeLayout = customFields.getTypeLayout(db, recordTypeKey);
+  const fields = [];
+  const seen = new Set();
+  const push = (entry) => {
+    if (!entry?.key || entry.key === 'std:number' || seen.has(entry.key)) return;
+    seen.add(entry.key);
+    fields.push(entry);
+  };
+  for (const f of typeLayout.fields || []) {
+    const key = f.fieldKey || f.key;
+    push({
+      key,
+      label: f.label || key,
+      kind: f.kind || (String(key).startsWith('cf:') ? 'custom' : 'standard'),
+      group: String(key).startsWith('cf:') ? 'Custom fields' : 'Matter fields',
+      fieldId: f.fieldId || null,
+      recordTypeKey: typeLayout.recordTypeKey,
+    });
+  }
+  for (const f of customFields.listCustomFields(db, {
+    appliesTo: 'matter',
+    recordTypeKey: typeLayout.recordTypeKey,
+  })) {
+    // Type-scoped only (skip firm-wide null-type and other matters).
+    if (f.matter_id || f.matterId) continue;
+    if (f.record_type_key && f.record_type_key !== typeLayout.recordTypeKey) continue;
+    if (!f.record_type_key) continue;
+    push({
+      key: `cf:${f.id}`,
+      label: f.label,
+      kind: 'custom',
+      group: 'Custom fields',
+      fieldId: f.id,
+      recordTypeKey: typeLayout.recordTypeKey,
+    });
+  }
+  return fields;
+}
+
+/**
+ * Matter field catalog. Pass recordTypeKey to scope to one record page;
+ * omit it for the merged firm-wide list (compat / save defaults).
+ */
+function catalogMatterLayoutFields(db, { recordTypeKey = null } = {}) {
   const customFields = require('./customFields');
   customFields.ensureRecordTypes(db);
+  if (recordTypeKey) {
+    return catalogMatterFieldsForRecordType(db, recordTypeKey);
+  }
   const standards = customFields.STANDARD_FIELDS
     .filter((f) => f.key !== 'std:number')
     .map((f) => ({
@@ -723,6 +772,7 @@ function catalogMatterLayoutFields(db) {
         kind: 'custom',
         group: 'Custom fields',
         fieldId: f.id,
+        recordTypeKey: type.key,
       });
     }
   }
@@ -735,10 +785,86 @@ function catalogMatterLayoutFields(db) {
   return [...standards, ...uniqueCustoms];
 }
 
-function catalogContactLayoutFields(db) {
+/** Fields on one contact record page (Name + type layout + firm/type customs). */
+function catalogContactFieldsForRecordType(db, recordTypeKey) {
+  const clientsSvc = require('./clients');
+  const customFields = require('./customFields');
+  const typeLayout = customFields.getTypeLayout(db, recordTypeKey);
+  const config = clientsSvc.getContactFieldConfig(db);
+  const fields = [];
+  const seen = new Set();
+  const push = (entry) => {
+    if (!entry?.key || seen.has(entry.key)) return;
+    // Layout uses std:name; contact writes use "name" — keep the write key.
+    if (entry.key === 'std:name') {
+      entry = {
+        ...entry,
+        key: 'name',
+        label: entry.label || 'Name',
+        kind: 'standard',
+        group: 'Contact fields',
+      };
+    }
+    if (seen.has(entry.key)) return;
+    seen.add(entry.key);
+    fields.push(entry);
+  };
+  for (const f of config.core || []) {
+    push({
+      key: f.key,
+      label: f.label,
+      kind: 'standard',
+      group: 'Contact fields',
+      recordTypeKey: typeLayout.recordTypeKey,
+    });
+  }
+  for (const f of config.enabledStandard || []) {
+    push({
+      key: f.key,
+      label: f.label,
+      kind: 'standard',
+      group: 'Contact fields',
+      recordTypeKey: typeLayout.recordTypeKey,
+    });
+  }
+  for (const f of typeLayout.fields || []) {
+    push({
+      key: f.fieldKey || f.key,
+      label: f.label,
+      kind: f.kind || (String(f.fieldKey || f.key).startsWith('cf:') ? 'custom' : 'standard'),
+      group: String(f.fieldKey || f.key).startsWith('cf:') ? 'Custom fields' : 'Contact fields',
+      fieldId: f.fieldId || null,
+      recordTypeKey: typeLayout.recordTypeKey,
+    });
+  }
+  for (const f of customFields.listCustomFields(db, {
+    appliesTo: 'client',
+    recordTypeKey: typeLayout.recordTypeKey,
+  })) {
+    if (f.client_id || f.clientId) continue; // contact-level only
+    push({
+      key: `cf:${f.id}`,
+      label: f.label,
+      kind: 'custom',
+      group: 'Custom fields',
+      fieldId: f.id,
+      recordTypeKey: typeLayout.recordTypeKey,
+    });
+  }
+  return fields;
+}
+
+/**
+ * Contact field catalog. Pass recordTypeKey to scope to one record page;
+ * omit it for the merged firm-wide list (compat).
+ */
+function catalogContactLayoutFields(db, { recordTypeKey = null } = {}) {
   const clientsSvc = require('./clients');
   const customFields = require('./customFields');
   customFields.ensureRecordTypes(db);
+  if (recordTypeKey) {
+    return catalogContactFieldsForRecordType(db, recordTypeKey);
+  }
   const config = clientsSvc.getContactFieldConfig(db);
   const standards = [
     ...config.core.map((f) => ({
@@ -805,12 +931,15 @@ function catalogTimeLayoutFields(db) {
 }
 
 function getPermissionsSettings(db) {
+  const customFields = require('./customFields');
   const layout = getRecordPageLayout(db);
   const roles = listRoles(db);
   const rolePermissions = getRolePermissions(db);
   let matterFields = [];
   let contactFields = [];
   let timeFields = [];
+  let matterRecordTypes = [];
+  let contactRecordTypes = [];
   try { matterFields = catalogMatterLayoutFields(db); } catch { /* keep empty */ }
   try { contactFields = catalogContactLayoutFields(db); } catch { /* keep empty */ }
   try { timeFields = catalogTimeLayoutFields(db); } catch {
@@ -822,6 +951,19 @@ function getPermissionsSettings(db) {
       { key: 'std:description', label: 'Description', kind: 'standard', group: 'Time entry fields' },
     ];
   }
+  try {
+    customFields.ensureRecordTypes(db);
+    matterRecordTypes = customFields.listRecordTypes(db, { appliesTo: 'matter' }).map((t) => ({
+      key: t.key,
+      label: t.label,
+      fields: catalogMatterLayoutFields(db, { recordTypeKey: t.key }),
+    }));
+    contactRecordTypes = customFields.listRecordTypes(db, { appliesTo: 'client' }).map((t) => ({
+      key: t.key,
+      label: t.label,
+      fields: catalogContactLayoutFields(db, { recordTypeKey: t.key }),
+    }));
+  } catch { /* keep empty */ }
   return {
     roles,
     profiles: roles, // compat
@@ -833,6 +975,8 @@ function getPermissionsSettings(db) {
     matterFields,
     contactFields,
     timeFields,
+    matterRecordTypes,
+    contactRecordTypes,
   };
 }
 
@@ -883,6 +1027,8 @@ module.exports = {
   assertCanWriteTimeFields,
   catalogMatterLayoutFields,
   catalogContactLayoutFields,
+  catalogMatterFieldsForRecordType,
+  catalogContactFieldsForRecordType,
   catalogTimeLayoutFields,
   getPermissionsSettings,
 };

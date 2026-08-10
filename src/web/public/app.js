@@ -2099,11 +2099,48 @@
         /* keep defaults */
       }
     }
-    const catalogs = {
-      matter: permissions.matterFields || [],
-      contact: permissions.contactFields || [],
-      time: timeCatalog,
+
+    let matterRecordTypes = [...(permissions.matterRecordTypes || [])];
+    let contactRecordTypes = [...(permissions.contactRecordTypes || [])];
+    if (!matterRecordTypes.length || !contactRecordTypes.length) {
+      const [matterTypes, contactTypes] = await Promise.all([
+        api('/api/record-types?appliesTo=matter').catch(() => []),
+        api('/api/record-types?appliesTo=client').catch(() => []),
+      ]);
+      if (!matterRecordTypes.length) {
+        matterRecordTypes = (matterTypes || []).map((t) => ({ key: t.key, label: t.label, fields: null }));
+      }
+      if (!contactRecordTypes.length) {
+        contactRecordTypes = (contactTypes || []).map((t) => ({ key: t.key, label: t.label, fields: null }));
+      }
+    }
+
+    let matterTypeKey = state.settingsMatterRecordTypeKey
+      || matterRecordTypes[0]?.key
+      || 'billable';
+    let contactTypeKey = state.settingsContactRecordTypeKey
+      || contactRecordTypes[0]?.key
+      || 'client';
+    if (!matterRecordTypes.some((t) => t.key === matterTypeKey) && matterRecordTypes[0]) {
+      matterTypeKey = matterRecordTypes[0].key;
+    }
+    if (!contactRecordTypes.some((t) => t.key === contactTypeKey) && contactRecordTypes[0]) {
+      contactTypeKey = contactRecordTypes[0].key;
+    }
+
+    const typeFieldCache = {
+      matter: new Map(
+        matterRecordTypes
+          .filter((t) => Array.isArray(t.fields))
+          .map((t) => [t.key, t.fields])
+      ),
+      contact: new Map(
+        contactRecordTypes
+          .filter((t) => Array.isArray(t.fields))
+          .map((t) => [t.key, t.fields])
+      ),
     };
+
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
     };
@@ -2119,11 +2156,93 @@
       return 'write';
     };
     const fieldRoles = roles.filter((r) => r.key !== 'admin');
-    const render = () => {
-      const fields = catalogs[page] || [];
+
+    async function fieldsForPage() {
+      if (page === 'time') return timeCatalog;
+      const typeKey = page === 'contact' ? contactTypeKey : matterTypeKey;
+      const cache = typeFieldCache[page];
+      if (cache.has(typeKey)) return cache.get(typeKey);
+      try {
+        const typeLayout = await api(`/api/record-types/${encodeURIComponent(typeKey)}/layout`);
+        const groupStd = page === 'contact' ? 'Contact fields' : 'Matter fields';
+        const seen = new Set();
+        const fields = [];
+        const push = (entry) => {
+          if (!entry?.key || seen.has(entry.key)) return;
+          if (page === 'contact' && entry.key === 'std:name') {
+            entry = { ...entry, key: 'name', label: entry.label || 'Name', kind: 'standard', group: groupStd };
+          }
+          if (entry.key === 'std:number' || seen.has(entry.key)) return;
+          seen.add(entry.key);
+          fields.push(entry);
+        };
+        if (page === 'contact') {
+          push({ key: 'name', label: 'Name', kind: 'standard', group: groupStd });
+        }
+        for (const f of typeLayout.fields || []) {
+          const key = f.fieldKey || f.key;
+          push({
+            key,
+            label: f.label || key,
+            kind: f.kind || (String(key).startsWith('cf:') ? 'custom' : 'standard'),
+            group: String(key).startsWith('cf:') ? 'Custom fields' : groupStd,
+            fieldId: f.fieldId,
+          });
+        }
+        const appliesTo = page === 'contact' ? 'client' : 'matter';
+        const customs = await api(
+          `/api/custom-fields?appliesTo=${encodeURIComponent(appliesTo)}&type=${encodeURIComponent(typeKey)}`
+        ).catch(() => []);
+        for (const c of customs || []) {
+          if (c.matter_id || c.matterId || c.client_id || c.clientId) continue;
+          push({
+            key: `cf:${c.id}`,
+            label: c.label,
+            kind: 'custom',
+            group: 'Custom fields',
+            fieldId: c.id,
+          });
+        }
+        cache.set(typeKey, fields);
+        return fields;
+      } catch {
+        return page === 'contact'
+          ? (permissions.contactFields || [])
+          : (permissions.matterFields || []);
+      }
+    }
+
+    const render = async () => {
+      const types = page === 'matter'
+        ? matterRecordTypes
+        : page === 'contact'
+          ? contactRecordTypes
+          : [];
+      const selectedTypeKey = page === 'matter'
+        ? matterTypeKey
+        : page === 'contact'
+          ? contactTypeKey
+          : null;
+      const selectedType = types.find((t) => t.key === selectedTypeKey) || types[0];
+      const fields = await fieldsForPage();
+      if (!bodyEl.isConnected || !stillOnView('settings')) return;
+
+      const recordPagePicker = page === 'time' ? '' : `
+        <div class="row-actions" style="flex-wrap:wrap;align-items:flex-end;gap:.75rem">
+          <label class="matter-type-picker">Record page
+            <select id="fieldPermsRecordPageSelect" name="recordTypeKey">
+              ${types.map((t) => `
+                <option value="${escapeHtml(t.key)}" ${t.key === selectedTypeKey ? 'selected' : ''}>
+                  ${escapeHtml(t.label || t.key)}
+                </option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <p class="hint">Showing fields for the <strong>${escapeHtml(selectedType?.label || selectedTypeKey || '')}</strong> record page. Pick a record page first, then set who can see or edit each field. Matter name and time Date / Hours / Description stay editable for everyone. Admin always has full access.</p>`;
+
       bodyEl.innerHTML = `
         <div class="field-perms-editor stack">
-          <div class="role-perms-tabs" role="tablist" aria-label="Record type">
+          <div class="role-perms-tabs" role="tablist" aria-label="Object">
             <button type="button" data-layout-page="matter" role="tab"
               class="role-perms-tab${page === 'matter' ? ' is-active' : ''}"
               aria-selected="${page === 'matter' ? 'true' : 'false'}">Matter fields</button>
@@ -2134,7 +2253,7 @@
               class="role-perms-tab${page === 'time' ? ' is-active' : ''}"
               aria-selected="${page === 'time' ? 'true' : 'false'}">Time entry fields</button>
           </div>
-          <p class="hint">For each field, choose whether a role can see it, only read it, or edit it. Matter name and time Date / Hours / Description stay editable for everyone. Admin always has full access.</p>
+          ${recordPagePicker || '<p class="hint">For each field, choose whether a role can see it, only read it, or edit it. Date / Hours / Description stay editable for everyone. Admin always has full access.</p>'}
           <div class="table-wrap"><table class="perms-table layout-vis-table field-perms-table">
             <thead>
               <tr>
@@ -2161,7 +2280,7 @@
                       </select>
                     </td>`).join('')}
                 </tr>`;
-              }).join('') || `<tr><td class="muted" colspan="${fieldRoles.length + 1}">No fields yet</td></tr>`}
+              }).join('') || `<tr><td class="muted" colspan="${fieldRoles.length + 1}">No fields on this record page yet</td></tr>`}
             </tbody>
           </table></div>
           <div class="row-actions">
@@ -2173,9 +2292,24 @@
           page = btn.dataset.layoutPage;
           state.settingsLayoutPage = page;
           setMsg('');
-          render();
+          void render();
         };
       });
+      const typeSelect = bodyEl.querySelector('#fieldPermsRecordPageSelect');
+      if (typeSelect) {
+        typeSelect.onchange = () => {
+          const next = typeSelect.value;
+          if (page === 'matter') {
+            matterTypeKey = next;
+            state.settingsMatterRecordTypeKey = next;
+          } else if (page === 'contact') {
+            contactTypeKey = next;
+            state.settingsContactRecordTypeKey = next;
+          }
+          setMsg('');
+          void render();
+        };
+      }
       bodyEl.querySelectorAll('[data-field-mode]').forEach((sel) => {
         sel.onchange = () => {
           const fieldKey = sel.dataset.fieldMode;
@@ -2188,7 +2322,8 @@
       if (saveBtn) {
         saveBtn.onclick = async () => {
           try {
-            for (const f of catalogs[page] || []) {
+            const currentFields = await fieldsForPage();
+            for (const f of currentFields || []) {
               if (!layout[page][f.key]) layout[page][f.key] = {};
               for (const p of roles) {
                 if (layout[page][f.key][p.key] === undefined) {
@@ -2207,15 +2342,31 @@
             layout.matter = { ...(next.matter || {}) };
             layout.contact = { ...(next.contact || {}) };
             layout.time = { ...(next.time || {}) };
+            if (updated.permissions?.matterRecordTypes) {
+              matterRecordTypes = updated.permissions.matterRecordTypes;
+              typeFieldCache.matter = new Map(
+                matterRecordTypes
+                  .filter((t) => Array.isArray(t.fields))
+                  .map((t) => [t.key, t.fields])
+              );
+            }
+            if (updated.permissions?.contactRecordTypes) {
+              contactRecordTypes = updated.permissions.contactRecordTypes;
+              typeFieldCache.contact = new Map(
+                contactRecordTypes
+                  .filter((t) => Array.isArray(t.fields))
+                  .map((t) => [t.key, t.fields])
+              );
+            }
             setMsg('<div class="ok-banner">Field permissions saved.</div>');
-            render();
+            await render();
           } catch (e) {
             setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
           }
         };
       }
     };
-    render();
+    await render();
   }
 
   /** @deprecated */
@@ -8679,7 +8830,7 @@
         meta: 'Admin',
         open: settingsTabOpen('field-permissions'),
         bodyHtml: `
-          <p class="hint">Control which matter, contact, and time entry fields each role can see or edit.</p>
+          <p class="hint">Choose a record page (for Matter or Contact), then set which fields each role can see or edit. Time entry fields are firm-wide.</p>
           <div id="fieldPermissionsBody" class="stack"></div>
           <div id="fieldPermissionsMsg"></div>`,
       })}` : ''}
