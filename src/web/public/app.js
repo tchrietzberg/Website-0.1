@@ -4088,6 +4088,8 @@
                 <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
                   role="listbox" hidden></ul>
               </div>
+              <button class="primary" type="submit">Create</button>
+              <button type="button" id="clearCreateMatter">Clear</button>
               <label class="create-matter-type-field">Record type
                 <select name="recordTypeKey" id="createMatterTypeSelect" required>
                   ${(recordTypes || []).map((t) => `
@@ -4099,8 +4101,6 @@
                     <option value="do_not_charge">Do not charge</option>`}
                 </select>
               </label>
-              <button class="primary" type="submit">Create</button>
-              <button type="button" id="clearCreateMatter">Clear</button>
             </div>
             ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
             <div class="create-matter-meta">
