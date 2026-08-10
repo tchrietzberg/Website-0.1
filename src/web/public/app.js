@@ -6290,16 +6290,27 @@
     return '<td></td>';
   }
 
-  async function billingEarliestDate(matterId) {
-    if (!matterId) return '';
+  function maxServiceDate(...dates) {
+    const valid = dates
+      .map((d) => String(d || '').slice(0, 10))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (!valid.length) return '';
+    return valid.sort().at(-1);
+  }
+
+  async function billingServiceDateBounds(matterId) {
+    if (!matterId) return { earliestDate: '', latestDate: '' };
     try {
       const data = await api(
         `/api/time-entries/earliest-date?matterId=${encodeURIComponent(matterId)}`,
         { cache: false },
       );
-      return String(data?.earliestDate || '').slice(0, 10);
+      return {
+        earliestDate: String(data?.earliestDate || '').slice(0, 10),
+        latestDate: String(data?.latestDate || '').slice(0, 10),
+      };
     } catch {
-      return '';
+      return { earliestDate: '', latestDate: '' };
     }
   }
 
@@ -6318,12 +6329,17 @@
       state.billingForm = form;
       return form;
     }
-    if (!force && form.defaultsForMatterId === key) return form;
-    const earliest = await billingEarliestDate(key);
+    // Suffix forces one re-default after the TZ/bounds fix so stale From>To ranges refresh.
+    const defaultsKey = `${key}@bounds`;
+    if (!force && form.defaultsForMatterId === defaultsKey) return form;
+    const bounds = await billingServiceDateBounds(key);
+    const earliest = bounds.earliestDate || '';
+    const latest = bounds.latestDate || earliest;
     form.matterId = key;
-    form.dateFrom = earliest || '';
-    form.dateTo = today;
-    form.defaultsForMatterId = key;
+    form.dateFrom = earliest || today;
+    // Include firm-today and any entries already on the matter (covers TZ/UTC skew).
+    form.dateTo = maxServiceDate(today, earliest, latest) || today;
+    form.defaultsForMatterId = defaultsKey;
     state.billingForm = form;
     return form;
   }
@@ -6343,7 +6359,7 @@
     // null = never set → default To to today; '' means the user cleared it.
     if (state.billingForm.dateTo == null) state.billingForm.dateTo = today;
     if (state.billingForm.matterId
-      && state.billingForm.defaultsForMatterId !== String(state.billingForm.matterId)) {
+      && state.billingForm.defaultsForMatterId !== `${String(state.billingForm.matterId)}@bounds`) {
       await applyBillingMatterDateDefaults(state.billingForm.matterId);
       if (!stillOnView('billing')) return;
     }
@@ -6371,7 +6387,7 @@
           <label>To
             <input type="date" name="dateTo" id="billDateTo" value="${escapeHtml(dateTo)}" />
           </label>
-          <p class="hint span-all">Defaults to the matter’s earliest time entry through today. Adjust to filter which time entries are billed and included in Lodestar.</p>
+          <p class="hint span-all">Defaults to the matter’s earliest time entry through today (or the latest entry if newer). Adjust to filter which time entries are billed and included in Lodestar.</p>
           <div class="row-actions span-all" style="flex-wrap:wrap;gap:.5rem">
             <button type="button" data-bill-report="lodestar-matter-summary">Lodestar Summary</button>
             <button type="button" data-bill-report="lodestar-matter-detail">Lodestar Detail</button>

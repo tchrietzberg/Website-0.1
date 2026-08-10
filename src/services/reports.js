@@ -14,10 +14,13 @@ function roleLabel(role) {
 }
 
 function normalizeReportDates(opts = {}) {
-  const dateFrom = opts.dateFrom ? String(opts.dateFrom).slice(0, 10) : null;
-  const dateTo = opts.dateTo ? String(opts.dateTo).slice(0, 10) : null;
+  let dateFrom = opts.dateFrom ? String(opts.dateFrom).slice(0, 10) : null;
+  let dateTo = opts.dateTo ? String(opts.dateTo).slice(0, 10) : null;
+  if (dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) dateFrom = null;
+  if (dateTo && !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) dateTo = null;
+  // Timezone skew can briefly invert defaults; widen instead of failing empty.
   if (dateFrom && dateTo && dateFrom > dateTo) {
-    throw new Error('From date must be on or before To date');
+    dateTo = dateFrom;
   }
   return { dateFrom, dateTo };
 }

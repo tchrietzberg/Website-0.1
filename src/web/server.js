@@ -984,8 +984,12 @@ function createServer(db = openDb()) {
           if (!matterId) {
             return json(res, 400, { error: 'matterId is required', message: 'matterId is required' });
           }
-          const earliest = timeSvc.earliestServiceDate(db, Number(matterId), user);
-          return json(res, 200, { matterId: Number(matterId), earliestDate: earliest });
+          const bounds = timeSvc.serviceDateBounds(db, Number(matterId), user);
+          return json(res, 200, {
+            matterId: Number(matterId),
+            earliestDate: bounds.earliestDate,
+            latestDate: bounds.latestDate,
+          });
         } catch (e) {
           return json(res, 403, { error: e.message, message: e.message });
         }

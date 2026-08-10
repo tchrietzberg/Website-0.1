@@ -38,6 +38,22 @@ describe('matters report', () => {
     assert.deepEqual(Object.keys(rows[0]), ['Matter']);
   });
 
+  it('widens inverted date ranges instead of excluding entries', () => {
+    timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-08-10',
+      rawMinutes: 60,
+      description: 'TZ skew entry',
+    });
+    const detail = reports.lodestarMatterDetail(db, 1, {
+      dateFrom: '2026-08-10',
+      dateTo: '2026-08-09',
+    });
+    assert.equal(detail.totals.minutes, 60);
+    assert.equal(detail.timekeepers[0].entries[0].description, 'TZ skew entry');
+  });
+
   it('builds friendly lodestar matter detail and summary PDF/Excel', () => {
     const entry = timeSvc.createEntry(db, para, {
       matterId: 1,

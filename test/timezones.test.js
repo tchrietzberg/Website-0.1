@@ -47,3 +47,30 @@ describe('timezones', () => {
     );
   });
 });
+
+describe('service date bounds', () => {
+  it('returns earliest and latest service dates for a matter', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tz-bounds-'));
+    const db = resetDb(path.join(dir, 'test.db'));
+    const timeSvc = require('../src/services/time');
+    db.prepare("INSERT INTO users(email,name,role) VALUES ('a@x.com','A','admin')").run();
+    db.prepare("INSERT INTO users(email,name,role) VALUES ('p@x.com','P','paralegal')").run();
+    db.prepare("INSERT INTO clients(name) VALUES ('C')").run();
+    db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
+      VALUES (1, '2026-0001', 'M', 'billable', 1, '2026-01-01')
+    `).run();
+    db.prepare("INSERT INTO rates(scope,scope_id,amount_cents,effective_date) VALUES ('timekeeper',2,10000,'2020-01-01')").run();
+    const admin = db.prepare('SELECT * FROM users WHERE id=1').get();
+    const para = db.prepare('SELECT * FROM users WHERE id=2').get();
+    timeSvc.createEntry(db, para, {
+      matterId: 1, timekeeperId: 2, serviceDate: '2026-08-10', rawMinutes: 60, description: 'later',
+    });
+    timeSvc.createEntry(db, para, {
+      matterId: 1, timekeeperId: 2, serviceDate: '2026-08-08', rawMinutes: 60, description: 'earlier',
+    });
+    const bounds = timeSvc.serviceDateBounds(db, 1, admin);
+    assert.equal(bounds.earliestDate, '2026-08-08');
+    assert.equal(bounds.latestDate, '2026-08-10');
+  });
+});

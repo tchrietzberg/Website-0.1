@@ -290,9 +290,8 @@ function listEntries(db, filters = {}, actor = null) {
   return rows.map((row) => redactTimekeeperName(row, actor, access));
 }
 
-/** Earliest service_date for a matter (respects the actor's time visibility). */
-function earliestServiceDate(db, matterId, actor = null) {
-  if (!matterId) return null;
+function serviceDateBounds(db, matterId, actor = null) {
+  if (!matterId) return { earliestDate: null, latestDate: null };
   if (actor) permissions.assertCanViewRecords(db, actor, 'time');
   let timekeeperId = null;
   const access = actor ? permissions.getRoleObjectAccess(db, actor.role, 'time') : null;
@@ -300,13 +299,22 @@ function earliestServiceDate(db, matterId, actor = null) {
     timekeeperId = actor.id;
   }
   const row = db.prepare(`
-    SELECT MIN(te.service_date) AS earliest
+    SELECT MIN(te.service_date) AS earliest, MAX(te.service_date) AS latest
     FROM time_entries te
     WHERE te.matter_id = ?
       AND (? IS NULL OR te.timekeeper_id = ?)
   `).get(Number(matterId), timekeeperId, timekeeperId);
   const earliest = row?.earliest ? String(row.earliest).slice(0, 10) : '';
-  return /^\d{4}-\d{2}-\d{2}$/.test(earliest) ? earliest : null;
+  const latest = row?.latest ? String(row.latest).slice(0, 10) : '';
+  return {
+    earliestDate: /^\d{4}-\d{2}-\d{2}$/.test(earliest) ? earliest : null,
+    latestDate: /^\d{4}-\d{2}-\d{2}$/.test(latest) ? latest : null,
+  };
+}
+
+/** Earliest service_date for a matter (respects the actor's time visibility). */
+function earliestServiceDate(db, matterId, actor = null) {
+  return serviceDateBounds(db, matterId, actor).earliestDate;
 }
 
 function getEntry(db, id) {
@@ -607,6 +615,7 @@ module.exports = {
   listQueue,
   listEntries,
   earliestServiceDate,
+  serviceDateBounds,
   evaluateRules,
   detectDuplicates,
   canApprove,

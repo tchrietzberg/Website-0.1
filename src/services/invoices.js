@@ -169,8 +169,9 @@ function createBill(db, actor, matterId, opts = null) {
     dateFrom = opts.dateFrom ? String(opts.dateFrom).slice(0, 10) : null;
     dateTo = opts.dateTo ? String(opts.dateTo).slice(0, 10) : null;
   }
+  // Timezone skew can invert client defaults; widen To instead of rejecting.
   if (dateFrom && dateTo && dateFrom > dateTo) {
-    throw new Error('From date must be on or before To date');
+    dateTo = dateFrom;
   }
 
   let entries;
