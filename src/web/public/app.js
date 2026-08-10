@@ -1667,6 +1667,20 @@
               deleteOthers: true,
             } : {}),
           };
+        } else if (preset === 'edit_view') {
+          // One-click: View + Find + Edit across all areas (no Delete).
+          current[roleKey].objects[key] = {
+            viewAll: true,
+            search: true,
+            modifyAll: true,
+            delete: false,
+            ...(key === 'time' ? {
+              selectTimekeeper: false,
+              viewOthers: true,
+              modifyOthers: false,
+              deleteOthers: false,
+            } : {}),
+          };
         } else if (preset === 'view') {
           current[roleKey].objects[key] = {
             viewAll: true,
@@ -1697,7 +1711,9 @@
         }
       }
       dirty = true;
-      cascadeNote = '';
+      cascadeNote = preset === 'edit_view'
+        ? 'View, Find, and Edit turned on for all areas. Delete stays off.'
+        : '';
       setMsg('');
       render();
     };
@@ -1744,9 +1760,14 @@
               </div>
               <div class="role-perm-presets" aria-label="Quick setups">
                 <span class="muted role-perm-presets-label">Quick setup</span>
-                <button type="button" data-role-preset="full">Full access</button>
-                <button type="button" data-role-preset="view">View only</button>
-                <button type="button" data-role-preset="no_delete">No delete</button>
+                <button type="button" class="primary" data-role-preset="edit_view"
+                  title="Turn on View, Find, and Edit for every area">Edit &amp; View</button>
+                <button type="button" data-role-preset="view"
+                  title="Turn on View and Find only">View only</button>
+                <button type="button" data-role-preset="full"
+                  title="Turn on View, Find, Edit, and Delete">Full access</button>
+                <button type="button" data-role-preset="no_delete"
+                  title="Keep edit access but turn Delete off">No delete</button>
               </div>
             </div>
             <div class="role-perm-summary" aria-live="polite">${roleSummaryHtml(roleKey)}</div>
