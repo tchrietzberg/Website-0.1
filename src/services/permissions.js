@@ -786,6 +786,20 @@ function getPermissionsSettings(db) {
   const layout = getRecordPageLayout(db);
   const roles = listRoles(db);
   const rolePermissions = getRolePermissions(db);
+  let matterFields = [];
+  let contactFields = [];
+  let timeFields = [];
+  try { matterFields = catalogMatterLayoutFields(db); } catch { /* keep empty */ }
+  try { contactFields = catalogContactLayoutFields(db); } catch { /* keep empty */ }
+  try { timeFields = catalogTimeLayoutFields(db); } catch {
+    timeFields = [
+      { key: 'std:service_date', label: 'Date', kind: 'standard', group: 'Time entry fields' },
+      { key: 'std:hours', label: 'Hours', kind: 'standard', group: 'Time entry fields' },
+      { key: 'std:timekeeper', label: 'Timekeeper', kind: 'standard', group: 'Time entry fields' },
+      { key: 'std:billable', label: 'Billable', kind: 'standard', group: 'Time entry fields' },
+      { key: 'std:description', label: 'Description', kind: 'standard', group: 'Time entry fields' },
+    ];
+  }
   return {
     roles,
     profiles: roles, // compat
@@ -794,9 +808,9 @@ function getPermissionsSettings(db) {
     profilePermissions: getProfilePermissionsFromRoles(rolePermissions, getRoleKeys(db)), // compat
     fieldPermissions: layout,
     recordPageLayout: layout, // compat
-    matterFields: catalogMatterLayoutFields(db),
-    contactFields: catalogContactLayoutFields(db),
-    timeFields: catalogTimeLayoutFields(db),
+    matterFields,
+    contactFields,
+    timeFields,
   };
 }
 

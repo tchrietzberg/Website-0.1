@@ -2041,6 +2041,31 @@
     return roleFieldAccess(pageKey, fieldKey, settings) === 'write';
   }
 
+  const DEFAULT_TIME_FIELD_CATALOG = [
+    { key: 'std:service_date', label: 'Date', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:hours', label: 'Hours', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:timekeeper', label: 'Timekeeper', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:billable', label: 'Billable', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:description', label: 'Description', kind: 'standard', group: 'Time entry fields' },
+  ];
+
+  function mergeTimeFieldCatalog(apiFields = []) {
+    const byKey = new Map(DEFAULT_TIME_FIELD_CATALOG.map((f) => [f.key, { ...f }]));
+    for (const f of apiFields || []) {
+      if (!f?.key) continue;
+      byKey.set(f.key, {
+        key: f.key,
+        label: f.label || f.key,
+        kind: f.kind || (String(f.key).startsWith('cf:') ? 'custom' : 'standard'),
+        group: f.group || (String(f.key).startsWith('cf:') ? 'Custom fields' : 'Time entry fields'),
+        fieldId: f.fieldId,
+      });
+    }
+    const standards = DEFAULT_TIME_FIELD_CATALOG.map((f) => byKey.get(f.key)).filter(Boolean);
+    const customs = [...byKey.values()].filter((f) => !String(f.key).startsWith('std:'));
+    return [...standards, ...customs];
+  }
+
   async function bindFieldPermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
     if (!bodyEl || !permissions) return;
     const roles = (permissions.roles || permissions.profiles || []).map((r) => ({
@@ -2055,10 +2080,29 @@
       contact: { ...(source.contact || {}) },
       time: { ...(source.time || {}) },
     };
+    let timeCatalog = mergeTimeFieldCatalog(permissions.timeFields || []);
+    // If settings payload omitted time catalogs (stale cache), load customs directly.
+    if (!(permissions.timeFields || []).length) {
+      try {
+        const timeCustoms = await api('/api/custom-fields?appliesTo=time_entry').catch(() => []);
+        timeCatalog = mergeTimeFieldCatalog([
+          ...DEFAULT_TIME_FIELD_CATALOG,
+          ...(timeCustoms || []).map((f) => ({
+            key: `cf:${f.id}`,
+            label: f.label,
+            kind: 'custom',
+            group: 'Custom fields',
+            fieldId: f.id,
+          })),
+        ]);
+      } catch {
+        /* keep defaults */
+      }
+    }
     const catalogs = {
       matter: permissions.matterFields || [],
       contact: permissions.contactFields || [],
-      time: permissions.timeFields || [],
+      time: timeCatalog,
     };
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
@@ -9170,28 +9214,30 @@
           onRecordTypeChange: (key) => {
             state.settingsContactRecordTypeKey = key;
           },
-        }),
+        }).catch(() => {}),
         bindDefaultFieldsEditor({
           bodyEl: $('#timeFieldsBody'),
           msgEl: $('#timeFieldMsg'),
           appliesTo: 'time_entry',
-        }),
+        }).catch(() => {}),
       ]);
       if (!stillOnView('settings')) return;
     }
 
     if (isAdmin && settings.permissions) {
+      // Keep field-permission binding independent so a role-editor failure
+      // cannot leave Time entry fields blank in Field permissions.
       await Promise.all([
         bindRolePermissionsEditor({
           bodyEl: $('#rolePermissionsBody'),
           msgEl: $('#rolePermissionsMsg'),
           permissions: settings.permissions,
-        }),
+        }).catch(() => {}),
         bindFieldPermissionsEditor({
           bodyEl: $('#fieldPermissionsBody'),
           msgEl: $('#fieldPermissionsMsg'),
           permissions: settings.permissions,
-        }),
+        }).catch(() => {}),
       ]);
       if (!stillOnView('settings')) return;
     }
