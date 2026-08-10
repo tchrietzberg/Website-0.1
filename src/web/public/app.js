@@ -5082,6 +5082,26 @@
             <h1>${escapeHtml(m.name || 'Matter')}</h1>
             <p class="muted matter-top-meta">Record type · ${escapeHtml(matterTypeLabel)}</p>
             ${createFlash ? successNoticeHtml(createFlash) : ''}
+            <form id="matterForm" class="matter-details-panel stack">
+              <div class="matter-details-panel-head">
+                <h2>Matter details</h2>
+                <p class="hint">Core facts for this matter</p>
+              </div>
+              ${sections.map(([section, fields]) => `
+                <div class="grid two matter-details-grid">
+                  ${fields.map((f) => `
+                    <label class="${f.width === 'full' ? 'span-all' : ''}">
+                      ${escapeHtml(f.label)}${f.required ? ' *' : ''}
+                      ${renderFieldInput(f, fieldCtx)}
+                    </label>`).join('')}
+                </div>
+              `).join('') || '<p class="muted">No fields on this matter yet. Add one under Add custom fields below.</p>'}
+              ${canEdit ? `
+                <div class="row-actions">
+                  <button class="primary" type="submit">Save</button>
+                </div>` : ''}
+              <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
+            </form>
           </div>
           <aside class="matter-reports-aside" aria-label="Time reports">
             <div class="matter-reports-aside-head">
@@ -5143,24 +5163,6 @@
         </table></div>
         <div id="matterTimeListMsg" style="margin-top:.75rem"></div>
       </div>` : ''}
-
-      <form id="matterForm" class="card stack">
-        <h2>Matter details</h2>
-        ${sections.map(([section, fields]) => `
-          <div class="grid two">
-            ${fields.map((f) => `
-              <label class="${f.width === 'full' ? 'span-all' : ''}">
-                ${escapeHtml(f.label)}${f.required ? ' *' : ''}
-                ${renderFieldInput(f, fieldCtx)}
-              </label>`).join('')}
-          </div>
-        `).join('') || '<p class="muted">No fields on this matter yet. Add one under Add custom fields below.</p>'}
-        ${canEdit ? `
-          <div class="row-actions">
-            <button class="primary" type="submit">Save</button>
-          </div>` : ''}
-        <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
-      </form>
 
       <details class="onedrive-collapse" id="onedriveCard">
         <summary class="onedrive-collapse-summary">

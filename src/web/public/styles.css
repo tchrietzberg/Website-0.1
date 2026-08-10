@@ -2592,7 +2592,7 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 .pill[data-status="open"] { background: var(--ok-soft); color: var(--ok); }
 .pill[data-status="closed"] { background: #eef2f5; color: #4b5c6b; }
 
-/* Matter header: name on the left, compact Lodestar reports on the right */
+/* Matter header: details on the left, compact Lodestar reports on the far right */
 .matter-top-nav {
   margin-bottom: 0.85rem;
 }
@@ -2600,8 +2600,8 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 .matter-top-split {
   display: -webkit-flex;
   display: flex;
-  -webkit-align-items: stretch;
-  align-items: stretch;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
   -webkit-justify-content: space-between;
   justify-content: space-between;
   gap: 1.25rem 1.75rem;
@@ -2610,9 +2610,10 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 }
 
 .matter-top-main {
-  -webkit-flex: 1 1 16rem;
-  flex: 1 1 16rem;
+  -webkit-flex: 1 1 22rem;
+  flex: 1 1 22rem;
   min-width: 0;
+  max-width: 46rem;
 }
 
 .matter-top-main h1 {
@@ -2625,12 +2626,58 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   margin: 0.35rem 0 0;
 }
 
+.matter-details-panel {
+  margin-top: 1rem;
+  padding: 0.95rem 1rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f5f8fc 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+}
+
+.matter-details-panel-head h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--accent);
+}
+
+.matter-details-panel-head .hint {
+  margin: 0.2rem 0 0.75rem;
+  font-size: 0.82rem;
+}
+
+.matter-details-grid {
+  gap: 0.7rem 0.85rem;
+}
+
+.matter-details-panel label {
+  font-size: 0.78rem;
+}
+
+.matter-details-panel input,
+.matter-details-panel select,
+.matter-details-panel textarea {
+  font-size: 0.92rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.matter-details-panel .row-actions {
+  margin-top: 0.25rem;
+}
+
 .matter-reports-aside {
-  -webkit-flex: 0 1 22rem;
-  flex: 0 1 22rem;
+  -webkit-flex: 0 0 clamp(17rem, 30%, 22rem);
+  flex: 0 0 clamp(17rem, 30%, 22rem);
   min-width: min(100%, 17rem);
-  max-width: 24rem;
+  max-width: 22rem;
   margin-left: auto;
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0.75rem;
   padding: 0.85rem 1rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -2714,11 +2761,20 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 }
 
 @media (max-width: 860px) {
+  .matter-top-main {
+    -webkit-flex: 1 1 100%;
+    flex: 1 1 100%;
+    max-width: none;
+  }
   .matter-reports-aside {
     -webkit-flex: 1 1 100%;
     flex: 1 1 100%;
     max-width: none;
     margin-left: 0;
+    position: static;
+  }
+  .matter-details-grid {
+    grid-template-columns: 1fr;
   }
 }
 
