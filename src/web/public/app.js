@@ -2445,7 +2445,7 @@
     return `
       <div class="client-typeahead${isNew ? ' is-new' : ''}${display && !isNew ? ' has-value' : ''}" data-client-typeahead>
         <div class="client-typeahead-input-wrap">
-          <input type="search" class="client-typeahead-input" data-client-search
+          <input type="text" class="client-typeahead-input" data-client-search
             value="${escapeHtml(display)}"
             placeholder="${escapeHtml(placeholder)}"
             autocomplete="off" aria-autocomplete="list" aria-expanded="false"

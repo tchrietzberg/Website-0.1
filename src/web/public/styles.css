@@ -715,6 +715,14 @@ button.lookup-result.is-active,
   padding-right: 2.1rem;
 }
 
+/* One clear control only — hide native search cancel if type=search is used. */
+.client-typeahead-input[type="search"]::-webkit-search-cancel-button,
+.client-typeahead-input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 .client-typeahead-clear {
   position: absolute;
   right: 0.35rem;
