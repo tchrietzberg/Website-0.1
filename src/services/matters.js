@@ -530,22 +530,121 @@ function updateMatter(db, actor, id, patch) {
   return getMatter(db, id, actor);
 }
 
-/** All matters (dropdowns / internal). */
+function normalizeCustomFieldFilter(filters = {}) {
+  const rawId = filters.fieldId != null ? filters.fieldId : filters.customFieldId;
+  const fieldId = rawId != null && String(rawId).trim() !== '' ? Number(rawId) : null;
+  const rawValue = filters.fieldValue != null ? filters.fieldValue : filters.customFieldValue;
+  const fieldValue = rawValue != null && String(rawValue).trim() !== ''
+    ? String(rawValue).trim()
+    : null;
+  if (fieldId == null || !Number.isFinite(fieldId) || fieldId <= 0 || !fieldValue) {
+    return { fieldId: null, fieldValue: null };
+  }
+  return { fieldId, fieldValue };
+}
+
+/**
+ * Filterable matter fields for the Matters list (built-in status + custom fields).
+ * Includes firm-wide and record-type fields (not matter-only).
+ */
+function listMatterBrowseFilters(db) {
+  const custom = db.prepare(`
+    SELECT id, label, field_type, options_json, record_type_key, api_name
+    FROM custom_fields
+    WHERE active = 1
+      AND IFNULL(applies_to, 'matter') = 'matter'
+      AND matter_id IS NULL
+      AND client_id IS NULL
+      AND lower(IFNULL(field_type, 'text')) IN (
+        'select', 'picklist', 'dropdown', 'multiselect',
+        'text', 'textarea', 'checkbox', 'status'
+      )
+    ORDER BY
+      CASE
+        WHEN lower(label) = 'status' THEN 0
+        WHEN lower(label) LIKE '%status%' THEN 1
+        ELSE 2
+      END,
+      label,
+      id
+  `).all().map((row) => {
+    const field = customFields.getCustomField(db, row.id);
+    const options = Array.isArray(field?.options)
+      ? field.options.map((o) => String(o)).filter(Boolean)
+      : [];
+    const values = db.prepare(`
+      SELECT DISTINCT trim(value_text) AS value_text
+      FROM custom_field_values
+      WHERE field_id = ?
+        AND IFNULL(trim(value_text), '') != ''
+      ORDER BY value_text COLLATE NOCASE
+      LIMIT 100
+    `).all(row.id).map((r) => r.value_text);
+    const merged = [];
+    const seen = new Set();
+    for (const v of [...options, ...values]) {
+      const key = String(v).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(String(v));
+    }
+    return {
+      id: field.id,
+      label: field.label,
+      fieldType: field.field_type || field.fieldType || row.field_type,
+      recordTypeKey: field.record_type_key || row.record_type_key || null,
+      options: merged,
+    };
+  });
+
+  return {
+    builtIn: [
+      {
+        key: 'status',
+        label: 'Status',
+        options: [
+          { value: 'open', label: 'Open' },
+          { value: 'closed', label: 'Closed' },
+        ],
+      },
+    ],
+    custom,
+  };
+}
+
+/** All matters (dropdowns / internal / browse list). */
 function listMatters(db, filters = {}) {
   const status = filters.status || null;
   const matterType = filters.matterType || filters.recordType || null;
-  const clientId = filters.clientId != null ? Number(filters.clientId) : null;
+  const clientId = filters.clientId != null && String(filters.clientId).trim() !== ''
+    ? Number(filters.clientId)
+    : null;
+  const { fieldId, fieldValue } = normalizeCustomFieldFilter(filters);
+
+  let join = '';
+  const params = [];
+  if (fieldId != null) {
+    join = `
+      JOIN custom_field_values cfv
+        ON cfv.matter_id = m.id
+       AND cfv.field_id = ?
+       AND lower(IFNULL(cfv.value_text, '')) LIKE '%' || lower(?) || '%'
+    `;
+    params.push(fieldId, fieldValue);
+  }
+  params.push(status, status, matterType, matterType, clientId, clientId);
 
   return db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
     LEFT JOIN clients c ON c.id = m.client_id
     LEFT JOIN users u ON u.id = m.responsible_attorney_id
+    ${join}
     WHERE (? IS NULL OR m.status = ?)
       AND (? IS NULL OR m.matter_type = ?)
       AND (? IS NULL OR m.client_id = ?)
     ORDER BY m.number DESC
-  `).all(status, status, matterType, matterType, clientId, clientId);
+  `).all(...params);
 }
 
 /**
@@ -622,6 +721,7 @@ module.exports = {
   deleteMatter,
   listMatters,
   searchMatters,
+  listMatterBrowseFilters,
   listClients,
   getMatter,
   getMatterNameFormula,

@@ -10,7 +10,7 @@
     clients: [],
     settings: null,
     matterId: null,
-    matterSearch: { q: '' },
+    matterSearch: { q: '', filterKey: '', filterValue: '' },
     tkSearch: { q: '' },
     showCreateMatter: false,
     createMatterDraftName: '',
@@ -2239,72 +2239,212 @@
     return null;
   }
 
-  function matterSearchResultsHtml(hits, q) {
+  function emptyMatterSearchState() {
+    return { q: '', filterKey: '', filterValue: '' };
+  }
+
+  function matterBrowseQueryParams(search = state.matterSearch) {
+    const params = new URLSearchParams();
+    const q = String(search?.q || '').trim();
+    // Indexed text search starts at 2 characters; shorter queries keep the full browse list.
+    if (q.length >= 2) params.set('q', q);
+    const filterKey = String(search?.filterKey || '').trim();
+    const filterValue = String(search?.filterValue || '').trim();
+    if (filterKey === 'status' && filterValue) {
+      params.set('status', filterValue);
+    } else if (filterKey.startsWith('cf:') && filterValue) {
+      const fieldId = filterKey.slice(3);
+      if (fieldId) {
+        params.set('fieldId', fieldId);
+        params.set('fieldValue', filterValue);
+      }
+    }
+    return params;
+  }
+
+  function formatMatterStatusLabel(status) {
+    const s = String(status || '').trim();
+    if (!s) return '—';
+    if (s.toLowerCase() === 'open') return 'Open';
+    if (s.toLowerCase() === 'closed') return 'Closed';
+    return s;
+  }
+
+  function matterListHtml(hits, { q = '', filterKey = '', filterValue = '' } = {}) {
     const query = String(q || '').trim();
-    if (!query) {
-      return '<p class="muted">Type a few characters to search the matter index.</p>';
+    const rows = hits || [];
+    const filterBits = [];
+    if (query) filterBits.push(`“${query}”`);
+    if (filterKey && filterValue) {
+      const label = filterKey === 'status'
+        ? 'Status'
+        : (filterKey.startsWith('cf:') ? 'custom field' : 'filter');
+      filterBits.push(`${label}: ${filterValue}`);
     }
-    if (query.length < 2) {
-      return '<p class="muted">Keep typing — results appear after 2 characters.</p>';
-    }
-    const shown = (hits || []).slice(0, 5);
+    const summary = rows.length
+      ? `${rows.length} matter${rows.length === 1 ? '' : 's'}${filterBits.length ? ` · ${filterBits.join(' · ')}` : ''}`
+      : (filterBits.length
+        ? `No matters match ${filterBits.join(' · ')}`
+        : 'No matters yet');
     return `
-      ${(hits || []).length > 5
-        ? `<p class="muted">Showing 5 of ${hits.length} — refine your search to narrow results.</p>`
-        : (hits || []).length
-          ? `<p class="muted">${hits.length} match${hits.length === 1 ? '' : 'es'} for “${escapeHtml(query)}”</p>`
-          : `<p class="muted">No indexed matters match “${escapeHtml(query)}”</p>`}
-      <div class="table-wrap"><table>
-        <thead>
-          <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
-        </thead>
-        <tbody>
-          ${shown.map((m) => `
-            <tr class="click-row" data-matter="${m.id}">
-              <td><strong>${escapeHtml(m.name)}</strong></td>
-              <td>${escapeHtml(m.client_name || '—')}</td>
-              <td><span class="pill" data-status="${escapeHtml(m.status)}">${escapeHtml(m.status)}</span></td>
-              <td>${escapeHtml(m.attorney_name || '—')}</td>
-            </tr>`).join('') || '<tr><td colspan="4" class="muted">No indexed matters match</td></tr>'}
-        </tbody>
-      </table></div>`;
+      <p class="muted matters-list-summary">${escapeHtml(summary)}</p>
+      <div class="matters-list-scroll table-wrap">
+        <table class="matters-list-table">
+          <thead>
+            <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map((m) => `
+              <tr class="click-row" data-matter="${m.id}">
+                <td><strong>${escapeHtml(m.name)}</strong></td>
+                <td>${escapeHtml(m.client_name || '—')}</td>
+                <td><span class="pill" data-status="${escapeHtml(m.status || '')}">${escapeHtml(formatMatterStatusLabel(m.status))}</span></td>
+                <td>${escapeHtml(m.attorney_name || '—')}</td>
+              </tr>`).join('') || '<tr><td colspan="4" class="muted">No matters to show</td></tr>'}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function matterFilterValueControlHtml(filterFields, filterKey, filterValue) {
+    const key = String(filterKey || '');
+    const value = String(filterValue || '');
+    if (!key) {
+      return `
+        <label class="matter-filter-value">Value
+          <select name="filterValue" id="matterFilterValue" disabled>
+            <option value="">Choose a field first</option>
+          </select>
+        </label>`;
+    }
+    if (key === 'status') {
+      const builtIn = (filterFields?.builtIn || []).find((f) => f.key === 'status');
+      const options = builtIn?.options || [
+        { value: 'open', label: 'Open' },
+        { value: 'closed', label: 'Closed' },
+      ];
+      return `
+        <label class="matter-filter-value">Value
+          <select name="filterValue" id="matterFilterValue">
+            <option value="">All</option>
+            ${options.map((o) => {
+              const v = typeof o === 'string' ? o : o.value;
+              const label = typeof o === 'string' ? formatMatterStatusLabel(o) : (o.label || formatMatterStatusLabel(o.value));
+              return `<option value="${escapeHtml(v)}" ${value === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            }).join('')}
+          </select>
+        </label>`;
+    }
+    if (key.startsWith('cf:')) {
+      const id = Number(key.slice(3));
+      const field = (filterFields?.custom || []).find((f) => Number(f.id) === id);
+      const options = field?.options || [];
+      if (options.length) {
+        return `
+          <label class="matter-filter-value">Value
+            <select name="filterValue" id="matterFilterValue">
+              <option value="">All</option>
+              ${options.map((o) => `
+                <option value="${escapeHtml(o)}" ${value === String(o) ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('')}
+            </select>
+          </label>`;
+      }
+      return `
+        <label class="matter-filter-value">Value
+          <input name="filterValue" id="matterFilterValue" value="${escapeHtml(value)}"
+            placeholder="Type a value…" autocomplete="off" />
+        </label>`;
+    }
+    return `
+      <label class="matter-filter-value">Value
+        <input name="filterValue" id="matterFilterValue" value="${escapeHtml(value)}"
+          placeholder="Type a value…" autocomplete="off" />
+      </label>`;
+  }
+
+  function matterFilterBarHtml(filterFields, search = state.matterSearch) {
+    const filterKey = String(search?.filterKey || '');
+    const filterValue = String(search?.filterValue || '');
+    const custom = filterFields?.custom || [];
+    return `
+      <div class="matter-filter-bar" id="matterFilterBar">
+        <label class="matter-filter-field">Filter by
+          <select name="filterKey" id="matterFilterKey">
+            <option value="">No field filter</option>
+            <option value="status" ${filterKey === 'status' ? 'selected' : ''}>Status</option>
+            ${custom.map((f) => {
+              const key = `cf:${f.id}`;
+              const typeHint = f.recordTypeKey ? ` (${f.recordTypeKey})` : '';
+              return `<option value="${escapeHtml(key)}" ${filterKey === key ? 'selected' : ''}>${escapeHtml(f.label)}${escapeHtml(typeHint)}</option>`;
+            }).join('')}
+          </select>
+        </label>
+        ${matterFilterValueControlHtml(filterFields, filterKey, filterValue)}
+      </div>`;
   }
 
   let matterLiveSearchTimer = null;
   let matterLiveSearchSeq = 0;
 
-  function wireMatterLiveSearch() {
+  function wireMatterLiveSearch(filterFields = null) {
     const form = $('#matterSearch');
     const input = form?.querySelector('input[name="q"]');
     const resultsEl = $('#matterSearchResults');
+    const filterKeyEl = $('#matterFilterKey');
     if (!form || !input || !resultsEl) return;
 
     const paintRows = () => {
       resultsEl.querySelectorAll('[data-matter]').forEach((row) => {
         row.onclick = () => {
-          state.matterSearch = { q: '' };
           openMatter(Number(row.dataset.matter));
         };
       });
     };
 
-    const runSearch = async (raw) => {
-      const q = String(raw || '').trim();
-      state.matterSearch = { q };
+    const readFilters = () => {
+      const filterKey = String($('#matterFilterKey')?.value || '').trim();
+      const filterValue = String($('#matterFilterValue')?.value || '').trim();
+      return {
+        q: String(input.value || '').trim(),
+        filterKey,
+        filterValue,
+      };
+    };
+
+    const refreshFilterValueControl = () => {
+      const wrap = $('#matterFilterBar');
+      if (!wrap) return;
+      const filterKey = String($('#matterFilterKey')?.value || '').trim();
+      const prevValue = String($('#matterFilterValue')?.value || '').trim();
+      const keepValue = filterKey === String(state.matterSearch?.filterKey || '')
+        ? (prevValue || String(state.matterSearch?.filterValue || ''))
+        : '';
+      const valueLabel = wrap.querySelector('.matter-filter-value');
+      const html = matterFilterValueControlHtml(filterFields, filterKey, keepValue);
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html.trim();
+      const next = tmp.firstElementChild;
+      if (valueLabel && next) valueLabel.replaceWith(next);
+      else if (!valueLabel && next) wrap.appendChild(next);
+      const valueEl = $('#matterFilterValue');
+      if (valueEl) {
+        valueEl.addEventListener('change', () => { void runSearch(); });
+        valueEl.addEventListener('input', () => { schedule(); });
+      }
+    };
+
+    const runSearch = async () => {
+      const next = readFilters();
+      // Text search needs 2+ characters; shorter text is ignored so the browse list stays visible.
+      const effective = (next.q && next.q.length < 2) ? { ...next, q: '' } : next;
+      state.matterSearch = next;
       const seq = ++matterLiveSearchSeq;
-      if (!q) {
-        resultsEl.innerHTML = matterSearchResultsHtml([], '');
-        return;
-      }
-      if (q.length < 2) {
-        resultsEl.innerHTML = matterSearchResultsHtml([], q);
-        return;
-      }
-      resultsEl.innerHTML = '<p class="muted">Searching…</p>';
+      resultsEl.innerHTML = '<p class="muted">Loading matters…</p>';
       try {
-        const hits = await api(`/api/matters?search=1&q=${encodeURIComponent(q)}`);
+        const params = matterBrowseQueryParams(effective);
+        const hits = await api(`/api/matters?${params}`);
         if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
-        resultsEl.innerHTML = matterSearchResultsHtml(hits, q);
+        resultsEl.innerHTML = matterListHtml(hits, effective);
         paintRows();
       } catch (e) {
         if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
@@ -2312,30 +2452,47 @@
       }
     };
 
-    const schedule = (value) => {
+    const schedule = () => {
       if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
       matterLiveSearchTimer = setTimeout(() => {
         matterLiveSearchTimer = null;
-        void runSearch(value);
+        void runSearch();
       }, 180);
     };
 
-    input.addEventListener('input', () => {
-      schedule(input.value);
-    });
+    input.addEventListener('input', () => { schedule(); });
     form.onsubmit = async (ev) => {
       ev.preventDefault();
       if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
       matterLiveSearchTimer = null;
-      await runSearch(input.value);
+      await runSearch();
     };
+    if (filterKeyEl) {
+      filterKeyEl.addEventListener('change', () => {
+        state.matterSearch = {
+          ...state.matterSearch,
+          filterKey: String(filterKeyEl.value || ''),
+          filterValue: '',
+        };
+        refreshFilterValueControl();
+        void runSearch();
+      });
+    }
+    const valueEl = $('#matterFilterValue');
+    if (valueEl) {
+      valueEl.addEventListener('change', () => { void runSearch(); });
+      valueEl.addEventListener('input', () => { schedule(); });
+    }
     const clearBtn = $('#clearSearch');
     if (clearBtn) {
       clearBtn.onclick = async () => {
         if (matterLiveSearchTimer) clearTimeout(matterLiveSearchTimer);
         matterLiveSearchTimer = null;
         input.value = '';
-        await runSearch('');
+        state.matterSearch = emptyMatterSearchState();
+        if (filterKeyEl) filterKeyEl.value = '';
+        refreshFilterValueControl();
+        await runSearch();
       };
     }
     paintRows();
@@ -2411,7 +2568,7 @@
       list.querySelectorAll('[data-matter-pick]').forEach((el) => {
         el.onmousedown = (ev) => {
           ev.preventDefault();
-          state.matterSearch = { q: '' };
+          state.matterSearch = emptyMatterSearchState();
           state.showCreateMatter = false;
           openMatter(Number(el.dataset.matterPick));
         };
@@ -3527,20 +3684,20 @@
   }
 
   async function renderMatters() {
-    const params = new URLSearchParams();
-    params.set('search', '1'); // indexed Matter Search mode
-    if (state.matterSearch.q) params.set('q', state.matterSearch.q);
-
-    const hasQuery = !!state.matterSearch.q;
+    if (!state.matterSearch || typeof state.matterSearch !== 'object') {
+      state.matterSearch = emptyMatterSearchState();
+    }
+    const browseParams = matterBrowseQueryParams(state.matterSearch);
     const canEdit = canCreateMatter(state.user) && roleCanModify('matter');
 
     const showCreate = canEdit && state.showCreateMatter;
     let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
     const requestedCreateTypeKey = createRecordTypeKey;
-    const [hits, clients, allMatters, recordTypes, createSettings, createMatterFieldsRaw] = await Promise.all([
-      hasQuery ? api(`/api/matters?${params}`) : Promise.resolve([]),
+    const [hits, clients, allMatters, filterFields, recordTypes, createSettings, createMatterFieldsRaw] = await Promise.all([
+      api(`/api/matters?${browseParams}`),
       api('/api/clients').catch(() => state.clients || []),
-      api('/api/matters'), // full list for dropdowns elsewhere; not shown here
+      api('/api/matters'), // full list for dropdowns elsewhere
+      api('/api/matters/filter-fields').catch(() => ({ builtIn: [], custom: [] })),
       showCreate
         ? api('/api/record-types').catch(() => [])
         : Promise.resolve([]),
@@ -3688,22 +3845,24 @@
           <h2>Search matters</h2>
           <form id="matterSearch" class="matter-search-bar">
             <input name="q" value="${escapeHtml(state.matterSearch.q || '')}"
-              placeholder="Type a few characters…" aria-label="Search matters"
+              placeholder="Search by name, client, or keyword…" aria-label="Search matters"
               autocomplete="off" />
             <button class="primary" type="submit">Search</button>
             <button type="button" id="clearSearch">Clear</button>
           </form>
+          ${matterFilterBarHtml(filterFields, state.matterSearch)}
+          <p class="hint">Browse all matters below. Filter by Status or any custom field (for example a Status picklist), and scroll the list.</p>
         </div>
 
         <div class="page-section">
-          <h2>Results</h2>
+          <h2>Matters</h2>
           <div id="matterSearchResults">
-            ${matterSearchResultsHtml(hits, hasQuery ? state.matterSearch.q : '')}
+            ${matterListHtml(hits, state.matterSearch)}
           </div>
         </div>
       </div>`);
 
-    wireMatterLiveSearch();
+    wireMatterLiveSearch(filterFields);
     const clearCreate = $('#clearCreateMatter');
     if (clearCreate) {
       clearCreate.onclick = async () => {
@@ -3808,7 +3967,6 @@
 
     main.querySelectorAll('[data-matter]').forEach((row) => {
       row.onclick = () => {
-        state.matterSearch = { q: '' };
         openMatter(Number(row.dataset.matter));
       };
     });
@@ -3963,7 +4121,7 @@
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterClientId = '';
           state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
-          state.matterSearch = { q: '' };
+          state.matterSearch = emptyMatterSearchState();
           state.matterCreateFlash = {
             title: 'Matter created',
             detail: page.matter.name,

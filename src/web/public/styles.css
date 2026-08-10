@@ -620,6 +620,60 @@ button.lookup-result.is-active,
   white-space: nowrap;
 }
 
+.matter-filter-bar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: end;
+  align-items: flex-end;
+  gap: 0.65rem 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.matter-filter-bar label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 10rem;
+  -webkit-flex: 1 1 12rem;
+  flex: 1 1 12rem;
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.matter-filter-bar select,
+.matter-filter-bar input {
+  font-weight: 500;
+  min-width: 0;
+  width: 100%;
+}
+
+.matters-list-summary {
+  margin: 0 0 0.55rem;
+}
+
+.matters-list-scroll {
+  max-height: min(32rem, 62vh);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border, #d5d0c6);
+  border-radius: 0.55rem;
+  background: var(--surface-2, rgba(255, 255, 255, 0.45));
+}
+
+.matters-list-scroll table {
+  margin: 0;
+}
+
+.matters-list-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface, #fff);
+  box-shadow: 0 1px 0 var(--border, #d5d0c6);
+}
+
 .create-matter-panel {
   margin: 0;
   padding: 0.9rem 0 0;

@@ -54,6 +54,54 @@ describe('matter search and record-based fields', () => {
     assert.equal(matterSvc.listMatters(db).length, 2);
   });
 
+  it('lists matters with status and custom-field browse filters', () => {
+    const openPage = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Open Docket',
+      openedOn: '2026-01-01', responsibleAttorneyId: 2,
+    });
+    const closedPage = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Closed Docket',
+      openedOn: '2026-01-02', responsibleAttorneyId: 2,
+    });
+    matterSvc.updateMatter(db, admin, closedPage.matter.id, { status: 'closed' });
+
+    const stage = customFields.createCustomField(db, admin, {
+      label: 'Status',
+      fieldType: 'dropdown',
+      recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+      options: ['Active', 'On Hold'],
+    });
+    matterSvc.updateMatter(db, admin, openPage.matter.id, {
+      customValues: { [stage.id]: 'Active' },
+    });
+    matterSvc.updateMatter(db, admin, closedPage.matter.id, {
+      customValues: { [stage.id]: 'On Hold' },
+    });
+
+    const openOnly = matterSvc.listMatters(db, { status: 'open' });
+    assert.equal(openOnly.length, 1);
+    assert.equal(openOnly[0].id, openPage.matter.id);
+
+    const byCustom = matterSvc.listMatters(db, {
+      fieldId: stage.id,
+      fieldValue: 'On Hold',
+    });
+    assert.equal(byCustom.length, 1);
+    assert.equal(byCustom[0].id, closedPage.matter.id);
+
+    const searchFiltered = matterSvc.searchMatters(db, {
+      q: 'docket',
+      fieldId: stage.id,
+      fieldValue: 'Active',
+    });
+    assert.equal(searchFiltered.length, 1);
+    assert.equal(searchFiltered[0].id, openPage.matter.id);
+
+    const filters = matterSvc.listMatterBrowseFilters(db);
+    assert.ok(filters.builtIn.some((f) => f.key === 'status'));
+    assert.ok(filters.custom.some((f) => Number(f.id) === Number(stage.id)));
+  });
+
   it('seeds Billable and Non-Billable record types; Billable is default', () => {
     const types = customFields.listRecordTypes(db);
     assert.ok(types.length >= 2);
