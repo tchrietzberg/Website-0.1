@@ -4618,7 +4618,6 @@
     const fieldPanelFlash = state.contactFieldPanelFlash;
     const showPostCreateFields = canEdit && !!state.showPostCreateContactFields;
     const typeLabel = page.recordTypeLabel || c.record_type || 'Client';
-    const recordTypeKey = page.recordTypeKey || c.record_type || 'client';
     state.contactFlash = null;
     state.contactCreateFlash = null;
     state.contactFieldPanelFlash = null;
