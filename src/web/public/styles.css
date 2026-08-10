@@ -2712,12 +2712,69 @@ a.btn {
   margin-bottom: 0.55rem;
 }
 
-#firmTimezoneSelect {
-  width: 100%;
+.tz-select-label {
+  display: grid;
+  gap: 0.35rem;
   max-width: 36rem;
-  min-height: 14rem;
-  padding: 0.35rem;
+}
+
+.tz-select-scroll {
+  max-width: 36rem;
+  max-height: min(22rem, 55vh);
+  overflow-x: hidden;
+  overflow-y: scroll;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  border: 1px solid var(--line-strong, #c9c2b6);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.2rem;
+}
+
+.tz-select-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.tz-select-scroll::-webkit-scrollbar-track {
+  background: rgba(24, 40, 48, 0.06);
+  border-radius: 8px;
+}
+
+.tz-select-scroll::-webkit-scrollbar-thumb {
+  background: rgba(24, 40, 48, 0.35);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.tz-select-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(24, 40, 48, 0.5);
+  background-clip: padding-box;
+}
+
+#firmTimezoneSelect {
+  display: block;
+  width: 100%;
+  min-height: 16rem;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0.25rem;
+  border: none;
+  background: transparent;
   font-size: 0.9rem;
+  overflow: visible;
+}
+
+#firmTimezoneSelect:focus {
+  outline: none;
+}
+
+.tz-select-scroll:focus-within {
+  outline: 2px solid rgba(26, 58, 107, 0.28);
+  outline-offset: 1px;
+  border-color: var(--accent, #1a3a6b);
 }
 
 #firmTimezoneSelect option,
