@@ -719,7 +719,7 @@ function catalogMatterLayoutFields(db) {
     })) {
       customs.push({
         key: `cf:${f.id}`,
-        label: `${f.label} (${type.label})`,
+        label: f.label,
         kind: 'custom',
         group: 'Custom fields',
         fieldId: f.id,
