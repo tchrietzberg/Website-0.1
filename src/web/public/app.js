@@ -2005,6 +2005,42 @@
     render();
   }
 
+  function isAlwaysWritableFieldKey(fieldKey) {
+    const key = String(fieldKey || '');
+    return key === 'name'
+      || key === 'std:name'
+      || key === 'std:service_date'
+      || key === 'std:hours'
+      || key === 'std:description';
+  }
+
+  function roleFieldAccess(pageKey, fieldKey, settings = state.settings) {
+    if (isAlwaysWritableFieldKey(fieldKey)) return 'write';
+    const role = state.user?.role;
+    if (!role || role === 'admin') return 'write';
+    const layout = settings?.permissions?.fieldPermissions
+      || settings?.permissions?.recordPageLayout
+      || {};
+    const page = pageKey === 'time_entry' ? 'time' : pageKey;
+    const row = layout[page]?.[fieldKey];
+    if (!row || row[role] === undefined) return 'write';
+    const raw = row[role];
+    if (raw === true || raw === 1) return 'write';
+    if (raw === false || raw === 0) return 'hidden';
+    const mode = String(raw).toLowerCase();
+    if (mode === 'hidden' || mode === 'read' || mode === 'write') return mode;
+    return 'write';
+  }
+
+  function roleCanSeeField(pageKey, fieldKey, settings = state.settings) {
+    return roleFieldAccess(pageKey, fieldKey, settings) !== 'hidden';
+  }
+
+  function roleCanEditField(pageKey, fieldKey, settings = state.settings) {
+    if (!roleCanModify(pageKey === 'time_entry' ? 'time' : pageKey, settings)) return false;
+    return roleFieldAccess(pageKey, fieldKey, settings) === 'write';
+  }
+
   async function bindFieldPermissionsEditor({ bodyEl, msgEl, permissions } = {}) {
     if (!bodyEl || !permissions) return;
     const roles = (permissions.roles || permissions.profiles || []).map((r) => ({
@@ -2012,20 +2048,23 @@
       label: formatRoleLabel(r),
     }));
     let page = state.settingsLayoutPage || 'matter';
+    if (!['matter', 'contact', 'time'].includes(page)) page = 'matter';
     const source = permissions.fieldPermissions || permissions.recordPageLayout || {};
     const layout = {
       matter: { ...(source.matter || {}) },
       contact: { ...(source.contact || {}) },
+      time: { ...(source.time || {}) },
     };
     const catalogs = {
       matter: permissions.matterFields || [],
       contact: permissions.contactFields || [],
+      time: permissions.timeFields || [],
     };
     const setMsg = (html) => {
       if (msgEl) msgEl.innerHTML = html || '';
     };
     const fieldMode = (pageKey, fieldKey, roleKey) => {
-      if (fieldKey === 'name' || fieldKey === 'std:name') return 'write';
+      if (isAlwaysWritableFieldKey(fieldKey)) return 'write';
       const row = layout[pageKey]?.[fieldKey];
       if (!row || row[roleKey] === undefined) return 'write';
       const raw = row[roleKey];
@@ -2047,8 +2086,11 @@
             <button type="button" data-layout-page="contact" role="tab"
               class="role-perms-tab${page === 'contact' ? ' is-active' : ''}"
               aria-selected="${page === 'contact' ? 'true' : 'false'}">Contact fields</button>
+            <button type="button" data-layout-page="time" role="tab"
+              class="role-perms-tab${page === 'time' ? ' is-active' : ''}"
+              aria-selected="${page === 'time' ? 'true' : 'false'}">Time entry fields</button>
           </div>
-          <p class="hint">For each field, choose whether a role can see it, only read it, or edit it. Name stays editable for everyone. Admin always has full access.</p>
+          <p class="hint">For each field, choose whether a role can see it, only read it, or edit it. Matter name and time Date / Hours / Description stay editable for everyone. Admin always has full access.</p>
           <div class="table-wrap"><table class="perms-table layout-vis-table field-perms-table">
             <thead>
               <tr>
@@ -2058,7 +2100,7 @@
             </thead>
             <tbody>
               ${fields.map((f) => {
-                const locked = f.key === 'name' || f.key === 'std:name';
+                const locked = isAlwaysWritableFieldKey(f.key);
                 return `
                 <tr>
                   <td>
@@ -2120,6 +2162,7 @@
               || layout;
             layout.matter = { ...(next.matter || {}) };
             layout.contact = { ...(next.contact || {}) };
+            layout.time = { ...(next.time || {}) };
             setMsg('<div class="ok-banner">Field permissions saved.</div>');
             render();
           } catch (e) {
@@ -5260,7 +5303,14 @@
     billableLocked = false,
     timeFieldDefs,
   }) {
-    const canSelectTk = roleCanSelectTimekeeper();
+    const canSelectTk = roleCanSelectTimekeeper() && roleCanEditField('time', 'std:timekeeper');
+    const showTimekeeper = roleCanSeeField('time', 'std:timekeeper');
+    const canEditBillable = !billableLocked && roleCanEditField('time', 'std:billable');
+    const showBillable = roleCanSeeField('time', 'std:billable');
+    const visibleCustom = (timeFieldDefs || []).filter((field) => {
+      const key = field.key || (field.fieldId != null ? `cf:${field.fieldId}` : '');
+      return roleCanSeeField('time', key);
+    });
     const selfId = Number(state.user?.id);
     const lockedId = selfId;
     const selectedId = canSelectTk
@@ -5283,6 +5333,7 @@
         </label>
         <p class="hint time-entry-tz-hint">Firm timezone · ${escapeHtml(firmTimeZoneLabel())}</p>
       </div>
+      ${showTimekeeper ? `
       <label>Timekeeper
         ${canSelectTk ? `
         <select name="timekeeperId">
@@ -5292,21 +5343,26 @@
         </select>` : `
         <input type="hidden" name="timekeeperId" value="${lockedId}" />
         <input type="text" value="${escapeHtml(selfName)}" disabled aria-label="Timekeeper" />`}
-      </label>
+      </label>` : `<input type="hidden" name="timekeeperId" value="${lockedId}" />`}
+      ${showBillable ? `
       <label class="check-inline time-entry-billable">
         <input type="checkbox" name="billable" value="1" id="timeEntryBillable"
-          ${formBillable && !billableLocked ? 'checked' : ''}
-          ${billableLocked ? 'disabled' : ''} />
+          ${formBillable && canEditBillable ? 'checked' : ''}
+          ${canEditBillable ? '' : 'disabled'} />
         <span>Billable${billableLocked ? ' <span class="muted">(Do not charge)</span>' : ''}</span>
-      </label>
+      </label>` : ''}
       <label class="span-all">Description
         <textarea name="description" rows="2" required
           placeholder="What did you work on?">${escapeHtml(formDescription)}</textarea>
       </label>
-      ${timeFieldDefs.map((field) => `
+      ${visibleCustom.map((field) => {
+        const key = field.key || (field.fieldId != null ? `cf:${field.fieldId}` : '');
+        const canEdit = roleCanEditField('time', key) && !field.readonly;
+        return `
         <label class="${field.width === 'full' ? 'span-all' : ''}">${escapeHtml(field.label)}${field.required ? ' *' : ''}
-          ${renderFieldInput(field, { canEdit: true })}
-        </label>`).join('')}
+          ${renderFieldInput(field, { canEdit })}
+        </label>`;
+      }).join('')}
       <div class="row-actions span-all">
         <button class="primary" type="submit">Save</button>
       </div>`;
@@ -5324,11 +5380,15 @@
       const fd = new FormData(ev.target);
       const body = Object.fromEntries(fd.entries());
       body.matterId = Number(fixedMatterId != null ? fixedMatterId : body.matterId);
-      body.timekeeperId = roleCanSelectTimekeeper()
+      body.timekeeperId = (roleCanSelectTimekeeper() && roleCanEditField('time', 'std:timekeeper'))
         ? Number(body.timekeeperId || state.user.id)
         : Number(state.user.id);
-      // Checkbox omitted when unchecked — send an explicit 0/1.
-      body.billable = (fd.get('billable') === '1' || fd.get('billable') === 'on') ? 1 : 0;
+      // Checkbox omitted when unchecked — send an explicit 0/1 only when writable.
+      if (roleCanEditField('time', 'std:billable')) {
+        body.billable = (fd.get('billable') === '1' || fd.get('billable') === 'on') ? 1 : 0;
+      } else {
+        delete body.billable;
+      }
       const hoursRaw = String(body.hours ?? '').trim();
       body.hours = Number(hoursRaw);
       if (!Number.isFinite(body.hours) || body.hours <= 0) {
@@ -5340,7 +5400,11 @@
       delete body.rawMinutes;
       delete body.category;
       delete body.subcategory;
-      const customValues = collectCustomFieldValues(ev.target, timeFieldDefs || []);
+      const writableCustomDefs = (timeFieldDefs || []).filter((field) => {
+        const key = field.key || (field.fieldId != null ? `cf:${field.fieldId}` : '');
+        return roleCanEditField('time', key);
+      });
+      const customValues = collectCustomFieldValues(ev.target, writableCustomDefs);
       for (const key of Object.keys(body)) {
         if (key.startsWith('cf_') || key.endsWith('_lat') || key.endsWith('_lng')) {
           delete body[key];
@@ -5597,10 +5661,12 @@
                 aria-label="Description">${escapeHtml(e.description || '')}</textarea>
             </td>
             <td>
+              ${roleCanSeeField('time', 'std:billable') ? `
               <label class="check-inline">
-                <input type="checkbox" data-field="billable" value="1" ${isBillable ? 'checked' : ''} />
+                <input type="checkbox" data-field="billable" value="1" ${isBillable ? 'checked' : ''}
+                  ${roleCanEditField('time', 'std:billable') ? '' : 'disabled'} />
                 <span>Yes</span>
-              </label>
+              </label>` : '<span class="muted">—</span>'}
             </td>
             <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
             <td class="row-actions">
@@ -5616,7 +5682,9 @@
             <span class="muted">hrs</span></td>
           <td class="col-desc">${escapeHtml(e.description || '—')}
             <div class="muted">${escapeHtml(timekeeperDisplayName(e))}</div></td>
-          <td>${isBillable ? 'Yes' : '<span class="muted">No</span>'}</td>
+          <td>${roleCanSeeField('time', 'std:billable')
+            ? (isBillable ? 'Yes' : '<span class="muted">No</span>')
+            : '<span class="muted">—</span>'}</td>
           <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
           <td>${deletable
             ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
@@ -5955,7 +6023,9 @@
         const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
         const hours = Number(row.querySelector('[data-field="hours"]')?.value);
         const billableEl = row.querySelector('[data-field="billable"]');
-        const billable = billableEl ? (billableEl.checked ? 1 : 0) : undefined;
+        const billable = (billableEl && roleCanEditField('time', 'std:billable'))
+          ? (billableEl.checked ? 1 : 0)
+          : undefined;
         if (!serviceDate) {
           matterListMsg('<div class="error">Enter a service date.</div>');
           return;
@@ -6399,10 +6469,12 @@
                     aria-label="Description">${escapeHtml(e.description || '')}</textarea>
                 </td>
                 <td>
+                  ${roleCanSeeField('time', 'std:billable') ? `
                   <label class="check-inline">
-                    <input type="checkbox" data-field="billable" value="1" ${isBillable ? 'checked' : ''} />
+                    <input type="checkbox" data-field="billable" value="1" ${isBillable ? 'checked' : ''}
+                      ${roleCanEditField('time', 'std:billable') ? '' : 'disabled'} />
                     <span>Yes</span>
-                  </label>
+                  </label>` : '<span class="muted">—</span>'}
                 </td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td class="row-actions">
@@ -6418,7 +6490,9 @@
                   <span class="muted">hrs</span></td>
                 <td>${escapeHtml(matterName)}</td>
                 <td class="col-desc">${escapeHtml(e.description || '—')}</td>
-                <td>${isBillable ? 'Yes' : '<span class="muted">No</span>'}</td>
+                <td>${roleCanSeeField('time', 'std:billable')
+                  ? (isBillable ? 'Yes' : '<span class="muted">No</span>')
+                  : '<span class="muted">—</span>'}</td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
                   ? `<button type="button" class="danger" data-del-time="${e.id}" data-billed="${billed ? '1' : '0'}">Delete</button>`
@@ -6452,7 +6526,9 @@
         const description = String(row.querySelector('[data-field="description"]')?.value || '').trim();
         const hours = Number(row.querySelector('[data-field="hours"]')?.value);
         const billableEl = row.querySelector('[data-field="billable"]');
-        const billable = billableEl ? (billableEl.checked ? 1 : 0) : undefined;
+        const billable = (billableEl && roleCanEditField('time', 'std:billable'))
+          ? (billableEl.checked ? 1 : 0)
+          : undefined;
         if (!serviceDate) {
           listMsg('<div class="error">Enter a service date.</div>');
           return;
@@ -8677,7 +8753,7 @@
         meta: 'Admin',
         open: settingsTabOpen('field-permissions'),
         bodyHtml: `
-          <p class="hint">Control which matter and contact fields each role can see or edit.</p>
+          <p class="hint">Control which matter, contact, and time entry fields each role can see or edit.</p>
           <div id="fieldPermissionsBody" class="stack"></div>
           <div id="fieldPermissionsMsg"></div>`,
       })}` : ''}

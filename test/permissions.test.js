@@ -263,6 +263,60 @@ describe('role permissions and field permissions', () => {
     assert.ok(asAdmin.fields.some((f) => f.fieldId === field.id));
   });
 
+  it('includes time entry fields in field permissions catalog and enforces writes', () => {
+    const settings = permissions.getPermissionsSettings(db);
+    assert.ok(settings.timeFields.some((f) => f.key === 'std:billable'));
+    assert.ok(settings.timeFields.some((f) => f.key === 'std:hours'));
+    assert.ok(Object.prototype.hasOwnProperty.call(settings.fieldPermissions, 'time'));
+
+    const field = customFields.createCustomField(db, admin, {
+      label: 'Phase code',
+      fieldType: 'text',
+      appliesTo: 'time_entry',
+    });
+    assert.ok(permissions.catalogTimeLayoutFields(db).some((f) => f.key === `cf:${field.id}`));
+
+    const matter = matterSvc.createMatter(db, admin, {
+      clientId: 1,
+      name: 'Time perms',
+      openedOn: '2026-07-01',
+    });
+    permissions.setRecordPageLayout(db, admin, {
+      time: {
+        'std:billable': {
+          admin: 'write', paralegal: 'read', attorney: 'write', billing_clerk: 'write',
+        },
+        [`cf:${field.id}`]: {
+          admin: 'write', paralegal: 'hidden', attorney: 'write', billing_clerk: 'write',
+        },
+      },
+    });
+
+    const entry = timeSvc.createEntry(db, paralegal, {
+      matterId: matter.matter.id,
+      timekeeperId: paralegal.id,
+      serviceDate: '2026-07-02',
+      hours: 1,
+      description: 'Draft',
+    });
+
+    assert.throws(() => timeSvc.updateEntry(db, paralegal, entry.id, {
+      billable: 0,
+    }), /read only/i);
+    assert.throws(() => timeSvc.createEntry(db, paralegal, {
+      matterId: matter.matter.id,
+      timekeeperId: paralegal.id,
+      serviceDate: '2026-07-03',
+      hours: 1,
+      description: 'With hidden field',
+      customValues: { [field.id]: 'B' },
+    }), /read only/i);
+    assert.doesNotThrow(() => timeSvc.updateEntry(db, paralegal, entry.id, {
+      description: 'Updated draft',
+    }));
+    assert.equal(permissions.getFieldAccess(db, 'time', 'paralegal', 'std:hours'), 'write');
+  });
+
   it('enforces View All and time delete permission', () => {
     const matter = matterSvc.createMatter(db, admin, {
       clientId: 1,
