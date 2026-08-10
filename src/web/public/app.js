@@ -1288,22 +1288,20 @@
             </select>
           </label>
           ${isAdminUser() ? `
-            <button type="button" id="showAddRecordType">Add record page</button>` : ''}
+          <form id="addRecordTypeForm" class="row-actions"
+            style="flex-wrap:wrap;align-items:flex-end;gap:.75rem;margin:0">
+            <label class="matter-type-picker">Label
+              <input name="label" required maxlength="80"
+                placeholder="e.g. ${escapeHtml(typeExample)}" autocomplete="off" />
+            </label>
+            <button class="primary" type="submit">Create record page</button>
+          </form>` : ''}
         </div>
         <p class="hint">Fields you add here are for the <strong>${escapeHtml(typeLabel)}</strong> record type — they appear on every ${escapeHtml(entityNoun)} of this type.${
           entityAppliesTo === 'matter'
             ? ' For a field on one matter only, open that matter and use Matter level fields at the bottom of the page.'
             : ' For a field on one contact only, open that contact and use Contact level fields.'
-        }</p>
-        <form id="addRecordTypeForm" class="stack" hidden>
-          <label>Label *
-            <input name="label" required placeholder="e.g. ${escapeHtml(typeExample)}" />
-          </label>
-          <div class="row-actions">
-            <button class="primary" type="submit">Create record page</button>
-            <button type="button" id="cancelAddRecordType">Cancel</button>
-          </div>
-        </form>`;
+        }</p>`;
       bodyEl.innerHTML = `
         ${typePicker}
         <div class="field-mgmt-list">
@@ -1350,21 +1348,7 @@
           render();
         };
       }
-      const showAddType = bodyEl.querySelector('#showAddRecordType');
       const addTypeForm = bodyEl.querySelector('#addRecordTypeForm');
-      const cancelAddType = bodyEl.querySelector('#cancelAddRecordType');
-      if (showAddType && addTypeForm) {
-        showAddType.onclick = () => {
-          addTypeForm.hidden = false;
-          showAddType.hidden = true;
-        };
-      }
-      if (cancelAddType && addTypeForm && showAddType) {
-        cancelAddType.onclick = () => {
-          addTypeForm.hidden = true;
-          showAddType.hidden = false;
-        };
-      }
       if (addTypeForm) {
         addTypeForm.onsubmit = async (ev) => {
           ev.preventDefault();
@@ -8767,7 +8751,7 @@
         ].filter(Boolean).join(' · '),
         open: settingsTabOpen('record-pages', true),
         bodyHtml: `
-          <p class="hint">Field layouts for each record page. Open a page below to edit its types and fields — more record pages can be added here later.</p>
+          <p class="hint">Field layouts for each record page. Open Matter page or Contact page below to edit fields, or create a record page with a label.</p>
           <div class="record-pages-list stack">
             ${canConfigureMatterDefaults ? `
             <details class="onedrive-collapse settings-collapse settings-subtab record-page-tab"
