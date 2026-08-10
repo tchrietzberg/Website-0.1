@@ -3630,7 +3630,7 @@
               <button class="primary" type="submit">Create</button>
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
-            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type. Matching names cannot be created twice.</p>' : ''}
+            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
             <div class="create-matter-meta">
               <label class="create-matter-client-field">Client
                 ${renderClientTypeahead({
