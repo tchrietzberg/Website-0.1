@@ -8457,24 +8457,26 @@
           <div class="onedrive-collapse-body">
             <div class="settings-block" data-editable="${canEditBilling ? '1' : '0'}">
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Firm timezone</h3>
-              <p class="hint">Time entry dates and billing “today” use this timezone (${tzCount} zones).</p>
+              <p class="hint">Time entry dates and billing “today” use this timezone (${tzCount} zones). Scroll the list to browse all zones.</p>
               <label class="tz-filter-label">Filter
                 <input type="search" id="firmTimezoneFilter" placeholder="Search city or region…"
                   autocomplete="off" ${canEditBilling ? '' : 'disabled'} />
               </label>
-              <label>Timezone
-                <select name="firmTimezone" id="firmTimezoneSelect" size="12" ${canEditBilling ? '' : 'disabled'}>
-                  ${tzGroups.map((group) => `
-                    <optgroup label="${escapeHtml(group.region)}" data-tz-region="${escapeHtml(group.region)}">
-                      ${(group.zones || []).map((z) => `
-                        <option value="${escapeHtml(z.id)}"
-                          data-tz-label="${escapeHtml((z.label || z.id).toLowerCase())}"
-                          ${z.id === selectedTz ? 'selected' : ''}>
-                          ${escapeHtml(z.label || z.id)}
-                        </option>`).join('')}
-                    </optgroup>`).join('') || `
-                    <option value="${escapeHtml(selectedTz)}" selected>${escapeHtml(selectedTz)}</option>`}
-                </select>
+              <label class="tz-select-label">Timezone
+                <div class="tz-select-scroll" role="presentation">
+                  <select name="firmTimezone" id="firmTimezoneSelect" size="28" ${canEditBilling ? '' : 'disabled'}>
+                    ${tzGroups.map((group) => `
+                      <optgroup label="${escapeHtml(group.region)}" data-tz-region="${escapeHtml(group.region)}">
+                        ${(group.zones || []).map((z) => `
+                          <option value="${escapeHtml(z.id)}"
+                            data-tz-label="${escapeHtml((z.label || z.id).toLowerCase())}"
+                            ${z.id === selectedTz ? 'selected' : ''}>
+                            ${escapeHtml(z.label || z.id)}
+                          </option>`).join('')}
+                      </optgroup>`).join('') || `
+                      <option value="${escapeHtml(selectedTz)}" selected>${escapeHtml(selectedTz)}</option>`}
+                  </select>
+                </div>
               </label>
               <p class="hint">Current firm date: <strong>${escapeHtml(today)}</strong></p>
             </div>
