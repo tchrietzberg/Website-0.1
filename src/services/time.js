@@ -8,6 +8,7 @@ const { getSetting, setSetting, audit } = require('../db');
 const customFields = require('./customFields');
 const permissions = require('./permissions');
 const timezones = require('./timezones');
+const matterBilling = require('./matterBilling');
 
 function evaluateRules(db, entry) {
   const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
@@ -37,14 +38,9 @@ function detectDuplicates(db, { timekeeperId, matterId, serviceDate, roundedMinu
   return rows.map((r) => r.id);
 }
 
-/** Billable matters default billable=1; Non-Billable record type defaults to 0. */
+/** Billable matters default billable=1; Non-Billable / Do not charge default to 0. */
 function defaultBillableFromMatter(matter) {
-  const key = String(matter?.matter_type || '')
-    .trim()
-    .toLowerCase()
-    .replace(/-/g, '_');
-  if (key === 'non_billable' || key.startsWith('non_billable')) return 0;
-  return 1;
+  return matterBilling.defaultBillableForMatterType(matter?.matter_type);
 }
 
 function resolveMinutes(input) {
@@ -98,6 +94,8 @@ function createEntry(db, actor, input) {
   } else {
     billable = (billable === true || billable === 1 || billable === '1' || billable === 'on') ? 1 : 0;
   }
+  // Do not charge matters are always non-billable.
+  if (matterBilling.forcesNonBillable(matter.matter_type)) billable = 0;
 
   const firmTz = timezones.normalizeTimeZone(
     getSetting(db, 'firm_timezone', timezones.DEFAULT_TIMEZONE)
@@ -385,6 +383,7 @@ function updateEntry(db, actor, id, input = {}) {
 
   let billable = entry.billable;
   if (input.billable != null) billable = input.billable ? 1 : 0;
+  if (matterBilling.forcesNonBillable(matter.matter_type)) billable = 0;
 
   const category = input.category !== undefined ? (input.category || null) : entry.category;
   const subcategory = input.subcategory !== undefined

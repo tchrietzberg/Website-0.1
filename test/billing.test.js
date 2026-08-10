@@ -91,6 +91,21 @@ describe('time entry rules', () => {
     assert.equal(onBillableMatter.billable, 0);
   });
 
+  it('forces Do not charge matters to non-billable', () => {
+    const ins = ctx.db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
+      VALUES (1, '2026-0004', 'Internal', 'do_not_charge', 2, '2026-01-01')
+    `).run();
+    const matterId = Number(ins.lastInsertRowid);
+    const e = timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId, timekeeperId: 3, serviceDate: '2026-03-02', rawMinutes: 60,
+      description: 'admin', billable: 1,
+    });
+    assert.equal(e.billable, 0);
+    const updated = timeSvc.updateEntry(ctx.db, ctx.para, e.id, { billable: 1 });
+    assert.equal(updated.billable, 0);
+  });
+
   it('accepts quarter-hour decimal hours without re-rounding', () => {
     const e = timeSvc.createEntry(ctx.db, ctx.para, {
       matterId: 2, timekeeperId: 3, serviceDate: '2026-03-01', hours: 1.25, description: 'review',
@@ -314,6 +329,37 @@ describe('invoice lifecycle', () => {
       WHERE matter_id = 1 AND invoice_id IS NULL AND status = 'approved'
     `).get().n;
     assert.equal(left, 1);
+  });
+
+  it('Non-Billable matters invoice hours at $0; Do not charge cannot be invoiced', () => {
+    ctx.db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
+      VALUES (1, '2026-0010', 'Pro Bono Matter', 'non_billable', 2, '2026-01-01')
+    `).run();
+    ctx.db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
+      VALUES (1, '2026-0011', 'Internal Only', 'do_not_charge', 2, '2026-01-01')
+    `).run();
+
+    timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 3, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: 90, description: 'clinic',
+    });
+    const zeroInv = invoiceSvc.createBill(ctx.db, ctx.clerk, 3);
+    assert.equal(zeroInv.lines.length, 1);
+    assert.equal(zeroInv.lines[0].minutes, 90);
+    assert.equal(zeroInv.lines[0].rate_cents, 0);
+    assert.equal(zeroInv.lines[0].amount_cents, 0);
+    assert.equal(zeroInv.total_cents, 0);
+
+    timeSvc.createEntry(ctx.db, ctx.para, {
+      matterId: 4, timekeeperId: 3, serviceDate: '2026-03-01', rawMinutes: 60, description: 'admin',
+    });
+    assert.throws(
+      () => invoiceSvc.createBill(ctx.db, ctx.clerk, 4),
+      /Do not charge matters cannot be invoiced/
+    );
+    const ready = invoiceSvc.listMattersReadyForBilling(ctx.db).map((m) => m.id);
+    assert.ok(!ready.includes(4));
   });
 
   it('create bill explains missing rates with timekeeper and date', () => {

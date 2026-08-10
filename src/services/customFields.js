@@ -6,6 +6,7 @@ const fieldTypes = require('./fieldTypes');
 const RECORD_TYPES = [
   { key: 'billable', label: 'Billable' },
   { key: 'non_billable', label: 'Non-Billable' },
+  { key: 'do_not_charge', label: 'Do not charge' },
 ];
 /** Seeded default contact record types. */
 const CONTACT_RECORD_TYPES = [
@@ -487,9 +488,10 @@ function listRecordTypes(db, { appliesTo = 'matter' } = {}) {
     ORDER BY CASE key
       WHEN 'billable' THEN 0
       WHEN 'non_billable' THEN 1
+      WHEN 'do_not_charge' THEN 2
       WHEN 'client' THEN 0
       WHEN 'company' THEN 1
-      ELSE 2
+      ELSE 3
     END, label
   `).all(entity);
 }

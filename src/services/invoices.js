@@ -3,6 +3,7 @@ const { resolveRate } = require('../rates');
 const { allocateNumber, audit, getSetting, setSetting } = require('../db');
 const { buildXlsx } = require('../xlsx');
 const { buildTextPdf } = require('../pdf');
+const matterBilling = require('./matterBilling');
 
 const BILL_FIELDS_SETTING = 'bill_fields';
 
@@ -159,6 +160,12 @@ function createBill(db, actor, matterId, opts = null) {
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
   if (!matter) throw new Error('matter not found');
 
+  const billingMode = matterBilling.matterBillingMode(matter.matter_type);
+  if (!matterBilling.canInvoiceMatterType(matter.matter_type)) {
+    throw new Error('Do not charge matters cannot be invoiced');
+  }
+  const zeroCharge = matterBilling.invoiceLinesAreZeroCharge(matter.matter_type);
+
   let entryIds = null;
   let dateFrom = null;
   let dateTo = null;
@@ -209,6 +216,16 @@ function createBill(db, actor, matterId, opts = null) {
   let order = 0;
   const missingRates = [];
   for (const e of entries) {
+    // Non-Billable matters: show hours on the invoice at $0 (no charge, rates not required).
+    if (zeroCharge || billingMode === 'non_billable') {
+      lineRows.push({
+        entry: e,
+        rateCents: 0,
+        amount: 0,
+        sortOrder: order++,
+      });
+      continue;
+    }
     const rate = resolveRate(db, {
       matterId: matter.id,
       clientId: matter.client_id,
@@ -292,8 +309,8 @@ function generatePrebill(db, actor, matterId, entryIds = null) {
 
 /** Matters with unbilled time ready to bill (saved time; no approval step). */
 function listMattersReadyForBilling(db) {
-  return db.prepare(`
-    SELECT m.id, m.number, m.name, c.name AS client_name,
+  const rows = db.prepare(`
+    SELECT m.id, m.number, m.name, m.matter_type, c.name AS client_name,
       COUNT(te.id) AS entry_count,
       COALESCE(SUM(te.rounded_minutes), 0) AS minutes
     FROM matters m
@@ -301,9 +318,18 @@ function listMattersReadyForBilling(db) {
     JOIN time_entries te ON te.matter_id = m.id
     WHERE te.status IN ('draft','submitted','approved')
       AND te.invoice_id IS NULL AND te.rounded_minutes > 0
+      AND lower(replace(IFNULL(m.matter_type, 'billable'), '-', '_')) NOT LIKE 'do_not_charge%'
     GROUP BY m.id
     ORDER BY m.name
   `).all();
+  return rows.map((row) => {
+    const mode = matterBilling.matterBillingMode(row.matter_type);
+    return {
+      ...row,
+      billing_mode: mode,
+      invoice_zero_charge: mode === 'non_billable',
+    };
+  });
 }
 
 function recomputeTotals(db, invoiceId) {

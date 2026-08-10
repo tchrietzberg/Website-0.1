@@ -2798,13 +2798,26 @@
     });
   }
 
-  function defaultBillableFromMatterType(matterType) {
-    const key = String(matterType || '')
+  function normalizeMatterTypeKey(matterType) {
+    return String(matterType || '')
       .trim()
       .toLowerCase()
       .replace(/-/g, '_');
-    if (key === 'non_billable' || key.startsWith('non_billable')) return false;
-    return true;
+  }
+
+  function matterBillingMode(matterType) {
+    const key = normalizeMatterTypeKey(matterType);
+    if (key === 'do_not_charge' || key.startsWith('do_not_charge')) return 'do_not_charge';
+    if (key === 'non_billable' || key.startsWith('non_billable')) return 'non_billable';
+    return 'billable';
+  }
+
+  function defaultBillableFromMatterType(matterType) {
+    return matterBillingMode(matterType) === 'billable';
+  }
+
+  function forcesNonBillableMatterType(matterType) {
+    return matterBillingMode(matterType) === 'do_not_charge';
   }
 
   function wireMatterPicker(scopeEl, { matters = [], onChange = null } = {}) {
@@ -3655,7 +3668,8 @@
                       ${escapeHtml(t.label || t.key)}
                     </option>`).join('') || `
                     <option value="billable" selected>Billable</option>
-                    <option value="non_billable">Non-Billable</option>`}
+                    <option value="non_billable">Non-Billable</option>
+                    <option value="do_not_charge">Do not charge</option>`}
                 </select>
               </label>
             </div>
@@ -4989,6 +5003,7 @@
     formDescription,
     formTimekeeperId,
     formBillable = true,
+    billableLocked = false,
     timeFieldDefs,
   }) {
     const canSelectTk = roleCanSelectTimekeeper();
@@ -5024,8 +5039,9 @@
       </label>
       <label class="check-inline span-all" style="align-self:center">
         <input type="checkbox" name="billable" value="1" id="timeEntryBillable"
-          ${formBillable ? 'checked' : ''} />
-        <span>Billable</span>
+          ${formBillable && !billableLocked ? 'checked' : ''}
+          ${billableLocked ? 'disabled' : ''} />
+        <span>Billable${billableLocked ? ' <span class="muted">(Do not charge)</span>' : ''}</span>
       </label>
       <label class="span-all">Description
         <textarea name="description" rows="2" required
@@ -5220,9 +5236,12 @@
     // Match Time Entry page defaults: seed first entry, clear hours/desc when adding another.
     const formHours = addAnother ? '' : '1.00';
     const formDescription = addAnother ? '' : 'Reviewed production set';
-    const formBillable = retain.billable != null
-      ? !!Number(retain.billable)
-      : defaultBillableFromMatterType(m.matter_type);
+    const billableLocked = forcesNonBillableMatterType(m.matter_type);
+    const formBillable = billableLocked
+      ? false
+      : (retain.billable != null
+        ? !!Number(retain.billable)
+        : defaultBillableFromMatterType(m.matter_type));
     const flash = state.matterTimeFlash;
     const matterFlash = state.matterFieldFlash;
     const createFlash = state.matterCreateFlash;
@@ -5284,6 +5303,7 @@
       recordTypes: recordTypes || [
         { key: 'billable', label: 'Billable' },
         { key: 'non_billable', label: 'Non-Billable' },
+        { key: 'do_not_charge', label: 'Do not charge' },
       ],
       users: state.users,
     };
@@ -5414,7 +5434,13 @@
       ${canViewTime ? `
       ${canLogTime ? `<div class="card">
         <h1>Time Entry</h1>
-        <p class="hint">Logging time on <strong>${escapeHtml(m.name || 'this matter')}</strong>. Billable defaults from the ${escapeHtml(matterTypeLabel)} record type.</p>
+        <p class="hint">Logging time on <strong>${escapeHtml(m.name || 'this matter')}</strong>. ${
+          billableLocked
+            ? 'Do not charge matters are always non-billable and never appear on invoices.'
+            : matterBillingMode(m.matter_type) === 'non_billable'
+              ? 'Non-Billable matters appear on invoices with hours at $0 (no charge).'
+              : `Billable defaults from the ${escapeHtml(matterTypeLabel)} record type.`
+        }</p>
         <form id="matterTimeForm" class="grid two">
           <input type="hidden" name="matterId" value="${Number(m.id)}" />
           ${timeEntryFormFieldsHtml({
@@ -5423,6 +5449,7 @@
             formDescription,
             formTimekeeperId,
             formBillable,
+            billableLocked,
             timeFieldDefs,
           })}
         </form>
@@ -5999,9 +6026,12 @@
     const formHours = addAnother ? '' : '1.00';
     const formDescription = addAnother ? '' : 'Reviewed production set';
     const preferredMatter = matters.find((m) => Number(m.id) === Number(preferredMatterId)) || null;
-    const formBillable = retain.billable != null
-      ? !!Number(retain.billable)
-      : defaultBillableFromMatterType(preferredMatter?.matter_type);
+    const billableLocked = forcesNonBillableMatterType(preferredMatter?.matter_type);
+    const formBillable = billableLocked
+      ? false
+      : (retain.billable != null
+        ? !!Number(retain.billable)
+        : defaultBillableFromMatterType(preferredMatter?.matter_type));
     const flash = state.timeFlash;
     state.timeFlash = null;
     state.timeEntryRetain = null;
@@ -6017,7 +6047,7 @@
               selectedId: preferredMatterId,
               matters,
             })}
-            <span class="hint">Type to filter by matter name or client. Billable defaults from the matter record type.</span>
+            <span class="hint">Type to filter by matter name or client. Billable matters charge on invoices; Non-Billable show hours at $0; Do not charge never invoice.</span>
           </div>
           ${timeEntryFormFieldsHtml({
             formDate,
@@ -6025,6 +6055,7 @@
             formDescription,
             formTimekeeperId,
             formBillable,
+            billableLocked,
             timeFieldDefs,
           })}
         </form>
@@ -6206,7 +6237,16 @@
     if (timeForm) {
       const syncBillableFromMatter = (m) => {
         const cb = timeForm.querySelector('input[name="billable"]');
-        if (cb) cb.checked = defaultBillableFromMatterType(m?.matter_type);
+        if (!cb) return;
+        const locked = forcesNonBillableMatterType(m?.matter_type);
+        cb.disabled = locked;
+        cb.checked = locked ? false : defaultBillableFromMatterType(m?.matter_type);
+        const label = cb.closest('label')?.querySelector('span');
+        if (label) {
+          label.innerHTML = locked
+            ? 'Billable <span class="muted">(Do not charge)</span>'
+            : 'Billable';
+        }
       };
       matterPicker = wireMatterPicker(timeForm, {
         matters,
@@ -6394,7 +6434,7 @@
           <label>To
             <input type="date" name="dateTo" id="billDateTo" value="${escapeHtml(dateTo)}" />
           </label>
-          <p class="hint span-all">Defaults to the matter’s earliest time entry through today (or the latest entry if newer). Adjust to filter which time entries are billed and included in Lodestar.</p>
+          <p class="hint span-all">Defaults to the matter’s earliest time entry through today (or the latest entry if newer). Billable matters charge normally; Non-Billable invoices show hours at $0; Do not charge matters cannot be billed.</p>
           <div class="row-actions span-all" style="flex-wrap:wrap;gap:.5rem">
             <button type="button" data-bill-report="lodestar-matter-summary">Lodestar Summary</button>
             <button type="button" data-bill-report="lodestar-matter-detail">Lodestar Detail</button>
@@ -7532,6 +7572,7 @@
       : [
         { key: 'billable', label: 'Billable' },
         { key: 'non_billable', label: 'Non-Billable' },
+        { key: 'do_not_charge', label: 'Do not charge' },
       ];
     let addRecordTypeKey = state.settingsMatterRecordTypeKey || types[0]?.key || 'billable';
 
