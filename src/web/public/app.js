@@ -48,6 +48,7 @@
     contactCreateFlash: null,
     contactListFlash: null,
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
+    settingsBillingFlash: null,
     settingsTabOpen: {},
     _apiCache: null,
     _shellSig: null,
@@ -8574,6 +8575,8 @@
       ? `On · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes`
       : 'Off';
     const billingMeta = `${escapeHtml(settings.firmTimezoneLabel || selectedTz)} · ${escapeHtml(settings.durationFormat || '')}`;
+    const billingFlash = state.settingsBillingFlash;
+    state.settingsBillingFlash = null;
 
     setMainHtml(`
       <div class="card stack settings-page-head">
@@ -8794,7 +8797,12 @@
                       </select>
                     </div>
                   </label>
-                  <p class="hint">Current firm date: <strong>${escapeHtml(today)}</strong></p>
+                  <p class="hint">Current firm date: <strong>${escapeHtml(today)}</strong>. Select a zone, then Save — or double-click a zone to save it.</p>
+                  ${canEditBilling ? `
+                  <div class="row-actions">
+                    <button class="primary" type="button" id="saveFirmTimezoneBtn">Save firm timezone</button>
+                  </div>` : ''}
+                  <div id="firmTimezoneMsg">${billingFlash?.scope === 'timezone' ? `<div class="ok-banner">${escapeHtml(billingFlash.text)}</div>` : ''}</div>
                 </div>
               </div>
             </details>
@@ -8852,7 +8860,7 @@
                 ${canEditBilling ? '<div class="row-actions"><button class="primary" type="submit">Save time &amp; billing settings</button></div>' : ''}
               </div>
             </details>
-            <div id="settingsMsg"></div>
+            <div id="settingsMsg">${billingFlash?.scope === 'billing' ? `<div class="ok-banner">${escapeHtml(billingFlash.text)}</div>` : ''}</div>
           </form>`,
       })}
 
@@ -9153,29 +9161,64 @@
     }
 
     if (canEditBilling) {
-      form.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const durationFormat = form.querySelector('input[name="durationFormat"]:checked')?.value;
-        const roundMode = form.querySelector('input[name="roundMode"]:checked')?.value;
+      const saveTimeBillingSettings = async ({
+        timezoneOnly = false,
+        flashScope = 'billing',
+        flashText = 'Time & billing settings saved.',
+      } = {}) => {
         const firmTimezone = tzSelect?.value || form.firmTimezone?.value;
-        const roundIncrementMinutes = Number(
-          interval?.disabled
-            ? form.roundIncrementMinutesFallback?.value
-            : interval?.value
-        );
+        const msgEl = timezoneOnly ? $('#firmTimezoneMsg') : $('#settingsMsg');
+        if (!firmTimezone) {
+          if (msgEl) msgEl.innerHTML = '<div class="error">Choose a firm timezone first.</div>';
+          return false;
+        }
+        const body = timezoneOnly
+          ? { firmTimezone }
+          : {
+              durationFormat: form.querySelector('input[name="durationFormat"]:checked')?.value,
+              roundMode: form.querySelector('input[name="roundMode"]:checked')?.value,
+              roundIncrementMinutes: Number(
+                interval?.disabled
+                  ? form.roundIncrementMinutesFallback?.value
+                  : interval?.value
+              ),
+              firmTimezone,
+            };
         try {
           state.settings = await api('/api/settings', {
             method: 'PATCH',
-            body: JSON.stringify({ durationFormat, roundMode, roundIncrementMinutes, firmTimezone }),
+            body: JSON.stringify(body),
           });
-          const msg = $('#settingsMsg');
-          if (msg) msg.innerHTML = '<div class="ok-banner">Time &amp; billing settings saved.</div>';
+          state.settingsBillingFlash = { scope: flashScope, text: flashText };
           await renderSettings();
+          return true;
         } catch (e) {
-          const msg = $('#settingsMsg');
-          if (msg) msg.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          return false;
         }
       };
+
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        await saveTimeBillingSettings();
+      };
+
+      $('#saveFirmTimezoneBtn')?.addEventListener('click', async () => {
+        await saveTimeBillingSettings({
+          timezoneOnly: true,
+          flashScope: 'timezone',
+          flashText: 'Firm timezone saved.',
+        });
+      });
+
+      tzSelect?.addEventListener('dblclick', async () => {
+        if (!tzSelect.value) return;
+        await saveTimeBillingSettings({
+          timezoneOnly: true,
+          flashScope: 'timezone',
+          flashText: 'Firm timezone saved.',
+        });
+      });
     }
 
     if (showClerkRates) {
