@@ -505,6 +505,70 @@ function slugify(label) {
     .slice(0, 40) || `field_${Date.now()}`;
 }
 
+function normalizeFieldLabelKey(label) {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/** Built-in labels that custom fields must not reuse for each object. */
+function reservedFieldLabels(appliesTo) {
+  const target = normalizeAppliesTo(appliesTo);
+  if (target === 'client') {
+    return CONTACT_LAYOUT_FIELDS.map((f) => normalizeFieldLabelKey(f.label));
+  }
+  if (target === 'time_entry') {
+    return ['date', 'hours', 'timekeeper', 'billable', 'description'];
+  }
+  // Status may be a custom picklist used in matter naming; allow that label once.
+  return STANDARD_FIELDS
+    .filter((f) => f.key !== 'std:status')
+    .map((f) => normalizeFieldLabelKey(f.label));
+}
+
+/**
+ * Reject duplicate field labels / api names within an object (matter, contact,
+ * or time entry) at every scope — type defaults, record-only, and firm-wide.
+ */
+function assertUniqueCustomFieldName(db, {
+  label,
+  apiName = null,
+  appliesTo = 'matter',
+  excludeId = null,
+} = {}) {
+  const target = normalizeAppliesTo(appliesTo);
+  const labelKey = normalizeFieldLabelKey(label);
+  if (!labelKey) throw new Error('label required');
+
+  if (reservedFieldLabels(target).includes(labelKey)) {
+    throw new Error(`A built-in field named “${String(label).trim()}” already exists`);
+  }
+
+  const rows = db.prepare(`
+    SELECT id, label, api_name
+    FROM custom_fields
+    WHERE active = 1
+      AND IFNULL(applies_to, 'matter') = ?
+      AND (? IS NULL OR id != ?)
+  `).all(target, excludeId, excludeId);
+
+  for (const row of rows) {
+    if (normalizeFieldLabelKey(row.label) === labelKey) {
+      throw new Error(`A field named “${String(label).trim()}” already exists`);
+    }
+  }
+
+  const api = apiName != null ? String(apiName).trim().toLowerCase() : '';
+  if (api) {
+    for (const row of rows) {
+      if (String(row.api_name || '').toLowerCase() === api) {
+        throw new Error(`A field named “${String(label).trim()}” already exists`);
+      }
+    }
+  }
+}
+
 function normalizeAppliesTo(value) {
   const v = String(value || 'matter').trim().toLowerCase();
   if (v === 'time' || v === 'time_entry' || v === 'time-entry') return 'time_entry';
@@ -599,16 +663,11 @@ function createCustomField(db, actor, input) {
     throw new Error('apiName must be snake_case starting with a letter');
   }
 
-  // Ensure unique api_name within scope
-  const clash = db.prepare(`
-    SELECT id FROM custom_fields
-    WHERE api_name = ?
-      AND IFNULL(applies_to, 'matter') = ?
-      AND IFNULL(record_type_key,'') = IFNULL(?, '')
-      AND IFNULL(matter_id,0) = IFNULL(?, 0)
-      AND IFNULL(client_id,0) = IFNULL(?, 0)
-  `).get(apiName, appliesTo, recordTypeKey, matterId, clientId);
-  if (clash) apiName = `${apiName}_${Date.now().toString(36)}`;
+  assertUniqueCustomFieldName(db, {
+    label,
+    apiName,
+    appliesTo,
+  });
 
   // Contact/matter record-only fields are never "default on type"
   const allowDefault = !matterId && !clientId;
@@ -790,10 +849,19 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
   ).get(fieldId);
   if (!existing) throw new Error('field not found');
 
+  const appliesTo = normalizeAppliesTo(existing.applies_to || 'matter');
   let label = existing.label;
   if (patch.label !== undefined) {
     label = String(patch.label || '').trim();
     if (!label) throw new Error('label required');
+  }
+  if (normalizeFieldLabelKey(label) !== normalizeFieldLabelKey(existing.label)) {
+    assertUniqueCustomFieldName(db, {
+      label,
+      apiName: existing.api_name,
+      appliesTo,
+      excludeId: fieldId,
+    });
   }
 
   let fieldType = existing.field_type;
@@ -802,7 +870,6 @@ function updateCustomField(db, actor, fieldId, patch = {}) {
     if (!fieldTypes.isAllowedFieldType(fieldType)) {
       throw new Error('invalid fieldType');
     }
-    const appliesTo = normalizeAppliesTo(existing.applies_to || 'matter');
     if (!fieldTypes.isAllowedFieldTypeForAppliesTo(fieldType, appliesTo)) {
       throw new Error(
         appliesTo === 'time_entry'

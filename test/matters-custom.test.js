@@ -591,6 +591,69 @@ describe('matter search and record-based fields', () => {
     );
   });
 
+  it('rejects duplicate field labels across type, matter, and case variants', () => {
+    const pageA = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Dup Field A', openedOn: '2026-04-01',
+    });
+    const pageB = matterSvc.createMatter(db, admin, {
+      clientId: 1, name: 'Dup Field B', openedOn: '2026-04-02',
+    });
+
+    customFields.createCustomField(db, admin, {
+      label: 'Judge',
+      fieldType: 'text',
+      recordTypeKey: 'billable',
+    });
+
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'judge',
+        fieldType: 'text',
+        recordTypeKey: 'non_billable',
+      }),
+      /already exists/i
+    );
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'Judge',
+        fieldType: 'text',
+        matterId: pageA.matter.id,
+      }),
+      /already exists/i
+    );
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'Matter name',
+        fieldType: 'text',
+        recordTypeKey: 'billable',
+      }),
+      /already exists/i
+    );
+
+    customFields.createCustomField(db, admin, {
+      label: 'Local docket',
+      fieldType: 'text',
+      matterId: pageA.matter.id,
+    });
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'Local Docket',
+        fieldType: 'text',
+        matterId: pageB.matter.id,
+      }),
+      /already exists/i
+    );
+
+    // Same label is fine on a different object (contact vs matter)
+    const contactField = customFields.createCustomField(db, admin, {
+      label: 'Judge',
+      fieldType: 'text',
+      appliesTo: 'client',
+      recordTypeKey: 'client',
+    });
+    assert.equal(contactField.applies_to, 'client');
+  });
+
   it('only admins can add default matter fields; editors can add matter-only fields', () => {
     const attorney = db.prepare('SELECT * FROM users WHERE id=2').get();
     const page = matterSvc.createMatter(db, attorney, {
