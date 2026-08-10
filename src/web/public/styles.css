@@ -2267,11 +2267,24 @@ td .muted {
   min-width: 48rem;
 }
 
-.time-entries-table th:nth-child(3),
-.time-entries-table td:nth-child(3) {
+.time-entries-table .col-date {
+  width: 9.5rem;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.time-entries-table .col-hours {
+  width: 5.75rem;
+  white-space: nowrap;
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-entries-table .col-desc {
   min-width: 12rem;
   max-width: 22rem;
   word-break: break-word;
+  vertical-align: top;
 }
 
 .time-entries-table .inline-input {
@@ -2308,6 +2321,39 @@ td .muted {
 
 .time-entries-table select.inline-input {
   min-width: 8rem;
+}
+
+/* Keep Date + Hours on one aligned row in the time entry form. */
+.time-entry-date-hours {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.9rem 0.9rem;
+  align-items: start;
+}
+
+.time-entry-date-hours .time-entry-date,
+.time-entry-date-hours .time-entry-hours {
+  margin: 0;
+}
+
+.time-entry-date-hours .time-entry-tz-hint {
+  grid-column: 1 / -1;
+  margin: -0.35rem 0 0;
+}
+
+.time-entry-billable.check-inline {
+  margin-top: 1.65rem;
+  align-self: start;
+}
+
+@media (max-width: 640px) {
+  .time-entry-date-hours {
+    grid-template-columns: 1fr;
+  }
+
+  .time-entry-billable.check-inline {
+    margin-top: 0.25rem;
+  }
 }
 
 .stack { display: grid; gap: 0.85rem; }

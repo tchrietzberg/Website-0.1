@@ -5280,14 +5280,16 @@
       || state.user?.name
       || 'You';
     return `
-      <label>Date
-        <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
-        <span class="hint">Firm timezone · ${escapeHtml(firmTimeZoneLabel())}</span>
-      </label>
-      <label>Hours
-        <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
-          value="${escapeHtml(formHours)}" placeholder="0.25" required />
-      </label>
+      <div class="time-entry-date-hours span-all">
+        <label class="time-entry-date">Date
+          <input name="serviceDate" type="date" value="${escapeHtml(formDate)}" required />
+        </label>
+        <label class="time-entry-hours">Hours
+          <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
+            value="${escapeHtml(formHours)}" placeholder="0.25" required />
+        </label>
+        <p class="hint time-entry-tz-hint">Firm timezone · ${escapeHtml(firmTimeZoneLabel())}</p>
+      </div>
       <label>Timekeeper
         ${canSelectTk ? `
         <select name="timekeeperId">
@@ -5298,7 +5300,7 @@
         <input type="hidden" name="timekeeperId" value="${lockedId}" />
         <input type="text" value="${escapeHtml(selfName)}" disabled aria-label="Timekeeper" />`}
       </label>
-      <label class="check-inline span-all" style="align-self:center">
+      <label class="check-inline time-entry-billable">
         <input type="checkbox" name="billable" value="1" id="timeEntryBillable"
           ${formBillable && !billableLocked ? 'checked' : ''}
           ${billableLocked ? 'disabled' : ''} />
@@ -5588,18 +5590,18 @@
         const entryId = Number(e.id);
         return `
           <tr data-time-row="${entryId}">
-            <td>
+            <td class="col-date">
               <input class="inline-input" type="date" data-field="serviceDate"
                 value="${escapeHtml(String(e.service_date || '').slice(0, 10))}" />
             </td>
-            <td>
-              <textarea class="inline-input inline-desc" data-field="description" rows="2"
-                aria-label="Description">${escapeHtml(e.description || '')}</textarea>
-            </td>
-            <td>
+            <td class="col-hours">
               <input class="inline-input inline-hours" type="number" min="0.25" step="0.25"
                 inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
                 aria-label="Hours" />
+            </td>
+            <td class="col-desc">
+              <textarea class="inline-input inline-desc" data-field="description" rows="2"
+                aria-label="Description">${escapeHtml(e.description || '')}</textarea>
             </td>
             <td>
               <label class="check-inline">
@@ -5616,11 +5618,11 @@
       }
       return `
         <tr>
-          <td>${escapeHtml(e.service_date)}</td>
-          <td>${escapeHtml(e.description || '—')}
-            <div class="muted">${escapeHtml(timekeeperDisplayName(e))}</div></td>
-          <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
+          <td class="col-date">${escapeHtml(e.service_date)}</td>
+          <td class="col-hours"><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
             <span class="muted">hrs</span></td>
+          <td class="col-desc">${escapeHtml(e.description || '—')}
+            <div class="muted">${escapeHtml(timekeeperDisplayName(e))}</div></td>
           <td>${isBillable ? 'Yes' : '<span class="muted">No</span>'}</td>
           <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
           <td>${deletable
@@ -5730,9 +5732,9 @@
         <div class="table-wrap"><table class="time-entries-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Hours</th>
+              <th class="col-date">Date</th>
+              <th class="col-hours">Hours</th>
+              <th class="col-desc">Description</th>
               <th>Billable</th>
               <th>Status</th>
               <th></th>
@@ -6342,10 +6344,10 @@
         <div class="table-wrap"><table class="time-entries-table">
           <thead>
             <tr>
-              <th>Date</th>
+              <th class="col-date">Date</th>
+              <th class="col-hours">Hours</th>
               <th>Matter</th>
-              <th>Description</th>
-              <th>Hours</th>
+              <th class="col-desc">Description</th>
               <th>Billable</th>
               <th>Status</th>
               <th></th>
@@ -6382,9 +6384,14 @@
                 }
                 return `
               <tr data-time-row="${entryId}">
-                <td>
+                <td class="col-date">
                   <input class="inline-input" type="date" data-field="serviceDate"
                     value="${escapeHtml(String(e.service_date || '').slice(0, 10))}" />
+                </td>
+                <td class="col-hours">
+                  <input class="inline-input inline-hours" type="number" min="0.25" step="0.25"
+                    inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
+                    aria-label="Hours" />
                 </td>
                 <td>
                   <select class="inline-input" data-field="matterId" aria-label="Matter">
@@ -6394,14 +6401,9 @@
                       </option>`).join('')}
                   </select>
                 </td>
-                <td>
+                <td class="col-desc">
                   <textarea class="inline-input inline-desc" data-field="description" rows="2"
                     aria-label="Description">${escapeHtml(e.description || '')}</textarea>
-                </td>
-                <td>
-                  <input class="inline-input inline-hours" type="number" min="0.25" step="0.25"
-                    inputmode="decimal" data-field="hours" value="${escapeHtml(hoursVal)}"
-                    aria-label="Hours" />
                 </td>
                 <td>
                   <label class="check-inline">
@@ -6418,11 +6420,11 @@
               }
               return `
               <tr>
-                <td>${escapeHtml(e.service_date)}</td>
-                <td>${escapeHtml(matterName)}</td>
-                <td>${escapeHtml(e.description || '—')}</td>
-                <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
+                <td class="col-date">${escapeHtml(e.service_date)}</td>
+                <td class="col-hours"><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong>
                   <span class="muted">hrs</span></td>
+                <td>${escapeHtml(matterName)}</td>
+                <td class="col-desc">${escapeHtml(e.description || '—')}</td>
                 <td>${isBillable ? 'Yes' : '<span class="muted">No</span>'}</td>
                 <td><span class="pill" data-status="${escapeHtml(e.status)}">${escapeHtml(statusLabel)}</span></td>
                 <td>${deletable
