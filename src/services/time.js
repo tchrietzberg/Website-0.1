@@ -64,6 +64,15 @@ function resolveMinutes(input) {
 
 function createEntry(db, actor, input) {
   permissions.assertCanModifyRecords(db, actor, 'time');
+  permissions.assertCanWriteTimeFields(db, actor, {
+    serviceDate: input.serviceDate,
+    hours: input.hours,
+    rawMinutes: input.rawMinutes,
+    timekeeperId: input.timekeeperId,
+    billable: input.billable,
+    description: input.description,
+    customValues: input.customValues,
+  });
   const mode = assertRoundMode(getSetting(db, 'round_mode', 'up'));
   const defaultInc = Number(getSetting(db, 'round_increment_minutes', '15'));
   const increment = mode === 'none'
@@ -339,6 +348,16 @@ function updateEntry(db, actor, id, input = {}) {
     err.code = 'FORBIDDEN';
     throw err;
   }
+
+  const timePatch = {};
+  if (input.serviceDate !== undefined) timePatch.serviceDate = input.serviceDate;
+  if (input.hours !== undefined) timePatch.hours = input.hours;
+  if (input.rawMinutes !== undefined) timePatch.rawMinutes = input.rawMinutes;
+  if (input.timekeeperId !== undefined) timePatch.timekeeperId = input.timekeeperId;
+  if (input.billable !== undefined) timePatch.billable = input.billable;
+  if (input.description !== undefined) timePatch.description = input.description;
+  if (input.customValues !== undefined) timePatch.customValues = input.customValues;
+  permissions.assertCanWriteTimeFields(db, actor, timePatch);
 
   let timekeeperId = input.timekeeperId != null ? Number(input.timekeeperId) : entry.timekeeper_id;
   if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = entry.timekeeper_id;

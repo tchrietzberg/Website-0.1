@@ -498,17 +498,22 @@ function assertCanWriteRecords(db, actor, areaLabel = 'records') {
   assertCanModifyRecords(db, actor, objectKey);
 }
 
+function emptyRecordPageLayout() {
+  return { matter: {}, contact: {}, time: {} };
+}
+
 function getRecordPageLayout(db) {
   const raw = getSetting(db, RECORD_PAGE_LAYOUT_KEY, null);
-  if (!raw) return { matter: {}, contact: {} };
+  if (!raw) return emptyRecordPageLayout();
   try {
     const parsed = JSON.parse(raw) || {};
     return {
       matter: parsed.matter && typeof parsed.matter === 'object' ? parsed.matter : {},
       contact: parsed.contact && typeof parsed.contact === 'object' ? parsed.contact : {},
+      time: parsed.time && typeof parsed.time === 'object' ? parsed.time : {},
     };
   } catch {
-    return { matter: {}, contact: {} };
+    return emptyRecordPageLayout();
   }
 }
 
@@ -553,6 +558,9 @@ function setRecordPageLayout(db, actor, input = {}) {
     contact: input.contact !== undefined
       ? normalizeFieldAccessMap(input.contact)
       : current.contact,
+    time: input.time !== undefined
+      ? normalizeFieldAccessMap(input.time)
+      : current.time,
   };
   setSetting(db, RECORD_PAGE_LAYOUT_KEY, JSON.stringify(next));
   audit(db, {
@@ -563,16 +571,33 @@ function setRecordPageLayout(db, actor, input = {}) {
     detail: {
       matterFields: Object.keys(next.matter).length,
       contactFields: Object.keys(next.contact).length,
+      timeFields: Object.keys(next.time).length,
     },
   });
   return next;
 }
 
+function isAlwaysWritableFieldKey(fieldKey) {
+  const key = String(fieldKey || '');
+  return key === 'name'
+    || key === 'std:name'
+    || key === 'std:service_date'
+    || key === 'std:hours'
+    || key === 'std:description';
+}
+
+function objectKeyForFieldPage(page) {
+  if (page === 'contact') return 'contact';
+  if (page === 'time' || page === 'time_entry') return 'time';
+  return 'matter';
+}
+
 function getFieldAccess(db, page, role, fieldKey) {
   const key = String(fieldKey || '');
-  if (key === 'name' || key === 'std:name') return 'write';
+  if (isAlwaysWritableFieldKey(key)) return 'write';
   const layout = getRecordPageLayout(db);
-  const pageMap = layout[page] || {};
+  const pageKey = page === 'time_entry' ? 'time' : page;
+  const pageMap = layout[pageKey] || {};
   const row = pageMap[key];
   if (!row || typeof row !== 'object') return 'write';
   if (!isKnownRole(db, role)) return 'write';
@@ -580,13 +605,13 @@ function getFieldAccess(db, page, role, fieldKey) {
   return normalizeFieldMode(row[role], 'write');
 }
 
-/** Missing entries default to visible. Core name is always shown. */
+/** Missing entries default to visible. Core name / time date-hours-description stay shown. */
 function isFieldVisibleForProfile(db, page, role, fieldKey) {
   return getFieldAccess(db, page, role, fieldKey) !== 'hidden';
 }
 
 function isFieldWritableForRole(db, page, role, fieldKey) {
-  if (!canModifyAll(db, role, page === 'contact' ? 'contact' : 'matter')) return false;
+  if (!canModifyAll(db, role, objectKeyForFieldPage(page))) return false;
   return getFieldAccess(db, page, role, fieldKey) === 'write';
 }
 
@@ -606,6 +631,15 @@ const CONTACT_PATCH_FIELD_KEYS = {
   phone: 'phone',
   company: 'company',
   notes: 'notes',
+};
+
+const TIME_PATCH_FIELD_KEYS = {
+  serviceDate: 'std:service_date',
+  hours: 'std:hours',
+  rawMinutes: 'std:hours',
+  timekeeperId: 'std:timekeeper',
+  billable: 'std:billable',
+  description: 'std:description',
 };
 
 function assertCanWriteMatterFields(db, actor, patch = {}) {
@@ -636,6 +670,30 @@ function assertCanWriteContactFields(db, actor, patch = {}) {
   if (patch.customValues && typeof patch.customValues === 'object') {
     for (const fieldId of Object.keys(patch.customValues)) {
       if (!isFieldWritableForRole(db, 'contact', role, `cf:${fieldId}`)) {
+        throw new Error(`Field is read only for your role`);
+      }
+    }
+  }
+}
+
+function assertCanWriteTimeFields(db, actor, patch = {}) {
+  const role = actor?.role;
+  for (const [patchKey, fieldKey] of Object.entries(TIME_PATCH_FIELD_KEYS)) {
+    if (patch[patchKey] === undefined) continue;
+    // Logging time for yourself does not require Timekeeper field write access.
+    if (
+      patchKey === 'timekeeperId'
+      && Number(patch.timekeeperId) === Number(actor?.id)
+    ) {
+      continue;
+    }
+    if (!isFieldWritableForRole(db, 'time', role, fieldKey)) {
+      throw new Error(`Field is read only for your role`);
+    }
+  }
+  if (patch.customValues && typeof patch.customValues === 'object') {
+    for (const fieldId of Object.keys(patch.customValues)) {
+      if (!isFieldWritableForRole(db, 'time', role, `cf:${fieldId}`)) {
         throw new Error(`Field is read only for your role`);
       }
     }
@@ -705,6 +763,25 @@ function catalogContactLayoutFields(db) {
   return [...standards, ...customs];
 }
 
+function catalogTimeLayoutFields(db) {
+  const customFields = require('./customFields');
+  const standards = [
+    { key: 'std:service_date', label: 'Date', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:hours', label: 'Hours', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:timekeeper', label: 'Timekeeper', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:billable', label: 'Billable', kind: 'standard', group: 'Time entry fields' },
+    { key: 'std:description', label: 'Description', kind: 'standard', group: 'Time entry fields' },
+  ];
+  const customs = customFields.listCustomFields(db, { appliesTo: 'time_entry' }).map((f) => ({
+    key: `cf:${f.id}`,
+    label: f.label,
+    kind: 'custom',
+    group: 'Custom fields',
+    fieldId: f.id,
+  }));
+  return [...standards, ...customs];
+}
+
 function getPermissionsSettings(db) {
   const layout = getRecordPageLayout(db);
   const roles = listRoles(db);
@@ -719,6 +796,7 @@ function getPermissionsSettings(db) {
     recordPageLayout: layout, // compat
     matterFields: catalogMatterLayoutFields(db),
     contactFields: catalogContactLayoutFields(db),
+    timeFields: catalogTimeLayoutFields(db),
   };
 }
 
@@ -766,7 +844,9 @@ module.exports = {
   isFieldWritableForRole,
   assertCanWriteMatterFields,
   assertCanWriteContactFields,
+  assertCanWriteTimeFields,
   catalogMatterLayoutFields,
   catalogContactLayoutFields,
+  catalogTimeLayoutFields,
   getPermissionsSettings,
 };
