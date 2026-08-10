@@ -2495,7 +2495,12 @@
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
-  function matterListHtml(hits, { q = '', filterKey = '', filterValue = '' } = {}) {
+  function matterListHtml(hits, {
+    q = '',
+    filterKey = '',
+    filterValue = '',
+    canDelete = false,
+  } = {}) {
     const query = String(q || '').trim();
     const rows = hits || [];
     const filterBits = [];
@@ -2511,12 +2516,19 @@
       : (filterBits.length
         ? `No matters match ${filterBits.join(' · ')}`
         : 'No matters yet');
+    const colSpan = canDelete ? 5 : 4;
     return `
       <p class="muted matters-list-summary">${escapeHtml(summary)}</p>
       <div class="matters-list-scroll table-wrap">
         <table class="matters-list-table">
           <thead>
-            <tr><th>Name</th><th>Client</th><th>Status</th><th>Attorney</th></tr>
+            <tr>
+              <th>Name</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th>Attorney</th>
+              ${canDelete ? '<th class="matters-list-actions-col"></th>' : ''}
+            </tr>
           </thead>
           <tbody>
             ${rows.map((m) => `
@@ -2525,10 +2537,74 @@
                 <td>${escapeHtml(m.client_name || '—')}</td>
                 <td><span class="pill" data-status="${escapeHtml(m.status || '')}">${escapeHtml(formatMatterStatusLabel(m.status))}</span></td>
                 <td>${escapeHtml(m.attorney_name || '—')}</td>
-              </tr>`).join('') || '<tr><td colspan="4" class="muted">No matters to show</td></tr>'}
+                ${canDelete ? `
+                  <td class="matters-list-actions">
+                    <button type="button" class="danger" data-del-matter="${m.id}"
+                      data-del-matter-name="${escapeHtml(m.name || '')}">Delete</button>
+                  </td>` : ''}
+              </tr>`).join('') || `<tr><td colspan="${colSpan}" class="muted">No matters to show</td></tr>`}
           </tbody>
         </table>
       </div>`;
+  }
+
+  async function deleteMatterFromList(id, name) {
+    const sure = await confirmAction({
+      title: 'Delete this matter?',
+      message: `Are you sure you want to delete “${name || 'this matter'}”? This cannot be undone.`,
+      confirmLabel: 'Yes, delete matter',
+      cancelLabel: 'Cancel',
+    });
+    if (!sure) return false;
+    await api(`/api/matters/${id}`, { method: 'DELETE' });
+    if (Number(state.matterId) === Number(id)) {
+      state.matterId = null;
+      state.showPostCreateFields = false;
+      state.editingMatterFieldId = null;
+    }
+    await refreshRefs();
+    return true;
+  }
+
+  function wireMatterListRows(rootEl, { canDelete = false } = {}) {
+    if (!rootEl) return;
+    rootEl.querySelectorAll('[data-matter]').forEach((row) => {
+      row.onclick = () => {
+        openMatter(Number(row.dataset.matter));
+      };
+    });
+    if (!canDelete) return;
+    rootEl.querySelectorAll('[data-del-matter]').forEach((btn) => {
+      btn.onclick = async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const id = Number(btn.dataset.delMatter);
+        const name = btn.getAttribute('data-del-matter-name') || 'this matter';
+        if (!id) return;
+        try {
+          const deleted = await deleteMatterFromList(id, name);
+          if (!deleted) return;
+          if (stillOnView('matters')) await renderMatters();
+          else {
+            state.view = 'matters';
+            renderShell();
+            await renderMatters();
+          }
+        } catch (e) {
+          const resultsEl = $('#matterSearchResults');
+          if (resultsEl) {
+            const existing = resultsEl.querySelector('.matters-list-delete-error');
+            if (existing) existing.remove();
+            const banner = document.createElement('div');
+            banner.className = 'error matters-list-delete-error';
+            banner.textContent = e.message || 'Could not delete matter';
+            resultsEl.prepend(banner);
+          } else {
+            alert(e.message || 'Could not delete matter');
+          }
+        }
+      };
+    });
   }
 
   function matterFilterValueControlHtml(filterFields, filterKey, filterValue) {
@@ -2610,7 +2686,7 @@
   let matterLiveSearchTimer = null;
   let matterLiveSearchSeq = 0;
 
-  function wireMatterLiveSearch(filterFields = null) {
+  function wireMatterLiveSearch(filterFields = null, { canDelete = false } = {}) {
     const form = $('#matterSearch');
     const input = form?.querySelector('input[name="q"]');
     const resultsEl = $('#matterSearchResults');
@@ -2618,11 +2694,7 @@
     if (!form || !input || !resultsEl) return;
 
     const paintRows = () => {
-      resultsEl.querySelectorAll('[data-matter]').forEach((row) => {
-        row.onclick = () => {
-          openMatter(Number(row.dataset.matter));
-        };
-      });
+      wireMatterListRows(resultsEl, { canDelete });
     };
 
     const readFilters = () => {
@@ -2668,7 +2740,7 @@
         const params = matterBrowseQueryParams(effective);
         const hits = await api(`/api/matters?${params}`);
         if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
-        resultsEl.innerHTML = matterListHtml(hits, effective);
+        resultsEl.innerHTML = matterListHtml(hits, { ...effective, canDelete });
         paintRows();
       } catch (e) {
         if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
@@ -3974,6 +4046,7 @@
     }
     const browseParams = matterBrowseQueryParams(state.matterSearch);
     const canEdit = canCreateMatter(state.user) && roleCanModify('matter');
+    const canDeleteMatters = roleCanDelete('matter');
 
     const showCreate = canEdit && state.showCreateMatter;
     let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
@@ -4136,18 +4209,22 @@
             <button type="button" id="clearSearch">Clear</button>
           </form>
           ${matterFilterBarHtml(filterFields, state.matterSearch)}
-          <p class="hint">Browse all matters below. Filter by Status or any custom field (for example a Status picklist), and scroll the list.</p>
+          <p class="hint">Browse all matters below. Filter by Status or any custom field (for example a Status picklist), and scroll the list.${
+            canDeleteMatters
+              ? ' Roles with Matters → Delete can remove a matter from this list.'
+              : ''
+          }</p>
         </div>
 
         <div class="page-section">
           <h2>Matters</h2>
           <div id="matterSearchResults">
-            ${matterListHtml(hits, state.matterSearch)}
+            ${matterListHtml(hits, { ...state.matterSearch, canDelete: canDeleteMatters })}
           </div>
         </div>
       </div>`);
 
-    wireMatterLiveSearch(filterFields);
+    wireMatterLiveSearch(filterFields, { canDelete: canDeleteMatters });
     const clearCreate = $('#clearCreateMatter');
     if (clearCreate) {
       clearCreate.onclick = async () => {
@@ -4250,11 +4327,7 @@
       }
     }
 
-    main.querySelectorAll('[data-matter]').forEach((row) => {
-      row.onclick = () => {
-        openMatter(Number(row.dataset.matter));
-      };
-    });
+    wireMatterListRows($('#matterSearchResults') || main, { canDelete: canDeleteMatters });
 
     const newMatterForm = $('#newMatterForm');
     if (newMatterForm) {
@@ -9393,7 +9466,7 @@
       id: 'matter',
       label: 'Create a matter',
       keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case', 'search matters', 'filter matters', 'matter list'],
-      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name, complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it.',
+      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name, complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it. Roles with Matters → Delete can delete a matter from that list.',
       links: [
         { label: 'Go to Create Matter', target: 'create-matter' },
         { label: 'Browse Matters', target: 'matters' },
