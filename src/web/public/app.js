@@ -2420,8 +2420,7 @@
             <option value="status" ${filterKey === 'status' ? 'selected' : ''}>Status</option>
             ${custom.map((f) => {
               const key = `cf:${f.id}`;
-              const typeHint = f.recordTypeKey ? ` (${f.recordTypeKey})` : '';
-              return `<option value="${escapeHtml(key)}" ${filterKey === key ? 'selected' : ''}>${escapeHtml(f.label)}${escapeHtml(typeHint)}</option>`;
+              return `<option value="${escapeHtml(key)}" ${filterKey === key ? 'selected' : ''}>${escapeHtml(f.label)}</option>`;
             }).join('')}
           </select>
         </label>
@@ -8067,9 +8066,7 @@
             <select id="mnfAddField" ${draft.enabled ? '' : 'disabled'}>
               ${addable.length
                 ? addable.map((f) => `
-                  <option value="${f.id}">${escapeHtml(f.label)}${
-                    f.recordTypeKey ? ` (${escapeHtml(f.recordTypeKey)})` : ''
-                  }</option>`).join('')
+                  <option value="${f.id}">${escapeHtml(f.label)}</option>`).join('')
                 : '<option value="">No more fields available</option>'}
             </select>
           </label>
