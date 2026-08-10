@@ -945,7 +945,7 @@
         <div class="span-all" data-default-field-wrap ${showDefault ? '' : 'hidden'}>
           ${defaultFieldCheckboxHtml(isDefault, defaultLabel)}
         </div>
-        <div data-required-field-wrap>
+        <div class="span-all" data-required-field-wrap>
           ${requiredFieldCheckboxHtml(required, requiredLabel)}
         </div>
         <div class="row-actions span-all">
@@ -4690,7 +4690,10 @@
         <span class="hint">Hold Ctrl/Cmd to select multiple</span>`;
     }
     if (type === 'checkbox') {
-      return `<input type="checkbox" name="${name}" value="1" ${disabled} ${req} ${val === '1' || val === 'true' ? 'checked' : ''} />`;
+      return `<span class="field-checkbox">
+        <input type="checkbox" name="${name}" value="1" ${disabled} ${req}
+          ${val === '1' || val === 'true' || val === true || val === 1 ? 'checked' : ''} />
+      </span>`;
     }
     if (type === 'geolocation') {
       const [lat = '', lng = ''] = String(val || '').split(',').map((p) => p.trim());
