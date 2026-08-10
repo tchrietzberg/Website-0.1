@@ -2723,7 +2723,10 @@ button.primary.login-submit {
   animation: confirm-fade 0.18s ease-out;
 }
 .confirm-dialog {
-  width: min(100%, 26rem);
+  width: min(100%, 34rem);
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -2739,12 +2742,34 @@ button.primary.login-submit {
   font-weight: 650;
   color: var(--ink);
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
-.confirm-dialog p {
+.confirm-dialog #confirmMessage {
   margin: 0 0 1.1rem;
+  max-width: 100%;
+}
+.confirm-dialog #confirmMessage > p {
+  margin: 0;
   color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.45;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.confirm-dialog .confirm-name {
+  display: block;
+  margin: 0.65rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: var(--accent-soft, #e8eef7);
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .confirm-actions {
   display: -webkit-flex;
