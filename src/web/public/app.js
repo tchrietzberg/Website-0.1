@@ -3357,11 +3357,6 @@
     }
   }
 
-  function firmTimeZoneLabel() {
-    return state.settings?.firmTimezoneLabel
-      || String(firmTimeZone()).replace(/_/g, ' ');
-  }
-
   function listBrowserTimeZoneGroups() {
     let zones = [];
     try {
@@ -5393,7 +5388,6 @@
           <input name="hours" type="number" min="0.25" step="0.25" inputmode="decimal"
             value="${escapeHtml(formHours)}" placeholder="0.25" required />
         </label>
-        <p class="hint time-entry-tz-hint">Firm timezone · ${escapeHtml(firmTimeZoneLabel())}</p>
       </div>
       ${showTimekeeper ? `
       <label>Timekeeper
