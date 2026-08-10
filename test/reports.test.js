@@ -38,7 +38,14 @@ describe('matters report', () => {
     assert.deepEqual(Object.keys(rows[0]), ['Matter']);
   });
 
-  it('widens inverted date ranges instead of excluding entries', () => {
+  it('swaps inverted date ranges so the full window is kept', () => {
+    timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-08-09',
+      rawMinutes: 30,
+      description: 'Earlier day',
+    });
     timeSvc.createEntry(db, para, {
       matterId: 1,
       timekeeperId: 2,
@@ -50,8 +57,33 @@ describe('matters report', () => {
       dateFrom: '2026-08-10',
       dateTo: '2026-08-09',
     });
-    assert.equal(detail.totals.minutes, 60);
-    assert.equal(detail.timekeepers[0].entries[0].description, 'TZ skew entry');
+    assert.equal(detail.totals.minutes, 90);
+    assert.equal(detail.header.date_from, '2026-08-09');
+    assert.equal(detail.header.date_to, '2026-08-10');
+    assert.equal(detail.timekeepers[0].entries.length, 2);
+  });
+
+  it('keeps separate summary rows when a timekeeper rate changes', () => {
+    db.prepare("INSERT INTO rates(scope,scope_id,amount_cents,effective_date) VALUES ('timekeeper',2,30000,'2026-04-01')").run();
+    timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-03-15',
+      rawMinutes: 60,
+      description: 'Old rate',
+    });
+    timeSvc.createEntry(db, para, {
+      matterId: 1,
+      timekeeperId: 2,
+      serviceDate: '2026-04-15',
+      rawMinutes: 60,
+      description: 'New rate',
+    });
+    const summary = reports.lodestarMatterSummary(db, 1);
+    assert.equal(summary.summary.length, 2);
+    const rates = summary.summary.map((r) => r.rate_cents).sort((a, b) => a - b);
+    assert.deepEqual(rates, [20000, 30000]);
+    assert.equal(summary.totals.amount_cents, 50000);
   });
 
   it('includes non-billable time in lodestar at $0', () => {
@@ -102,11 +134,13 @@ describe('matters report', () => {
     assert.match(pdfText, /Lodestar Detail/);
     assert.match(pdfText, /Timekeeper/);
     assert.match(pdfText, /Research/);
-    assert.doesNotMatch(pdfText, /Alpha Matter/);
+    assert.match(pdfText, /Alpha Matter/);
+    assert.match(pdfText, /Period:/);
 
     const summaryPdf = reports.lodestarMatterSummaryPdf(db, 1);
     assert.match(summaryPdf.toString('latin1'), /Alpha Matter/);
     assert.match(summaryPdf.toString('latin1'), /Timekeeper Summary/);
+    assert.match(summaryPdf.toString('latin1'), /Period:/);
 
     const xlsx = reports.lodestarMatterDetailXlsx(db, 1);
     assert.ok(xlsx[0] === 0x50 && xlsx[1] === 0x4b);

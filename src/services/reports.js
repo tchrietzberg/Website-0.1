@@ -18,11 +18,26 @@ function normalizeReportDates(opts = {}) {
   let dateTo = opts.dateTo ? String(opts.dateTo).slice(0, 10) : null;
   if (dateFrom && !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) dateFrom = null;
   if (dateTo && !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) dateTo = null;
-  // Timezone skew can briefly invert defaults; widen instead of failing empty.
+  // Timezone / UI skew can invert From/To — swap so the full range is kept.
   if (dateFrom && dateTo && dateFrom > dateTo) {
-    dateTo = dateFrom;
+    const tmp = dateFrom;
+    dateFrom = dateTo;
+    dateTo = tmp;
   }
   return { dateFrom, dateTo };
+}
+
+function periodLabel(dateFrom, dateTo) {
+  if (dateFrom && dateTo) return `${dateFrom} → ${dateTo}`;
+  if (dateFrom) return `From ${dateFrom}`;
+  if (dateTo) return `Through ${dateTo}`;
+  return 'All dates';
+}
+
+function pad(value, width, align = 'left') {
+  const s = String(value ?? '');
+  if (s.length >= width) return s.slice(0, width);
+  return align === 'right' ? s.padStart(width) : s.padEnd(width);
 }
 
 function matterHeader(db, matterId) {
@@ -49,7 +64,7 @@ function matterHeader(db, matterId) {
 function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } = {}) {
   const range = normalizeReportDates({ dateFrom, dateTo });
   // Include billable and non-billable time so every saved entry appears.
-  // Non-billable lines keep hours but charge $0.
+  // Non-billable lines keep hours but charge $0. Rejected entries stay out.
   const entries = db.prepare(`
     SELECT te.*, u.name AS timekeeper_name, u.role AS timekeeper_role,
            m.number AS matter_number, m.name AS matter_name, m.status AS matter_status,
@@ -64,7 +79,7 @@ function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } 
       AND (? IS NULL OR te.matter_id = ?)
       AND (? IS NULL OR te.service_date >= ?)
       AND (? IS NULL OR te.service_date <= ?)
-    ORDER BY m.number, u.name, te.service_date, te.id
+    ORDER BY m.number COLLATE NOCASE, u.name COLLATE NOCASE, te.service_date, te.id
   `).all(
     matterId, matterId,
     range.dateFrom, range.dateFrom,
@@ -86,15 +101,19 @@ function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } 
       amount = amountFromMinutes(e.rounded_minutes, rateCents);
     }
     return {
+      entry_id: e.id,
+      matter_id: e.mid,
       matter_number: e.matter_number,
       matter_name: e.matter_name,
       matter_status: e.matter_status,
       client_name: e.client_name || '',
       attorney_name: e.attorney_name || '',
       timekeeper: e.timekeeper_name,
+      timekeeper_id: e.timekeeper_id,
       role: roleLabel(e.timekeeper_role),
       service_date: e.service_date,
       description: e.description,
+      status: e.status,
       hours: e.rounded_minutes / 60,
       minutes: e.rounded_minutes,
       rate_cents: rateCents,
@@ -106,73 +125,143 @@ function lodestarDetail(db, { matterId = null, dateFrom = null, dateTo = null } 
   });
 }
 
-function lodestarSummary(db, { matterId = null, dateFrom = null, dateTo = null } = {}) {
-  const detail = lodestarDetail(db, { matterId, dateFrom, dateTo });
+function summarizeLodestarRows(detail) {
   const map = new Map();
   for (const row of detail) {
-    const key = `${row.matter_number}|${row.timekeeper}|${row.rate_cents}`;
+    // Keep separate rows when the effective rate changes mid-period.
+    const key = [
+      row.matter_number,
+      row.timekeeper_id || row.timekeeper,
+      row.rate_cents,
+      row.billable ? 1 : 0,
+    ].join('|');
     const cur = map.get(key) || {
       matter_number: row.matter_number,
       matter_name: row.matter_name,
       client_name: row.client_name,
+      attorney_name: row.attorney_name || '',
       timekeeper: row.timekeeper,
       role: row.role,
       rate_cents: row.rate_cents,
+      billable: row.billable ? 1 : 0,
+      entry_count: 0,
       minutes: 0,
       amount_cents: 0,
     };
+    cur.entry_count += 1;
     cur.minutes += row.minutes;
     cur.amount_cents += row.amount_cents;
     map.set(key, cur);
   }
-  return [...map.values()].map((r) => ({ ...r, hours: r.minutes / 60 }));
+  return [...map.values()]
+    .map((r) => ({ ...r, hours: r.minutes / 60 }))
+    .sort((a, b) => {
+      const m = String(a.matter_number || '').localeCompare(String(b.matter_number || ''));
+      if (m) return m;
+      const t = String(a.timekeeper || '').localeCompare(String(b.timekeeper || ''));
+      if (t) return t;
+      return (b.rate_cents || 0) - (a.rate_cents || 0);
+    });
 }
 
-/** Structured lodestar matter detail (demo-style grouping by timekeeper). */
+function lodestarTotals(detail) {
+  return detail.reduce((acc, row) => {
+    acc.entry_count += 1;
+    acc.minutes += row.minutes || 0;
+    acc.amount_cents += row.amount_cents || 0;
+    if (row.billable) {
+      acc.billable_minutes += row.minutes || 0;
+      acc.billable_amount_cents += row.amount_cents || 0;
+    } else {
+      acc.nonbillable_minutes += row.minutes || 0;
+    }
+    return acc;
+  }, {
+    entry_count: 0,
+    minutes: 0,
+    hours: 0,
+    amount_cents: 0,
+    billable_minutes: 0,
+    billable_hours: 0,
+    billable_amount_cents: 0,
+    nonbillable_minutes: 0,
+    nonbillable_hours: 0,
+  });
+}
+
+function finalizeTotals(totals) {
+  return {
+    ...totals,
+    hours: (totals.minutes || 0) / 60,
+    billable_hours: (totals.billable_minutes || 0) / 60,
+    nonbillable_hours: (totals.nonbillable_minutes || 0) / 60,
+  };
+}
+
+function lodestarSummary(db, { matterId = null, dateFrom = null, dateTo = null } = {}) {
+  const range = normalizeReportDates({ dateFrom, dateTo });
+  return summarizeLodestarRows(lodestarDetail(db, { matterId, ...range }));
+}
+
+/** Structured lodestar matter detail (grouped by timekeeper, rates kept distinct in summary). */
 function lodestarMatterDetail(db, matterId, opts = {}) {
   if (!matterId) throw new Error('matterId required');
-  const header = matterHeader(db, matterId);
-  const detail = lodestarDetail(db, { matterId, ...normalizeReportDates(opts) });
+  const range = normalizeReportDates(opts);
+  const header = {
+    ...matterHeader(db, matterId),
+    date_from: range.dateFrom,
+    date_to: range.dateTo,
+    period: periodLabel(range.dateFrom, range.dateTo),
+  };
+  const detail = lodestarDetail(db, { matterId, ...range });
   const groups = new Map();
   for (const row of detail) {
     const cur = groups.get(row.timekeeper) || {
       timekeeper: row.timekeeper,
       role: row.role,
       rate_cents: row.rate_cents,
+      rates: new Set(),
       entries: [],
       minutes: 0,
       amount_cents: 0,
+      billable_minutes: 0,
+      nonbillable_minutes: 0,
     };
     cur.entries.push(row);
     cur.minutes += row.minutes;
     cur.amount_cents += row.amount_cents;
-    // Prefer latest non-zero rate seen
-    if (row.rate_cents) cur.rate_cents = row.rate_cents;
+    if (row.billable) cur.billable_minutes += row.minutes;
+    else cur.nonbillable_minutes += row.minutes;
+    if (row.rate_cents) cur.rates.add(row.rate_cents);
+    // Display rate: sole rate, else 0 to signal mixed rates (summary rows stay precise).
+    cur.rate_cents = cur.rates.size === 1 ? [...cur.rates][0] : 0;
     groups.set(row.timekeeper, cur);
   }
-  const timekeepers = [...groups.values()];
-  const totals = timekeepers.reduce(
-    (acc, g) => ({
-      minutes: acc.minutes + g.minutes,
-      amount_cents: acc.amount_cents + g.amount_cents,
-    }),
-    { minutes: 0, amount_cents: 0 }
-  );
+  const timekeepers = [...groups.values()].map((g) => {
+    const { rates, ...rest } = g;
+    return {
+      ...rest,
+      mixed_rates: rates.size > 1,
+      rate_count: rates.size,
+    };
+  });
+  const totals = finalizeTotals(lodestarTotals(detail));
+  const summary = summarizeLodestarRows(detail).map((r) => ({
+    timekeeper: r.timekeeper,
+    role: r.role,
+    hours: r.hours,
+    minutes: r.minutes,
+    rate_cents: r.rate_cents,
+    amount_cents: r.amount_cents,
+    billable: r.billable,
+    entry_count: r.entry_count,
+  }));
   return {
     header,
     timekeepers,
-    totals: {
-      ...totals,
-      hours: totals.minutes / 60,
-    },
-    summary: timekeepers.map((g) => ({
-      timekeeper: g.timekeeper,
-      role: g.role,
-      hours: g.minutes / 60,
-      minutes: g.minutes,
-      rate_cents: g.rate_cents,
-      amount_cents: g.amount_cents,
-    })),
+    totals,
+    summary,
+    empty: detail.length === 0,
   };
 }
 
@@ -192,31 +281,40 @@ function hoursLabel(minutes) {
 
 function lodestarMatterDetailPdf(db, matterId, opts = {}) {
   const report = lodestarMatterDetail(db, matterId, opts);
+  const { header } = report;
   const lines = [
-    'Date       Timekeeper                 Hours     Amount  Description',
-    '--------------------------------------------------------------------------',
+    `Matter: ${header.matter_number} — ${header.client_name} — ${header.matter_name}`,
+    `Status: ${header.status}${header.attorney_name ? ` · Attorney: ${header.attorney_name}` : ''}`,
+    `Period: ${header.period}`,
+    '',
+    `${pad('Date', 10)} ${pad('Timekeeper', 18)} ${pad('Hours', 7, 'right')} ${pad('Amount', 10, 'right')}  Description`,
+    '-'.repeat(90),
   ];
   const entries = report.timekeepers.flatMap((g) => g.entries || []);
   if (!entries.length) {
-    lines.push('No time entries yet.');
+    lines.push('No time entries in this period.');
   } else {
     for (const e of entries) {
-      const date = String(e.service_date || '').padEnd(10);
-      const who = String(e.timekeeper || '').slice(0, 24).padEnd(24);
-      const hours = hoursLabel(e.minutes).padStart(7);
-      const amount = formatCents(e.amount_cents).padStart(10);
-      const nb = e.billable ? '' : ' [non-billable]';
-      const desc = String(`${e.description || ''}${nb}`).slice(0, 40);
-      lines.push(`${date} ${who} ${hours} ${amount}  ${desc}`);
+      const nb = e.billable ? '' : ' [NB]';
+      const desc = String(`${e.description || ''}${nb}`);
+      lines.push(
+        `${pad(e.service_date, 10)} ${pad(e.timekeeper, 18)} ${pad(hoursLabel(e.minutes), 7, 'right')} ${pad(formatCents(e.amount_cents), 10, 'right')}  ${desc}`
+      );
     }
-    lines.push('--------------------------------------------------------------------------');
+    lines.push('-'.repeat(90));
     lines.push(
-      `Total${''.padEnd(35)}${hoursLabel(report.totals.minutes).padStart(7)} ${formatCents(report.totals.amount_cents).padStart(10)}`
+      `${pad('Total', 29)} ${pad(hoursLabel(report.totals.minutes), 7, 'right')} ${pad(formatCents(report.totals.amount_cents), 10, 'right')}`
     );
+    if (report.totals.nonbillable_minutes) {
+      lines.push(
+        `Billable ${hoursLabel(report.totals.billable_minutes)} · Non-billable ${hoursLabel(report.totals.nonbillable_minutes)} (at $0)`
+      );
+    }
   }
   return buildTextPdf({
     title: 'Lodestar Detail',
     lines,
+    wrapWidth: 100,
   });
 }
 
@@ -226,40 +324,53 @@ function lodestarMatterSummaryPdf(db, matterId, opts = {}) {
   const lines = [
     `Matter: ${header.matter_number} — ${header.client_name} — ${header.matter_name} — ${header.status}`,
     header.attorney_name ? `Responsible Attorney: ${header.attorney_name}` : null,
+    `Period: ${header.period}`,
     '',
-    'Timekeeper Summary',
-    'Name                      Role               Rate       Hours     Lodestar',
-    '--------------------------------------------------------------------------',
+    'Timekeeper Summary (one row per rate)',
+    `${pad('Name', 22)} ${pad('Role', 14)} ${pad('Billable', 8)} ${pad('Rate', 10, 'right')} ${pad('Hours', 8, 'right')} ${pad('Lodestar', 12, 'right')}`,
+    '-'.repeat(90),
   ];
-  for (const s of report.summary) {
-    const name = String(s.timekeeper || '').slice(0, 24).padEnd(24);
-    const role = String(s.role || '').slice(0, 16).padEnd(16);
-    const rate = formatCents(s.rate_cents).padStart(10);
-    const hours = hoursLabel(s.minutes).padStart(8);
-    const lodestar = formatCents(s.amount_cents).padStart(12);
-    lines.push(`${name} ${role} ${rate} ${hours} ${lodestar}`);
+  if (!report.summary.length) {
+    lines.push('No time entries in this period.');
+  } else {
+    for (const s of report.summary) {
+      lines.push(
+        `${pad(s.timekeeper, 22)} ${pad(s.role, 14)} ${pad(s.billable ? 'Yes' : 'No', 8)} ${pad(formatCents(s.rate_cents), 10, 'right')} ${pad(hoursLabel(s.minutes), 8, 'right')} ${pad(formatCents(s.amount_cents), 12, 'right')}`
+      );
+    }
+    lines.push('-'.repeat(90));
+    lines.push(
+      `${pad('Total', 56)} ${pad(hoursLabel(report.totals.minutes), 8, 'right')} ${pad(formatCents(report.totals.amount_cents), 12, 'right')}`
+    );
+    lines.push(
+      `Entries: ${report.totals.entry_count} · Billable hours: ${hoursLabel(report.totals.billable_minutes)} · Non-billable: ${hoursLabel(report.totals.nonbillable_minutes)}`
+    );
   }
-  lines.push('--------------------------------------------------------------------------');
-  lines.push(
-    `Total${''.padEnd(52)}${hoursLabel(report.totals.minutes).padStart(8)} ${formatCents(report.totals.amount_cents).padStart(12)}`
-  );
   return buildTextPdf({
     title: `Lodestar Matter Summary — ${header.matter_name}`,
     lines: lines.filter((l) => l != null),
+    wrapWidth: 100,
   });
 }
 
 function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
   const report = lodestarMatterDetail(db, matterId, opts);
+  const { header } = report;
   const rows = [
     [{ v: 'Lodestar Detail', t: 's' }],
+    [{ v: 'Matter', t: 's' }, { v: `${header.matter_number} — ${header.matter_name}`, t: 's' }],
+    [{ v: 'Client', t: 's' }, { v: header.client_name, t: 's' }],
+    [{ v: 'Period', t: 's' }, { v: header.period, t: 's' }],
     [],
     [
       { v: 'Date', t: 's' },
       { v: 'Timekeeper', t: 's' },
+      { v: 'Role', t: 's' },
       { v: 'Hours', t: 's' },
+      { v: 'Rate', t: 's' },
       { v: 'Amount', t: 's' },
       { v: 'Billable', t: 's' },
+      { v: 'Status', t: 's' },
       { v: 'Description', t: 's' },
     ],
   ];
@@ -268,9 +379,12 @@ function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
     rows.push([
       { v: e.service_date || '', t: 's' },
       { v: e.timekeeper || '', t: 's' },
+      { v: e.role || '', t: 's' },
       { v: e.hours, t: 'n' },
+      { v: e.rate_cents / 100, t: 'currency' },
       { v: e.amount_cents / 100, t: 'currency' },
       { v: e.billable ? 'Yes' : 'No', t: 's' },
+      { v: e.status || '', t: 's' },
       { v: e.description || '', t: 's' },
     ]);
   }
@@ -278,10 +392,13 @@ function lodestarMatterDetailXlsx(db, matterId, opts = {}) {
   rows.push([
     { v: 'Total', t: 's' },
     { v: '', t: 's' },
+    { v: '', t: 's' },
     { v: report.totals.hours, t: 'n' },
+    { v: '', t: 's' },
     { v: report.totals.amount_cents / 100, t: 'currency' },
     { v: '', t: 's' },
     { v: '', t: 's' },
+    { v: `${report.totals.entry_count} entries`, t: 's' },
   ]);
   return buildXlsx(rows);
 }
@@ -296,32 +413,99 @@ function lodestarMatterSummaryXlsx(db, matterId, opts = {}) {
     [{ v: 'Client', t: 's' }, { v: header.client_name, t: 's' }],
     [{ v: 'Status', t: 's' }, { v: header.status, t: 's' }],
     [{ v: 'Responsible attorney', t: 's' }, { v: header.attorney_name, t: 's' }],
+    [{ v: 'Period', t: 's' }, { v: header.period, t: 's' }],
     [],
     [
       { v: 'Name', t: 's' },
       { v: 'Role', t: 's' },
+      { v: 'Billable', t: 's' },
       { v: 'Rate', t: 's' },
       { v: 'Hours', t: 's' },
       { v: 'Lodestar', t: 's' },
+      { v: 'Entries', t: 's' },
     ],
   ];
   for (const s of report.summary) {
     rows.push([
       { v: s.timekeeper, t: 's' },
       { v: s.role, t: 's' },
+      { v: s.billable ? 'Yes' : 'No', t: 's' },
       { v: s.rate_cents / 100, t: 'currency' },
       { v: s.hours, t: 'n' },
       { v: s.amount_cents / 100, t: 'currency' },
+      { v: s.entry_count || 0, t: 'n' },
     ]);
   }
   rows.push([
     { v: 'Total', t: 's' },
     { v: '', t: 's' },
     { v: '', t: 's' },
+    { v: '', t: 's' },
     { v: report.totals.hours, t: 'n' },
     { v: report.totals.amount_cents / 100, t: 'currency' },
+    { v: report.totals.entry_count, t: 'n' },
   ]);
   return buildXlsx(rows);
+}
+
+/** Columnar firm Lodestar PDFs (stronger than key/value dumps). */
+function lodestarFirmSummaryPdf(db, opts = {}) {
+  const rows = lodestarSummary(db, opts);
+  const range = normalizeReportDates(opts);
+  const lines = [
+    `Period: ${periodLabel(range.dateFrom, range.dateTo)}`,
+    '',
+    `${pad('Matter', 12)} ${pad('Timekeeper', 18)} ${pad('Rate', 10, 'right')} ${pad('Hours', 8, 'right')} ${pad('Amount', 12, 'right')} ${pad('NB', 3)}`,
+    '-'.repeat(90),
+  ];
+  if (!rows.length) {
+    lines.push('No time entries in this period.');
+  } else {
+    let minutes = 0;
+    let amount = 0;
+    for (const r of rows) {
+      minutes += r.minutes || 0;
+      amount += r.amount_cents || 0;
+      lines.push(
+        `${pad(r.matter_number, 12)} ${pad(r.timekeeper, 18)} ${pad(formatCents(r.rate_cents), 10, 'right')} ${pad(hoursLabel(r.minutes), 8, 'right')} ${pad(formatCents(r.amount_cents), 12, 'right')} ${r.billable ? '  ' : 'NB'}`
+      );
+    }
+    lines.push('-'.repeat(90));
+    lines.push(
+      `${pad('Total', 42)} ${pad(hoursLabel(minutes), 8, 'right')} ${pad(formatCents(amount), 12, 'right')}`
+    );
+  }
+  return buildTextPdf({ title: 'Lodestar Summary (all matters)', lines, wrapWidth: 100 });
+}
+
+function lodestarFirmDetailPdf(db, opts = {}) {
+  const rows = lodestarDetail(db, { ...normalizeReportDates(opts), matterId: opts.matterId || null });
+  const range = normalizeReportDates(opts);
+  const lines = [
+    `Period: ${periodLabel(range.dateFrom, range.dateTo)}`,
+    '',
+    `${pad('Date', 10)} ${pad('Matter', 12)} ${pad('Timekeeper', 16)} ${pad('Hours', 7, 'right')} ${pad('Amount', 10, 'right')} Description`,
+    '-'.repeat(95),
+  ];
+  if (!rows.length) {
+    lines.push('No time entries in this period.');
+  } else {
+    let minutes = 0;
+    let amount = 0;
+    for (const r of rows) {
+      minutes += r.minutes || 0;
+      amount += r.amount_cents || 0;
+      const nb = r.billable ? '' : ' [NB]';
+      lines.push(
+        `${pad(r.service_date, 10)} ${pad(r.matter_number, 12)} ${pad(r.timekeeper, 16)} ${pad(hoursLabel(r.minutes), 7, 'right')} ${pad(formatCents(r.amount_cents), 10, 'right')} ${r.description || ''}${nb}`
+      );
+    }
+    lines.push('-'.repeat(95));
+    lines.push(
+      `${pad('Total', 40)} ${pad(hoursLabel(minutes), 7, 'right')} ${pad(formatCents(amount), 10, 'right')}`
+    );
+  }
+  return buildTextPdf({ title: 'Lodestar Detail (all matters)', lines, wrapWidth: 100 });
 }
 
 function wipReport(db) {
@@ -496,6 +680,7 @@ function toPdf(rows, { title = 'Report', currencyKeys = [] } = {}) {
 }
 
 module.exports = {
+  normalizeReportDates,
   lodestarDetail,
   lodestarSummary,
   lodestarMatterDetail,
@@ -504,6 +689,8 @@ module.exports = {
   lodestarMatterSummaryPdf,
   lodestarMatterDetailXlsx,
   lodestarMatterSummaryXlsx,
+  lodestarFirmSummaryPdf,
+  lodestarFirmDetailPdf,
   mattersReport,
   wipReport,
   arAging,

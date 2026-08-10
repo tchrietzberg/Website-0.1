@@ -483,10 +483,12 @@ function createCreditNote(db, actor, invoiceId, amountCents, reason) {
 
 function getInvoice(db, id) {
   const invoice = db.prepare(`
-    SELECT i.*, m.number AS matter_number, m.name AS matter_name, c.name AS client_name
+    SELECT i.*, m.number AS matter_number, m.name AS matter_name, c.name AS client_name,
+           atty.name AS attorney_name
     FROM invoices i
     JOIN matters m ON m.id = i.matter_id
     JOIN clients c ON c.id = m.client_id
+    LEFT JOIN users atty ON atty.id = m.responsible_attorney_id
     WHERE i.id = ?
   `).get(id);
   if (!invoice) return null;

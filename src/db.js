@@ -32,6 +32,7 @@ function migrate(db) {
   migrateAllowInvoiceDelete(db);
   migrateAuditHardening(db);
   migrateMfa(db);
+  migrateInvoiceTemplates(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -117,6 +118,11 @@ function migrateAuditHardening(db) {
 function migrateMfa(db) {
   const mfa = require('./mfa');
   mfa.ensureMfaSchema(db);
+}
+
+function migrateInvoiceTemplates(db) {
+  const invoiceTemplates = require('./services/invoiceTemplates');
+  invoiceTemplates.ensureInvoiceTemplatesTable(db);
 }
 
 /** Matter vs time-entry custom fields + time value storage. */
