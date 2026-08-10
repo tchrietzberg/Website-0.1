@@ -5363,6 +5363,8 @@
         <div id="matterTimeListMsg" style="margin-top:.75rem"></div>
       </div>` : ''}
 
+      ${canEdit ? matterOnlyFieldsPanelHtml() : ''}
+
       <details class="onedrive-collapse" id="onedriveCard">
         <summary class="onedrive-collapse-summary">
           <span class="onedrive-collapse-title">OneDrive</span>
@@ -5466,9 +5468,7 @@
           `}
           <div id="onedriveMsg"></div>
         </div>
-      </details>
-
-      ${canEdit ? matterOnlyFieldsPanelHtml() : ''}`);
+      </details>`);
 
     $('#backMatters').onclick = () => {
       state.view = 'matters';
