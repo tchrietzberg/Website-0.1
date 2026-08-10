@@ -306,4 +306,51 @@ describe('contacts and contact custom fields', () => {
     assert.ok(typeOnly.some((f) => f.id === typeField.id));
     assert.ok(!typeOnly.some((f) => f.id === contactField.id));
   });
+
+  it('rejects duplicate contact field labels across type and contact scopes', () => {
+    customFields.ensureRecordTypes(db);
+    const a = clientsSvc.createClient(db, admin, { name: 'Contact A', recordTypeKey: 'client' });
+    const b = clientsSvc.createClient(db, admin, { name: 'Contact B', recordTypeKey: 'client' });
+
+    customFields.createCustomField(db, admin, {
+      label: 'Preferred name',
+      fieldType: 'text',
+      appliesTo: 'client',
+      recordTypeKey: 'client',
+    });
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'Preferred Name',
+        fieldType: 'text',
+        appliesTo: 'client',
+        recordTypeKey: 'company',
+      }),
+      /already exists/i
+    );
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'Name',
+        fieldType: 'text',
+        appliesTo: 'client',
+        recordTypeKey: 'client',
+      }),
+      /already exists/i
+    );
+
+    customFields.createCustomField(db, admin, {
+      label: 'Internal code',
+      fieldType: 'text',
+      appliesTo: 'client',
+      clientId: a.client.id,
+    });
+    assert.throws(
+      () => customFields.createCustomField(db, admin, {
+        label: 'internal code',
+        fieldType: 'text',
+        appliesTo: 'client',
+        clientId: b.client.id,
+      }),
+      /already exists/i
+    );
+  });
 });
