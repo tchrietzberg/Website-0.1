@@ -6774,11 +6774,22 @@
           const data = await api(url);
           if (!out) return;
           out.hidden = false;
+          const totalHours = formatDuration(data.totals?.minutes || 0);
+          const totalAmount = money(data.totals?.amount_cents || 0);
+          const totalsUnderLabel = `
+            <p class="lodestar-report-totals">
+              <span><span class="muted">Total hours</span> <strong>${escapeHtml(totalHours)}</strong></span>
+              <span><span class="muted">Total amount</span> <strong>${totalAmount}</strong></span>
+            </p>`;
+          const matterLine = `<p class="muted">${escapeHtml(data.header?.matter_name || '')}${
+            from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''
+          }</p>`;
           if (reportId === 'lodestar-matter-summary') {
             const rows = data.summary || [];
             out.innerHTML = `
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Summary</h3>
-              <p class="muted">${escapeHtml(data.header?.matter_name || '')}${from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''}</p>
+              ${totalsUnderLabel}
+              ${matterLine}
               <div class="table-wrap"><table>
                 <thead><tr><th>Timekeeper</th><th>Role</th><th>Rate</th><th>Hours</th><th>Amount</th></tr></thead>
                 <tbody>
@@ -6789,15 +6800,15 @@
                       <td>${money(r.rate_cents)}</td>
                       <td>${escapeHtml(formatDuration(r.minutes))}</td>
                       <td>${money(r.amount_cents)}</td>
-                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No billable time in this range</td></tr>'}
+                    </tr>`).join('') || '<tr><td colspan="5" class="muted">No time entries in this range</td></tr>'}
                 </tbody>
-              </table></div>
-              <p class="muted">Total ${escapeHtml(formatDuration(data.totals?.minutes || 0))} · ${money(data.totals?.amount_cents || 0)}</p>`;
+              </table></div>`;
           } else {
             const entries = (data.timekeepers || []).flatMap((g) => g.entries || []);
             out.innerHTML = `
               <h3 style="margin:0 0 .35rem;font-family:var(--font)">Lodestar Detail</h3>
-              <p class="muted">${escapeHtml(data.header?.matter_name || '')}${from || to ? ` · ${escapeHtml([from || '…', to || '…'].join(' → '))}` : ''}</p>
+              ${totalsUnderLabel}
+              ${matterLine}
               <p class="hint">Includes non-billable time at $0.</p>
               <div class="table-wrap"><table>
                 <thead><tr><th>Date</th><th>Timekeeper</th><th>Hours</th><th>Amount</th><th>Billable</th><th>Description</th></tr></thead>
