@@ -279,6 +279,55 @@ describe('role permissions and field permissions', () => {
     assert.ok(settings.contactFields.some((f) => f.key === `cf:${field.id}`));
   });
 
+  it('scopes field permission catalogs to the selected record page', () => {
+    const billableOnly = customFields.createCustomField(db, admin, {
+      label: 'Fee arrangement',
+      fieldType: 'text',
+      recordTypeKey: 'billable',
+    });
+    const nonBillableOnly = customFields.createCustomField(db, admin, {
+      label: 'Pro bono reason',
+      fieldType: 'textarea',
+      recordTypeKey: 'non_billable',
+    });
+    const clientEmail = customFields.createCustomField(db, admin, {
+      label: 'Work email',
+      fieldType: 'email',
+      appliesTo: 'client',
+      recordTypeKey: 'client',
+    });
+    const companyIndustry = customFields.createCustomField(db, admin, {
+      label: 'Industry',
+      fieldType: 'text',
+      appliesTo: 'client',
+      recordTypeKey: 'company',
+    });
+
+    const billableFields = permissions.catalogMatterLayoutFields(db, { recordTypeKey: 'billable' });
+    assert.ok(billableFields.some((f) => f.key === `cf:${billableOnly.id}`));
+    assert.ok(!billableFields.some((f) => f.key === `cf:${nonBillableOnly.id}`));
+    assert.ok(billableFields.some((f) => f.key === 'std:name'));
+
+    const nbFields = permissions.catalogMatterLayoutFields(db, { recordTypeKey: 'non_billable' });
+    assert.ok(nbFields.some((f) => f.key === `cf:${nonBillableOnly.id}`));
+    assert.ok(!nbFields.some((f) => f.key === `cf:${billableOnly.id}`));
+
+    const clientFields = permissions.catalogContactLayoutFields(db, { recordTypeKey: 'client' });
+    assert.ok(clientFields.some((f) => f.key === 'name'));
+    assert.ok(clientFields.some((f) => f.key === `cf:${clientEmail.id}`));
+    assert.ok(!clientFields.some((f) => f.key === `cf:${companyIndustry.id}`));
+
+    const companyFields = permissions.catalogContactLayoutFields(db, { recordTypeKey: 'company' });
+    assert.ok(companyFields.some((f) => f.key === `cf:${companyIndustry.id}`));
+    assert.ok(!companyFields.some((f) => f.key === `cf:${clientEmail.id}`));
+
+    const settings = permissions.getPermissionsSettings(db);
+    const billablePage = settings.matterRecordTypes.find((t) => t.key === 'billable');
+    assert.ok(billablePage?.fields.some((f) => f.key === `cf:${billableOnly.id}`));
+    const clientPage = settings.contactRecordTypes.find((t) => t.key === 'client');
+    assert.ok(clientPage?.fields.some((f) => f.key === `cf:${clientEmail.id}`));
+  });
+
   it('includes time entry fields in field permissions catalog and enforces writes', () => {
     const settings = permissions.getPermissionsSettings(db);
     assert.ok(settings.timeFields.some((f) => f.key === 'std:billable'));
