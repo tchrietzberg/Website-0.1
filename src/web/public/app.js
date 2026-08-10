@@ -6579,11 +6579,37 @@
       return form;
     }
     // Suffix forces one re-default after the TZ/bounds fix so stale From>To ranges refresh.
-    const defaultsKey = `${key}@bounds`;
-    if (!force && form.defaultsForMatterId === defaultsKey) return form;
+    const defaultsKey = `${key}@bounds-v2`;
+    const fromMissing = !/^\d{4}-\d{2}-\d{2}$/.test(String(form.dateFrom || ''));
+    const inverted = !fromMissing
+      && /^\d{4}-\d{2}-\d{2}$/.test(String(form.dateTo || ''))
+      && String(form.dateFrom) > String(form.dateTo);
+    // Re-default when forced, first visit for this matter, From was cleared, or range is inverted.
+    if (!force && form.defaultsForMatterId === defaultsKey && !fromMissing && !inverted) {
+      return form;
+    }
     const bounds = await billingServiceDateBounds(key);
-    const earliest = bounds.earliestDate || '';
-    const latest = bounds.latestDate || earliest;
+    let earliest = bounds.earliestDate || '';
+    let latest = bounds.latestDate || earliest;
+    // Fallback: derive bounds from the matter's time list if the dedicated endpoint fails.
+    if (!earliest) {
+      try {
+        const entries = await api(
+          `/api/time-entries?matterId=${encodeURIComponent(key)}`,
+          { cache: false },
+        );
+        const dates = (entries || [])
+          .map((e) => String(e.service_date || '').slice(0, 10))
+          .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+          .sort();
+        if (dates.length) {
+          earliest = dates[0];
+          latest = dates[dates.length - 1];
+        }
+      } catch {
+        /* keep empty — fall through to today */
+      }
+    }
     form.matterId = key;
     form.dateFrom = earliest || today;
     // Include firm-today and any entries already on the matter (covers TZ/UTC skew).
@@ -6607,8 +6633,8 @@
     }
     // null = never set → default To to today; '' means the user cleared it.
     if (state.billingForm.dateTo == null) state.billingForm.dateTo = today;
-    if (state.billingForm.matterId
-      && state.billingForm.defaultsForMatterId !== `${String(state.billingForm.matterId)}@bounds`) {
+    if (state.billingForm.matterId) {
+      // Always restore From when missing (e.g. user cleared it, then left and returned).
       await applyBillingMatterDateDefaults(state.billingForm.matterId);
       if (!stillOnView('billing')) return;
     }
@@ -6674,11 +6700,18 @@
       const billMatterPicker = wireMatterPicker(billForm, {
         matters,
         onChange: (m) => {
+          // Mark matter immediately so a mid-flight persistDates cannot drop it.
+          state.billingForm = {
+            ...(state.billingForm || {}),
+            matterId: m?.id != null ? String(m.id) : '',
+            defaultsForMatterId: '',
+          };
           void (async () => {
             const form = await applyBillingMatterDateDefaults(
               m?.id != null ? m.id : '',
               { force: true },
             );
+            if (!stillOnView('billing')) return;
             const fromEl = $('#billDateFrom');
             const toEl = $('#billDateTo');
             if (fromEl) fromEl.value = form.dateFrom || '';
@@ -6687,11 +6720,13 @@
         },
       });
       const persistDates = () => {
+        const fromRaw = String($('#billDateFrom')?.value || '').trim();
+        const toRaw = String($('#billDateTo')?.value || '').trim();
         state.billingForm = {
           ...(state.billingForm || {}),
           matterId: String(new FormData(billForm).get('matterId') || state.billingForm?.matterId || ''),
-          dateFrom: String($('#billDateFrom')?.value || ''),
-          dateTo: String($('#billDateTo')?.value || ''),
+          dateFrom: /^\d{4}-\d{2}-\d{2}$/.test(fromRaw) ? fromRaw : '',
+          dateTo: /^\d{4}-\d{2}-\d{2}$/.test(toRaw) ? toRaw : '',
           defaultsForMatterId: state.billingForm?.defaultsForMatterId || '',
         };
       };
