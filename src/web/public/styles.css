@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Figtree:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&family=UnifrakturMaguntia&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap");
 
 :root {
   --ink: #142033;
@@ -39,12 +39,10 @@
   --radius: 10px;
   --font: "Fraunces", "Iowan Old Style", Georgia, serif;
   --sans: "Figtree", "Avenir Next", "Segoe UI", sans-serif;
-  --font-medieval: "UnifrakturMaguntia", "Cinzel", "Times New Roman", serif;
-  --font-chronicle: "Cinzel", "Fraunces", Georgia, serif;
-  --chrono-ink: #1c1410;
-  --chrono-gold: #b08d3e;
-  --chrono-gold-soft: #d4b56a;
-  --chrono-stone: #2a3140;
+  --font-brand: "Cormorant Garamond", "Fraunces", "Iowan Old Style", Georgia, serif;
+  --chrono-navy: #0f2744;
+  --chrono-navy-soft: #1a3a6b;
+  --chrono-rule: #8a7350;
   --page-pad-x: clamp(0.85rem, 2.2vw, 2rem);
   --page-pad-y: clamp(1rem, 2vw, 1.75rem);
 }
@@ -124,12 +122,13 @@ body {
 }
 
 .sidebar-brand {
-  font-family: var(--font-medieval);
-  font-size: 1.7rem;
-  font-weight: 400;
-  letter-spacing: 0.03em;
+  font-family: var(--font-brand);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   line-height: 1.1;
-  color: var(--chrono-gold-soft);
+  text-transform: uppercase;
+  color: #f7f9fc;
   padding: 0.2rem 0.4rem 0.55rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
@@ -2426,13 +2425,13 @@ td .muted {
 
 .stack { display: grid; gap: 0.85rem; }
 
-/* —— Sign-in (centered, Chrono brand-first, medieval) —— */
+/* —— Sign-in (centered, Chrono brand-first, professional) —— */
 body.login-mode {
   background:
-    radial-gradient(1100px 620px at 50% -8%, rgba(176, 141, 62, 0.22) 0%, transparent 55%),
-    radial-gradient(820px 480px at 8% 100%, rgba(42, 49, 64, 0.55) 0%, transparent 58%),
-    radial-gradient(760px 420px at 96% 78%, rgba(28, 20, 16, 0.5) 0%, transparent 52%),
-    linear-gradient(168deg, #1c1410 0%, #2a3140 38%, #3a3328 72%, #1c1410 100%);
+    radial-gradient(1200px 640px at 50% -18%, rgba(42, 80, 136, 0.32) 0%, transparent 58%),
+    radial-gradient(900px 520px at 10% 90%, rgba(15, 39, 68, 0.28) 0%, transparent 55%),
+    radial-gradient(700px 420px at 94% 72%, rgba(15, 39, 68, 0.4) 0%, transparent 50%),
+    linear-gradient(165deg, #0b1f3a 0%, #123056 42%, #0e2745 100%);
 }
 
 body.login-mode::before {
@@ -2440,41 +2439,23 @@ body.login-mode::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.28;
+  opacity: 0.18;
   background-image:
-    repeating-linear-gradient(
-      -18deg,
-      transparent 0,
-      transparent 11px,
-      rgba(212, 181, 106, 0.04) 11px,
-      rgba(212, 181, 106, 0.04) 12px
-    ),
-    radial-gradient(circle at 20% 30%, rgba(212, 181, 106, 0.08) 0%, transparent 28%),
-    radial-gradient(circle at 80% 70%, rgba(255, 255, 255, 0.03) 0%, transparent 32%);
-  -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 42%, #000 18%, transparent 78%);
-  mask-image: radial-gradient(ellipse 75% 65% at 50% 42%, #000 18%, transparent 78%);
-  animation: login-heraldry-drift 36s linear infinite;
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%);
+  animation: login-grid-drift 32s linear infinite;
 }
 
 body.login-mode::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.35;
-  background:
-    linear-gradient(180deg, rgba(28, 20, 16, 0.15) 0%, transparent 30%, transparent 70%, rgba(28, 20, 16, 0.45) 100%);
-  animation: login-torch-pulse 7.5s ease-in-out infinite;
+  content: none;
 }
 
-@keyframes login-heraldry-drift {
-  from { background-position: 0 0, 0 0, 0 0; }
-  to { background-position: 80px 40px, 0 0, 0 0; }
-}
-
-@keyframes login-torch-pulse {
-  0%, 100% { opacity: 0.28; }
-  50% { opacity: 0.42; }
+@keyframes login-grid-drift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 56px 56px, 56px 56px; }
 }
 
 #app.login-mode,
@@ -2512,21 +2493,20 @@ body.login-mode::after {
   gap: 1rem;
   padding: clamp(1.75rem, 4vw, 2.35rem);
   border-radius: 14px;
-  border: 1px solid rgba(176, 141, 62, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   background:
-    linear-gradient(180deg, rgba(252, 249, 242, 0.98) 0%, rgba(236, 230, 216, 0.96) 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(244, 247, 251, 0.97) 100%);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.45) inset,
-    0 0 0 1px rgba(28, 20, 16, 0.08) inset,
-    0 28px 52px rgba(12, 10, 8, 0.45);
-  animation: login-panel-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    0 1px 0 rgba(255, 255, 255, 0.55) inset,
+    0 24px 48px rgba(8, 20, 40, 0.32);
+  animation: login-panel-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes login-panel-in {
   from {
     opacity: 0;
-    -webkit-transform: translateY(14px);
-    transform: translateY(14px);
+    -webkit-transform: translateY(12px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -2539,48 +2519,42 @@ body.login-mode::after {
   margin: 0;
   text-align: center;
   line-height: 1;
-  animation: login-brand-in 800ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  animation: login-brand-in 640ms cubic-bezier(0.22, 1, 0.36, 1) 40ms both;
 }
 
 .login-brand-glyph {
   display: inline-block;
-  font-family: var(--font-medieval);
-  font-size: clamp(3.1rem, 9vw, 4.35rem);
-  font-weight: 400;
-  letter-spacing: 0.04em;
+  font-family: var(--font-brand);
+  font-size: clamp(2.65rem, 6.5vw, 3.35rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
   line-height: 1.05;
-  color: var(--chrono-ink);
-  background: linear-gradient(180deg, var(--chrono-gold-soft) 0%, var(--chrono-gold) 42%, #7a5e22 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 1px 0 rgba(28, 20, 16, 0.18));
-  animation: login-brand-etch 4.8s ease-in-out 900ms infinite;
+  text-transform: uppercase;
+  color: var(--chrono-navy);
 }
 
 .login-brand::after {
   content: "";
   display: block;
-  width: min(11rem, 62%);
-  height: 2px;
-  margin: 0.55rem auto 0;
+  width: min(7.5rem, 48%);
+  height: 1px;
+  margin: 0.7rem auto 0.15rem;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    var(--chrono-gold) 18%,
-    var(--chrono-gold-soft) 50%,
-    var(--chrono-gold) 82%,
+    var(--chrono-rule) 20%,
+    var(--chrono-rule) 80%,
     transparent 100%
   );
   transform-origin: center;
-  animation: login-flourish 900ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both;
+  animation: login-rule-in 700ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
 }
 
 @keyframes login-brand-in {
   from {
     opacity: 0;
-    -webkit-transform: translateY(10px) scale(0.96);
-    transform: translateY(10px) scale(0.96);
+    -webkit-transform: translateY(8px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -2589,16 +2563,11 @@ body.login-mode::after {
   }
 }
 
-@keyframes login-brand-etch {
-  0%, 100% { filter: drop-shadow(0 1px 0 rgba(28, 20, 16, 0.18)); }
-  50% { filter: drop-shadow(0 1px 0 rgba(28, 20, 16, 0.28)); }
-}
-
-@keyframes login-flourish {
+@keyframes login-rule-in {
   from {
     opacity: 0;
-    -webkit-transform: scaleX(0.35);
-    transform: scaleX(0.35);
+    -webkit-transform: scaleX(0.4);
+    transform: scaleX(0.4);
   }
   to {
     opacity: 1;
@@ -2608,12 +2577,12 @@ body.login-mode::after {
 }
 
 .login-lead {
-  margin: 0.1rem 0 0.35rem;
-  color: var(--chrono-stone);
-  font-family: var(--font-chronicle);
-  font-size: 1.02rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  margin: 0.15rem 0 0.35rem;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.98rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   text-align: center;
 }
 
