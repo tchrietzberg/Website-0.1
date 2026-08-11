@@ -3978,6 +3978,73 @@
     return `${window.location.origin}/auth?token=${encodeURIComponent(rawToken)}`;
   }
 
+  let loginClockTimer = null;
+
+  function stopLoginClock() {
+    if (loginClockTimer) {
+      clearInterval(loginClockTimer);
+      loginClockTimer = null;
+    }
+  }
+
+  function loginClockHtml() {
+    const ticks = [];
+    for (let i = 0; i < 60; i += 1) {
+      const hour = i % 5 === 0;
+      ticks.push(`
+        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
+          x1="100" y1="${hour ? 18 : 20}" x2="100" y2="${hour ? 30 : 24}"
+          transform="rotate(${i * 6} 100 100)" />`);
+    }
+    return `
+      <div class="login-clock" aria-hidden="true">
+        <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+          <circle class="login-clock-halo" cx="100" cy="100" r="98" />
+          <circle class="login-clock-dial" cx="100" cy="100" r="90" />
+          <circle class="login-clock-ring" cx="100" cy="100" r="84" />
+          ${ticks.join('')}
+          <g class="login-clock-hand-hour">
+            <line x1="100" y1="108" x2="100" y2="52" />
+          </g>
+          <g class="login-clock-hand-minute">
+            <line x1="100" y1="112" x2="100" y2="34" />
+          </g>
+          <g class="login-clock-hand-second">
+            <line x1="100" y1="120" x2="100" y2="28" />
+          </g>
+          <circle class="login-clock-pivot" cx="100" cy="100" r="3.2" />
+        </svg>
+      </div>`;
+  }
+
+  function loginStageHtml(panelInner) {
+    return `<div class="login-stage">${loginClockHtml()}<div class="login-panel">${panelInner}</div></div>`;
+  }
+
+  function wireLoginClock() {
+    const hourEl = document.querySelector('.login-clock-hand-hour');
+    const minuteEl = document.querySelector('.login-clock-hand-minute');
+    const secondEl = document.querySelector('.login-clock-hand-second');
+    if (!hourEl || !minuteEl || !secondEl) return;
+
+    const tick = () => {
+      const now = new Date();
+      const ms = now.getMilliseconds();
+      const s = now.getSeconds() + ms / 1000;
+      const m = now.getMinutes() + s / 60;
+      const h = (now.getHours() % 12) + m / 60;
+      hourEl.setAttribute('transform', `rotate(${h * 30} 100 100)`);
+      minuteEl.setAttribute('transform', `rotate(${m * 6} 100 100)`);
+      secondEl.setAttribute('transform', `rotate(${s * 6} 100 100)`);
+    };
+
+    stopLoginClock();
+    tick();
+    const reduceMotion = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduceMotion) loginClockTimer = setInterval(tick, 200);
+  }
+
   async function finishAuthSession(data) {
     if (data && data.mfaRequired && data.mfaToken) {
       return renderMfaChallenge(data.mfaToken);
@@ -3985,6 +4052,7 @@
     persistSession(data.token, data.csrf);
     state.user = data.user;
     clearAuthTokenFromUrl();
+    stopLoginClock();
     document.body.classList.remove('login-mode');
     if (appEl) appEl.classList.remove('login-mode');
     await refreshRefs();
@@ -4087,7 +4155,8 @@
           <div id="loginErr"></div>
           <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
 
-    setMainHtml(`<div class="login-stage"><div class="login-panel">${panel}</div></div>`);
+    setMainHtml(loginStageHtml(panel));
+    wireLoginClock();
 
     const err = (msg) => {
       const el = $('#loginErr');
@@ -4128,9 +4197,7 @@
 
   function renderMfaChallenge(mfaToken) {
     enterLoginChrome();
-    setMainHtml(`
-      <div class="login-stage">
-        <div class="login-panel">
+    setMainHtml(loginStageHtml(`
           <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Enter the 6-digit code from your authenticator app</p>
           <label class="login-field">Authenticator code
@@ -4140,9 +4207,8 @@
           <button class="primary login-submit" id="mfaBtn" type="button">Verify</button>
           <button class="linkish" id="mfaBack" type="button">Back to sign in</button>
           <div id="loginErr"></div>
-          <p class="login-hint">You can also use a one-time backup code.</p>
-        </div>
-      </div>`);
+          <p class="login-hint">You can also use a one-time backup code.</p>`));
+    wireLoginClock();
     const err = (msg) => {
       const el = $('#loginErr');
       if (el) el.innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
@@ -4174,40 +4240,31 @@
 
   async function renderAuthToken(rawToken) {
     enterLoginChrome();
-    setMainHtml(`
-      <div class="login-stage">
-        <div class="login-panel">
+    setMainHtml(loginStageHtml(`
           <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Checking secure link…</p>
-          <div id="loginErr"></div>
-        </div>
-      </div>`);
+          <div id="loginErr"></div>`));
+    wireLoginClock();
     try {
       const info = await api(`/api/auth/token-info?token=${encodeURIComponent(rawToken)}`);
       if (!info.valid) {
-        setMainHtml(`
-          <div class="login-stage">
-            <div class="login-panel">
+        setMainHtml(loginStageHtml(`
               <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
               <p class="login-lead">This link is invalid or has expired.</p>
               <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
-              <div id="loginErr"></div>
-            </div>
-          </div>`);
+              <div id="loginErr"></div>`));
+        wireLoginClock();
         clearAuthTokenFromUrl();
         $('#backToLogin').onclick = () => renderLogin('password');
         return;
       }
 
       if (info.purpose === 'magic_login') {
-        setMainHtml(`
-          <div class="login-stage">
-            <div class="login-panel">
+        setMainHtml(loginStageHtml(`
               <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
               <p class="login-lead">Signing you in…</p>
-              <div id="loginErr"></div>
-            </div>
-          </div>`);
+              <div id="loginErr"></div>`));
+        wireLoginClock();
         const data = await api('/api/login/magic/confirm', {
           method: 'POST',
           body: JSON.stringify({ token: rawToken }),
@@ -4219,9 +4276,7 @@
       const title = info.purpose === 'invite'
         ? 'Set your password to finish joining'
         : 'Choose a new password';
-      setMainHtml(`
-        <div class="login-stage">
-          <div class="login-panel">
+      setMainHtml(loginStageHtml(`
             <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
             <p class="login-lead">${escapeHtml(title)}</p>
             <p class="login-hint">${escapeHtml(info.name || '')} · ${escapeHtml(info.emailHint || '')}</p>
@@ -4234,9 +4289,8 @@
                 minlength="10" placeholder="Repeat password" />
             </label>
             <button class="primary login-submit" id="setPwdBtn" type="button">Save and sign in</button>
-            <div id="loginErr"></div>
-          </div>
-        </div>`);
+            <div id="loginErr"></div>`));
+      wireLoginClock();
       const err = (msg) => {
         $('#loginErr').innerHTML = msg ? `<div class="error">${escapeHtml(msg)}</div>` : '';
       };
@@ -4259,15 +4313,12 @@
         }
       };
     } catch (e) {
-      setMainHtml(`
-        <div class="login-stage">
-          <div class="login-panel">
+      setMainHtml(loginStageHtml(`
             <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
             <p class="login-lead">Could not open this link.</p>
             <div class="error">${escapeHtml(e.message)}</div>
-            <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
-          </div>
-        </div>`);
+            <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>`));
+      wireLoginClock();
       clearAuthTokenFromUrl();
       $('#backToLogin').onclick = () => renderLogin('password');
     }
