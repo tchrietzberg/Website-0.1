@@ -696,6 +696,67 @@ function createServer(db = openDb()) {
           return json(res, 403, { error: e.message, message: e.message });
         }
       }
+      if (req.method === 'GET' && pathname === '/api/matters/list-columns') {
+        try {
+          const permissions = require('../services/permissions');
+          permissions.assertCanViewRecords(db, user, 'matter');
+          return json(res, 200, matterSvc.getMatterListColumnConfig(db));
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'PUT' && pathname === '/api/matters/list-columns') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const body = await parseBody(req);
+          const keys = body.columns != null ? body.columns : body.keys;
+          return json(res, 200, matterSvc.setMatterListColumnKeys(db, user, keys));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/matters/list-columns') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const body = await parseBody(req);
+          return json(res, 200, matterSvc.addMatterListColumn(db, user, body.key));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'DELETE' && pathname === '/api/matters/list-columns') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk', 'attorney', 'paralegal'])) return;
+        try {
+          const key = url.searchParams.get('key');
+          return json(res, 200, matterSvc.removeMatterListColumn(db, user, key));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'GET' && pathname === '/api/matters/export') {
+        try {
+          const permissions = require('../services/permissions');
+          permissions.assertCanViewRecords(db, user, 'matter');
+          const q = url.searchParams.get('q');
+          const filters = {
+            q,
+            status: url.searchParams.get('status'),
+            matterType: url.searchParams.get('type'),
+            clientId: url.searchParams.get('clientId'),
+            fieldId: url.searchParams.get('fieldId'),
+            fieldValue: url.searchParams.get('fieldValue'),
+          };
+          const buf = matterSvc.exportMattersListXlsx(db, filters);
+          res.writeHead(200, {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename="matters.xlsx"',
+            'Content-Length': buf.length,
+          });
+          return res.end(buf);
+        } catch (e) {
+          return json(res, 403, { error: e.message, message: e.message });
+        }
+      }
       if (req.method === 'GET' && pathname === '/api/matters') {
         try {
           const permissions = require('../services/permissions');
@@ -709,9 +770,15 @@ function createServer(db = openDb()) {
             fieldId: url.searchParams.get('fieldId'),
             fieldValue: url.searchParams.get('fieldValue'),
           };
+          const withListColumns = url.searchParams.get('listColumns') === '1';
           // Matter Search (indexed) when q is present; otherwise full/filtered list
           if (q != null && String(q).trim() !== '') {
-            return json(res, 200, matterSvc.searchMatters(db, filters));
+            const hits = matterSvc.searchMatters(db, filters);
+            return json(
+              res,
+              200,
+              withListColumns ? matterSvc.attachCustomValuesForListColumns(db, hits) : hits
+            );
           }
           if (url.searchParams.get('search') === '1') {
             // Indexed search mode with empty query: still allow status/custom-field browse filters.
@@ -720,7 +787,12 @@ function createServer(db = openDb()) {
                 && filters.fieldValue && String(filters.fieldValue).trim()));
             if (!hasBrowseFilter) return json(res, 200, []);
           }
-          return json(res, 200, matterSvc.listMatters(db, filters));
+          const rows = matterSvc.listMatters(db, filters);
+          return json(
+            res,
+            200,
+            withListColumns ? matterSvc.attachCustomValuesForListColumns(db, rows) : rows
+          );
         } catch (e) {
           return json(res, 403, { error: e.message, message: e.message });
         }
