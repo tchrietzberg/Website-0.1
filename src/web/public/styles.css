@@ -2541,13 +2541,13 @@ td .muted {
 
 .stack { display: grid; gap: 0.85rem; }
 
-/* —— Sign-in (centered, Chrono brand-first, clock atmosphere) —— */
+/* —— Sign-in (Chrono brand-first, live clock as page ground) —— */
 body.login-mode {
   background:
-    radial-gradient(920px 620px at 50% 42%, rgba(42, 80, 136, 0.38) 0%, transparent 62%),
-    radial-gradient(900px 520px at 8% 92%, rgba(15, 39, 68, 0.34) 0%, transparent 55%),
-    radial-gradient(760px 460px at 96% 10%, rgba(138, 115, 80, 0.14) 0%, transparent 52%),
-    linear-gradient(165deg, #08182e 0%, #123056 46%, #0c243f 100%);
+    radial-gradient(ellipse 70% 60% at 50% 48%, rgba(28, 62, 110, 0.55) 0%, transparent 68%),
+    radial-gradient(900px 520px at 6% 94%, rgba(15, 39, 68, 0.4) 0%, transparent 55%),
+    radial-gradient(760px 460px at 96% 8%, rgba(138, 115, 80, 0.16) 0%, transparent 52%),
+    linear-gradient(165deg, #061426 0%, #123056 48%, #0a2038 100%);
 }
 
 body.login-mode::before {
@@ -2555,23 +2555,28 @@ body.login-mode::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.12;
+  opacity: 0.1;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(ellipse 68% 58% at 50% 45%, #000 18%, transparent 78%);
-  mask-image: radial-gradient(ellipse 68% 58% at 50% 45%, #000 18%, transparent 78%);
-  animation: login-grid-drift 36s linear infinite;
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(circle at 50% 48%, #000 12%, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 48%, #000 12%, transparent 72%);
+  animation: login-grid-drift 40s linear infinite;
 }
 
 body.login-mode::after {
-  content: none;
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 48%, transparent 28%, rgba(4, 12, 24, 0.28) 58%, rgba(3, 10, 20, 0.62) 100%);
 }
 
 @keyframes login-grid-drift {
   from { background-position: 0 0, 0 0; }
-  to { background-position: 64px 64px, 64px 64px; }
+  to { background-position: 72px 72px, 72px 72px; }
 }
 
 #app.login-mode,
@@ -2603,57 +2608,96 @@ body.login-mode::after {
   justify-content: center;
   padding: clamp(1.25rem, 4vw, 2.5rem);
   overflow: hidden;
+  isolation: isolate;
 }
 
 .login-clock {
   position: absolute;
   left: 50%;
-  top: 46%;
-  width: min(92vmin, 46rem);
-  height: min(92vmin, 46rem);
+  top: 48%;
+  width: min(118vmin, 54rem);
+  height: min(118vmin, 54rem);
   -webkit-transform: translate(-50%, -50%);
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 0;
-  opacity: 0.9;
-  animation: login-clock-in 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  opacity: 0;
+  animation: login-clock-in 980ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-clock-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(212, 186, 122, 0.16) 0%, transparent 42%),
+    radial-gradient(circle at 50% 50%, rgba(42, 80, 136, 0.35) 0%, transparent 68%);
+  animation: login-clock-breathe 7.5s ease-in-out infinite;
 }
 
 .login-clock-svg {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
   overflow: visible;
-  filter: drop-shadow(0 18px 40px rgba(4, 12, 28, 0.45));
+  filter: drop-shadow(0 22px 48px rgba(4, 12, 28, 0.5));
 }
 
 .login-clock-halo {
-  fill: rgba(18, 48, 86, 0.35);
-  stroke: rgba(212, 190, 150, 0.22);
-  stroke-width: 1.25;
+  fill: rgba(14, 36, 64, 0.22);
+  stroke: rgba(232, 214, 176, 0.28);
+  stroke-width: 1.1;
+}
+
+.login-clock-bezel {
+  fill: rgba(10, 28, 52, 0.48);
+  stroke: rgba(196, 168, 118, 0.5);
+  stroke-width: 2.4;
 }
 
 .login-clock-dial {
-  fill: rgba(8, 24, 46, 0.42);
-  stroke: rgba(236, 226, 206, 0.38);
-  stroke-width: 1.6;
+  fill: rgba(7, 22, 42, 0.55);
+  stroke: rgba(236, 226, 206, 0.22);
+  stroke-width: 1;
 }
 
 .login-clock-ring {
   fill: none;
-  stroke: rgba(196, 168, 118, 0.55);
-  stroke-width: 1;
+  stroke: rgba(214, 186, 130, 0.42);
+  stroke-width: 0.85;
+  stroke-dasharray: 2.2 1.6;
+}
+
+.login-clock-well {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: rgba(232, 220, 196, 0.12);
+  stroke-width: 0.8;
 }
 
 .login-clock-tick {
-  stroke: rgba(236, 226, 206, 0.38);
+  stroke: rgba(236, 226, 206, 0.42);
   stroke-width: 1;
   stroke-linecap: round;
 }
 
 .login-clock-tick.is-hour {
-  stroke: rgba(246, 236, 214, 0.82);
-  stroke-width: 2.25;
+  stroke: rgba(248, 236, 210, 0.9);
+  stroke-width: 2.35;
+}
+
+.login-clock-numeral {
+  fill: rgba(246, 236, 214, 0.78);
+  font-family: var(--font-brand);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.login-clock-hand-hour,
+.login-clock-hand-minute,
+.login-clock-hand-second {
+  will-change: transform;
 }
 
 .login-clock-hand-hour line,
@@ -2664,53 +2708,66 @@ body.login-mode::after {
 
 .login-clock-hand-hour line {
   stroke: rgba(248, 240, 222, 0.96);
-  stroke-width: 4.1;
+  stroke-width: 3.8;
 }
 
 .login-clock-hand-minute line {
   stroke: rgba(248, 240, 222, 0.9);
-  stroke-width: 2.7;
+  stroke-width: 2.45;
 }
 
 .login-clock-hand-second line {
   stroke: rgba(214, 168, 96, 0.98);
-  stroke-width: 1.25;
+  stroke-width: 1.15;
+}
+
+.login-clock-hand-second circle {
+  fill: rgba(214, 168, 96, 0.98);
 }
 
 .login-clock-pivot {
-  fill: rgba(222, 186, 122, 0.98);
-  stroke: rgba(248, 240, 222, 0.7);
+  fill: rgba(236, 214, 168, 0.98);
+  stroke: rgba(248, 240, 222, 0.75);
   stroke-width: 1;
 }
 
 @keyframes login-clock-in {
   from {
     opacity: 0;
-    -webkit-transform: translate(-50%, -46%) scale(0.94);
-    transform: translate(-50%, -46%) scale(0.94);
+    -webkit-transform: translate(-50%, -50%) scale(0.96);
+    transform: translate(-50%, -50%) scale(0.96);
   }
   to {
-    opacity: 0.9;
+    opacity: 1;
     -webkit-transform: translate(-50%, -50%) scale(1);
     transform: translate(-50%, -50%) scale(1);
   }
 }
 
+@keyframes login-clock-breathe {
+  0%, 100% { opacity: 0.72; -webkit-transform: scale(1); transform: scale(1); }
+  50% { opacity: 1; -webkit-transform: scale(1.03); transform: scale(1.03); }
+}
+
 .login-panel {
   position: relative;
   z-index: 1;
-  width: min(26rem, 100%);
+  width: min(24.5rem, 100%);
   display: grid;
   gap: 1rem;
-  padding: clamp(1.75rem, 4vw, 2.35rem);
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: clamp(1.7rem, 4vw, 2.25rem);
+  border-radius: 22px;
+  border: 1px solid rgba(214, 186, 130, 0.28);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(244, 247, 251, 0.97) 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.97) 0%, rgba(244, 247, 251, 0.94) 55%, rgba(236, 242, 248, 0.92) 100%);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.55) inset,
-    0 24px 48px rgba(8, 20, 40, 0.32);
-  animation: login-panel-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    0 0 0 1px rgba(255, 255, 255, 0.35) inset,
+    0 1px 0 rgba(255, 255, 255, 0.65) inset,
+    0 18px 40px rgba(8, 20, 40, 0.34),
+    0 0 0 10px rgba(10, 28, 52, 0.12);
+  animation: login-panel-in 560ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
 }
 
 @keyframes login-panel-in {
@@ -2867,19 +2924,32 @@ button.primary.login-submit {
 
 @media (max-width: 640px) {
   .login-clock {
-    width: min(118vw, 34rem);
-    height: min(118vw, 34rem);
-    opacity: 0.78;
+    width: min(140vw, 40rem);
+    height: min(140vw, 40rem);
+  }
+  .login-clock-numeral {
+    font-size: 10px;
+  }
+  .login-panel {
+    border-radius: 18px;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.35) inset,
+      0 14px 32px rgba(8, 20, 40, 0.36),
+      0 0 0 8px rgba(10, 28, 52, 0.14);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   body.login-mode::before,
   .login-clock,
+  .login-clock-glow,
   .login-panel,
   .login-brand,
   .login-brand::after {
     animation: none;
+  }
+  .login-clock {
+    opacity: 1;
   }
 }
 

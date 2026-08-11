@@ -4136,12 +4136,12 @@
     return `${window.location.origin}/auth?token=${encodeURIComponent(rawToken)}`;
   }
 
-  let loginClockTimer = null;
+  let loginClockRaf = null;
 
   function stopLoginClock() {
-    if (loginClockTimer) {
-      clearInterval(loginClockTimer);
-      loginClockTimer = null;
+    if (loginClockRaf != null) {
+      cancelAnimationFrame(loginClockRaf);
+      loginClockRaf = null;
     }
   }
 
@@ -4151,26 +4151,39 @@
       const hour = i % 5 === 0;
       ticks.push(`
         <line class="login-clock-tick${hour ? ' is-hour' : ''}"
-          x1="100" y1="${hour ? 18 : 20}" x2="100" y2="${hour ? 30 : 24}"
+          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
           transform="rotate(${i * 6} 100 100)" />`);
     }
+    const numerals = [
+      { n: '12', x: 100, y: 36 },
+      { n: '3', x: 168, y: 104 },
+      { n: '6', x: 100, y: 174 },
+      { n: '9', x: 32, y: 104 },
+    ].map(({ n, x, y }) => `
+      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
+        dominant-baseline="middle">${n}</text>`).join('');
     return `
       <div class="login-clock" aria-hidden="true">
+        <div class="login-clock-glow"></div>
         <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
-          <circle class="login-clock-halo" cx="100" cy="100" r="98" />
-          <circle class="login-clock-dial" cx="100" cy="100" r="90" />
-          <circle class="login-clock-ring" cx="100" cy="100" r="84" />
+          <circle class="login-clock-halo" cx="100" cy="100" r="99" />
+          <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
+          <circle class="login-clock-dial" cx="100" cy="100" r="88" />
+          <circle class="login-clock-ring" cx="100" cy="100" r="80" />
+          <circle class="login-clock-well" cx="100" cy="100" r="54" />
           ${ticks.join('')}
+          ${numerals}
           <g class="login-clock-hand-hour">
-            <line x1="100" y1="108" x2="100" y2="52" />
+            <line x1="100" y1="110" x2="100" y2="48" />
           </g>
           <g class="login-clock-hand-minute">
-            <line x1="100" y1="112" x2="100" y2="34" />
+            <line x1="100" y1="114" x2="100" y2="30" />
           </g>
           <g class="login-clock-hand-second">
-            <line x1="100" y1="120" x2="100" y2="28" />
+            <line x1="100" y1="122" x2="100" y2="22" />
+            <circle cx="100" cy="100" r="2.2" />
           </g>
-          <circle class="login-clock-pivot" cx="100" cy="100" r="3.2" />
+          <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
         </svg>
       </div>`;
   }
@@ -4180,10 +4193,11 @@
   }
 
   function wireLoginClock() {
-    const hourEl = document.querySelector('.login-clock-hand-hour');
-    const minuteEl = document.querySelector('.login-clock-hand-minute');
-    const secondEl = document.querySelector('.login-clock-hand-second');
-    if (!hourEl || !minuteEl || !secondEl) return;
+    const root = document.querySelector('.login-clock');
+    const hourEl = root?.querySelector('.login-clock-hand-hour');
+    const minuteEl = root?.querySelector('.login-clock-hand-minute');
+    const secondEl = root?.querySelector('.login-clock-hand-second');
+    if (!root || !hourEl || !minuteEl || !secondEl) return;
 
     const tick = () => {
       const now = new Date();
@@ -4200,7 +4214,19 @@
     tick();
     const reduceMotion = window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!reduceMotion) loginClockTimer = setInterval(tick, 200);
+    if (reduceMotion) return;
+
+    const loop = () => {
+      // Keep sweeping while the login clock remains in the DOM.
+      if (!document.body.classList.contains('login-mode')
+        || !document.contains(root)) {
+        loginClockRaf = null;
+        return;
+      }
+      tick();
+      loginClockRaf = requestAnimationFrame(loop);
+    };
+    loginClockRaf = requestAnimationFrame(loop);
   }
 
   async function finishAuthSession(data) {
