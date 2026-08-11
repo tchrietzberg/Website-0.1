@@ -210,7 +210,7 @@ function authEmailHtml({ name, intro, ctaLabel, link, footer }) {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f6f8;padding:24px 12px;">
     <tr><td align="center">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;padding:28px 24px;">
-        <tr><td style="font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#64748b;padding-bottom:8px;">Firm Billing</td></tr>
+        <tr><td style="font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#64748b;padding-bottom:8px;">Chrono</td></tr>
         <tr><td style="font-size:22px;font-weight:600;padding-bottom:12px;">Hi ${safeName},</td></tr>
         <tr><td style="font-size:15px;line-height:1.55;padding-bottom:20px;">${safeIntro}</td></tr>
         <tr><td style="padding-bottom:20px;">
@@ -237,11 +237,11 @@ async function sendAuthEmail(db, req, {
   let html;
   const footer = 'If you were not expecting this, you can ignore this email.';
   if (purpose === 'invite') {
-    subject = 'Welcome to Firm Billing — finish signing in';
+    subject = 'Welcome to Chrono — finish signing in';
     text = [
       `Hi ${user.name},`,
       '',
-      'You have been invited to Firm Billing.',
+      'You have been invited to Chrono.',
       'Open this link to choose a password and sign in (one-time use):',
       '',
       link,
@@ -250,13 +250,13 @@ async function sendAuthEmail(db, req, {
     ].join('\n');
     html = authEmailHtml({
       name: user.name,
-      intro: 'You have been invited to Firm Billing. Use the button below to choose a password and sign in (one-time use).',
+      intro: 'You have been invited to Chrono. Use the button below to choose a password and sign in (one-time use).',
       ctaLabel: 'Finish signing in',
       link,
       footer,
     });
   } else if (purpose === 'reset') {
-    subject = 'Reset your Firm Billing password';
+    subject = 'Reset your Chrono password';
     text = [
       `Hi ${user.name},`,
       '',
@@ -274,7 +274,7 @@ async function sendAuthEmail(db, req, {
       footer,
     });
   } else {
-    subject = 'Your Firm Billing sign-in link';
+    subject = 'Your Chrono sign-in link';
     text = [
       `Hi ${user.name},`,
       '',

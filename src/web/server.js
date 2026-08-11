@@ -1245,9 +1245,9 @@ function createServer(db = openDb()) {
           const delivery = await mail.sendMail({
             db,
             to,
-            subject: 'Firm Billing test email',
-            text: 'This is a test email from Firm Billing. Email delivery is working — you should see this in Gmail or any other inbox.',
-            html: '<p>This is a test email from <strong>Firm Billing</strong>. Email delivery is working — you should see this in Gmail or any other inbox.</p>',
+            subject: 'Chrono test email',
+            text: 'This is a test email from Chrono. Email delivery is working — you should see this in Gmail or any other inbox.',
+            html: '<p>This is a test email from <strong>Chrono</strong>. Email delivery is working — you should see this in Gmail or any other inbox.</p>',
             allowLog: false,
           });
           return json(res, 200, { ok: true, delivery });

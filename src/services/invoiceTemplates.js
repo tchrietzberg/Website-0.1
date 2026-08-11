@@ -24,7 +24,7 @@ const MERGE_FIELDS = [
   { key: 'total', label: 'Total', example: '$1,250.00' },
   { key: 'hours_total', label: 'Total hours', example: '6.50' },
   { key: 'line_count', label: 'Line count', example: '4' },
-  { key: 'firm_name', label: 'Firm name', example: 'Firm Billing' },
+  { key: 'firm_name', label: 'Firm name', example: 'Chrono' },
   { key: 'today', label: 'Today (UTC date)', example: '2026-08-10' },
   { key: 'line_items', label: 'Line items (multi-line text)', example: '2026-03-01  Avery  1.00  $200.00  Research' },
   { key: 'line_items_table', label: 'Line items table (tab-separated)', example: 'Date\\tTimekeeper\\tHours\\tAmount\\tDescription' },
@@ -220,7 +220,7 @@ function xmlEscape(s) {
 }
 
 function buildMergeMap(inv, db = null) {
-  const firmName = db ? (getSetting(db, 'firm_name', 'Firm Billing') || 'Firm Billing') : 'Firm Billing';
+  const firmName = db ? (getSetting(db, 'firm_name', 'Chrono') || 'Chrono') : 'Chrono';
   const lines = inv.lines || [];
   const minutes = lines.reduce((s, l) => s + Number(l.minutes || 0), 0);
   const lineItems = lines.map((l) => [

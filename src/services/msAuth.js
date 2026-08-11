@@ -349,7 +349,7 @@ function isConnected(db) {
  * Send email via the connected Microsoft account (Graph /me/sendMail).
  * Requires Mail.Send consent — reconnect Microsoft after this scope was added.
  */
-async function sendMailGraph(db, { to, subject, text, html = null, fromName = 'Firm Billing' } = {}) {
+async function sendMailGraph(db, { to, subject, text, html = null, fromName = 'Chrono' } = {}) {
   const token = await ensureAccessToken(db);
   if (!token) {
     const err = new Error('Connect Microsoft under Settings to send email automatically.');

@@ -1,4 +1,4 @@
-# Firm Billing System (Prototype)
+# Chrono (Prototype)
 
 Time capture with approval workflow, effective-dated rates, invoicing with write-downs and an
 immutable post-send lifecycle, payments/AR, and lodestar reporting — built for a contingency

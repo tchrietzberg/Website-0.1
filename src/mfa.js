@@ -111,7 +111,7 @@ function verifyTotp(secretBase32, code, opts = {}) {
   return false;
 }
 
-function otpauthUrl({ secret, email, issuer = 'Firm Billing' }) {
+function otpauthUrl({ secret, email, issuer = 'Chrono' }) {
   const label = encodeURIComponent(`${issuer}:${email}`);
   const params = new URLSearchParams({
     secret: String(secret || '').replace(/=+$/g, ''),
@@ -270,7 +270,7 @@ function beginSetup(db, userId, email, keyMaterial) {
   `).run(sealed, JSON.stringify(backupHashes), userId);
   return {
     secret,
-    otpauthUrl: otpauthUrl({ secret, email, issuer: 'Firm Billing' }),
+    otpauthUrl: otpauthUrl({ secret, email, issuer: 'Chrono' }),
     backupCodes,
   };
 }

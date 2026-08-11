@@ -66,7 +66,7 @@ function storedFrom(db, fallback = 'noreply@firm.example') {
   const email = (db && getSetting(db, 'smtp_from', '')) || '';
   const name = (db && getSetting(db, 'smtp_from_name', '')) || '';
   if (!email && !name) return fallback;
-  return formatFromAddress(email || fallback, name || 'Firm Billing');
+  return formatFromAddress(email || fallback, name || 'Chrono');
 }
 
 /** Resolve delivery config: product env → Microsoft Graph → optional admin override. */
@@ -79,9 +79,9 @@ function resolveMailConfig(db = null) {
       provider: 'resend',
       source: 'env',
       apiKey: envResend,
-      from: formatFromAddress(envFrom || 'onboarding@resend.dev', envFromName || 'Firm Billing'),
+      from: formatFromAddress(envFrom || 'onboarding@resend.dev', envFromName || 'Chrono'),
       fromEmail: extractEmailAddress(envFrom || 'onboarding@resend.dev'),
-      fromName: envFromName || 'Firm Billing',
+      fromName: envFromName || 'Chrono',
       configured: true,
     };
   }
@@ -89,7 +89,7 @@ function resolveMailConfig(db = null) {
   const envHost = String(process.env.SMTP_HOST || '').trim();
   if (envHost) {
     const port = Number(process.env.SMTP_PORT || 587);
-    const from = formatFromAddress(envFrom || 'noreply@firm.example', envFromName || 'Firm Billing');
+    const from = formatFromAddress(envFrom || 'noreply@firm.example', envFromName || 'Chrono');
     return {
       provider: 'smtp',
       source: 'env',
@@ -100,7 +100,7 @@ function resolveMailConfig(db = null) {
       pass: String(process.env.SMTP_PASS || ''),
       from,
       fromEmail: extractEmailAddress(from),
-      fromName: envFromName || 'Firm Billing',
+      fromName: envFromName || 'Chrono',
       configured: true,
     };
   }
@@ -116,7 +116,7 @@ function resolveMailConfig(db = null) {
           source: 'microsoft',
           from: account,
           fromEmail: account,
-          fromName: 'Firm Billing',
+          fromName: 'Chrono',
           configured: true,
         };
       }
@@ -133,7 +133,7 @@ function resolveMailConfig(db = null) {
         apiKey: resendKey,
         from,
         fromEmail: extractEmailAddress(from),
-        fromName: getSetting(db, 'smtp_from_name', '') || 'Firm Billing',
+        fromName: getSetting(db, 'smtp_from_name', '') || 'Chrono',
         configured: true,
       };
     }
@@ -152,7 +152,7 @@ function resolveMailConfig(db = null) {
         pass: getSetting(db, 'smtp_pass', '') || '',
         from: smtpFrom,
         fromEmail: extractEmailAddress(smtpFrom),
-        fromName: getSetting(db, 'smtp_from_name', '') || 'Firm Billing',
+        fromName: getSetting(db, 'smtp_from_name', '') || 'Chrono',
         configured: true,
       };
     }
@@ -163,7 +163,7 @@ function resolveMailConfig(db = null) {
     source: 'none',
     from: envFrom || 'noreply@firm.example',
     fromEmail: extractEmailAddress(envFrom || 'noreply@firm.example'),
-    fromName: envFromName || 'Firm Billing',
+    fromName: envFromName || 'Chrono',
     configured: false,
   };
 }
@@ -176,7 +176,7 @@ function mailStatus(db) {
   const outboundEnabled = outboundEmailEnabled();
   const base = {
     hasApiKey: Boolean(savedKey || (cfg.provider === 'resend' && cfg.apiKey)),
-    fromName: savedFromName || cfg.fromName || 'Firm Billing',
+    fromName: savedFromName || cfg.fromName || 'Chrono',
     fromAddress: savedFrom || cfg.fromEmail || '',
     outboundEnabled,
   };

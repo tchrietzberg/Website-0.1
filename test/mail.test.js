@@ -110,7 +110,7 @@ describe('mail configuration', () => {
       provider: 'resend',
       apiKey: 're_test_key_12345',
       from: 'onboarding@resend.dev',
-      fromName: 'Firm Billing',
+      fromName: 'Chrono',
     });
     assert.equal(status.configured, true);
     assert.equal(status.provider, 'resend');
