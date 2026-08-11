@@ -629,10 +629,15 @@
         const choice = String(
           picker?.getValue?.() || state.createMatterClientId || '',
         ).trim();
+        // Existing contact id selected → never show record type.
+        if (choice && choice !== '__new__') {
+          typeWrap.hidden = true;
+          return;
+        }
         const typed = String(picker?.getTypedName?.() || '').trim();
         const exact = typed ? findExactClientMatch(clientList, typed) : null;
         const creatingNew = choice === '__new__'
-          || (!!typed && !exact && (!choice || choice === '__new__'));
+          || (!!typed && !exact);
         typeWrap.hidden = !creatingNew;
         if (creatingNew && typeSelect && !typeSelect.value) {
           typeSelect.value = defaultContactTypeKey;
