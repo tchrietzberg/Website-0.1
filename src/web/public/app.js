@@ -534,21 +534,44 @@
    * Create-matter confirmation: optionally associate a client from the dialog
    * (the Create Matter form no longer has a Client field).
    * Resolves to null if cancelled, otherwise
-   * { clientChoice: '' | '__new__' | idString, newClientName, clientId }.
+   * { clientChoice, newClientName, clientId, newClientRecordTypeKey }.
    */
-  function confirmCreateMatter({
+  async function confirmCreateMatter({
     matterName = '',
     clients = [],
+    contactRecordTypes = null,
     confirmLabel = 'Yes, create matter',
     cancelLabel = 'Not yet',
   } = {}) {
+    let contactTypes = Array.isArray(contactRecordTypes) ? [...contactRecordTypes] : null;
+    if (!contactTypes) {
+      contactTypes = await api('/api/record-types?appliesTo=client').catch(() => []);
+    }
+    if (!contactTypes.length) {
+      contactTypes = [
+        { key: 'client', label: 'Client' },
+        { key: 'company', label: 'Company' },
+      ];
+    }
+    const defaultContactTypeKey = contactTypes.some((t) => t.key === 'client')
+      ? 'client'
+      : (contactTypes[0]?.key || 'client');
+
     return new Promise((resolve) => {
       const existing = document.querySelector('.confirm-overlay');
       if (existing) existing.remove();
       state.createMatterClientId = '';
-      state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+      state.createMatterNewClient = {
+        name: '',
+        recordTypeKey: defaultContactTypeKey,
+        email: '',
+      };
       const clientList = [...(clients || [])];
       const allowAddNew = roleCanModify('contact');
+      const typeOptionsHtml = contactTypes.map((t) => `
+        <option value="${escapeHtml(t.key)}" ${t.key === defaultContactTypeKey ? 'selected' : ''}>
+          ${escapeHtml(t.label || t.key)}
+        </option>`).join('');
       const overlay = document.createElement('div');
       overlay.className = 'confirm-overlay';
       overlay.innerHTML = `
@@ -568,6 +591,13 @@
                 newClientName: '',
               })}
             </label>
+            ${allowAddNew ? `
+              <label class="confirm-client-type-field" data-confirm-client-type hidden>
+                Record type
+                <select data-confirm-client-record-type aria-label="Client record type">
+                  ${typeOptionsHtml}
+                </select>
+              </label>` : ''}
             <div class="error confirm-client-error" data-confirm-client-error hidden></div>
           </div>
           <div class="confirm-actions confirm-actions--create-matter">
@@ -582,7 +612,37 @@
       const panel = overlay.querySelector('[data-confirm-client-panel]');
       const addBtn = overlay.querySelector('[data-confirm-add-client]');
       const errEl = overlay.querySelector('[data-confirm-client-error]');
+      const typeWrap = overlay.querySelector('[data-confirm-client-type]');
+      const typeSelect = overlay.querySelector('[data-confirm-client-record-type]');
       let picker = null;
+
+      function selectedRecordTypeKey() {
+        const fromSelect = String(typeSelect?.value || '').trim();
+        if (fromSelect) return fromSelect;
+        return String(
+          state.createMatterNewClient?.recordTypeKey || defaultContactTypeKey,
+        ).trim() || 'client';
+      }
+
+      function syncRecordTypeVisibility() {
+        if (!typeWrap || !allowAddNew) return;
+        const choice = String(
+          picker?.getValue?.() || state.createMatterClientId || '',
+        ).trim();
+        // Existing contact id selected → never show record type.
+        if (choice && choice !== '__new__') {
+          typeWrap.hidden = true;
+          return;
+        }
+        const typed = String(picker?.getTypedName?.() || '').trim();
+        const exact = typed ? findExactClientMatch(clientList, typed) : null;
+        const creatingNew = choice === '__new__'
+          || (!!typed && !exact);
+        typeWrap.hidden = !creatingNew;
+        if (creatingNew && typeSelect && !typeSelect.value) {
+          typeSelect.value = defaultContactTypeKey;
+        }
+      }
 
       function clientLabelFromState() {
         const choice = String(state.createMatterClientId || '').trim();
@@ -602,6 +662,7 @@
         msgEl.textContent = label
           ? `Create “${matterName}” for ${label}? You can add time and details after it’s created.`
           : `Create “${matterName}” with no client? You can associate a client later on the matter page.`;
+        syncRecordTypeVisibility();
       }
 
       function showClientError(text) {
@@ -626,6 +687,7 @@
         ).trim();
         let clientId = null;
         let newClientName = '';
+        let newClientRecordTypeKey = selectedRecordTypeKey();
         if ((!clientChoice || clientChoice === '__new__') && typedClientName) {
           const exactTyped = findExactClientMatch(clientList, typedClientName);
           if (exactTyped) {
@@ -647,13 +709,16 @@
               error: `A contact named “${dupClient.name}” already exists. Pick them from suggestions instead.`,
             };
           }
+          if (!contactTypes.some((t) => t.key === newClientRecordTypeKey)) {
+            newClientRecordTypeKey = defaultContactTypeKey;
+          }
         } else if (clientChoice) {
           clientId = Number(clientChoice);
           if (!Number.isFinite(clientId) || clientId <= 0) {
             return { error: 'Pick a client from the suggestions, or leave Client blank.' };
           }
         }
-        return { clientChoice, newClientName, clientId };
+        return { clientChoice, newClientName, clientId, newClientRecordTypeKey };
       }
 
       updateMessage();
@@ -670,11 +735,23 @@
         }
         if (ev.key !== 'Enter') return;
         const active = document.activeElement;
-        if (active?.matches?.('[data-client-search], [data-confirm-add-client]')) return;
+        if (active?.matches?.('[data-client-search], [data-confirm-add-client], [data-confirm-client-record-type]')) {
+          return;
+        }
         if (overlay.querySelector('[data-client-typeahead].is-open')) return;
         overlay.querySelector('[data-confirm-ok]')?.click();
       };
       document.addEventListener('keydown', onKey);
+
+      if (typeSelect) {
+        typeSelect.onchange = () => {
+          const key = selectedRecordTypeKey();
+          state.createMatterNewClient = {
+            ...(state.createMatterNewClient || { name: '', email: '' }),
+            recordTypeKey: key,
+          };
+        };
+      }
 
       addBtn.onclick = () => {
         if (panel.hidden) {
@@ -695,6 +772,7 @@
               updateMessage();
             });
           }
+          syncRecordTypeVisibility();
           setTimeout(() => picker?.focus?.(), 0);
         } else {
           picker?.focus?.();
@@ -713,8 +791,9 @@
         state.createMatterClientId = resolved.clientChoice || '';
         if (resolved.clientChoice === '__new__') {
           state.createMatterNewClient = {
-            ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+            ...(state.createMatterNewClient || { email: '' }),
             name: resolved.newClientName,
+            recordTypeKey: resolved.newClientRecordTypeKey || defaultContactTypeKey,
           };
         }
         finish(resolved);
@@ -4558,6 +4637,11 @@
         let clientChoice = String(confirmed.clientChoice || '').trim();
         let clientId = confirmed.clientId != null ? confirmed.clientId : null;
         const newClientName = String(confirmed.newClientName || '').trim();
+        const newClientRecordTypeKey = String(
+          confirmed.newClientRecordTypeKey
+            || state.createMatterNewClient?.recordTypeKey
+            || 'client',
+        ).trim() || 'client';
 
         const recordTypeKey = String(
           fd.get('recordTypeKey') || state.createMatterRecordTypeKey || 'billable'
@@ -4571,9 +4655,7 @@
               method: 'POST',
               body: JSON.stringify({
                 name: newClientName,
-                recordTypeKey: String(
-                  state.createMatterNewClient?.recordTypeKey || 'client',
-                ),
+                recordTypeKey: newClientRecordTypeKey,
               }),
             });
             clientId = Number(createdClient?.client?.id);

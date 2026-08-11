@@ -2795,6 +2795,18 @@ button.primary.login-submit {
   font-size: 0.9rem;
   color: var(--ink);
 }
+.confirm-client-type-field {
+  display: block;
+  margin-top: 0.75rem;
+  font-weight: 650;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.confirm-client-type-field select {
+  margin-top: 0.3rem;
+  width: 100%;
+  max-width: 16rem;
+}
 .confirm-client-error {
   margin: 0.45rem 0 0;
   font-size: 0.88rem;
