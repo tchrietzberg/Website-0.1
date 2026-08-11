@@ -2780,6 +2780,34 @@ button.primary.login-submit {
   flex-wrap: wrap;
   gap: 0.55rem;
 }
+.confirm-dialog--create-matter {
+  width: min(100%, 36rem);
+  overflow: visible;
+}
+.confirm-client-panel {
+  position: relative;
+  z-index: 5;
+  margin: 0 0 1.1rem;
+}
+.confirm-client-label {
+  display: block;
+  font-weight: 650;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.confirm-client-error {
+  margin: 0.45rem 0 0;
+  font-size: 0.88rem;
+}
+.confirm-actions--create-matter {
+  -webkit-align-items: center;
+  align-items: center;
+}
+.confirm-actions-spacer {
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-width: 0.5rem;
+}
 @-webkit-keyframes confirm-fade {
   from { opacity: 0; }
   to { opacity: 1; }
