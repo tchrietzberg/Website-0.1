@@ -530,6 +530,202 @@
     });
   }
 
+  /**
+   * Create-matter confirmation: optionally associate a client from the dialog
+   * (the Create Matter form no longer has a Client field).
+   * Resolves to null if cancelled, otherwise
+   * { clientChoice: '' | '__new__' | idString, newClientName, clientId }.
+   */
+  function confirmCreateMatter({
+    matterName = '',
+    clients = [],
+    confirmLabel = 'Yes, create matter',
+    cancelLabel = 'Not yet',
+  } = {}) {
+    return new Promise((resolve) => {
+      const existing = document.querySelector('.confirm-overlay');
+      if (existing) existing.remove();
+      state.createMatterClientId = '';
+      state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+      const clientList = [...(clients || [])];
+      const allowAddNew = roleCanModify('contact');
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = `
+        <div class="confirm-dialog confirm-dialog--create-matter" role="alertdialog" aria-modal="true"
+          aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+          <h2 id="confirmTitle">Create this matter?</h2>
+          <div id="confirmMessage">
+            <p data-create-matter-msg></p>
+          </div>
+          <div class="confirm-client-panel" data-confirm-client-panel hidden>
+            <label class="confirm-client-label">Client
+              ${renderClientTypeahead({
+                name: 'confirmClientId',
+                selectedId: '',
+                clients: clientList,
+                allowAddNew,
+                newClientName: '',
+              })}
+            </label>
+            <div class="error confirm-client-error" data-confirm-client-error hidden></div>
+          </div>
+          <div class="confirm-actions confirm-actions--create-matter">
+            <button type="button" data-confirm-add-client>Add client</button>
+            <span class="confirm-actions-spacer"></span>
+            <button type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
+            <button type="button" class="primary" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const msgEl = overlay.querySelector('[data-create-matter-msg]');
+      const panel = overlay.querySelector('[data-confirm-client-panel]');
+      const addBtn = overlay.querySelector('[data-confirm-add-client]');
+      const errEl = overlay.querySelector('[data-confirm-client-error]');
+      let picker = null;
+
+      function clientLabelFromState() {
+        const choice = String(state.createMatterClientId || '').trim();
+        if (choice === '__new__') {
+          return String(state.createMatterNewClient?.name || '').trim() || null;
+        }
+        if (choice) {
+          return clientList.find((c) => String(c.id) === choice)?.name || 'client';
+        }
+        const typed = picker?.getTypedName?.() || '';
+        return typed || null;
+      }
+
+      function updateMessage() {
+        const label = clientLabelFromState();
+        if (!msgEl) return;
+        msgEl.textContent = label
+          ? `Create “${matterName}” for ${label}? You can add time and details after it’s created.`
+          : `Create “${matterName}” with no client? You can associate a client later on the matter page.`;
+      }
+
+      function showClientError(text) {
+        if (!errEl) return;
+        if (text) {
+          errEl.hidden = false;
+          errEl.textContent = text;
+        } else {
+          errEl.hidden = true;
+          errEl.textContent = '';
+        }
+      }
+
+      function resolveClientChoice() {
+        const typedClientName = String(
+          picker?.getTypedName?.()
+            || state.createMatterNewClient?.name
+            || '',
+        ).trim();
+        let clientChoice = String(
+          picker?.getValue?.() || state.createMatterClientId || '',
+        ).trim();
+        let clientId = null;
+        let newClientName = '';
+        if ((!clientChoice || clientChoice === '__new__') && typedClientName) {
+          const exactTyped = findExactClientMatch(clientList, typedClientName);
+          if (exactTyped) {
+            clientChoice = String(exactTyped.id);
+          } else if (allowAddNew) {
+            clientChoice = '__new__';
+            newClientName = typedClientName;
+          } else {
+            return { error: 'Pick a client from the suggestions, or leave Client blank.' };
+          }
+        }
+        if (clientChoice === '__new__') {
+          if (!newClientName) {
+            return { error: 'Enter a client name to continue, or clear Client.' };
+          }
+          const dupClient = findExactClientMatch(clientList, newClientName);
+          if (dupClient) {
+            return {
+              error: `A contact named “${dupClient.name}” already exists. Pick them from suggestions instead.`,
+            };
+          }
+        } else if (clientChoice) {
+          clientId = Number(clientChoice);
+          if (!Number.isFinite(clientId) || clientId <= 0) {
+            return { error: 'Pick a client from the suggestions, or leave Client blank.' };
+          }
+        }
+        return { clientChoice, newClientName, clientId };
+      }
+
+      updateMessage();
+
+      const finish = (value) => {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(value);
+      };
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') {
+          finish(null);
+          return;
+        }
+        if (ev.key !== 'Enter') return;
+        const active = document.activeElement;
+        if (active?.matches?.('[data-client-search], [data-confirm-add-client]')) return;
+        if (overlay.querySelector('[data-client-typeahead].is-open')) return;
+        overlay.querySelector('[data-confirm-ok]')?.click();
+      };
+      document.addEventListener('keydown', onKey);
+
+      addBtn.onclick = () => {
+        if (panel.hidden) {
+          panel.hidden = false;
+          addBtn.textContent = 'Change client';
+          if (!picker) {
+            picker = wireClientTypeahead(panel, {
+              clients: clientList,
+              selectedId: '',
+              allowAddNew,
+              onChange: () => {
+                showClientError('');
+                updateMessage();
+              },
+            });
+            panel.addEventListener('input', () => {
+              showClientError('');
+              updateMessage();
+            });
+          }
+          setTimeout(() => picker?.focus?.(), 0);
+        } else {
+          picker?.focus?.();
+        }
+      };
+
+      overlay.querySelector('[data-confirm-cancel]').onclick = () => finish(null);
+      overlay.querySelector('[data-confirm-ok]').onclick = () => {
+        const resolved = resolveClientChoice();
+        if (resolved.error) {
+          if (panel.hidden) addBtn.click();
+          showClientError(resolved.error);
+          picker?.focus?.();
+          return;
+        }
+        state.createMatterClientId = resolved.clientChoice || '';
+        if (resolved.clientChoice === '__new__') {
+          state.createMatterNewClient = {
+            ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+            name: resolved.newClientName,
+          };
+        }
+        finish(resolved);
+      };
+      overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) finish(null);
+      });
+      setTimeout(() => overlay.querySelector('[data-confirm-ok]')?.focus(), 0);
+    });
+  }
+
   /** Built-in fields (client, status, etc.) are not managed from Add field UI. */
   function isBuiltInField(field) {
     const key = field?.fieldKey || field?.key || '';
@@ -4082,12 +4278,6 @@
     const clientList = [...(clients || [])].sort((a, b) =>
       String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
     );
-    const selectedClientId = state.createMatterClientId != null
-      ? String(state.createMatterClientId)
-      : '';
-    const newClientDraft = state.createMatterNewClient || {
-      name: '', recordTypeKey: 'client', email: '',
-    };
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
     const nameFormula = createSettings?.matterNameFormula || state.settings?.matterNameFormula || null;
     const formulaActive = !!(nameFormula?.enabled && (nameFormula.parts || []).length);
@@ -4187,17 +4377,6 @@
               </label>
             </div>
             ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
-            <div class="create-matter-meta">
-              <label class="create-matter-client-field">Client
-                ${renderClientTypeahead({
-                  name: 'clientId',
-                  selectedId: selectedClientId,
-                  clients: clientList,
-                  allowAddNew: roleCanModify('contact'),
-                  newClientName: newClientDraft.name || '',
-                })}
-              </label>
-            </div>
             <div class="grid two create-matter-custom">
               ${createFieldDefs.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}${field.inNameFormula ? ' name-formula-field' : ''}">
@@ -4302,35 +4481,11 @@
           }
         }, 0);
       }
-      const clientPicker = wireClientTypeahead($('#createMatterSection') || main, {
-        clients: clientList,
-        selectedId: selectedClientId,
-        allowAddNew: roleCanModify('contact'),
-        onChange: (value) => {
-          const nameEl = $('#createMatterName');
-          if (nameEl && !formulaActive) state.createMatterDraftName = String(nameEl.value || '');
-          state.createMatterClientId = value || '';
-          if (value === '__new__') {
-            const typed = clientPicker?.getTypedName?.() || '';
-            state.createMatterNewClient = {
-              ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
-              name: typed || state.createMatterNewClient?.name || '',
-            };
-          }
-        },
-      });
       const typeSelect = $('#createMatterTypeSelect');
       if (typeSelect) {
         typeSelect.onchange = async () => {
           const nameEl = $('#createMatterName');
           if (nameEl && !formulaActive) state.createMatterDraftName = String(nameEl.value || '');
-          const typed = clientPicker?.getTypedName?.() || '';
-          if (typed && (state.createMatterClientId === '__new__' || !state.createMatterClientId)) {
-            state.createMatterNewClient = {
-              ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
-              name: typed,
-            };
-          }
           state.createMatterRecordTypeKey = typeSelect.value || 'billable';
           await renderMatters();
         };
@@ -4393,64 +4548,16 @@
           });
           return;
         }
-        const typedClientName = String(
-          document.querySelector('#createMatterSection [data-client-search]')?.value
-            || state.createMatterNewClient?.name
-            || '',
-        ).trim();
-        let clientChoice = String(fd.get('clientId') || state.createMatterClientId || '').trim();
-        let clientId = null;
-        let newClientName = '';
-        // Typed text in the Client box can create a contact when no existing id is selected.
-        if ((!clientChoice || clientChoice === '__new__') && typedClientName) {
-          const exactTyped = findExactClientMatch(clientList, typedClientName);
-          if (exactTyped) {
-            clientChoice = String(exactTyped.id);
-          } else if (roleCanModify('contact')) {
-            clientChoice = '__new__';
-            newClientName = typedClientName;
-          } else {
-            $('#newMatterMsg').innerHTML = '<div class="error">Pick a client from the suggestions, or leave Client blank.</div>';
-            document.querySelector('#createMatterSection [data-client-search]')?.focus();
-            return;
-          }
-        }
-        if (clientChoice === '__new__') {
-          if (!newClientName) {
-            $('#newMatterMsg').innerHTML = '<div class="error">Enter a client name in Client to continue.</div>';
-            document.querySelector('#createMatterSection [data-client-search]')?.focus();
-            return;
-          }
-          const dupClient = findExactClientMatch(clientList, newClientName);
-          if (dupClient) {
-            $('#newMatterMsg').innerHTML = `<div class="error">A contact named “${
-              escapeHtml(dupClient.name)
-            }” already exists. Pick them from Client suggestions instead of adding a new one.</div>`;
-            document.querySelector('#createMatterSection [data-client-search]')?.focus();
-            return;
-          }
-        } else if (clientChoice) {
-          clientId = Number(clientChoice);
-          if (!Number.isFinite(clientId) || clientId <= 0) {
-            $('#newMatterMsg').innerHTML = '<div class="error">Pick a client from the suggestions, or leave Client blank.</div>';
-            document.querySelector('#createMatterSection [data-client-search]')?.focus();
-            return;
-          }
-        }
-        const clientLabel = clientChoice === '__new__'
-          ? newClientName
-          : (clientId
-            ? (clientList.find((c) => Number(c.id) === clientId)?.name || 'client')
-            : null);
-        const sure = await confirmAction({
-          title: 'Create this matter?',
-          message: clientLabel
-            ? `Create “${name}” for ${clientLabel}? You can add time and details after it’s created.`
-            : `Create “${name}” with no client? You can associate a client later on the matter page.`,
+        const confirmed = await confirmCreateMatter({
+          matterName: name,
+          clients: clientList,
           confirmLabel: 'Yes, create matter',
           cancelLabel: 'Not yet',
         });
-        if (!sure) return;
+        if (!confirmed) return;
+        let clientChoice = String(confirmed.clientChoice || '').trim();
+        let clientId = confirmed.clientId != null ? confirmed.clientId : null;
+        const newClientName = String(confirmed.newClientName || '').trim();
 
         const recordTypeKey = String(
           fd.get('recordTypeKey') || state.createMatterRecordTypeKey || 'billable'
