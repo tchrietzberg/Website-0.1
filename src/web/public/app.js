@@ -3888,7 +3888,7 @@
     enterLoginChrome();
     // Magic-link / forgot-password email flows stay hidden until OUTBOUND_EMAIL is enabled at go-live.
     const panel = `
-          <p class="login-brand">Firm Billing</p>
+          <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Sign in with your work email and password</p>
           <label class="login-field">Work email
             <input id="email" type="email" autocomplete="username"
@@ -3946,7 +3946,7 @@
     setMainHtml(`
       <div class="login-stage">
         <div class="login-panel">
-          <p class="login-brand">Firm Billing</p>
+          <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Enter the 6-digit code from your authenticator app</p>
           <label class="login-field">Authenticator code
             <input id="mfaCode" type="text" inputmode="numeric" autocomplete="one-time-code"
@@ -3992,7 +3992,7 @@
     setMainHtml(`
       <div class="login-stage">
         <div class="login-panel">
-          <p class="login-brand">Firm Billing</p>
+          <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Checking secure link…</p>
           <div id="loginErr"></div>
         </div>
@@ -4003,7 +4003,7 @@
         setMainHtml(`
           <div class="login-stage">
             <div class="login-panel">
-              <p class="login-brand">Firm Billing</p>
+              <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
               <p class="login-lead">This link is invalid or has expired.</p>
               <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
               <div id="loginErr"></div>
@@ -4018,7 +4018,7 @@
         setMainHtml(`
           <div class="login-stage">
             <div class="login-panel">
-              <p class="login-brand">Firm Billing</p>
+              <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
               <p class="login-lead">Signing you in…</p>
               <div id="loginErr"></div>
             </div>
@@ -4037,7 +4037,7 @@
       setMainHtml(`
         <div class="login-stage">
           <div class="login-panel">
-            <p class="login-brand">Firm Billing</p>
+            <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
             <p class="login-lead">${escapeHtml(title)}</p>
             <p class="login-hint">${escapeHtml(info.name || '')} · ${escapeHtml(info.emailHint || '')}</p>
             <label class="login-field">New password
@@ -4077,7 +4077,7 @@
       setMainHtml(`
         <div class="login-stage">
           <div class="login-panel">
-            <p class="login-brand">Firm Billing</p>
+            <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
             <p class="login-lead">Could not open this link.</p>
             <div class="error">${escapeHtml(e.message)}</div>
             <button class="primary login-submit" id="backToLogin" type="button">Back to sign in</button>
@@ -9659,7 +9659,7 @@
       </div>`);
   }
 
-  /** Compact in-app help agent: training & how-to for Firm Billing.
+  /** Compact in-app help agent: training & how-to for Chrono.
    *  Answer text may include [[Label|target]] deep links; see goHelpTarget(). */
   const HELP_TOPICS = [
     {
@@ -10177,7 +10177,7 @@
 
       const renderHome = () => {
         body.innerHTML = `
-          <p class="help-agent-intro">Need a hand? Pick a topic or ask how to do something in Firm Billing. Answers include links that take you there.</p>
+          <p class="help-agent-intro">Need a hand? Pick a topic or ask how to do something in Chrono. Answers include links that take you there.</p>
           <div class="help-agent-topics">
             ${HELP_TOPICS.map((t) => `
               <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
