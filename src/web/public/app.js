@@ -808,6 +808,163 @@
     });
   }
 
+  /**
+   * Create-contact confirmation: optionally associate an existing matter.
+   * Resolves to null if cancelled, otherwise { matterId, matterName }.
+   */
+  async function confirmCreateContact({
+    contactName = '',
+    matters = null,
+    confirmLabel = 'Yes, create contact',
+    cancelLabel = 'Not yet',
+  } = {}) {
+    let matterList = Array.isArray(matters) ? [...matters] : null;
+    if (!matterList) {
+      matterList = await api('/api/matters').catch(() => state.matters || []);
+    }
+    const canAssociate = roleCanModify('matter') && Array.isArray(matterList);
+
+    return new Promise((resolve) => {
+      const existing = document.querySelector('.confirm-overlay');
+      if (existing) existing.remove();
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = `
+        <div class="confirm-dialog confirm-dialog--create-contact" role="alertdialog" aria-modal="true"
+          aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+          <h2 id="confirmTitle">Create this contact?</h2>
+          <div id="confirmMessage">
+            <p data-create-contact-msg></p>
+            <p class="confirm-billing-note" data-create-contact-billing>
+              To bill time for this contact, a matter must be associated.
+            </p>
+          </div>
+          ${canAssociate ? `
+            <div class="confirm-matter-panel" data-confirm-matter-panel hidden>
+              <label class="confirm-matter-label">Matter
+                ${renderMatterPicker({
+                  name: 'confirmMatterId',
+                  selectedId: null,
+                  matters: matterList,
+                })}
+              </label>
+              <p class="hint confirm-matter-hint" data-confirm-matter-hint hidden></p>
+              <div class="error confirm-matter-error" data-confirm-matter-error hidden></div>
+            </div>
+            <div class="confirm-actions confirm-actions--create-contact">
+              <button type="button" data-confirm-add-matter>Associate matter</button>
+              <span class="confirm-actions-spacer"></span>
+              <button type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
+              <button type="button" class="primary" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
+            </div>` : `
+            <div class="confirm-actions">
+              <button type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
+              <button type="button" class="primary" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
+            </div>`}
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const msgEl = overlay.querySelector('[data-create-contact-msg]');
+      const panel = overlay.querySelector('[data-confirm-matter-panel]');
+      const addBtn = overlay.querySelector('[data-confirm-add-matter]');
+      const errEl = overlay.querySelector('[data-confirm-matter-error]');
+      const hintEl = overlay.querySelector('[data-confirm-matter-hint]');
+      let picker = null;
+      let selectedMatter = null;
+
+      function showMatterError(text) {
+        if (!errEl) return;
+        if (text) {
+          errEl.hidden = false;
+          errEl.textContent = text;
+        } else {
+          errEl.hidden = true;
+          errEl.textContent = '';
+        }
+      }
+
+      function updateMessage() {
+        if (!msgEl) return;
+        if (selectedMatter) {
+          msgEl.textContent = `Create “${contactName}” and associate with “${selectedMatter.name}”? You can edit details after it’s created.`;
+        } else {
+          msgEl.textContent = `Create “${contactName}”? Associate a matter now if you want — you can also link one later on the matter page.`;
+        }
+        if (hintEl) {
+          if (selectedMatter?.client_name) {
+            hintEl.hidden = false;
+            hintEl.textContent = `This matter is currently linked to “${selectedMatter.client_name}”. Associating will reassign it to “${contactName}”.`;
+          } else {
+            hintEl.hidden = true;
+            hintEl.textContent = '';
+          }
+        }
+      }
+
+      const finish = (value) => {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(value);
+      };
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') {
+          finish(null);
+          return;
+        }
+        if (ev.key !== 'Enter') return;
+        const active = document.activeElement;
+        if (active?.matches?.('[data-matter-search], [data-confirm-add-matter], .matter-picker-trigger')) {
+          return;
+        }
+        if (overlay.querySelector('[data-matter-picker].is-open')) return;
+        overlay.querySelector('[data-confirm-ok]')?.click();
+      };
+      document.addEventListener('keydown', onKey);
+
+      updateMessage();
+
+      if (addBtn && panel) {
+        addBtn.onclick = () => {
+          if (panel.hidden) {
+            panel.hidden = false;
+            addBtn.textContent = 'Change matter';
+            if (!picker) {
+              picker = wireMatterPicker(panel, {
+                matters: matterList,
+                onChange: (m) => {
+                  selectedMatter = m || null;
+                  showMatterError('');
+                  updateMessage();
+                },
+              });
+            }
+            setTimeout(() => picker?.focus?.(), 0);
+          } else {
+            picker?.focus?.();
+          }
+        };
+      }
+
+      overlay.querySelector('[data-confirm-cancel]').onclick = () => finish(null);
+      overlay.querySelector('[data-confirm-ok]').onclick = () => {
+        const matterId = canAssociate ? (picker?.getValue?.() || null) : null;
+        if (matterId) {
+          const m = matterList.find((x) => Number(x.id) === Number(matterId));
+          finish({
+            matterId: Number(matterId),
+            matterName: m?.name || selectedMatter?.name || '',
+          });
+          return;
+        }
+        finish({ matterId: null, matterName: '' });
+      };
+      overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) finish(null);
+      });
+      setTimeout(() => overlay.querySelector('[data-confirm-ok]')?.focus(), 0);
+    });
+  }
+
   /** Built-in fields (client, status, etc.) are not managed from Add field UI. */
   function isBuiltInField(field) {
     const key = field?.fieldKey || field?.key || '';
@@ -5261,13 +5418,13 @@
           });
           return;
         }
-        const sure = await confirmAction({
-          title: 'Create this contact?',
-          message: `Create “${name}”? You can edit details and custom fields after it’s created.`,
+        const confirmed = await confirmCreateContact({
+          contactName: name,
+          matters: state.matters?.length ? state.matters : null,
           confirmLabel: 'Yes, create contact',
           cancelLabel: 'Not yet',
         });
-        if (!sure) return;
+        if (!confirmed) return;
 
         const customValues = collectCustomFieldValues(form, createFieldDefs);
         const recordTypeKey = String(
@@ -5282,13 +5439,32 @@
             method: 'POST',
             body: JSON.stringify(payload),
           });
+          let associateDetail = '';
+          if (confirmed.matterId) {
+            try {
+              await api(`/api/matters/${confirmed.matterId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ clientId: page.client.id }),
+              });
+              associateDetail = confirmed.matterName
+                ? `Associated with ${confirmed.matterName}`
+                : 'Associated with a matter';
+              await refreshRefs().catch(() => {});
+            } catch (assocErr) {
+              associateDetail = `Created, but could not associate matter: ${
+                assocErr.message || 'unknown error'
+              }`;
+            }
+          }
           state.showCreateContact = false;
           state.createContactRecordTypeKey = 'client';
           state.createContactFieldMsg = null;
           state.createContactFieldsOpen = false;
           state.contactCreateFlash = {
             title: 'Contact created',
-            detail: page.client.name,
+            detail: associateDetail
+              ? `${page.client.name} · ${associateDetail}`
+              : page.client.name,
           };
           state.showPostCreateContactFields = true;
           state.editingContactFieldId = null;
