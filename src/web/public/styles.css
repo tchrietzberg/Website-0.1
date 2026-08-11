@@ -3103,29 +3103,23 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   margin: 0.35rem 0 0;
 }
 
-.matter-details-panel {
+.matter-details-collapse {
   margin-top: 1rem;
-  padding: 0.95rem 1rem 1.05rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, #ffffff 0%, #f5f8fc 100%);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
-  max-width: 100%;
+  margin-bottom: 0;
 }
 
-.matter-details-panel-head h2 {
+.matter-details-collapse > .onedrive-collapse-body {
+  padding-top: 0.75rem;
+}
+
+.matter-details-panel {
   margin: 0;
-  font-family: var(--sans);
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--accent);
-}
-
-.matter-details-panel-head .hint {
-  margin: 0.2rem 0 0.55rem;
-  font-size: 0.82rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  max-width: 100%;
 }
 
 .matter-details-scroll {

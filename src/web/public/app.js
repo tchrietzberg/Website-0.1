@@ -50,6 +50,7 @@
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
     settingsBillingFlash: null,
     settingsTabOpen: {},
+    matterDetailsOpen: true,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -6033,40 +6034,43 @@
             <h1>${escapeHtml(m.name || 'Matter')}</h1>
             <p class="muted matter-top-meta">Record type · ${escapeHtml(matterTypeLabel)}</p>
             ${createFlash ? successNoticeHtml(createFlash) : ''}
-            <form id="matterForm" class="matter-details-panel stack">
-              <div class="matter-details-panel-head">
-                <h2>Matter details</h2>
-                <p class="hint">${canEdit
-                  ? 'Core facts for this matter. Drag fields to rearrange; the list scrolls when it grows.'
-                  : 'Core facts for this matter'}</p>
-              </div>
-              <div class="matter-details-scroll">
-                ${sections.map(([section, fields]) => `
-                  <div class="matter-details-grid" data-matter-details-grid data-section="${escapeHtml(section)}">
-                    ${fields.map((f) => {
-                      const width = f.width === 'full' ? 'full' : 'half';
-                      return `
-                    <div class="matter-detail-field matter-detail-field--${width}"
-                      data-field-key="${escapeHtml(f.key)}"
-                      data-width="${width}"
-                      data-section="${escapeHtml(section)}"
-                      ${canEdit ? 'draggable="true"' : ''}>
-                      ${canEdit ? '<span class="matter-detail-drag" title="Drag to reorder" aria-hidden="true">⋮⋮</span>' : ''}
-                      <label>
-                        ${escapeHtml(f.label)}${f.required ? ' *' : ''}
-                        ${renderFieldInput(f, fieldCtx)}
-                      </label>
-                    </div>`;
-                    }).join('')}
+            <details class="onedrive-collapse matter-details-collapse" id="matterDetailsCollapse"${
+              state.matterDetailsOpen !== false ? ' open' : ''
+            }>
+              <summary class="onedrive-collapse-summary">
+                <span class="onedrive-collapse-title">Matter details</span>
+              </summary>
+              <div class="onedrive-collapse-body">
+                <form id="matterForm" class="matter-details-panel stack">
+                  <div class="matter-details-scroll">
+                    ${sections.map(([section, fields]) => `
+                      <div class="matter-details-grid" data-matter-details-grid data-section="${escapeHtml(section)}">
+                        ${fields.map((f) => {
+                          const width = f.width === 'full' ? 'full' : 'half';
+                          return `
+                        <div class="matter-detail-field matter-detail-field--${width}"
+                          data-field-key="${escapeHtml(f.key)}"
+                          data-width="${width}"
+                          data-section="${escapeHtml(section)}"
+                          ${canEdit ? 'draggable="true"' : ''}>
+                          ${canEdit ? '<span class="matter-detail-drag" title="Drag to reorder" aria-hidden="true">⋮⋮</span>' : ''}
+                          <label>
+                            ${escapeHtml(f.label)}${f.required ? ' *' : ''}
+                            ${renderFieldInput(f, fieldCtx)}
+                          </label>
+                        </div>`;
+                        }).join('')}
+                      </div>
+                    `).join('') || '<p class="muted">No fields on this matter yet. Add one under Matter level fields below.</p>'}
                   </div>
-                `).join('') || '<p class="muted">No fields on this matter yet. Add one under Matter level fields below.</p>'}
+                  ${canEdit ? `
+                    <div class="row-actions matter-details-actions">
+                      <button class="primary" type="submit">Save</button>
+                    </div>` : ''}
+                  <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
+                </form>
               </div>
-              ${canEdit ? `
-                <div class="row-actions matter-details-actions">
-                  <button class="primary" type="submit">Save</button>
-                </div>` : ''}
-              <div id="matterMsg">${matterFlash ? successNoticeHtml(matterFlash) : ''}</div>
-            </form>
+            </details>
           </div>
           <aside class="matter-reports-aside" aria-label="Time reports">
             <div class="matter-reports-aside-head">
@@ -6295,6 +6299,13 @@
           panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }, 0);
+    }
+
+    const matterDetailsCollapse = $('#matterDetailsCollapse');
+    if (matterDetailsCollapse) {
+      matterDetailsCollapse.addEventListener('toggle', () => {
+        state.matterDetailsOpen = !!matterDetailsCollapse.open;
+      });
     }
 
     const matterForm = $('#matterForm');
