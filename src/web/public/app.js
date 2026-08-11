@@ -53,6 +53,7 @@
     matterDetailsOpen: true,
     matterListColumns: null,
     matterListColumnsOpen: false,
+    sidebarSectionOpen: { quickActions: true, navigate: true },
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -4592,10 +4593,15 @@
     }
     state._shellSig = sig;
 
+    if (!state.sidebarSectionOpen || typeof state.sidebarSectionOpen !== 'object') {
+      state.sidebarSectionOpen = { quickActions: true, navigate: true };
+    }
+    const quickOpen = state.sidebarSectionOpen.quickActions !== false;
+    const navOpen = state.sidebarSectionOpen.navigate !== false;
+
     if (sidebarActions) {
-      sidebarActions.innerHTML = `
-        <p class="sidebar-label">Quick actions</p>
-        ${canCreateMatter(state.user) && roleCanModify('matter')
+      const quickButtons = [
+        canCreateMatter(state.user) && roleCanModify('matter')
           ? `<button type="button" class="sidebar-action primary" id="sideAddMatter">
               <span class="sidebar-action-mark" aria-hidden="true">${navIcon('briefcase')}</span>
               <span class="sidebar-action-text">
@@ -4603,8 +4609,8 @@
                 <small>Open create + search</small>
               </span>
             </button>`
-          : ''}
-        ${roleCanView('contact')
+          : '',
+        roleCanView('contact')
           ? `<button type="button" class="sidebar-action primary" id="sideAddContact">
               <span class="sidebar-action-mark" aria-hidden="true">${navIcon('contacts')}</span>
               <span class="sidebar-action-text">
@@ -4612,35 +4618,66 @@
                 <small>Open create + search</small>
               </span>
             </button>`
-          : ''}
-        ${roleCanModify('time') ? `
-        <button type="button" class="sidebar-action primary" id="sideAddTime">
-          <span class="sidebar-action-mark" aria-hidden="true">${navIcon('time')}</span>
-          <span class="sidebar-action-text">
-            <strong>Add Time Entry</strong>
-            <small>Log time on a matter</small>
-          </span>
-        </button>` : ''}`;
+          : '',
+        roleCanModify('time')
+          ? `<button type="button" class="sidebar-action primary" id="sideAddTime">
+              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('time')}</span>
+              <span class="sidebar-action-text">
+                <strong>Add Time Entry</strong>
+                <small>Log time on a matter</small>
+              </span>
+            </button>`
+          : '',
+      ].filter(Boolean).join('');
+      sidebarActions.innerHTML = `
+        <details class="sidebar-section" data-sidebar-section="quickActions" ${quickOpen ? 'open' : ''}>
+          <summary class="sidebar-section-summary">
+            <span class="sidebar-label">Quick actions</span>
+          </summary>
+          <div class="sidebar-section-body">
+            ${quickButtons || '<p class="sidebar-section-empty muted">No quick actions for your role</p>'}
+          </div>
+        </details>`;
       const sideAddMatter = $('#sideAddMatter');
       if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
       const sideAddContact = $('#sideAddContact');
       if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
+      sidebarActions.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
+        el.addEventListener('toggle', () => {
+          const key = el.getAttribute('data-sidebar-section');
+          if (!key) return;
+          state.sidebarSectionOpen[key] = el.open;
+        });
+      });
     }
 
     nav.innerHTML = `
-      <p class="sidebar-label">Navigate</p>
-      ${items.map(([id, label, icon, hint]) =>
-        `<button type="button" data-view="${id}"
-          class="sidebar-action primary sidebar-nav-btn ${activeView === id ? 'active' : ''}">
-          <span class="sidebar-action-mark" aria-hidden="true">${navIcon(icon)}</span>
-          <span class="sidebar-action-text">
-            <strong>${label}</strong>
-            <small>${hint}</small>
-          </span>
-        </button>`
-      ).join('')}`;
+      <details class="sidebar-section" data-sidebar-section="navigate" ${navOpen ? 'open' : ''}>
+        <summary class="sidebar-section-summary">
+          <span class="sidebar-label">Navigate</span>
+        </summary>
+        <div class="sidebar-section-body">
+          ${items.map(([id, label, icon, hint]) =>
+            `<button type="button" data-view="${id}"
+              class="sidebar-action primary sidebar-nav-btn ${activeView === id ? 'active' : ''}">
+              <span class="sidebar-action-mark" aria-hidden="true">${navIcon(icon)}</span>
+              <span class="sidebar-action-text">
+                <strong>${label}</strong>
+                <small>${hint}</small>
+              </span>
+            </button>`
+          ).join('')}
+        </div>
+      </details>`;
+    nav.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
+      el.addEventListener('toggle', () => {
+        const key = el.getAttribute('data-sidebar-section');
+        if (!key) return;
+        state.sidebarSectionOpen[key] = el.open;
+      });
+    });
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.addEventListener('pointerenter', () => prefetchView(b.dataset.view));
       b.addEventListener('focus', () => prefetchView(b.dataset.view));
