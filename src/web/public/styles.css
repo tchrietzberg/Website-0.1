@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap");
 
 :root {
   --ink: #142033;
@@ -37,9 +37,9 @@
   --btn-primary-hover: linear-gradient(180deg, #33609c 0%, #1e4478 55%, #102648 100%);
   --btn-primary-depth: 0 1px 0 rgba(255, 255, 255, 0.22) inset, 0 8px 16px rgba(15, 39, 68, 0.28);
   --radius: 10px;
-  --font: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --sans: "Figtree", "Avenir Next", "Segoe UI", sans-serif;
-  --font-brand: "Cormorant Garamond", "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font: "Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sans: "Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-brand: "Roboto", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --chrono-navy: #0f2744;
   --chrono-navy-soft: #1a3a6b;
   --chrono-rule: #8a7350;
@@ -123,9 +123,9 @@ body {
 
 .sidebar-brand {
   font-family: var(--font-brand);
-  font-size: 1.55rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   line-height: 1.1;
   text-transform: uppercase;
   color: #f7f9fc;
@@ -2525,9 +2525,9 @@ body.login-mode::after {
 .login-brand-glyph {
   display: inline-block;
   font-family: var(--font-brand);
-  font-size: clamp(2.65rem, 6.5vw, 3.35rem);
+  font-size: clamp(2.4rem, 6vw, 3rem);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   line-height: 1.05;
   text-transform: uppercase;
   color: var(--chrono-navy);
