@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Figtree:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,550;9..144,650&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Source+Sans+3:wght@400;500;600;700&display=swap");
 
 :root {
   --ink: #142033;
@@ -37,9 +37,10 @@
   --btn-primary-hover: linear-gradient(180deg, #33609c 0%, #1e4478 55%, #102648 100%);
   --btn-primary-depth: 0 1px 0 rgba(255, 255, 255, 0.22) inset, 0 8px 16px rgba(15, 39, 68, 0.28);
   --radius: 10px;
-  --font: "Fraunces", "Iowan Old Style", Georgia, serif;
-  --sans: "Figtree", "Avenir Next", "Segoe UI", sans-serif;
-  --font-brand: "Cormorant Garamond", "Fraunces", "Iowan Old Style", Georgia, serif;
+  /* Chrono: Baskerville for legal authority; Source Sans 3 for dense billing UI */
+  --font: "Libre Baskerville", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", "Source Sans Pro", "Segoe UI", sans-serif;
+  --font-brand: "Libre Baskerville", "Iowan Old Style", Georgia, "Times New Roman", serif;
   --chrono-navy: #0f2744;
   --chrono-navy-soft: #1a3a6b;
   --chrono-rule: #8a7350;
@@ -123,13 +124,13 @@ body {
 
 .sidebar-brand {
   font-family: var(--font-brand);
-  font-size: 1.55rem;
+  font-size: 1.28rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.1;
+  letter-spacing: 0.12em;
+  line-height: 1.15;
   text-transform: uppercase;
   color: #f7f9fc;
-  padding: 0.2rem 0.4rem 0.55rem;
+  padding: 0.25rem 0.4rem 0.6rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 
@@ -2525,10 +2526,10 @@ body.login-mode::after {
 .login-brand-glyph {
   display: inline-block;
   font-family: var(--font-brand);
-  font-size: clamp(2.65rem, 6.5vw, 3.35rem);
+  font-size: clamp(2.35rem, 5.8vw, 2.95rem);
   font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1.05;
+  letter-spacing: 0.18em;
+  line-height: 1.1;
   text-transform: uppercase;
   color: var(--chrono-navy);
 }
