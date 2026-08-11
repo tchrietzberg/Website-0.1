@@ -2558,26 +2558,26 @@ body.login-mode::after {
 }
 
 .login-clock-dial {
-  fill: rgba(10, 28, 52, 0.55);
-  stroke: rgba(232, 220, 196, 0.28);
-  stroke-width: 1.5;
+  fill: rgba(8, 24, 46, 0.42);
+  stroke: rgba(236, 226, 206, 0.38);
+  stroke-width: 1.6;
 }
 
 .login-clock-ring {
   fill: none;
-  stroke: rgba(138, 115, 80, 0.42);
-  stroke-width: 0.9;
+  stroke: rgba(196, 168, 118, 0.55);
+  stroke-width: 1;
 }
 
 .login-clock-tick {
-  stroke: rgba(232, 220, 196, 0.28);
+  stroke: rgba(236, 226, 206, 0.38);
   stroke-width: 1;
   stroke-linecap: round;
 }
 
 .login-clock-tick.is-hour {
-  stroke: rgba(232, 220, 196, 0.62);
-  stroke-width: 2.1;
+  stroke: rgba(246, 236, 214, 0.82);
+  stroke-width: 2.25;
 }
 
 .login-clock-hand-hour line,
@@ -2587,23 +2587,23 @@ body.login-mode::after {
 }
 
 .login-clock-hand-hour line {
-  stroke: rgba(236, 226, 206, 0.88);
-  stroke-width: 3.4;
+  stroke: rgba(248, 240, 222, 0.96);
+  stroke-width: 4.1;
 }
 
 .login-clock-hand-minute line {
-  stroke: rgba(236, 226, 206, 0.78);
-  stroke-width: 2.3;
+  stroke: rgba(248, 240, 222, 0.9);
+  stroke-width: 2.7;
 }
 
 .login-clock-hand-second line {
-  stroke: rgba(196, 154, 92, 0.95);
-  stroke-width: 1.15;
+  stroke: rgba(214, 168, 96, 0.98);
+  stroke-width: 1.25;
 }
 
 .login-clock-pivot {
-  fill: rgba(212, 178, 118, 0.95);
-  stroke: rgba(236, 226, 206, 0.55);
+  fill: rgba(222, 186, 122, 0.98);
+  stroke: rgba(248, 240, 222, 0.7);
   stroke-width: 1;
 }
 
