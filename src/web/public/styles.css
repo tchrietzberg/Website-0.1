@@ -2975,20 +2975,33 @@ button.primary.login-submit {
   flex-wrap: wrap;
   gap: 0.55rem;
 }
-.confirm-dialog--create-matter {
+.confirm-dialog--create-matter,
+.confirm-dialog--create-contact {
   width: min(100%, 36rem);
   overflow: visible;
 }
-.confirm-client-panel {
+.confirm-client-panel,
+.confirm-matter-panel {
   position: relative;
   z-index: 5;
   margin: 0 0 1.1rem;
 }
-.confirm-client-label {
+.confirm-client-label,
+.confirm-matter-label {
   display: block;
   font-weight: 650;
   font-size: 0.9rem;
   color: var(--ink);
+}
+.confirm-billing-note {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.confirm-matter-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.86rem;
 }
 .confirm-client-type-field {
   display: block;
@@ -3002,11 +3015,13 @@ button.primary.login-submit {
   width: 100%;
   max-width: 16rem;
 }
-.confirm-client-error {
+.confirm-client-error,
+.confirm-matter-error {
   margin: 0.45rem 0 0;
   font-size: 0.88rem;
 }
-.confirm-actions--create-matter {
+.confirm-actions--create-matter,
+.confirm-actions--create-contact {
   -webkit-align-items: center;
   align-items: center;
 }
