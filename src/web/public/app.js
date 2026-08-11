@@ -3087,7 +3087,7 @@
       try {
         const next = await api('/api/matters/list-columns', {
           method: 'PUT',
-          body: { columns: keys },
+          body: JSON.stringify({ columns: keys }),
         });
         state.matterListColumns = next;
         if (!stillOnView('matters')) return;
