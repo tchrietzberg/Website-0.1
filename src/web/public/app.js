@@ -51,6 +51,8 @@
     settingsBillingFlash: null,
     settingsTabOpen: {},
     matterDetailsOpen: true,
+    matterListColumns: null,
+    matterListColumnsOpen: false,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -2770,6 +2772,7 @@
         params.set('fieldValue', filterValue);
       }
     }
+    params.set('listColumns', '1');
     return params;
   }
 
@@ -2780,14 +2783,78 @@
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
+  function defaultMatterListColumns() {
+    return [
+      { key: 'name', label: 'Name', kind: 'built_in', removable: false },
+      { key: 'client', label: 'Client', kind: 'built_in', removable: true },
+      { key: 'status', label: 'Status', kind: 'built_in', removable: true },
+      { key: 'attorney', label: 'Attorney', kind: 'built_in', removable: true },
+    ];
+  }
+
+  function matterListColumnsOrDefault(config = state.matterListColumns) {
+    const cols = Array.isArray(config?.columns) && config.columns.length
+      ? config.columns
+      : defaultMatterListColumns();
+    return cols;
+  }
+
+  function matterListCellDisplay(m, col, typeLabelByKey = {}) {
+    const key = col?.key || col;
+    switch (key) {
+      case 'name':
+        return m.name || '—';
+      case 'number':
+        return m.number || '—';
+      case 'client':
+        return m.client_name || '—';
+      case 'status':
+        return formatMatterStatusLabel(m.status);
+      case 'attorney':
+        return m.attorney_name || '—';
+      case 'matter_type': {
+        const k = m.matter_type || '';
+        return (typeLabelByKey && typeLabelByKey[k]) || k || '—';
+      }
+      case 'opened_on':
+        return m.opened_on || '—';
+      default: {
+        if (String(key).startsWith('cf:')) {
+          const id = String(key).slice(3);
+          const bag = m.customValues || {};
+          const v = bag[id] ?? bag[Number(id)];
+          return (v == null || v === '') ? '—' : String(v);
+        }
+        return '—';
+      }
+    }
+  }
+
+  function matterListCellHtml(m, col, typeLabelByKey = {}) {
+    const key = col?.key || col;
+    const text = matterListCellDisplay(m, col, typeLabelByKey);
+    if (key === 'name') {
+      return `<td><strong>${escapeHtml(text)}</strong></td>`;
+    }
+    if (key === 'status') {
+      return `<td><span class="pill" data-status="${escapeHtml(m.status || '')}">${escapeHtml(text)}</span></td>`;
+    }
+    return `<td>${escapeHtml(text)}</td>`;
+  }
+
   function matterListHtml(hits, {
     q = '',
     filterKey = '',
     filterValue = '',
     canDelete = false,
+    columns = null,
+    typeLabelByKey = {},
   } = {}) {
     const query = String(q || '').trim();
     const rows = hits || [];
+    const cols = Array.isArray(columns) && columns.length
+      ? columns
+      : matterListColumnsOrDefault();
     const filterBits = [];
     if (query) filterBits.push(`“${query}”`);
     if (filterKey && filterValue) {
@@ -2801,27 +2868,21 @@
       : (filterBits.length
         ? `No matters match ${filterBits.join(' · ')}`
         : 'No matters yet');
-    const colSpan = canDelete ? 5 : 4;
+    const colSpan = cols.length + (canDelete ? 1 : 0);
     return `
       <p class="muted matters-list-summary">${escapeHtml(summary)}</p>
       <div class="matters-list-scroll table-wrap">
         <table class="matters-list-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Client</th>
-              <th>Status</th>
-              <th>Attorney</th>
+              ${cols.map((c) => `<th>${escapeHtml(c.label || c.key)}</th>`).join('')}
               ${canDelete ? '<th class="matters-list-actions-col"></th>' : ''}
             </tr>
           </thead>
           <tbody>
             ${rows.map((m) => `
               <tr class="click-row" data-matter="${m.id}">
-                <td><strong>${escapeHtml(m.name)}</strong></td>
-                <td>${escapeHtml(m.client_name || '—')}</td>
-                <td><span class="pill" data-status="${escapeHtml(m.status || '')}">${escapeHtml(formatMatterStatusLabel(m.status))}</span></td>
-                <td>${escapeHtml(m.attorney_name || '—')}</td>
+                ${cols.map((c) => matterListCellHtml(m, c, typeLabelByKey)).join('')}
                 ${canDelete ? `
                   <td class="matters-list-actions">
                     <button type="button" class="danger" data-del-matter="${m.id}"
@@ -2831,6 +2892,45 @@
           </tbody>
         </table>
       </div>`;
+  }
+
+  function matterListColumnsPanelHtml(config, { canEdit = false } = {}) {
+    const columns = matterListColumnsOrDefault(config);
+    const available = Array.isArray(config?.available) ? config.available : [];
+    const open = !!state.matterListColumnsOpen;
+    return `
+      <details class="matters-list-columns" id="matterListColumnsPanel" ${open ? 'open' : ''}>
+        <summary>List columns</summary>
+        <p class="hint">Add, remove, or reorder columns on this Matters list. Changes apply for the firm and to Excel export.</p>
+        <div class="field-mgmt-list" id="matterListColumnRows">
+          ${columns.map((c, i) => `
+            <div class="field-mgmt-row" data-mlc-key="${escapeHtml(c.key)}">
+              <div>
+                <strong>${escapeHtml(c.label || c.key)}</strong>
+                <span class="muted"> · ${c.kind === 'custom' ? 'Custom field' : 'Built-in'}${c.removable === false ? ' · required' : ''}</span>
+              </div>
+              <div class="row-actions">
+                <button type="button" data-mlc-up="${i}" ${!canEdit || i === 0 ? 'disabled' : ''}>Up</button>
+                <button type="button" data-mlc-down="${i}" ${!canEdit || i === columns.length - 1 ? 'disabled' : ''}>Down</button>
+                <button type="button" data-mlc-remove="${escapeHtml(c.key)}"
+                  ${!canEdit || c.removable === false ? 'disabled' : ''}>Remove</button>
+              </div>
+            </div>`).join('') || '<p class="muted">No columns configured.</p>'}
+        </div>
+        ${canEdit ? `
+          <div class="field-mgmt-add" style="margin-top:.65rem">
+            <label>Add column
+              <select id="matterListAddColumn">
+                ${available.length
+                  ? available.map((c) => `
+                    <option value="${escapeHtml(c.key)}">${escapeHtml(c.label || c.key)}</option>`).join('')
+                  : '<option value="">No more columns available</option>'}
+              </select>
+            </label>
+            <button type="button" id="matterListAddColumnBtn" ${available.length ? '' : 'disabled'}>Add</button>
+          </div>` : '<p class="muted">You can view columns; editors can change them.</p>'}
+        <div id="matterListColumnsMsg"></div>
+      </details>`;
   }
 
   async function deleteMatterFromList(id, name) {
@@ -2969,15 +3069,99 @@
       </div>`;
   }
 
+  function wireMatterListColumnsPanel({ canEdit = false } = {}) {
+    const panel = $('#matterListColumnsPanel');
+    if (!panel) return;
+    panel.addEventListener('toggle', () => {
+      state.matterListColumnsOpen = panel.open;
+    });
+    if (!canEdit) return;
+
+    const msg = (html) => {
+      const el = $('#matterListColumnsMsg');
+      if (el) el.innerHTML = html || '';
+    };
+
+    const saveKeys = async (keys) => {
+      msg('<p class="muted">Saving columns…</p>');
+      try {
+        const next = await api('/api/matters/list-columns', {
+          method: 'PUT',
+          body: JSON.stringify({ columns: keys }),
+        });
+        state.matterListColumns = next;
+        if (!stillOnView('matters')) return;
+        await renderMatters();
+      } catch (e) {
+        msg(`<div class="error">${escapeHtml(e.message || 'Could not save columns')}</div>`);
+      }
+    };
+
+    const currentKeys = () => matterListColumnsOrDefault(state.matterListColumns).map((c) => c.key);
+
+    panel.querySelectorAll('[data-mlc-up]').forEach((btn) => {
+      btn.onclick = async (ev) => {
+        ev.preventDefault();
+        const i = Number(btn.dataset.mlcUp);
+        if (!Number.isFinite(i) || i <= 0) return;
+        const keys = currentKeys();
+        const tmp = keys[i - 1];
+        keys[i - 1] = keys[i];
+        keys[i] = tmp;
+        await saveKeys(keys);
+      };
+    });
+    panel.querySelectorAll('[data-mlc-down]').forEach((btn) => {
+      btn.onclick = async (ev) => {
+        ev.preventDefault();
+        const i = Number(btn.dataset.mlcDown);
+        const keys = currentKeys();
+        if (!Number.isFinite(i) || i >= keys.length - 1) return;
+        const tmp = keys[i + 1];
+        keys[i + 1] = keys[i];
+        keys[i] = tmp;
+        await saveKeys(keys);
+      };
+    });
+    panel.querySelectorAll('[data-mlc-remove]').forEach((btn) => {
+      btn.onclick = async (ev) => {
+        ev.preventDefault();
+        const key = String(btn.dataset.mlcRemove || '');
+        if (!key || key === 'name') return;
+        await saveKeys(currentKeys().filter((k) => k !== key));
+      };
+    });
+    const addBtn = $('#matterListAddColumnBtn');
+    if (addBtn) {
+      addBtn.onclick = async (ev) => {
+        ev.preventDefault();
+        const key = String($('#matterListAddColumn')?.value || '').trim();
+        if (!key) return;
+        const keys = currentKeys();
+        if (!keys.includes(key)) keys.push(key);
+        await saveKeys(keys);
+      };
+    }
+  }
+
   let matterLiveSearchTimer = null;
   let matterLiveSearchSeq = 0;
 
-  function wireMatterLiveSearch(filterFields = null, { canDelete = false } = {}) {
+  function wireMatterLiveSearch(filterFields = null, {
+    canDelete = false,
+    columns = null,
+    typeLabelByKey = {},
+  } = {}) {
     const form = $('#matterSearch');
     const input = form?.querySelector('input[name="q"]');
     const resultsEl = $('#matterSearchResults');
     const filterKeyEl = $('#matterFilterKey');
     if (!form || !input || !resultsEl) return;
+
+    const listOpts = () => ({
+      columns: columns || matterListColumnsOrDefault(state.matterListColumns),
+      typeLabelByKey,
+    });
 
     const paintRows = () => {
       wireMatterListRows(resultsEl, { canDelete });
@@ -3026,7 +3210,7 @@
         const params = matterBrowseQueryParams(effective);
         const hits = await api(`/api/matters?${params}`);
         if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
-        resultsEl.innerHTML = matterListHtml(hits, { ...effective, canDelete });
+        resultsEl.innerHTML = matterListHtml(hits, { ...effective, canDelete, ...listOpts() });
         paintRows();
       } catch (e) {
         if (seq !== matterLiveSearchSeq || !stillOnView('matters')) return;
@@ -4337,14 +4521,17 @@
     const showCreate = canEdit && state.showCreateMatter;
     let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
     const requestedCreateTypeKey = createRecordTypeKey;
-    const [hits, clients, allMatters, filterFields, recordTypes, createSettings, createMatterFieldsRaw] = await Promise.all([
+    const [hits, clients, allMatters, filterFields, listColumnConfig, recordTypes, createSettings, createMatterFieldsRaw] = await Promise.all([
       api(`/api/matters?${browseParams}`),
       api('/api/clients').catch(() => state.clients || []),
       api('/api/matters'), // full list for dropdowns elsewhere
       api('/api/matters/filter-fields').catch(() => ({ builtIn: [], custom: [] })),
-      showCreate
-        ? api('/api/record-types').catch(() => [])
-        : Promise.resolve([]),
+      api('/api/matters/list-columns').catch(() => ({
+        columns: defaultMatterListColumns(),
+        available: [],
+        keys: defaultMatterListColumns().map((c) => c.key),
+      })),
+      api('/api/record-types').catch(() => []),
       showCreate
         ? api('/api/settings').catch(() => state.settings || {})
         : Promise.resolve(state.settings || {}),
@@ -4355,6 +4542,12 @@
     if (!stillOnView('matters')) return;
     state.matters = allMatters;
     state.clients = clients || [];
+    state.matterListColumns = listColumnConfig || state.matterListColumns;
+    const listColumns = matterListColumnsOrDefault(state.matterListColumns);
+    const typeLabelByKey = Object.fromEntries(
+      (recordTypes || []).map((t) => [t.key, t.label || t.key])
+    );
+    const canEditListColumns = canCreateMatter(state.user) && roleCanModify('matter');
     const clientList = [...(clients || [])].sort((a, b) =>
       String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
     );
@@ -4486,14 +4679,65 @@
         </div>
 
         <div class="page-section">
-          <h2>Matters</h2>
+          <div class="matters-list-heading">
+            <h2>Matters</h2>
+            <div class="row-actions">
+              <button type="button" id="exportMattersExcelBtn">Export Excel</button>
+            </div>
+          </div>
+          ${matterListColumnsPanelHtml(state.matterListColumns, { canEdit: canEditListColumns })}
           <div id="matterSearchResults">
-            ${matterListHtml(hits, { ...state.matterSearch, canDelete: canDeleteMatters })}
+            ${matterListHtml(hits, {
+              ...state.matterSearch,
+              canDelete: canDeleteMatters,
+              columns: listColumns,
+              typeLabelByKey,
+            })}
           </div>
         </div>
       </div>`);
 
-    wireMatterLiveSearch(filterFields, { canDelete: canDeleteMatters });
+    wireMatterLiveSearch(filterFields, {
+      canDelete: canDeleteMatters,
+      columns: listColumns,
+      typeLabelByKey,
+    });
+    wireMatterListColumnsPanel({ canEdit: canEditListColumns });
+    const exportMattersBtn = $('#exportMattersExcelBtn');
+    if (exportMattersBtn) {
+      exportMattersBtn.onclick = async () => {
+        try {
+          const params = matterBrowseQueryParams(state.matterSearch);
+          params.delete('listColumns');
+          params.set('format', 'xlsx');
+          const headers = { 'X-App-Origin': window.location.origin };
+          if (state.token && !state.cookieOnlyAuth) headers.Authorization = `Bearer ${state.token}`;
+          if (state.csrf) headers['X-CSRF-Token'] = state.csrf;
+          const res = await fetch(`/api/matters/export?${params}`, {
+            credentials: 'include',
+            headers,
+          });
+          if (!res.ok) {
+            let msg = res.statusText;
+            try {
+              const data = await res.json();
+              msg = data.message || data.error || msg;
+            } catch { /* ignore */ }
+            throw new Error(msg);
+          }
+          const blob = await res.blob();
+          const tmp = document.createElement('a');
+          tmp.href = URL.createObjectURL(blob);
+          tmp.download = 'matters.xlsx';
+          document.body.appendChild(tmp);
+          tmp.click();
+          tmp.remove();
+          URL.revokeObjectURL(tmp.href);
+        } catch (e) {
+          alert(e.message || 'Could not export matters');
+        }
+      };
+    }
     const clearCreate = $('#clearCreateMatter');
     if (clearCreate) {
       clearCreate.onclick = async () => {

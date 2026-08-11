@@ -2,6 +2,7 @@ const { allocateNumber, audit, getSetting, setSetting } = require('../db');
 const customFields = require('./customFields');
 const matterIndex = require('./matterIndex');
 const permissions = require('./permissions');
+const { buildXlsx } = require('../xlsx');
 
 const NAME_SEP = ' - ';
 const MATTER_NAME_FORMULA_SETTING = 'matter_name_formula';
@@ -11,6 +12,22 @@ const DEFAULT_MATTER_NAME_FORMULA = {
   parts: [],
   appendStatusYear: false,
 };
+
+const MATTER_LIST_COLUMNS_SETTING = 'matter_list_columns';
+
+/** Built-in Matter list columns (Name is always included). */
+const MATTER_LIST_BUILT_IN_FIELDS = [
+  { key: 'name', label: 'Name', removable: false },
+  { key: 'number', label: 'Number', removable: true },
+  { key: 'client', label: 'Client', removable: true },
+  { key: 'status', label: 'Status', removable: true },
+  { key: 'attorney', label: 'Attorney', removable: true },
+  { key: 'matter_type', label: 'Record type', removable: true },
+  { key: 'opened_on', label: 'Opened', removable: true },
+];
+
+const MATTER_LIST_BUILT_IN_KEYS = MATTER_LIST_BUILT_IN_FIELDS.map((f) => f.key);
+const DEFAULT_MATTER_LIST_COLUMNS = ['name', 'client', 'status', 'attorney'];
 
 function normalizeFormulaParts(parts) {
   if (!Array.isArray(parts)) return [];
@@ -715,6 +732,239 @@ function listClients(db) {
   return require('./clients').listClients(db);
 }
 
+function parseCustomListColumnKey(key) {
+  const raw = String(key || '').trim();
+  if (!raw.startsWith('cf:')) return null;
+  const id = Number(raw.slice(3));
+  if (!Number.isFinite(id) || id <= 0) return null;
+  return id;
+}
+
+function listMatterListCustomFieldRows(db) {
+  return db.prepare(`
+    SELECT id, label, field_type, record_type_key
+    FROM custom_fields
+    WHERE active = 1
+      AND IFNULL(applies_to, 'matter') = 'matter'
+      AND matter_id IS NULL
+      AND client_id IS NULL
+    ORDER BY label COLLATE NOCASE, id
+  `).all();
+}
+
+function normalizeMatterListColumnKeys(db, keys) {
+  const customIds = new Set(listMatterListCustomFieldRows(db).map((r) => Number(r.id)));
+  const seen = new Set();
+  const out = [];
+  for (const raw of Array.isArray(keys) ? keys : []) {
+    const key = String(raw || '').trim();
+    if (!key || seen.has(key)) continue;
+    if (MATTER_LIST_BUILT_IN_KEYS.includes(key)) {
+      seen.add(key);
+      out.push(key);
+      continue;
+    }
+    const cfId = parseCustomListColumnKey(key);
+    if (cfId != null && customIds.has(cfId)) {
+      const normalized = `cf:${cfId}`;
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  }
+  if (!out.includes('name')) out.unshift('name');
+  return out.length ? out : [...DEFAULT_MATTER_LIST_COLUMNS];
+}
+
+function getMatterListColumnKeys(db) {
+  const raw = getSetting(db, MATTER_LIST_COLUMNS_SETTING, null);
+  if (raw == null || raw === '') return [...DEFAULT_MATTER_LIST_COLUMNS];
+  try {
+    return normalizeMatterListColumnKeys(db, JSON.parse(raw));
+  } catch {
+    return [...DEFAULT_MATTER_LIST_COLUMNS];
+  }
+}
+
+function setMatterListColumnKeys(db, actor, keys) {
+  const next = normalizeMatterListColumnKeys(db, keys);
+  setSetting(db, MATTER_LIST_COLUMNS_SETTING, JSON.stringify(next));
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'matter_list_columns.update',
+    entityType: 'firm_settings',
+    entityId: null,
+    detail: { columns: next },
+  });
+  return getMatterListColumnConfig(db);
+}
+
+function matterListColumnMeta(db, key) {
+  const builtIn = MATTER_LIST_BUILT_IN_FIELDS.find((f) => f.key === key);
+  if (builtIn) {
+    return {
+      key: builtIn.key,
+      label: builtIn.label,
+      kind: 'built_in',
+      removable: builtIn.removable !== false,
+    };
+  }
+  const cfId = parseCustomListColumnKey(key);
+  if (cfId == null) return null;
+  const row = db.prepare(`
+    SELECT id, label, field_type, record_type_key
+    FROM custom_fields
+    WHERE id = ? AND active = 1 AND IFNULL(applies_to, 'matter') = 'matter'
+  `).get(cfId);
+  if (!row) return null;
+  return {
+    key: `cf:${row.id}`,
+    label: row.label,
+    kind: 'custom',
+    fieldId: row.id,
+    fieldType: row.field_type,
+    recordTypeKey: row.record_type_key || null,
+    removable: true,
+  };
+}
+
+function getMatterListColumnConfig(db) {
+  const keys = getMatterListColumnKeys(db);
+  const enabledSet = new Set(keys);
+  const columns = keys.map((key) => matterListColumnMeta(db, key)).filter(Boolean);
+  const availableBuiltIn = MATTER_LIST_BUILT_IN_FIELDS
+    .filter((f) => !enabledSet.has(f.key) && f.key !== 'name')
+    .map((f) => ({
+      key: f.key,
+      label: f.label,
+      kind: 'built_in',
+      removable: true,
+    }));
+  const availableCustom = listMatterListCustomFieldRows(db)
+    .filter((r) => !enabledSet.has(`cf:${r.id}`))
+    .map((r) => ({
+      key: `cf:${r.id}`,
+      label: r.label,
+      kind: 'custom',
+      fieldId: r.id,
+      fieldType: r.field_type,
+      recordTypeKey: r.record_type_key || null,
+      removable: true,
+    }));
+  return {
+    columns,
+    available: [...availableBuiltIn, ...availableCustom],
+    keys,
+  };
+}
+
+function addMatterListColumn(db, actor, key) {
+  const meta = matterListColumnMeta(db, key);
+  if (!meta) throw new Error('unknown matter list column');
+  const current = getMatterListColumnKeys(db);
+  if (!current.includes(meta.key)) current.push(meta.key);
+  return setMatterListColumnKeys(db, actor, current);
+}
+
+function removeMatterListColumn(db, actor, key) {
+  const k = String(key || '').trim();
+  if (k === 'name') throw new Error('Name cannot be removed from the matter list');
+  const current = getMatterListColumnKeys(db).filter((x) => x !== k);
+  return setMatterListColumnKeys(db, actor, current);
+}
+
+function attachCustomValuesForListColumns(db, matters, keys = null) {
+  const rows = Array.isArray(matters) ? matters : [];
+  if (!rows.length) return rows;
+  const columnKeys = keys || getMatterListColumnKeys(db);
+  const cfIds = columnKeys.map(parseCustomListColumnKey).filter((id) => id != null);
+  if (!cfIds.length) {
+    return rows.map((m) => ({ ...m, customValues: m.customValues || {} }));
+  }
+  const matterIds = rows.map((m) => Number(m.id)).filter((id) => Number.isFinite(id));
+  if (!matterIds.length) {
+    return rows.map((m) => ({ ...m, customValues: m.customValues || {} }));
+  }
+  const matterPlaceholders = matterIds.map(() => '?').join(',');
+  const fieldPlaceholders = cfIds.map(() => '?').join(',');
+  const valueRows = db.prepare(`
+    SELECT matter_id, field_id, value_text
+    FROM custom_field_values
+    WHERE matter_id IN (${matterPlaceholders})
+      AND field_id IN (${fieldPlaceholders})
+  `).all(...matterIds, ...cfIds);
+  const byMatter = new Map();
+  for (const v of valueRows) {
+    let bag = byMatter.get(v.matter_id);
+    if (!bag) {
+      bag = {};
+      byMatter.set(v.matter_id, bag);
+    }
+    bag[v.field_id] = v.value_text == null ? '' : String(v.value_text);
+  }
+  return rows.map((m) => ({
+    ...m,
+    customValues: { ...(m.customValues || {}), ...(byMatter.get(m.id) || {}) },
+  }));
+}
+
+function listMattersWithListColumns(db, filters = {}) {
+  const keys = getMatterListColumnKeys(db);
+  const q = filters.q != null && String(filters.q).trim() !== '' ? String(filters.q).trim() : '';
+  const rows = q ? searchMatters(db, filters) : listMatters(db, filters);
+  return {
+    columns: getMatterListColumnConfig(db).columns,
+    keys,
+    matters: attachCustomValuesForListColumns(db, rows, keys),
+  };
+}
+
+function formatMatterListCell(db, matter, key, typeLabelByKey = null) {
+  switch (key) {
+    case 'name':
+      return matter.name || '';
+    case 'number':
+      return matter.number || '';
+    case 'client':
+      return matter.client_name || '';
+    case 'status': {
+      const s = String(matter.status || '').trim();
+      if (!s) return '';
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+    case 'attorney':
+      return matter.attorney_name || '';
+    case 'matter_type': {
+      const k = matter.matter_type || '';
+      if (typeLabelByKey && typeLabelByKey[k]) return typeLabelByKey[k];
+      return k || '';
+    }
+    case 'opened_on':
+      return matter.opened_on || '';
+    default: {
+      const cfId = parseCustomListColumnKey(key);
+      if (cfId == null) return '';
+      const bag = matter.customValues || {};
+      const v = bag[cfId] ?? bag[String(cfId)];
+      return v == null ? '' : String(v);
+    }
+  }
+}
+
+function exportMattersListXlsx(db, filters = {}) {
+  const { columns, keys, matters } = listMattersWithListColumns(db, filters);
+  const typeLabelByKey = Object.fromEntries(
+    customFields.listRecordTypes(db, { appliesTo: 'matter' })
+      .map((t) => [t.key, t.label || t.key])
+  );
+  const header = columns.map((c) => ({ v: c.label, t: 's' }));
+  const body = matters.map((m) => keys.map((key) => ({
+    v: formatMatterListCell(db, m, key, typeLabelByKey),
+    t: 's',
+  })));
+  return buildXlsx([header, ...body]);
+}
+
 module.exports = {
   createMatter,
   updateMatter,
@@ -732,4 +982,15 @@ module.exports = {
   cleanMatterBaseName,
   findDuplicateMatter,
   MATTER_NAME_FORMULA_SETTING,
+  MATTER_LIST_COLUMNS_SETTING,
+  DEFAULT_MATTER_LIST_COLUMNS,
+  getMatterListColumnKeys,
+  setMatterListColumnKeys,
+  getMatterListColumnConfig,
+  addMatterListColumn,
+  removeMatterListColumn,
+  attachCustomValuesForListColumns,
+  listMattersWithListColumns,
+  exportMattersListXlsx,
+  formatMatterListCell,
 };
