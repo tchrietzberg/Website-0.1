@@ -2656,10 +2656,8 @@ button.primary.login-submit {
 
 @media (prefers-reduced-motion: reduce) {
   body.login-mode::before,
-  body.login-mode::after,
   .login-panel,
   .login-brand,
-  .login-brand-glyph,
   .login-brand::after {
     animation: none;
   }
