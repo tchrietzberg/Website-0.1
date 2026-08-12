@@ -3059,33 +3059,40 @@
     return `
       <details class="matters-list-columns" id="matterListColumnsPanel" ${open ? 'open' : ''}>
         <summary>List columns</summary>
-        <p class="hint">Add, remove, or reorder columns on this Matters list. Changes apply for the firm and to Excel export.</p>
-        <div class="field-mgmt-list" id="matterListColumnRows">
-          ${columns.map((c, i) => `
-            <div class="field-mgmt-row" data-mlc-key="${escapeHtml(c.key)}">
-              <div>
+        <p class="hint">${canEdit
+          ? 'Drag columns to reorder. Remove with ×, or click a field below to add. Changes apply for the firm and Excel export.'
+          : 'These columns appear on the Matters list and Excel export.'}</p>
+        <div class="mlc-active-list" id="matterListColumnRows" ${canEdit ? 'data-mlc-sortable="1"' : ''}>
+          ${columns.map((c) => `
+            <div class="mlc-chip is-active${canEdit ? ' is-draggable' : ''}${c.removable === false ? ' is-locked' : ''}"
+              data-mlc-key="${escapeHtml(c.key)}"
+              ${canEdit ? 'draggable="true"' : ''}>
+              ${canEdit ? '<span class="mlc-drag" title="Drag to reorder" aria-hidden="true">⋮⋮</span>' : ''}
+              <span class="mlc-chip-label">
                 <strong>${escapeHtml(c.label || c.key)}</strong>
-                <span class="muted"> · ${c.kind === 'custom' ? 'Custom field' : 'Built-in'}${c.removable === false ? ' · required' : ''}</span>
-              </div>
-              <div class="row-actions">
-                <button type="button" data-mlc-up="${i}" ${!canEdit || i === 0 ? 'disabled' : ''}>Up</button>
-                <button type="button" data-mlc-down="${i}" ${!canEdit || i === columns.length - 1 ? 'disabled' : ''}>Down</button>
-                <button type="button" data-mlc-remove="${escapeHtml(c.key)}"
-                  ${!canEdit || c.removable === false ? 'disabled' : ''}>Remove</button>
-              </div>
+                <small>${c.kind === 'custom' ? 'Custom' : 'Built-in'}${c.removable === false ? ' · required' : ''}</small>
+              </span>
+              ${canEdit && c.removable !== false
+                ? `<button type="button" class="mlc-remove" data-mlc-remove="${escapeHtml(c.key)}"
+                    title="Remove column" aria-label="Remove ${escapeHtml(c.label || c.key)}">×</button>`
+                : ''}
             </div>`).join('') || '<p class="muted">No columns configured.</p>'}
         </div>
         ${canEdit ? `
-          <div class="field-mgmt-add" style="margin-top:.65rem">
-            <label>Add column
-              <select id="matterListAddColumn">
-                ${available.length
-                  ? available.map((c) => `
-                    <option value="${escapeHtml(c.key)}">${escapeHtml(c.label || c.key)}</option>`).join('')
-                  : '<option value="">No more columns available</option>'}
-              </select>
-            </label>
-            <button type="button" id="matterListAddColumnBtn" ${available.length ? '' : 'disabled'}>Add</button>
+          <div class="mlc-available" id="matterListAvailableColumns">
+            <p class="mlc-available-label">Add columns</p>
+            <div class="mlc-available-chips">
+              ${available.length
+                ? available.map((c) => `
+                  <button type="button" class="mlc-chip is-available" data-mlc-add="${escapeHtml(c.key)}">
+                    <span class="mlc-chip-label">
+                      <strong>${escapeHtml(c.label || c.key)}</strong>
+                      <small>${c.kind === 'custom' ? 'Custom' : 'Built-in'}</small>
+                    </span>
+                    <span class="mlc-add-mark" aria-hidden="true">+</span>
+                  </button>`).join('')
+                : '<p class="muted">All available columns are already on the list.</p>'}
+            </div>
           </div>` : '<p class="muted">You can view columns; editors can change them.</p>'}
         <div id="matterListColumnsMsg"></div>
       </details>`;
@@ -3235,13 +3242,28 @@
     });
     if (!canEdit) return;
 
+    const list = panel.querySelector('#matterListColumnRows');
     const msg = (html) => {
       const el = $('#matterListColumnsMsg');
       if (el) el.innerHTML = html || '';
     };
 
-    const saveKeys = async (keys) => {
-      msg('<p class="muted">Saving columns…</p>');
+    const keysFromDom = () => [...(list?.querySelectorAll('[data-mlc-key]') || [])]
+      .map((el) => String(el.getAttribute('data-mlc-key') || '').trim())
+      .filter(Boolean);
+
+    const currentKeys = () => {
+      const fromDom = keysFromDom();
+      return fromDom.length
+        ? fromDom
+        : matterListColumnsOrDefault(state.matterListColumns).map((c) => c.key);
+    };
+
+    let saving = false;
+    const saveKeys = async (keys, { silent = false } = {}) => {
+      if (saving) return;
+      saving = true;
+      if (!silent) msg('<p class="muted">Saving columns…</p>');
       try {
         const next = await api('/api/matters/list-columns', {
           method: 'PUT',
@@ -3252,54 +3274,91 @@
         await renderMatters();
       } catch (e) {
         msg(`<div class="error">${escapeHtml(e.message || 'Could not save columns')}</div>`);
+      } finally {
+        saving = false;
       }
     };
 
-    const currentKeys = () => matterListColumnsOrDefault(state.matterListColumns).map((c) => c.key);
-
-    panel.querySelectorAll('[data-mlc-up]').forEach((btn) => {
-      btn.onclick = async (ev) => {
-        ev.preventDefault();
-        const i = Number(btn.dataset.mlcUp);
-        if (!Number.isFinite(i) || i <= 0) return;
-        const keys = currentKeys();
-        const tmp = keys[i - 1];
-        keys[i - 1] = keys[i];
-        keys[i] = tmp;
-        await saveKeys(keys);
-      };
-    });
-    panel.querySelectorAll('[data-mlc-down]').forEach((btn) => {
-      btn.onclick = async (ev) => {
-        ev.preventDefault();
-        const i = Number(btn.dataset.mlcDown);
-        const keys = currentKeys();
-        if (!Number.isFinite(i) || i >= keys.length - 1) return;
-        const tmp = keys[i + 1];
-        keys[i + 1] = keys[i];
-        keys[i] = tmp;
-        await saveKeys(keys);
-      };
-    });
     panel.querySelectorAll('[data-mlc-remove]').forEach((btn) => {
       btn.onclick = async (ev) => {
         ev.preventDefault();
+        ev.stopPropagation();
         const key = String(btn.dataset.mlcRemove || '');
         if (!key || key === 'name') return;
         await saveKeys(currentKeys().filter((k) => k !== key));
       };
     });
-    const addBtn = $('#matterListAddColumnBtn');
-    if (addBtn) {
-      addBtn.onclick = async (ev) => {
+
+    panel.querySelectorAll('[data-mlc-add]').forEach((btn) => {
+      btn.onclick = async (ev) => {
         ev.preventDefault();
-        const key = String($('#matterListAddColumn')?.value || '').trim();
+        const key = String(btn.dataset.mlcAdd || '').trim();
         if (!key) return;
         const keys = currentKeys();
         if (!keys.includes(key)) keys.push(key);
         await saveKeys(keys);
       };
-    }
+    });
+
+    if (!list || list.getAttribute('data-mlc-sortable') !== '1') return;
+
+    let dragEl = null;
+
+    list.querySelectorAll('.mlc-chip.is-draggable').forEach((chip) => {
+      chip.addEventListener('mousedown', (ev) => {
+        // Prefer starting from the grip; still allow dragging the chip body
+        // except when clicking Remove.
+        if (ev.target.closest?.('[data-mlc-remove]')) {
+          chip.draggable = false;
+          return;
+        }
+        chip.draggable = true;
+      });
+      chip.addEventListener('dragstart', (ev) => {
+        if (ev.target.closest?.('[data-mlc-remove]')) {
+          ev.preventDefault();
+          return;
+        }
+        dragEl = chip;
+        chip.classList.add('is-dragging');
+        try {
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('text/plain', chip.getAttribute('data-mlc-key') || '');
+        } catch (_) { /* ignore */ }
+      });
+      chip.addEventListener('dragend', () => {
+        chip.classList.remove('is-dragging');
+        list.querySelectorAll('.mlc-chip.is-drop-target').forEach((el) => {
+          el.classList.remove('is-drop-target');
+        });
+        dragEl = null;
+      });
+    });
+
+    list.addEventListener('dragover', (ev) => {
+      if (!dragEl || !list.contains(dragEl)) return;
+      ev.preventDefault();
+      try { ev.dataTransfer.dropEffect = 'move'; } catch (_) { /* ignore */ }
+      const over = ev.target.closest?.('.mlc-chip.is-draggable');
+      if (!over || over === dragEl || !list.contains(over)) return;
+      list.querySelectorAll('.mlc-chip.is-drop-target').forEach((el) => {
+        if (el !== over) el.classList.remove('is-drop-target');
+      });
+      over.classList.add('is-drop-target');
+      const rect = over.getBoundingClientRect();
+      const before = ev.clientY < rect.top + rect.height / 2;
+      if (before) list.insertBefore(dragEl, over);
+      else list.insertBefore(dragEl, over.nextSibling);
+    });
+
+    list.addEventListener('drop', async (ev) => {
+      if (!dragEl || !list.contains(dragEl)) return;
+      ev.preventDefault();
+      list.querySelectorAll('.mlc-chip.is-drop-target').forEach((el) => {
+        el.classList.remove('is-drop-target');
+      });
+      await saveKeys(keysFromDom(), { silent: true });
+    });
   }
 
   let matterLiveSearchTimer = null;
