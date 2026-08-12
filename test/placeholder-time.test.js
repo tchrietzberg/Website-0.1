@@ -96,4 +96,15 @@ describe('placeholder time park and transfer', () => {
       /Placeholder/
     );
   });
+
+  it('does not treat other Placeholder-prefixed matter names as the holding matter', () => {
+    ctx.db.prepare(`
+      INSERT INTO matters(client_id, number, name, matter_type, responsible_attorney_id, opened_on)
+      VALUES (1, '2026-0099', 'Placeholder Park Smoke', 'billable', 2, '2026-01-01')
+    `).run();
+    const id = timeSvc.ensurePlaceholderMatter(ctx.db, ctx.admin);
+    const row = ctx.db.prepare('SELECT name FROM matters WHERE id = ?').get(id);
+    assert.equal(row.name, 'Placeholder — Unassigned time');
+    assert.notEqual(id, ctx.db.prepare("SELECT id FROM matters WHERE name = 'Placeholder Park Smoke'").get().id);
+  });
 });
