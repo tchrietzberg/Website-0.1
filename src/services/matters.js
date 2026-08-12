@@ -645,9 +645,6 @@ function listMatters(db, filters = {}) {
     ? Number(filters.clientId)
     : null;
   const { fieldId, fieldValue } = normalizeCustomFieldFilter(filters);
-  const includePlaceholder = !!filters.includePlaceholder;
-  const timeSvc = require('./time');
-  const placeholderId = includePlaceholder ? null : timeSvc.getPlaceholderMatterId(db);
 
   let join = '';
   const params = [];
@@ -663,8 +660,7 @@ function listMatters(db, filters = {}) {
   params.push(
     status, status,
     matterType, matterType,
-    clientId, clientId,
-    placeholderId, placeholderId
+    clientId, clientId
   );
 
   return db.prepare(`
@@ -676,7 +672,6 @@ function listMatters(db, filters = {}) {
     WHERE (? IS NULL OR m.status = ?)
       AND (? IS NULL OR m.matter_type = ?)
       AND (? IS NULL OR m.client_id = ?)
-      AND (? IS NULL OR m.id != ?)
     ORDER BY m.number DESC
   `).all(...params);
 }
@@ -699,13 +694,6 @@ function deleteMatter(db, actor, id) {
   const current = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
   if (!current) throw new Error('matter not found');
 
-  const timeSvc = require('./time');
-  if (timeSvc.isPlaceholderMatter(db, id)) {
-    throw new Error(
-      'Cannot delete the Placeholder time matter. It holds unassigned time for admin transfer in Settings.'
-    );
-  }
-
   const timeCount = db.prepare(
     'SELECT COUNT(*) AS n FROM time_entries WHERE matter_id = ?'
   ).get(id)?.n || 0;
@@ -713,7 +701,7 @@ function deleteMatter(db, actor, id) {
     throw new Error(
       `Cannot delete “${current.name}” while ${timeCount} time entr${
         timeCount === 1 ? 'y' : 'ies'
-      } still reference this matter. Time entries must be transferred to another matter (or parked under Settings → Placeholder time) before this matter can be deleted.`
+      } still reference this matter. Time entries must be transferred to another matter before this matter can be deleted.`
     );
   }
 

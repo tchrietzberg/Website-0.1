@@ -1188,37 +1188,6 @@ function createServer(db = openDb()) {
         return json(res, 200, customFields.saveLayoutItems(db, user, layoutId, body.items || []));
       }
 
-      // Time — Placeholder holding (admin transfer)
-      if (req.method === 'GET' && pathname === '/api/time-entries/placeholder') {
-        try {
-          return json(res, 200, timeSvc.listPlaceholderEntries(db, user), req);
-        } catch (e) {
-          const status = e.code === 'FORBIDDEN' ? 403 : 400;
-          return json(res, status, { error: e.message, message: e.message }, req);
-        }
-      }
-      if (req.method === 'POST' && pathname === '/api/time-entries/placeholder/transfer') {
-        try {
-          const body = await parseBody(req);
-          return json(res, 200, timeSvc.transferEntriesToMatter(db, user, {
-            entryIds: body.entryIds || body.ids || [],
-            matterId: body.matterId,
-          }), req);
-        } catch (e) {
-          const status = e.code === 'FORBIDDEN' ? 403 : 400;
-          return json(res, status, { error: e.message, message: e.message }, req);
-        }
-      }
-      if (req.method === 'POST' && pathname.match(/^\/api\/matters\/\d+\/park-time$/)) {
-        try {
-          const id = Number(pathname.split('/')[3]);
-          return json(res, 200, timeSvc.parkMatterTime(db, user, id), req);
-        } catch (e) {
-          const status = e.code === 'FORBIDDEN' ? 403 : 400;
-          return json(res, status, { error: e.message, message: e.message }, req);
-        }
-      }
-
       // Time
       if (req.method === 'GET' && pathname === '/api/time-entries/earliest-date') {
         try {
