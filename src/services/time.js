@@ -4,11 +4,249 @@ const {
   assertAllowedIncrement,
   assertRoundMode,
 } = require('../money');
-const { getSetting, setSetting, audit } = require('../db');
+const { allocateNumber, getSetting, setSetting, audit } = require('../db');
 const customFields = require('./customFields');
 const permissions = require('./permissions');
 const timezones = require('./timezones');
 const matterBilling = require('./matterBilling');
+
+const PLACEHOLDER_MATTER_SETTING = 'placeholder_matter_id';
+const PLACEHOLDER_MATTER_NAME = 'Placeholder — Unassigned time';
+
+function getPlaceholderMatterId(db) {
+  const raw = getSetting(db, PLACEHOLDER_MATTER_SETTING, null);
+  const id = raw != null && String(raw).trim() !== '' ? Number(raw) : null;
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const row = db.prepare('SELECT id FROM matters WHERE id = ?').get(id);
+  return row ? id : null;
+}
+
+function isPlaceholderMatter(db, matterId) {
+  const id = Number(matterId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+  const placeholderId = getPlaceholderMatterId(db);
+  return placeholderId != null && Number(placeholderId) === id;
+}
+
+/** Firm holding matter for parked/unassigned time (created on first use). */
+function ensurePlaceholderMatter(db, actor = null) {
+  const existing = getPlaceholderMatterId(db);
+  if (existing) return existing;
+
+  const byName = db.prepare(`
+    SELECT id FROM matters
+    WHERE name = ? OR lower(name) LIKE 'placeholder%'
+    ORDER BY id
+    LIMIT 1
+  `).get(PLACEHOLDER_MATTER_NAME);
+  if (byName?.id) {
+    setSetting(db, PLACEHOLDER_MATTER_SETTING, String(byName.id));
+    return Number(byName.id);
+  }
+
+  customFields.ensureRecordTypes(db);
+  const matterType = customFields.normalizeRecordTypeKey(db, 'do_not_charge');
+  const openedOn = new Date().toISOString().slice(0, 10);
+  const year = Number(openedOn.slice(0, 4));
+  // Prefer a stable system number; fall back to allocated numbers if taken.
+  let number = 'SYS-PLACEHOLDER';
+  if (db.prepare('SELECT id FROM matters WHERE number = ?').get(number)) {
+    number = null;
+    for (let i = 0; i < 50; i += 1) {
+      const candidate = allocateNumber(db, 'matter', year, '');
+      if (!db.prepare('SELECT id FROM matters WHERE number = ?').get(candidate)) {
+        number = candidate;
+        break;
+      }
+    }
+  }
+  if (!number) throw new Error('Could not allocate a matter number for Placeholder time');
+  const info = db.prepare(`
+    INSERT INTO matters(
+      client_id, number, name, matter_type, jurisdiction, court, status,
+      responsible_attorney_id, opened_on
+    ) VALUES (?, ?, ?, ?, NULL, NULL, 'open', NULL, ?)
+  `).run(null, number, PLACEHOLDER_MATTER_NAME, matterType, openedOn);
+  const id = Number(info.lastInsertRowid);
+  setSetting(db, PLACEHOLDER_MATTER_SETTING, String(id));
+  try {
+    // Keep Placeholder out of Matter Search / pickers.
+    const matterIndex = require('./matterIndex');
+    matterIndex.removeMatterFromIndex(db, id);
+  } catch (_) { /* index optional at boot */ }
+  audit(db, {
+    actorId: actor?.id || null,
+    action: 'placeholder_matter.ensure',
+    entityType: 'matter',
+    entityId: id,
+    detail: { name: PLACEHOLDER_MATTER_NAME },
+  });
+  return id;
+}
+
+function assertNotPlaceholderMatter(db, matterId, action = 'use') {
+  if (isPlaceholderMatter(db, matterId)) {
+    throw new Error(
+      action === 'delete'
+        ? 'Cannot delete the Placeholder time matter. It holds unassigned time for admin transfer.'
+        : 'Placeholder time is only for parked entries. Choose a real matter, or transfer from Settings → Placeholder time.'
+    );
+  }
+}
+
+function listPlaceholderEntries(db, actor = null) {
+  if (actor) {
+    if (actor.role !== 'admin') {
+      const err = new Error('Only admins can manage Placeholder time');
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+    permissions.assertCanViewRecords(db, actor, 'time');
+  }
+  const placeholderId = ensurePlaceholderMatter(db, actor);
+  const rows = db.prepare(`
+    SELECT te.*, u.name AS timekeeper_name, m.number AS matter_number, m.name AS matter_name
+    FROM time_entries te
+    JOIN users u ON u.id = te.timekeeper_id
+    JOIN matters m ON m.id = te.matter_id
+    WHERE te.matter_id = ?
+    ORDER BY te.service_date DESC, te.id DESC
+  `).all(placeholderId);
+  const totals = rows.reduce((acc, r) => {
+    acc.count += 1;
+    acc.minutes += Number(r.rounded_minutes || 0);
+    return acc;
+  }, { count: 0, minutes: 0 });
+  return {
+    matterId: placeholderId,
+    matterName: PLACEHOLDER_MATTER_NAME,
+    entries: rows,
+    totals,
+  };
+}
+
+/**
+ * Move movable (not billed) time from a matter into Placeholder so the matter
+ * can be deleted once invoices/billed time are also cleared.
+ */
+function parkMatterTime(db, actor, matterId) {
+  if (!actor || actor.role !== 'admin') {
+    const err = new Error('Only admins can park time in Placeholder');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  permissions.assertCanModifyRecords(db, actor, 'time');
+  const id = Number(matterId);
+  if (!Number.isFinite(id) || id <= 0) throw new Error('matter not found');
+  assertNotPlaceholderMatter(db, id, 'park');
+  const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
+  if (!matter) throw new Error('matter not found');
+
+  const placeholderId = ensurePlaceholderMatter(db, actor);
+  const movable = db.prepare(`
+    SELECT id FROM time_entries
+    WHERE matter_id = ?
+      AND status != 'invoiced'
+      AND invoice_id IS NULL
+  `).all(id);
+  if (!movable.length) {
+    throw new Error(
+      'No unbilled time entries to park. Billed time (and invoices) must stay on the matter until those bills are handled.'
+    );
+  }
+  const ids = movable.map((r) => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+  db.prepare(`
+    UPDATE time_entries SET matter_id = ?
+    WHERE id IN (${placeholders})
+  `).run(placeholderId, ...ids);
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'time_entry.park_to_placeholder',
+    entityType: 'matter',
+    entityId: id,
+    detail: {
+      fromMatterId: id,
+      fromMatterName: matter.name,
+      placeholderMatterId: placeholderId,
+      entryIds: ids,
+      count: ids.length,
+    },
+  });
+  return {
+    ok: true,
+    parked: ids.length,
+    entryIds: ids,
+    placeholderMatterId: placeholderId,
+    remainingOnMatter: db.prepare(
+      'SELECT COUNT(*) AS n FROM time_entries WHERE matter_id = ?'
+    ).get(id)?.n || 0,
+  };
+}
+
+/** Admin: transfer Placeholder (or any) entries onto a real matter. */
+function transferEntriesToMatter(db, actor, { entryIds = [], matterId } = {}) {
+  if (!actor || actor.role !== 'admin') {
+    const err = new Error('Only admins can transfer Placeholder time');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  permissions.assertCanModifyRecords(db, actor, 'time');
+  const targetId = Number(matterId);
+  if (!Number.isFinite(targetId) || targetId <= 0) throw new Error('matter required');
+  assertNotPlaceholderMatter(db, targetId, 'transfer');
+  const target = db.prepare('SELECT * FROM matters WHERE id = ?').get(targetId);
+  if (!target) throw new Error('matter not found');
+
+  const ids = (Array.isArray(entryIds) ? entryIds : [])
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!ids.length) throw new Error('Select at least one time entry to transfer');
+
+  const placeholderId = ensurePlaceholderMatter(db, actor);
+  const ph = ids.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT id, matter_id, status, invoice_id FROM time_entries
+    WHERE id IN (${ph})
+  `).all(...ids);
+  if (rows.length !== ids.length) throw new Error('One or more time entries were not found');
+
+  for (const row of rows) {
+    if (Number(row.matter_id) !== Number(placeholderId)) {
+      throw new Error('Only time entries in Placeholder can be transferred here');
+    }
+    if (row.status === 'invoiced' || row.invoice_id) {
+      throw new Error('Cannot transfer a billed time entry');
+    }
+  }
+
+  db.prepare(`
+    UPDATE time_entries SET matter_id = ?
+    WHERE id IN (${ph})
+  `).run(targetId, ...ids);
+
+  audit(db, {
+    actorId: actor.id,
+    action: 'time_entry.transfer_from_placeholder',
+    entityType: 'matter',
+    entityId: targetId,
+    detail: {
+      toMatterId: targetId,
+      toMatterName: target.name,
+      fromMatterId: placeholderId,
+      entryIds: ids,
+      count: ids.length,
+    },
+  });
+  return {
+    ok: true,
+    transferred: ids.length,
+    entryIds: ids,
+    matterId: targetId,
+    matterName: target.name,
+  };
+}
 
 function evaluateRules(db, entry) {
   const rules = db.prepare('SELECT * FROM billing_rules WHERE active = 1').all();
@@ -88,6 +326,7 @@ function createEntry(db, actor, input) {
 
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(input.matterId);
   if (!matter) throw new Error('matter not found');
+  assertNotPlaceholderMatter(db, matter.id, 'create');
 
   let timekeeperId = Number(input.timekeeperId || actor.id);
   if (!Number.isFinite(timekeeperId) || timekeeperId <= 0) timekeeperId = actor.id;
@@ -373,6 +612,8 @@ function updateEntry(db, actor, id, input = {}) {
   const matterId = input.matterId != null ? Number(input.matterId) : entry.matter_id;
   const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(matterId);
   if (!matter) throw new Error('matter not found');
+  // Allow leaving Placeholder via transferEntriesToMatter; block casual edits onto it.
+  if (input.matterId != null) assertNotPlaceholderMatter(db, matterId, 'update');
 
   const serviceDate = input.serviceDate != null
     ? String(input.serviceDate).slice(0, 10)
@@ -638,4 +879,13 @@ module.exports = {
   detectDuplicates,
   canApprove,
   defaultBillableFromMatter,
+  PLACEHOLDER_MATTER_SETTING,
+  PLACEHOLDER_MATTER_NAME,
+  getPlaceholderMatterId,
+  isPlaceholderMatter,
+  ensurePlaceholderMatter,
+  assertNotPlaceholderMatter,
+  listPlaceholderEntries,
+  parkMatterTime,
+  transferEntriesToMatter,
 };
