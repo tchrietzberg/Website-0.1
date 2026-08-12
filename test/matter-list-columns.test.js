@@ -29,6 +29,16 @@ describe('matter list columns', () => {
     const cfg = matterSvc.getMatterListColumnConfig(ctx.db);
     assert.deepEqual(cfg.keys, ['name', 'client', 'status', 'attorney']);
     assert.equal(cfg.columns[0].removable, false);
+    assert.equal(cfg.columns.find((c) => c.key === 'status')?.kind, 'custom');
+  });
+
+  it('labels Opened and Status as custom in column config', () => {
+    const before = matterSvc.getMatterListColumnConfig(ctx.db);
+    assert.equal(before.available.find((c) => c.key === 'opened_on')?.kind, 'custom');
+    const cfg = matterSvc.addMatterListColumn(ctx.db, ctx.admin, 'opened_on');
+    assert.equal(cfg.columns.find((c) => c.key === 'opened_on')?.kind, 'custom');
+    assert.equal(cfg.columns.find((c) => c.key === 'status')?.kind, 'custom');
+    assert.equal(cfg.columns.find((c) => c.key === 'client')?.kind, 'built_in');
   });
 
   it('adds, reorders, and removes optional columns including custom fields', () => {
