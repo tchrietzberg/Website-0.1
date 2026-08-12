@@ -3366,6 +3366,11 @@ button.primary.login-submit {
   width: 100%;
   max-width: 16rem;
 }
+.confirm-contact-type-hint {
+  display: block;
+  margin: 0.35rem 0 0;
+  font-weight: 500;
+}
 .confirm-client-error,
 .confirm-matter-error {
   margin: 0.45rem 0 0;
