@@ -4958,7 +4958,6 @@
         ${showCreate ? `
         <div id="createMatterSection" class="create-matter-panel page-section">
           <form id="newMatterForm" class="create-matter-form">
-            <label class="create-matter-label" for="createMatterName">Create Matter</label>
             ${formulaActive ? `
               <p class="hint">Matter name is built from:
                 ${escapeHtml((nameFormula.parts || []).map((p) => p.label || (p.kind === 'token' ? 'Year' : 'Field')).join(nameFormula.separator || '-'))}</p>
@@ -4968,7 +4967,7 @@
                 <input id="createMatterName" name="name" ${formulaActive ? 'readonly' : 'required'}
                   value="${escapeHtml(draftName)}"
                   placeholder="${formulaActive ? 'Fills from name fields below' : 'Type a matter name…'}"
-                  aria-label="Create Matter" autocomplete="off" aria-autocomplete="list"
+                  aria-label="Matter name" autocomplete="off" aria-autocomplete="list"
                   aria-expanded="false" />
                 <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
                   role="listbox" hidden></ul>
