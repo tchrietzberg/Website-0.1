@@ -3098,6 +3098,86 @@
       </details>`;
   }
 
+  function isMatterDeleteBlockedByTime(message) {
+    const msg = String(message || '');
+    return /time entr/i.test(msg) && /still reference this matter/i.test(msg);
+  }
+
+  function openPlaceholderTimeSettings() {
+    if (!state.settingsTabOpen) state.settingsTabOpen = {};
+    state.settingsTabOpen['placeholder-time'] = true;
+    state.view = 'settings';
+    renderShell();
+    return renderSettings();
+  }
+
+  /**
+   * Show delete-blocked-by-time message. Admins can park unbilled time into
+   * Settings → Placeholder time so the matter can be deleted afterward.
+   */
+  function renderMatterDeleteTimeBlock(hostEl, {
+    message,
+    matterId,
+    matterName = 'this matter',
+    onAfterPark = null,
+  } = {}) {
+    if (!hostEl) return;
+    const existing = hostEl.querySelector('.matters-list-delete-error, .matter-delete-time-block');
+    if (existing) existing.remove();
+    const isAdmin = state.user?.role === 'admin';
+    const banner = document.createElement('div');
+    banner.className = 'error matter-delete-time-block matters-list-delete-error stack';
+    banner.style.gap = '0.65rem';
+    banner.innerHTML = `
+      <p style="margin:0">${escapeHtml(message || 'Could not delete matter')}</p>
+      <p class="hint" style="margin:0;color:inherit">
+        Time entries must be transferred to another matter before this matter can be deleted.
+        ${isAdmin
+          ? 'As an admin, you can park unbilled time under <strong>Settings → Placeholder time</strong>, then transfer it to a matter later.'
+          : 'Ask an admin to transfer or park the time under Settings → Placeholder time.'}
+      </p>
+      ${isAdmin ? `
+      <div class="row-actions" style="flex-wrap:wrap;gap:.5rem">
+        <button type="button" class="primary" data-park-matter-time="${Number(matterId)}">
+          Park unbilled time in Placeholder
+        </button>
+        <button type="button" class="linkish" data-open-placeholder-settings>Open Placeholder time</button>
+      </div>
+      <div data-park-msg></div>` : ''}`;
+    hostEl.prepend(banner);
+    banner.querySelector('[data-open-placeholder-settings]')?.addEventListener('click', () => {
+      openPlaceholderTimeSettings();
+    });
+    const parkBtn = banner.querySelector('[data-park-matter-time]');
+    if (parkBtn) {
+      parkBtn.onclick = async () => {
+        const msgEl = banner.querySelector('[data-park-msg]');
+        const sure = await confirmAction({
+          title: 'Park time in Placeholder?',
+          message: 'Unbilled time on this matter moves to Settings → Placeholder time. Admins can transfer it to another matter later. Billed/invoiced time stays on the matter.',
+          name: matterName,
+          confirmLabel: 'Park unbilled time',
+          cancelLabel: 'Cancel',
+        });
+        if (!sure) return;
+        try {
+          parkBtn.disabled = true;
+          const result = await api(`/api/matters/${matterId}/park-time`, { method: 'POST', body: '{}' });
+          const remaining = Number(result.remainingOnMatter || 0);
+          if (msgEl) {
+            msgEl.innerHTML = remaining > 0
+              ? `<div class="ok-banner">Parked ${result.parked} entr${result.parked === 1 ? 'y' : 'ies'}. ${remaining} entr${remaining === 1 ? 'y still references' : 'ies still reference'} this matter (usually billed) — clear those before delete.</div>`
+              : `<div class="ok-banner">Parked ${result.parked} entr${result.parked === 1 ? 'y' : 'ies'} in Placeholder. You can delete this matter now, or transfer the time from Settings → Placeholder time.</div>`;
+          }
+          if (typeof onAfterPark === 'function') await onAfterPark(result);
+        } catch (e) {
+          if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          parkBtn.disabled = false;
+        }
+      };
+    }
+  }
+
   async function deleteMatterFromList(id, name) {
     const sure = await confirmAction({
       title: 'Delete this matter?',
@@ -3142,8 +3222,18 @@
             await renderMatters();
           }
         } catch (e) {
-          const resultsEl = $('#matterSearchResults');
-          if (resultsEl) {
+          const resultsEl = $('#matterSearchResults') || rootEl;
+          if (isMatterDeleteBlockedByTime(e.message) && resultsEl) {
+            renderMatterDeleteTimeBlock(resultsEl, {
+              message: e.message,
+              matterId: id,
+              matterName: name,
+              onAfterPark: async () => {
+                await refreshRefs();
+                if (stillOnView('matters')) await renderMatters();
+              },
+            });
+          } else if (resultsEl) {
             const existing = resultsEl.querySelector('.matters-list-delete-error');
             if (existing) existing.remove();
             const banner = document.createElement('div');
@@ -6879,7 +6969,21 @@
           renderShell();
           await renderMatters();
         } catch (e) {
-          $('#matterMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          const msgHost = $('#matterMsg');
+          if (isMatterDeleteBlockedByTime(e.message) && msgHost) {
+            msgHost.innerHTML = '';
+            renderMatterDeleteTimeBlock(msgHost, {
+              message: e.message,
+              matterId: m.id,
+              matterName: m.name || 'this matter',
+              onAfterPark: async () => {
+                await refreshRefs();
+                if (stillOnView('matter')) await renderMatterDetail();
+              },
+            });
+          } else if (msgHost) {
+            msgHost.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+          }
         }
       };
     }
@@ -9551,7 +9655,7 @@
     const canConfigureFields = isAdmin || state.user.role === 'billing_clerk';
     // Billing clerks manage rates here; admins use Navigate → Add a user.
     const showClerkRates = canManageRates() && !canManageUsers();
-    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers, mfaStatus, invoiceTemplatePayload] = await Promise.all([
+    const [settings, matterRecordTypesPrefetch, contactRecordTypesPrefetch, timekeepers, mfaStatus, invoiceTemplatePayload, placeholderPayload, matterOptions] = await Promise.all([
       api('/api/settings'),
       canConfigureMatterDefaults ? api('/api/record-types').catch(() => []) : Promise.resolve([]),
       canConfigureFields ? api('/api/record-types?appliesTo=client').catch(() => []) : Promise.resolve([]),
@@ -9563,9 +9667,22 @@
           api('/api/invoice-templates/merge-fields').catch(() => ({ fields: [] })),
         ]).then(([t, f]) => ({ templates: t.templates || [], fields: f.fields || [] }))
         : Promise.resolve({ templates: [], fields: [] }),
+      isAdmin
+        ? api('/api/time-entries/placeholder', { cache: false }).catch((e) => ({
+          error: e.message,
+          entries: [],
+          totals: { count: 0, minutes: 0 },
+          matterName: 'Placeholder — Unassigned time',
+        }))
+        : Promise.resolve(null),
+      isAdmin ? api('/api/matters').catch(() => []) : Promise.resolve([]),
     ]);
     if (!stillOnView('settings')) return;
     state.settings = settings;
+    const placeholderEntries = Array.isArray(placeholderPayload?.entries) ? placeholderPayload.entries : [];
+    const placeholderTotals = placeholderPayload?.totals || { count: 0, minutes: 0 };
+    const transferMatters = (Array.isArray(matterOptions) ? matterOptions : [])
+      .filter((m) => m && Number(m.id) !== Number(placeholderPayload?.matterId));
     const invoiceTemplatesList = invoiceTemplatePayload.templates || [];
     const mergeFields = invoiceTemplatePayload.fields || [];
     const today = firmToday(settings.firmTimezone || firmTimeZone());
@@ -9664,6 +9781,55 @@
       }) : ''}
 
       ${isAdmin ? `
+      ${settingsCollapseTab({
+        id: 'placeholderTimeCard',
+        tabKey: 'placeholder-time',
+        title: 'Placeholder time',
+        meta: `${Number(placeholderTotals.count) || 0} entr${Number(placeholderTotals.count) === 1 ? 'y' : 'ies'}`,
+        open: settingsTabOpen('placeholder-time'),
+        bodyHtml: `
+          <p class="hint">Holding area for unassigned time. When a matter still has time entries, park unbilled time here so the matter can be deleted, then transfer entries to another matter.</p>
+          ${placeholderPayload?.error
+            ? `<div class="error">${escapeHtml(placeholderPayload.error)}</div>`
+            : ''}
+          <p class="muted">${Number(placeholderTotals.count) || 0} entr${Number(placeholderTotals.count) === 1 ? 'y' : 'ies'} · ${escapeHtml(formatDuration(placeholderTotals.minutes || 0))}</p>
+          <form id="placeholderTransferForm" class="stack">
+            <div class="table-wrap"><table>
+              <thead>
+                <tr>
+                  <th style="width:2.5rem"><input type="checkbox" id="placeholderSelectAll" title="Select all" ${placeholderEntries.length ? '' : 'disabled'} /></th>
+                  <th>Date</th>
+                  <th>Timekeeper</th>
+                  <th>Hours</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${placeholderEntries.map((e) => `
+                  <tr>
+                    <td><input type="checkbox" name="entryId" value="${e.id}" /></td>
+                    <td>${escapeHtml(String(e.service_date || '').slice(0, 10))}</td>
+                    <td>${escapeHtml(e.timekeeper_name || '—')}</td>
+                    <td><strong>${escapeHtml(formatDuration(e.rounded_minutes))}</strong></td>
+                    <td>${escapeHtml(e.description || '')}</td>
+                    <td class="muted">${escapeHtml(e.status || '')}</td>
+                  </tr>`).join('') || '<tr><td colspan="6" class="muted">No parked time yet. Park from a matter delete error, or leave entries here until you assign a matter.</td></tr>'}
+              </tbody>
+            </table></div>
+            <div class="row-actions" style="flex-wrap:wrap;gap:.75rem;align-items:end">
+              <label style="flex:1;min-width:12rem">Transfer selected to matter
+                <select name="matterId" id="placeholderTargetMatter" required ${placeholderEntries.length ? '' : 'disabled'}>
+                  <option value="">Select a matter…</option>
+                  ${transferMatters.map((m) => `
+                    <option value="${m.id}">${escapeHtml(m.number || '')} — ${escapeHtml(m.name || '')}</option>`).join('')}
+                </select>
+              </label>
+              <button type="submit" class="primary" ${placeholderEntries.length ? '' : 'disabled'}>Transfer to matter</button>
+            </div>
+            <div id="placeholderTimeMsg"></div>
+          </form>`,
+      })}
       ${settingsCollapseTab({
         id: 'rolePermissionsCard',
         tabKey: 'role-permissions',
@@ -9903,6 +10069,44 @@
         const key = el.getAttribute('data-settings-tab');
         if (key) state.settingsTabOpen[key] = false;
       });
+    });
+
+    const placeholderSelectAll = $('#placeholderSelectAll');
+    if (placeholderSelectAll) {
+      placeholderSelectAll.onchange = () => {
+        main.querySelectorAll('#placeholderTransferForm input[name="entryId"]').forEach((cb) => {
+          cb.checked = placeholderSelectAll.checked;
+        });
+      };
+    }
+    $('#placeholderTransferForm')?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const form = ev.currentTarget;
+      const msgEl = $('#placeholderTimeMsg');
+      const entryIds = [...form.querySelectorAll('input[name="entryId"]:checked')]
+        .map((el) => Number(el.value))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      const matterId = Number(form.matterId?.value || form.querySelector('[name="matterId"]')?.value);
+      if (!entryIds.length) {
+        if (msgEl) msgEl.innerHTML = '<div class="error">Select at least one time entry to transfer.</div>';
+        return;
+      }
+      if (!Number.isFinite(matterId) || matterId <= 0) {
+        if (msgEl) msgEl.innerHTML = '<div class="error">Choose a matter to receive the time.</div>';
+        return;
+      }
+      try {
+        const result = await api('/api/time-entries/placeholder/transfer', {
+          method: 'POST',
+          body: JSON.stringify({ entryIds, matterId }),
+        });
+        if (msgEl) {
+          msgEl.innerHTML = `<div class="ok-banner">Transferred ${result.transferred} entr${result.transferred === 1 ? 'y' : 'ies'} to ${escapeHtml(result.matterName || 'matter')}.</div>`;
+        }
+        await renderSettings();
+      } catch (e) {
+        if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      }
     });
 
     wireChoiceGroup(main, 'durationFormat');
