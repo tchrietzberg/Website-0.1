@@ -35,12 +35,16 @@ function ensurePlaceholderMatter(db, actor = null) {
 
   const byName = db.prepare(`
     SELECT id FROM matters
-    WHERE name = ? OR lower(name) LIKE 'placeholder%'
+    WHERE name = ?
     ORDER BY id
     LIMIT 1
   `).get(PLACEHOLDER_MATTER_NAME);
   if (byName?.id) {
     setSetting(db, PLACEHOLDER_MATTER_SETTING, String(byName.id));
+    try {
+      const matterIndex = require('./matterIndex');
+      matterIndex.removeMatterFromIndex(db, byName.id);
+    } catch (_) { /* optional */ }
     return Number(byName.id);
   }
 
