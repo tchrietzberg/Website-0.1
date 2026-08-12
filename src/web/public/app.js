@@ -2944,7 +2944,7 @@
     return [
       { key: 'name', label: 'Name', kind: 'built_in', removable: false },
       { key: 'client', label: 'Client', kind: 'built_in', removable: true },
-      { key: 'status', label: 'Status', kind: 'built_in', removable: true },
+      { key: 'status', label: 'Status', kind: 'custom', removable: true },
       { key: 'attorney', label: 'Attorney', kind: 'built_in', removable: true },
     ];
   }

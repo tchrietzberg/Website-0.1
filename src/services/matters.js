@@ -27,7 +27,15 @@ const MATTER_LIST_BUILT_IN_FIELDS = [
 ];
 
 const MATTER_LIST_BUILT_IN_KEYS = MATTER_LIST_BUILT_IN_FIELDS.map((f) => f.key);
+/** Shown as “Custom” in the columns modal (still firm standard matter fields). */
+const MATTER_LIST_CUSTOM_LABELED_KEYS = new Set(['status', 'opened_on']);
 const DEFAULT_MATTER_LIST_COLUMNS = ['name', 'client', 'status', 'attorney'];
+
+function matterListColumnKind(key) {
+  if (MATTER_LIST_CUSTOM_LABELED_KEYS.has(key)) return 'custom';
+  if (MATTER_LIST_BUILT_IN_KEYS.includes(key)) return 'built_in';
+  return 'custom';
+}
 
 function normalizeFormulaParts(parts) {
   if (!Array.isArray(parts)) return [];
@@ -823,7 +831,7 @@ function matterListColumnMeta(db, key) {
     return {
       key: builtIn.key,
       label: builtIn.label,
-      kind: 'built_in',
+      kind: matterListColumnKind(builtIn.key),
       removable: builtIn.removable !== false,
     };
   }
@@ -855,7 +863,7 @@ function getMatterListColumnConfig(db) {
     .map((f) => ({
       key: f.key,
       label: f.label,
-      kind: 'built_in',
+      kind: matterListColumnKind(f.key),
       removable: true,
     }));
   const availableCustom = listMatterListCustomFieldRows(db)
