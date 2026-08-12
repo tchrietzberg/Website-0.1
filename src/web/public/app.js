@@ -4574,6 +4574,24 @@
     return icons[name] || icons.matters;
   }
 
+  function wireSidebarSection(root) {
+    if (!root) return;
+    root.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
+      const body = el.querySelector('.sidebar-section-body');
+      const syncBody = () => {
+        if (!body) return;
+        // Keep the whole section body out of layout when collapsed.
+        body.hidden = !el.open;
+      };
+      syncBody();
+      el.addEventListener('toggle', () => {
+        const key = el.getAttribute('data-sidebar-section');
+        if (key) state.sidebarSectionOpen[key] = el.open;
+        syncBody();
+      });
+    });
+  }
+
   function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
     document.body.classList.remove('login-mode');
@@ -4659,6 +4677,7 @@
         <details class="sidebar-section" data-sidebar-section="quickActions" ${quickOpen ? 'open' : ''}>
           <summary class="sidebar-section-summary">
             <span class="sidebar-label">Quick actions</span>
+            <span class="sidebar-section-chevron" aria-hidden="true">▸</span>
           </summary>
           <div class="sidebar-section-body">
             ${quickButtons || '<p class="sidebar-section-empty muted">No quick actions for your role</p>'}
@@ -4670,19 +4689,14 @@
       if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
-      sidebarActions.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
-        el.addEventListener('toggle', () => {
-          const key = el.getAttribute('data-sidebar-section');
-          if (!key) return;
-          state.sidebarSectionOpen[key] = el.open;
-        });
-      });
+      wireSidebarSection(sidebarActions);
     }
 
     nav.innerHTML = `
       <details class="sidebar-section" data-sidebar-section="navigate" ${navOpen ? 'open' : ''}>
         <summary class="sidebar-section-summary">
           <span class="sidebar-label">Navigate</span>
+          <span class="sidebar-section-chevron" aria-hidden="true">▸</span>
         </summary>
         <div class="sidebar-section-body">
           ${items.map(([id, label, icon, hint]) =>
@@ -4697,13 +4711,7 @@
           ).join('')}
         </div>
       </details>`;
-    nav.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
-      el.addEventListener('toggle', () => {
-        const key = el.getAttribute('data-sidebar-section');
-        if (!key) return;
-        state.sidebarSectionOpen[key] = el.open;
-      });
-    });
+    wireSidebarSection(nav);
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.addEventListener('pointerenter', () => prefetchView(b.dataset.view));
       b.addEventListener('focus', () => prefetchView(b.dataset.view));
