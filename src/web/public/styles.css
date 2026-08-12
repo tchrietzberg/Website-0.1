@@ -772,16 +772,42 @@ button.lookup-result.is-active,
 
 .confirm-dialog--matter-columns {
   width: min(100%, 28rem);
-  max-height: min(90vh, 40rem);
-  overflow: auto;
+  max-height: min(90vh, 42rem);
+  overflow: hidden;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+
+.confirm-dialog--matter-columns > h2 {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+}
+
+.confirm-dialog--matter-columns > .confirm-actions {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
 }
 
 .mlc-modal-body {
-  margin: 0 0 1rem;
+  margin: 0;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.15rem;
 }
 
 .mlc-modal-section {
   margin: 0.35rem 0 0.85rem;
+}
+
+.mlc-chip.is-locked .mlc-drag {
+  opacity: 0.55;
 }
 
 .mlc-active-list {
