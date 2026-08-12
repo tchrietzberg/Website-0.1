@@ -3,14 +3,6 @@
  * Each matter has a denormalized body document updated on create/update.
  */
 
-const { getSetting } = require('../db');
-
-function placeholderMatterId(db) {
-  const raw = getSetting(db, 'placeholder_matter_id', null);
-  const id = raw != null && String(raw).trim() !== '' ? Number(raw) : null;
-  return Number.isFinite(id) && id > 0 ? id : null;
-}
-
 function ensureMatterIndex(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS matter_search_index (
@@ -38,11 +30,6 @@ function buildCustomText(db, matterId) {
 
 function indexMatter(db, matterId) {
   ensureMatterIndex(db);
-  const phId = placeholderMatterId(db);
-  if (phId != null && Number(matterId) === Number(phId)) {
-    db.prepare('DELETE FROM matter_search_index WHERE matter_id = ?').run(matterId);
-    return;
-  }
   const row = db.prepare(`
     SELECT m.*, c.name AS client_name, u.name AS attorney_name
     FROM matters m
@@ -94,11 +81,7 @@ function reindexAllMatters(db) {
   ensureMatterIndex(db);
   db.exec('DELETE FROM matter_search_index');
   const ids = db.prepare('SELECT id FROM matters').all();
-  const phId = placeholderMatterId(db);
-  for (const { id } of ids) {
-    if (phId != null && Number(id) === Number(phId)) continue;
-    indexMatter(db, id);
-  }
+  for (const { id } of ids) indexMatter(db, id);
 }
 
 function tokenize(q) {
@@ -139,11 +122,6 @@ function searchMatters(db, filters = {}) {
         AND cfv.field_id = ?
         AND lower(IFNULL(cfv.value_text, '')) LIKE '%' || lower(?) || '%'`
     : '';
-  const excludeId = filters.excludeMatterId != null && String(filters.excludeMatterId).trim() !== ''
-    ? Number(filters.excludeMatterId)
-    : (filters.includePlaceholder ? null : placeholderMatterId(db));
-  const excludeMatterId = Number.isFinite(excludeId) && excludeId > 0 ? excludeId : null;
-
   // Bind order follows SQL appearance: JOIN params, then WHERE token/status filters.
   const params = [];
   if (useCustom) params.push(fieldId, fieldValue);
@@ -151,8 +129,7 @@ function searchMatters(db, filters = {}) {
     ...tokenParams,
     status, status,
     matterType, matterType,
-    clientId, clientId,
-    excludeMatterId, excludeMatterId
+    clientId, clientId
   );
 
   return db.prepare(`
@@ -166,7 +143,6 @@ function searchMatters(db, filters = {}) {
       AND (? IS NULL OR m.status = ?)
       AND (? IS NULL OR m.matter_type = ?)
       AND (? IS NULL OR m.client_id = ?)
-      AND (? IS NULL OR m.id != ?)
     ORDER BY m.number DESC
   `).all(...params);
 }
