@@ -5163,11 +5163,6 @@
             <button type="button" id="clearSearch">Clear</button>
           </form>
           ${matterFilterBarHtml(filterFields, state.matterSearch)}
-          <p class="hint">Browse all matters below. Filter by Status or any custom field (for example a Status picklist), and scroll the list.${
-            canDeleteMatters
-              ? ' Roles with Matters → Delete can remove a matter from this list.'
-              : ''
-          }</p>
         </div>
 
         <div class="page-section">
