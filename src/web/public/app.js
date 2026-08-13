@@ -1,3 +1,5 @@
+import { parseHash } from "./routes.js";
+
 const copy = {
   en: {
     brand: "Indiantown Board",
@@ -463,11 +465,11 @@ const routes = {
 
 async function render() {
   applyChrome();
-  const [page, kind, id] = (location.hash.slice(2) || "").split("/");
+  const { page, id } = parseHash(location.hash);
   const main = $("#main");
   main.innerHTML = "<p class='muted'>…</p>";
   try {
-    if (kind && id && (page === "listing" || page === "business")) {
+    if ((page === "listing" || page === "business") && id) {
       main.innerHTML = await renderDetail(page, id);
     } else {
       main.innerHTML = await (routes[page] || renderHome)();
@@ -631,7 +633,9 @@ document.addEventListener("submit", async (event) => {
   }
 });
 
-window.addEventListener("hashchange", render);
-await loadSession();
-paintSheet();
-render();
+if (typeof document !== "undefined") {
+  window.addEventListener("hashchange", render);
+  await loadSession();
+  paintSheet();
+  render();
+}
