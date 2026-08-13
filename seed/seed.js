@@ -243,7 +243,7 @@ const rooms = [
   {
     title: "Spanish homework hour",
     topic: "youth",
-    description: "Pending room for after-school help. Waiting on admin review.",
+    description: "After-school Spanish help at the library. Bring homework and a pencil.",
     host_name: "Rosa Delgado",
     host_email: "rosa@example.com",
     status: "pending",
