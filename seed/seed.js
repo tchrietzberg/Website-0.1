@@ -398,66 +398,14 @@ export function ensureResources(db) {
   return { count: db.prepare("SELECT COUNT(*) AS n FROM resources").get().n };
 }
 
-const rooms = [
-  {
-    title: "Saturday at Booker Park",
-    topic: "events",
-    description: "Who is bringing water, shade, and extra gloves for the park cleanup?",
-    host_name: "Parks neighbors",
-    host_email: "parks@example.com",
-    status: "approved",
-  },
-  {
-    title: "Jobs and rides this week",
-    topic: "jobs",
-    description: "Share grove, shop, and ride-share needs for people already in 34956.",
-    host_name: "Patricia Nguyen",
-    host_email: "pnguyen@example.com",
-    status: "approved",
-  },
-  {
-    title: "Spanish homework hour",
-    topic: "youth",
-    description: "After-school Spanish help at the library. Bring homework and a pencil.",
-    host_name: "Rosa Delgado",
-    host_email: "rosa@example.com",
-    status: "pending",
-  },
-];
-
-const roomMessages = [
-  { room: "Saturday at Booker Park", author: "Andre", body: "I can bring two extra rakes and be there at 8." },
-  { room: "Saturday at Booker Park", author: "Elena", body: "Cafecito for volunteers after we finish the north field." },
-  { room: "Jobs and rides this week", author: "Luis", body: "Need a ride to the west side of 710 Saturday morning." },
-];
-
-export function seedRooms(db, { force = false } = {}) {
-  const n = db.prepare("SELECT COUNT(*) AS n FROM rooms").get().n;
-  if (!force && n > 0) return { seeded: false };
-  const insertRoom = db.prepare(
-    `INSERT INTO rooms (title, topic, description, host_name, host_email, status)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  );
-  const insertMsg = db.prepare("INSERT INTO messages (room_id, author, body) VALUES (?, ?, ?)");
-  for (const row of rooms) {
-    const result = insertRoom.run(
-      row.title,
-      row.topic,
-      row.description,
-      row.host_name,
-      row.host_email,
-      row.status,
-    );
-    for (const msg of roomMessages.filter((m) => m.room === row.title)) {
-      insertMsg.run(result.lastInsertRowid, msg.author, msg.body);
-    }
-  }
-  return { seeded: true };
+export function clearChatRooms(db) {
+  db.exec("DELETE FROM messages");
+  db.exec("DELETE FROM rooms");
+  return { cleared: true };
 }
 
 export function seed(db, { force = false } = {}) {
   if (!force && !isEmpty(db)) {
-    seedRooms(db);
     ensureResources(db);
     return { seeded: false };
   }
@@ -512,7 +460,6 @@ export function seed(db, { force = false } = {}) {
     db.exec("ROLLBACK");
     throw error;
   }
-  seedRooms(db, { force: true });
   return { seeded: true };
 }
 
@@ -520,6 +467,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const db = openDb();
   const result = seed(db, { force: process.argv.includes("--force") });
   const help = ensureResources(db);
+  if (process.argv.includes("--reset-chat")) clearChatRooms(db);
+  const rooms = db.prepare("SELECT COUNT(*) AS n FROM rooms").get().n;
   console.log(result.seeded ? "Seeded Indiantown Board." : "Updated existing Indiantown Board data.");
   console.log(`Help contacts: ${help.count}`);
+  console.log(`Chat rooms: ${rooms}`);
 }

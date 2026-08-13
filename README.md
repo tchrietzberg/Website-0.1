@@ -14,7 +14,7 @@ This project is only the Indiantown board. It does not share code, data, brandin
 - English / Spanish toggle
 - Search across listings, businesses, news, chat rooms, and help contacts
 - Contact details stay hidden until someone taps **Show contact**
-- **Chat rooms** by topic. Anyone can request a room; it stays closed until an admin approves it. Admins can hide messages and close rooms.
+- **Chat rooms** by topic. The list starts empty. Anyone can request a room; it stays closed until an admin approves it. Admins can hide messages and close rooms.
 
 ## Security
 

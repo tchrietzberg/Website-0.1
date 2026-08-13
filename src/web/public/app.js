@@ -56,6 +56,7 @@ const copy = {
     all: "All",
     results: "Results",
     empty: "Nothing matches yet. Try another word, or post it yourself.",
+    emptyRooms: "No rooms yet. Request one and an admin will review it.",
     actionListing: "Post a listing",
     actionListingHint: "For sale, jobs, housing, help",
     actionBiz: "Add a company",
@@ -194,6 +195,7 @@ const copy = {
     all: "Todo",
     results: "Resultados",
     empty: "Nada coincide. Pruebe otra palabra o publíquelo usted.",
+    emptyRooms: "Aún no hay salas. Pida una y un administrador la revisará.",
     actionListing: "Publicar anuncio",
     actionListingHint: "Se vende, empleos, vivienda, ayuda",
     actionBiz: "Agregar empresa",
@@ -590,7 +592,7 @@ async function renderChat() {
     <p><button type="button" class="primary" data-open-post data-tab="room">${t().requestRoom}</button>
     <a href="#/admin" data-link>${t().adminTitle}</a></p>
     ${chips(t().roomTopics, state.roomTopic, "room")}
-    ${gridOrEmpty(rows.map(roomCard).join(""))}`;
+    ${rows.length ? `<div class="grid">${rows.map(roomCard).join("")}</div>` : `<p class="empty">${t().emptyRooms}</p>`}`;
 }
 
 function messageLine(row) {

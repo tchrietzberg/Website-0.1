@@ -46,7 +46,7 @@ describe("Indiantown Board API", () => {
     assert.ok(stats.listings >= 1);
     assert.ok(stats.businesses >= 1);
     assert.ok(stats.resources >= 20);
-    assert.ok(stats.rooms >= 1);
+    assert.equal(stats.rooms, 0);
   });
 
   it("hides phone and email on listing cards", async () => {
@@ -160,10 +160,11 @@ describe("Indiantown Board API", () => {
     assert.ok(data.resources.some((row) => /Lahti/i.test(row.title)));
   });
 
-  it("finds an approved chat room through search", async () => {
-    const data = await (await fetch(`${base}/api/search?q=Booker`)).json();
-    assert.ok(data.rooms.some((row) => /Booker Park/i.test(row.title)));
-    assert.ok(data.rooms.every((row) => row.status === "approved"));
+  it("does not list chat rooms until one is approved", async () => {
+    const rooms = await (await fetch(`${base}/api/rooms`)).json();
+    assert.deepEqual(rooms, []);
+    const data = await (await fetch(`${base}/api/search?q=chat`)).json();
+    assert.deepEqual(data.rooms, []);
   });
 
   it("serves the Indiantown Board page and not another product name", async () => {

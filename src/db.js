@@ -38,7 +38,3 @@ export function isEmpty(db) {
   return row.n === 0;
 }
 
-export function needsChatSeed(db) {
-  const row = db.prepare("SELECT COUNT(*) AS n FROM rooms").get();
-  return row.n === 0;
-}
