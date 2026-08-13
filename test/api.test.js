@@ -172,6 +172,10 @@ describe("Indiantown Board API", () => {
     assert.match(html, /Indiantown Board/);
     assert.match(html, /village-seal\.png/);
     assert.match(html, /data-search-form/);
+    assert.match(html, /English/);
+    assert.match(html, /Español/);
+    assert.match(html, /data-lang-set="en"/);
+    assert.match(html, /data-lang-set="es"/);
     assert.doesNotMatch(html, /Chrono/i);
     assert.doesNotMatch(html, /legal billing/i);
   });
