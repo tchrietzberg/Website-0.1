@@ -519,5 +519,7 @@ export function seed(db, { force = false } = {}) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const db = openDb();
   const result = seed(db, { force: process.argv.includes("--force") });
-  console.log(result.seeded ? "Seeded Indiantown Board." : "Database already has data; skipped.");
+  const help = ensureResources(db);
+  console.log(result.seeded ? "Seeded Indiantown Board." : "Updated existing Indiantown Board data.");
+  console.log(`Help contacts: ${help.count}`);
 }
