@@ -34,6 +34,7 @@ export const ROOM_TOPICS = [
 ];
 
 export const RESOURCE_CATEGORIES = [
+  "safety",
   "government",
   "utilities",
   "schools",

@@ -92,7 +92,9 @@ const copy = {
       care: "Care",
       other: "Other",
     },
+    resourceIntro: "Official Village, county, and local contacts. Call 911 if someone is in danger.",
     resCats: {
+      safety: "Safety",
       government: "Government",
       utilities: "Utilities",
       schools: "Schools & library",
@@ -227,7 +229,9 @@ const copy = {
       care: "Cuidado",
       other: "Otro",
     },
+    resourceIntro: "Contactos oficiales del pueblo, el condado y la zona. Llame al 911 si hay peligro.",
     resCats: {
+      safety: "Seguridad",
       government: "Gobierno",
       utilities: "Servicios públicos",
       schools: "Escuelas y biblioteca",
@@ -279,6 +283,7 @@ const state = {
   listingCategory: "",
   businessCategory: "",
   roomTopic: "",
+  resourceCategory: "",
   query: "",
   csrf: "",
   admin: false,
@@ -391,13 +396,16 @@ function resourceCard(row) {
   const link = row.url
     ? `<a href="${escapeAttr(row.url)}" target="_blank" rel="noopener">${t().website}</a>`
     : "";
-  const phone = row.phone ? `<a href="tel:${escapeAttr(row.phone)}">${escapeHtml(row.phone)}</a>` : "";
-  return `<article class="card" style="cursor:default">
+  const phone = row.phone
+    ? `<a class="phone-link" href="tel:${escapeAttr(row.phone)}">${escapeHtml(row.phone)}</a>`
+    : "";
+  return `<article class="card is-static">
     <span class="tag">${t().resCats[row.category] || row.category}</span>
     <strong>${escapeHtml(row.title)}</strong>
-    <p>${escapeHtml(row.description)}</p>
+    <p class="blurb">${escapeHtml(row.description)}</p>
+    ${phone}
     <span class="muted">${escapeHtml(row.address || "")}</span>
-    <span>${[phone, link].filter(Boolean).join(" · ")}</span>
+    ${link}
   </article>`;
 }
 
@@ -475,8 +483,11 @@ async function renderNews() {
 }
 
 async function renderResources() {
-  const rows = await api("/api/resources");
+  const q = state.resourceCategory ? `?category=${encodeURIComponent(state.resourceCategory)}` : "";
+  const rows = await api(`/api/resources${q}`);
   return `<p class="kicker">${t().navResources}</p><h1>${t().resources}</h1>
+    <p class="lede">${t().resourceIntro}</p>
+    ${chips(t().resCats, state.resourceCategory, "resource")}
     ${gridOrEmpty(rows.map(resourceCard).join(""))}`;
 }
 
@@ -790,6 +801,7 @@ document.addEventListener("click", (event) => {
     if (group === "listing") state.listingCategory = chip.dataset.chip;
     if (group === "business") state.businessCategory = chip.dataset.chip;
     if (group === "room") state.roomTopic = chip.dataset.chip;
+    if (group === "resource") state.resourceCategory = chip.dataset.chip;
     render();
     return;
   }

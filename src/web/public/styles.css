@@ -207,6 +207,13 @@ h2 { font-size: 1.45rem; margin: 0; }
   color: var(--citrus);
 }
 .blurb { color: var(--muted); margin: 0; font-size: 1.08rem; }
+.phone-link {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--palmetto-deep);
+  text-decoration: none;
+}
+.phone-link:hover { color: var(--citrus); }
 .meta { color: var(--muted); font-size: 1.05rem; }
 .price { color: var(--palmetto-deep); font-weight: 700; }
 .muted { color: var(--muted); }

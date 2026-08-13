@@ -45,7 +45,7 @@ describe("Indiantown Board API", () => {
     const stats = await (await fetch(`${base}/api/stats`)).json();
     assert.ok(stats.listings >= 1);
     assert.ok(stats.businesses >= 1);
-    assert.ok(stats.resources >= 1);
+    assert.ok(stats.resources >= 20);
     assert.ok(stats.rooms >= 1);
   });
 
@@ -120,6 +120,33 @@ describe("Indiantown Board API", () => {
   it("finds a listing through search", async () => {
     const data = await (await fetch(`${base}/api/search?q=goats`)).json();
     assert.ok(data.listings.some((row) => /goats/i.test(row.title)));
+  });
+
+  it("lists police, fire, library, and council contacts", async () => {
+    const rows = await (await fetch(`${base}/api/resources`)).json();
+    const byTitle = (re) => rows.find((row) => re.test(row.title));
+    const police = byTitle(/police/i);
+    const fire = byTitle(/fire/i);
+    const library = byTitle(/library/i);
+    const council = byTitle(/council/i);
+    assert.ok(police?.phone);
+    assert.ok(fire?.phone);
+    assert.ok(library?.phone);
+    assert.ok(council?.phone);
+    assert.match(library.phone, /597-4200/);
+    assert.equal(police.category, "safety");
+    assert.equal(fire.category, "safety");
+  });
+
+  it("filters help resources by category", async () => {
+    const rows = await (await fetch(`${base}/api/resources?category=safety`)).json();
+    assert.ok(rows.length >= 3);
+    assert.ok(rows.every((row) => row.category === "safety"));
+  });
+
+  it("finds the library through search", async () => {
+    const data = await (await fetch(`${base}/api/search?q=Lahti`)).json();
+    assert.ok(data.resources.some((row) => /Lahti/i.test(row.title)));
   });
 
   it("finds an approved chat room through search", async () => {

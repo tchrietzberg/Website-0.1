@@ -75,8 +75,24 @@ export function createNews(db, row) {
   return db.prepare("SELECT * FROM news WHERE id = ?").get(result.lastInsertRowid);
 }
 
-export function listResources(db) {
-  return db.prepare("SELECT * FROM resources ORDER BY category, title COLLATE NOCASE").all();
+const RESOURCE_ORDER = `CASE category
+  WHEN 'safety' THEN 0
+  WHEN 'government' THEN 1
+  WHEN 'utilities' THEN 2
+  WHEN 'schools' THEN 3
+  WHEN 'health' THEN 4
+  WHEN 'help' THEN 5
+  WHEN 'parks' THEN 6
+  ELSE 7
+END, title COLLATE NOCASE`;
+
+export function listResources(db, category) {
+  if (category) {
+    return db
+      .prepare(`SELECT * FROM resources WHERE category = ? ORDER BY title COLLATE NOCASE`)
+      .all(category);
+  }
+  return db.prepare(`SELECT * FROM resources ORDER BY ${RESOURCE_ORDER}`).all();
 }
 
 export function stats(db) {

@@ -9,10 +9,10 @@ This project is only the Indiantown board. It does not share code, data, brandin
 - **Board** — Craigslist-style listings: for sale, wanted, jobs, housing, services, community
 - **Directory** — add a local company (name, owner, phone, email, address, optional website)
 - **News** — short town notes anyone can post
-- **Resources** — Village Hall, utilities, schools, parks, 211, and 911
+- **Help** — Police, fire, library, Village Council, utilities, schools, clinic, and other local contacts
 - **About town** — a short Indiantown primer
 - English / Spanish toggle
-- Search across listings, businesses, news, chat rooms, and resources
+- Search across listings, businesses, news, chat rooms, and help contacts
 - Contact details stay hidden until someone taps **Show contact**
 - **Chat rooms** by topic. Anyone can request a room; it stays closed until an admin approves it. Admins can hide messages and close rooms.
 

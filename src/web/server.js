@@ -15,7 +15,7 @@ import {
   setRoomStatus,
 } from "../chat.js";
 import { isEmpty, needsChatSeed, openDb } from "../db.js";
-import { seed, seedRooms } from "../../seed/seed.js";
+import { ensureResources, seed, seedRooms } from "../../seed/seed.js";
 import { createSecurity, publicBusiness, publicListing, verifyPassword } from "../security.js";
 import { validateBusiness, validateListing, validateMessage, validateNews, validateRoom } from "../validate.js";
 import {
@@ -53,7 +53,10 @@ function requireAdmin(req, res, send, security) {
 
 export function createApp(db = openDb(), security = createSecurity()) {
   if (isEmpty(db)) seed(db);
-  else if (needsChatSeed(db)) seedRooms(db);
+  else {
+    if (needsChatSeed(db)) seedRooms(db);
+    ensureResources(db);
+  }
 
   function send(res, status, body, extra = {}) {
     const isJson = typeof body === "object" && !Buffer.isBuffer(body);
@@ -150,7 +153,7 @@ export function createApp(db = openDb(), security = createSecurity()) {
         return send(res, 201, createNews(db, parsed.value));
       }
       if (pathname === "/api/resources" && req.method === "GET") {
-        return send(res, 200, listResources(db));
+        return send(res, 200, listResources(db, searchParams.get("category") || ""));
       }
 
       if (pathname === "/api/rooms" && req.method === "GET") {
