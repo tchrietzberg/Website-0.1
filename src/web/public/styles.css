@@ -770,26 +770,44 @@ button.lookup-result.is-active,
   margin: 0;
 }
 
-.matters-list-columns {
-  margin: 0.35rem 0 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.45rem 0.75rem 0.7rem;
-  background: #fbfcfd;
+.confirm-dialog--matter-columns {
+  width: min(100%, 28rem);
+  max-height: min(90vh, 42rem);
+  overflow: hidden;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
 }
 
-.matters-list-columns > summary {
-  cursor: pointer;
-  font-weight: 600;
-  list-style: none;
+.confirm-dialog--matter-columns > h2 {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
 }
 
-.matters-list-columns > summary::-webkit-details-marker {
-  display: none;
+.confirm-dialog--matter-columns > .confirm-actions {
+  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
 }
 
-.matters-list-columns[open] > summary {
-  margin-bottom: 0.45rem;
+.mlc-modal-body {
+  margin: 0;
+  -webkit-flex: 1 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+
+.mlc-modal-section {
+  margin: 0.35rem 0 0.85rem;
+}
+
+.mlc-chip.is-locked .mlc-drag {
+  opacity: 0.55;
 }
 
 .mlc-active-list {
