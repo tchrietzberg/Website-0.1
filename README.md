@@ -12,6 +12,12 @@ This project is only the Indiantown board. It does not share code, data, brandin
 - **Resources** — Village Hall, utilities, schools, parks, 211, and 911
 - **About town** — a short Indiantown primer
 - English / Spanish toggle
+- Search across listings, businesses, news, and resources
+- Contact details stay hidden until someone taps **Show contact**
+
+## Security
+
+Posts require a same-origin CSRF token, a local-post confirmation, and a honeypot check. The server also applies security headers, limits body size, and rate-limits posting. List cards do not include phone or email.
 
 Official Village business still lives at [indiantownfl.gov](https://www.indiantownfl.gov/). This board is independent of Village government.
 
@@ -45,3 +51,4 @@ Data is stored in `data/indiantown.db`. Sample businesses and listings are ficti
 |---|---|---|
 | `PORT` | `3000` | HTTP port |
 | `DB_FILE` | `data/indiantown.db` | SQLite file |
+| `RATE_LIMIT_MAX` | `8` | Posts allowed per client in 10 minutes |

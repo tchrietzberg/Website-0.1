@@ -87,3 +87,42 @@ export function stats(db) {
     resources: db.prepare("SELECT COUNT(*) AS n FROM resources").get().n,
   };
 }
+
+export function searchAll(db, query) {
+  const q = String(query || "")
+    .trim()
+    .slice(0, 80)
+    .replace(/[%_]/g, "");
+  if (q.length < 2) return { listings: [], businesses: [], news: [], resources: [] };
+  const like = `%${q}%`;
+  return {
+    listings: db
+      .prepare(
+        `SELECT id, title, category, description, price_cents, neighborhood, created_at
+         FROM listings
+         WHERE title LIKE ? OR description LIKE ? OR neighborhood LIKE ?
+         ORDER BY created_at DESC LIMIT 20`,
+      )
+      .all(like, like, like),
+    businesses: db
+      .prepare(
+        `SELECT id, name, category, description, address, website, created_at
+         FROM businesses
+         WHERE name LIKE ? OR description LIKE ? OR address LIKE ?
+         ORDER BY name COLLATE NOCASE LIMIT 20`,
+      )
+      .all(like, like, like),
+    news: db
+      .prepare(
+        `SELECT id, title, body, author, created_at FROM news
+         WHERE title LIKE ? OR body LIKE ? ORDER BY created_at DESC LIMIT 10`,
+      )
+      .all(like, like),
+    resources: db
+      .prepare(
+        `SELECT id, title, category, description, url, phone, address FROM resources
+         WHERE title LIKE ? OR description LIKE ? LIMIT 10`,
+      )
+      .all(like, like),
+  };
+}

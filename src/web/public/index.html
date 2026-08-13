@@ -6,7 +6,7 @@
     <title>Indiantown Board — 34956</title>
     <meta
       name="description"
-      content="Local classifieds, business directory, news, and resources for Indiantown, Florida. Not affiliated with any other product."
+      content="Local classifieds, business directory, news, and resources for Indiantown, Florida."
     />
     <link rel="icon" href="/village-seal.png" type="image/png" />
     <link rel="apple-touch-icon" href="/village-seal.png" />
@@ -16,7 +16,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=Source+Sans+3:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=seal" />
+    <link rel="stylesheet" href="/styles.css?v=secure" />
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
@@ -34,7 +34,17 @@
           <small>34956</small>
         </span>
       </a>
-      <nav class="nav" aria-label="Primary">
+      <form class="search" data-search-form>
+        <label class="sr-only" for="q" data-i18n="searchLabel">Search Indiantown</label>
+        <input id="q" name="q" type="search" maxlength="80" data-search-input data-i18n-placeholder="searchPh" placeholder="Search listings, businesses, news…" />
+        <button type="submit" class="primary" data-i18n="search">Search</button>
+      </form>
+      <div class="top-actions">
+        <button type="button" class="lang" data-lang-toggle>ES</button>
+        <button type="button" class="post" data-open-post data-i18n="post">Post</button>
+        <button type="button" class="menu" data-menu-toggle aria-expanded="false" aria-controls="site-nav" data-i18n="menu">Menu</button>
+      </div>
+      <nav class="nav" id="site-nav" data-nav aria-label="Primary">
         <a href="#/" data-link data-i18n="navHome">Home</a>
         <a href="#/board" data-link data-i18n="navBoard">Board</a>
         <a href="#/directory" data-link data-i18n="navDirectory">Directory</a>
@@ -42,10 +52,6 @@
         <a href="#/resources" data-link data-i18n="navResources">Resources</a>
         <a href="#/about" data-link data-i18n="navAbout">About town</a>
       </nav>
-      <div class="top-actions">
-        <button type="button" class="lang" data-lang-toggle>ES</button>
-        <button type="button" class="post" data-open-post data-i18n="post">Post</button>
-      </div>
     </header>
 
     <main id="main" class="main"></main>
@@ -70,6 +76,6 @@
         part of any other app.
       </p>
     </footer>
-    <script type="module" src="/app.js?v=seal"></script>
+    <script type="module" src="/app.js?v=secure"></script>
   </body>
 </html>
