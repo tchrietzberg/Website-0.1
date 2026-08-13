@@ -13,6 +13,7 @@ const copy = {
     post: "Post",
     menu: "Menu",
     search: "Search",
+    langLabel: "Language",
     searchLabel: "Search Indiantown",
     searchPh: "Search…",
     tabListing: "Listing",
@@ -152,6 +153,7 @@ const copy = {
     post: "Publicar",
     menu: "Menú",
     search: "Buscar",
+    langLabel: "Idioma",
     searchLabel: "Buscar en Indiantown",
     searchPh: "Buscar…",
     tabListing: "Anuncio",
@@ -315,7 +317,15 @@ function applyChrome() {
     const key = el.dataset.i18nPlaceholder;
     if (t()[key]) el.placeholder = t()[key];
   });
-  $("[data-lang-toggle]").textContent = state.lang === "en" ? "ES" : "EN";
+  $$("[data-i18n-aria]").forEach((el) => {
+    const key = el.dataset.i18nAria;
+    if (t()[key]) el.setAttribute("aria-label", t()[key]);
+  });
+  $$("[data-lang-set]").forEach((btn) => {
+    const on = btn.dataset.langSet === state.lang;
+    btn.classList.toggle("is-on", on);
+    btn.setAttribute("aria-pressed", String(on));
+  });
   const hash = location.hash.slice(2).split("/")[0] || "";
   $$(".nav a").forEach((a) => {
     const href = a.getAttribute("href").slice(2);
@@ -807,9 +817,9 @@ document.addEventListener("click", (event) => {
     menu.setAttribute("aria-expanded", String(open));
     return;
   }
-  const lang = event.target.closest("[data-lang-toggle]");
+  const lang = event.target.closest("[data-lang-set]");
   if (lang) {
-    state.lang = state.lang === "en" ? "es" : "en";
+    state.lang = lang.dataset.langSet === "es" ? "es" : "en";
     localStorage.setItem("it-lang", state.lang);
     paintSheet();
     render();
