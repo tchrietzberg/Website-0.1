@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Work — T. Chrietzberg</title>
+    <meta name="description" content="Selected software work: Chrono legal billing and Website 0.1." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560&family=Source+Sans+3:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <a class="wordmark" href="/">T<span>.</span>C</a>
+      <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="site-nav">
+        Menu
+      </button>
+      <nav class="site-nav" id="site-nav" data-nav aria-label="Primary">
+        <ul>
+          <li><a href="/work.html" aria-current="page">Work</a></li>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/contact.html">Contact</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main id="content" class="wrap">
+      <section class="section">
+        <p class="kicker">Index</p>
+        <h1 class="page-title">Work</h1>
+        <p class="lede">A short list. Depth over volume.</p>
+      </section>
+
+      <article class="section prose" id="chrono">
+        <p class="kicker">01</p>
+        <h2>Chrono</h2>
+        <p>
+          A legal billing prototype for a contingency securities practice: time capture with
+          approval, effective-dated rates, pre-bill through send, payments, and lodestar
+          reporting. Built as a zero-dependency Node service with SQLite so the money path
+          stays inspectable.
+        </p>
+        <p>
+          The interesting parts are the boring ones — integer cents, 15-minute rounding,
+          immutable sent invoices, and reports that export as real Excel numbers.
+        </p>
+      </article>
+
+      <article class="section prose" id="website">
+        <p class="kicker">02</p>
+        <h2>Website 0.1</h2>
+        <p>
+          This site. Four pages, one stylesheet, no framework. Vite for local development
+          and a static build. The contact form checks the note locally, then opens a drafted
+          email — no backend, no inbox to babysit on day one.
+        </p>
+        <p>
+          It is meant to be a clean main: easy to restyle, easy to replace, and honest about
+          what it is.
+        </p>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <p>© <span data-year></span> T. Chrietzberg</p>
+      <p><a href="/contact.html">Start a note</a></p>
+    </footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

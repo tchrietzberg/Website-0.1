@@ -1,0 +1,19 @@
+{
+  "name": "website-0.1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal site for T. Chrietzberg — editorial pages, selected work, and a working contact form.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "vite": "^7.1.2"
+  }
+}
