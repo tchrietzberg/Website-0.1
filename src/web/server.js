@@ -24,6 +24,7 @@ import {
   createNews,
   getBusiness,
   getListing,
+  getNews,
   listBusinesses,
   listListings,
   listNews,
@@ -151,6 +152,10 @@ export function createApp(db = openDb(), security = createSecurity()) {
         const parsed = validateNews(body);
         if (!parsed.ok) return send(res, 400, parsed);
         return send(res, 201, createNews(db, parsed.value));
+      }
+      if (pathname.startsWith("/api/news/") && req.method === "GET") {
+        const row = getNews(db, Number(pathname.slice("/api/news/".length)));
+        return row ? send(res, 200, row) : send(res, 404, { error: "Not found" });
       }
       if (pathname === "/api/resources" && req.method === "GET") {
         return send(res, 200, listResources(db, searchParams.get("category") || ""));

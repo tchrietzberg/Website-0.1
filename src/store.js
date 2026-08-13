@@ -68,6 +68,10 @@ export function listNews(db) {
   return db.prepare("SELECT * FROM news ORDER BY created_at DESC, id DESC").all();
 }
 
+export function getNews(db, id) {
+  return db.prepare("SELECT * FROM news WHERE id = ?").get(id) ?? null;
+}
+
 export function createNews(db, row) {
   const result = db
     .prepare("INSERT INTO news (title, body, author) VALUES (?, ?, ?)")

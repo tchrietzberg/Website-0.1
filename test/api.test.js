@@ -117,6 +117,17 @@ describe("Indiantown Board API", () => {
     assert.equal(res.status, 400);
   });
 
+  it("opens a news story with the full body", async () => {
+    const rows = await (await fetch(`${base}/api/news`)).json();
+    assert.ok(rows.length);
+    const res = await fetch(`${base}/api/news/${rows[0].id}`);
+    assert.equal(res.status, 200);
+    const story = await res.json();
+    assert.equal(story.title, rows[0].title);
+    assert.ok(story.body.length > 40);
+    assert.equal((await fetch(`${base}/api/news/99999`)).status, 404);
+  });
+
   it("finds a listing through search", async () => {
     const data = await (await fetch(`${base}/api/search?q=goats`)).json();
     assert.ok(data.listings.some((row) => /goats/i.test(row.title)));

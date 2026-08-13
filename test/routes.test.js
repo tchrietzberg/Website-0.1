@@ -18,4 +18,8 @@ describe("parseHash", () => {
   it("opens a chat room", () => {
     assert.deepEqual(parseHash("#/chat/2"), { page: "chat", id: "2" });
   });
+
+  it("opens a news story", () => {
+    assert.deepEqual(parseHash("#/news/3"), { page: "news", id: "3" });
+  });
 });

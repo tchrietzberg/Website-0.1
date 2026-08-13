@@ -51,6 +51,7 @@ const copy = {
     latestNews: "Latest news",
     seeBoard: "See all",
     seeNews: "See all",
+    readStory: "Read story",
     addCompany: "Add your company",
     all: "All",
     results: "Results",
@@ -188,6 +189,7 @@ const copy = {
     latestNews: "Noticias recientes",
     seeBoard: "Ver todos",
     seeNews: "Ver todas",
+    readStory: "Leer nota",
     addCompany: "Agregar su empresa",
     all: "Todo",
     results: "Resultados",
@@ -385,11 +387,12 @@ function businessCard(row) {
 }
 
 function newsCard(row) {
-  return `<article class="card is-static">
+  return `<button class="card" data-open="news" data-id="${row.id}">
     <span class="tag">${escapeHtml(row.author)}</span>
     <strong>${escapeHtml(row.title)}</strong>
-    <p class="blurb">${escapeHtml(excerpt(row.body, 140))}</p>
-  </article>`;
+    <span class="blurb">${escapeHtml(excerpt(row.body, 140))}</span>
+    <span class="meta">${t().readStory}</span>
+  </button>`;
 }
 
 function resourceCard(row) {
@@ -480,6 +483,29 @@ async function renderNews() {
   const rows = await api("/api/news");
   return `<p class="kicker">${t().navNews}</p><h1>${t().news}</h1>
     ${gridOrEmpty(rows.map(newsCard).join(""))}`;
+}
+
+function formatDay(value) {
+  const date = new Date(String(value || "").replace(" ", "T") + "Z");
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(state.lang === "es" ? "es-US" : "en-US", {
+    dateStyle: "medium",
+  }).format(date);
+}
+
+async function renderNewsStory(id) {
+  const row = await api(`/api/news/${id}`);
+  const when = formatDay(row.created_at);
+  return `<p><a href="#/news" data-link>${t().back}</a></p>
+    <article class="detail">
+      <span class="tag">${escapeHtml(row.author)}</span>
+      <h1>${escapeHtml(row.title)}</h1>
+      ${when ? `<p class="muted">${escapeHtml(when)}</p>` : ""}
+      <div class="prose">${String(row.body || "")
+        .split(/\n{2,}/)
+        .map((p) => `<p>${escapeHtml(p)}</p>`)
+        .join("")}</div>
+    </article>`;
 }
 
 async function renderResources() {
@@ -671,6 +697,8 @@ async function render() {
   try {
     if ((page === "listing" || page === "business") && id) {
       main.innerHTML = await renderDetail(page, id);
+    } else if (page === "news" && id) {
+      main.innerHTML = await renderNewsStory(id);
     } else if (page === "chat" && id) {
       main.innerHTML = await renderChatRoom(id);
       startPoll(id);
