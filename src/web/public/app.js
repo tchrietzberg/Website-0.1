@@ -17,8 +17,7 @@ const copy = {
     tabListing: "Listing",
     tabBusiness: "Business",
     tabNews: "News",
-    footer:
-      "Indiantown Board is a community bulletin for 34956. It is a standalone site and is not part of any other app.",
+    footer: "Village of Indiantown, Florida · 34956",
     heroKicker: "Village of Indiantown · Treasure Coast",
     heroTitle: "Find it in 34956.",
     heroLede: "Buy, sell, hire, or list your company — only for people in and around Indiantown.",
@@ -26,7 +25,7 @@ const copy = {
     businesses: "Businesses",
     news: "News notes",
     resources: "Resources",
-    latestBoard: "Latest on the board",
+    latestBoard: "Latest listings",
     latestNews: "Town notes",
     seeBoard: "See all listings",
     seeNews: "All news",
@@ -72,7 +71,7 @@ const copy = {
     aboutTitle: "About Indiantown",
     aboutBody: [
       "Indiantown is a rural village in Martin County on Florida’s Treasure Coast. It was incorporated on December 31, 2017 and is home to about 6,000 people.",
-      "Village Hall is at 15516 SW Osceola St., Suite B. Official business stays on indiantownfl.gov. This board is independent of Village government.",
+      "Village Hall is at 15516 SW Osceola St., Suite B. Official business stays on indiantownfl.gov.",
       "Search first. Then post a listing, add a company, or share a short town note. Contact details stay hidden until someone asks to see them.",
     ],
     form: {
@@ -94,7 +93,7 @@ const copy = {
       submitBusiness: "Add company",
       submitNews: "Share note",
     },
-    posted: "Posted. It is on the board now.",
+    posted: "Posted. It is live now.",
     needFix: "Check the fields and try again.",
     back: "Back",
     call: "Call",
@@ -118,8 +117,7 @@ const copy = {
     tabListing: "Anuncio",
     tabBusiness: "Negocio",
     tabNews: "Noticia",
-    footer:
-      "El Tablón de Indiantown es un boletín comunitario para el 34956. Es un sitio independiente y no forma parte de ninguna otra aplicación.",
+    footer: "Villa de Indiantown, Florida · 34956",
     heroKicker: "Villa de Indiantown · Treasure Coast",
     heroTitle: "Encuéntrelo en el 34956.",
     heroLede: "Compre, venda, contrate o registre su empresa — solo para gente de Indiantown y alrededores.",
@@ -127,7 +125,7 @@ const copy = {
     businesses: "Negocios",
     news: "Notas",
     resources: "Recursos",
-    latestBoard: "Lo último en el tablón",
+    latestBoard: "Anuncios recientes",
     latestNews: "Notas del pueblo",
     seeBoard: "Ver todos los anuncios",
     seeNews: "Todas las noticias",
@@ -173,7 +171,7 @@ const copy = {
     aboutTitle: "Sobre Indiantown",
     aboutBody: [
       "Indiantown es un pueblo rural en el condado de Martin, en la Treasure Coast de la Florida. Se incorporó el 31 de diciembre de 2017 y tiene unos 6,000 residentes.",
-      "La alcaldía está en 15516 SW Osceola St., Suite B. Los trámites oficiales siguen en indiantownfl.gov. Este tablón es independiente del gobierno municipal.",
+      "La alcaldía está en 15516 SW Osceola St., Suite B. Los trámites oficiales siguen en indiantownfl.gov.",
       "Busque primero. Luego publique un anuncio, agregue una empresa o comparta una nota. Los datos de contacto se ocultan hasta que alguien pida verlos.",
     ],
     form: {
@@ -195,7 +193,7 @@ const copy = {
       submitBusiness: "Agregar empresa",
       submitNews: "Compartir nota",
     },
-    posted: "Publicado. Ya está en el tablón.",
+    posted: "Publicado. Ya está en línea.",
     needFix: "Revise los campos e intente de nuevo.",
     back: "Volver",
     call: "Llamar",
