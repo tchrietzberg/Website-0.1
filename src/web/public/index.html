@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Indiantown Board — 34956</title>
+    <meta
+      name="description"
+      content="Local classifieds, business directory, news, and resources for Indiantown, Florida. Not affiliated with any other product."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="top">
+      <a class="brand" href="#/" data-link>
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>
+          <strong data-i18n="brand">Indiantown Board</strong>
+          <small>34956</small>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="#/" data-link data-i18n="navHome">Home</a>
+        <a href="#/board" data-link data-i18n="navBoard">Board</a>
+        <a href="#/directory" data-link data-i18n="navDirectory">Directory</a>
+        <a href="#/news" data-link data-i18n="navNews">News</a>
+        <a href="#/resources" data-link data-i18n="navResources">Resources</a>
+        <a href="#/about" data-link data-i18n="navAbout">About town</a>
+      </nav>
+      <div class="top-actions">
+        <button type="button" class="lang" data-lang-toggle>ES</button>
+        <button type="button" class="post" data-open-post data-i18n="post">Post</button>
+      </div>
+    </header>
+
+    <main id="main" class="main"></main>
+
+    <dialog class="sheet" data-sheet>
+      <form method="dialog" class="sheet-head">
+        <strong data-sheet-title>Post</strong>
+        <button value="close" aria-label="Close">×</button>
+      </form>
+      <div class="tabs" data-sheet-tabs>
+        <button type="button" data-sheet-tab="listing" class="is-on" data-i18n="tabListing">Listing</button>
+        <button type="button" data-sheet-tab="business" data-i18n="tabBusiness">Business</button>
+        <button type="button" data-sheet-tab="news" data-i18n="tabNews">News</button>
+      </div>
+      <div data-sheet-body></div>
+    </dialog>
+
+    <footer class="foot">
+      <p data-i18n="footer">
+        Indiantown Board is a community bulletin for 34956. It is a standalone site and is not
+        part of any other app.
+      </p>
+    </footer>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

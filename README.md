@@ -1,30 +1,37 @@
-# Website 0.1
+# Indiantown Board
 
-Personal site for **T. Chrietzberg** — four static pages, one stylesheet, no frontend framework.
+A standalone community board for **Indiantown, Florida (34956)**. Neighbors can post classifieds, add a company with contact information, share news, and open a list of local resources.
 
-## Pages
+This project is only the Indiantown board. It does not share code, data, branding, or accounts with any other product.
 
-- `/` — home
-- `/work.html` — selected work
-- `/about.html` — bio
-- `/contact.html` — form that drafts a `mailto:` note
+## What is here
+
+- **Board** — Craigslist-style listings: for sale, wanted, jobs, housing, services, community
+- **Directory** — add a local company (name, owner, phone, email, address, optional website)
+- **News** — short town notes anyone can post
+- **Resources** — Village Hall, utilities, schools, parks, 211, and 911
+- **About town** — a short Indiantown primer
+- English / Spanish toggle
+
+Official Village business still lives at [indiantownfl.gov](https://www.indiantownfl.gov/). This board is independent of Village government.
 
 ## Requirements
 
-Node.js 22 or newer.
+Node.js 22.13 or newer (uses built-in `node:sqlite`). No npm runtime dependencies.
 
 ## Commands
 
 ```bash
-npm install
-npm run dev      # http://localhost:5173
-npm test         # unit + page checks (run after a build)
-npm run build
-npm run preview  # http://localhost:4173
+npm start          # http://localhost:3000 — seeds on first run
+npm run seed       # load sample Indiantown listings if the database is empty
+npm test
 ```
 
-`npm test` expects `dist/` from `npm run build` so it can confirm the production pages exist.
+Data is stored in `data/indiantown.db`. Sample businesses and listings are fictional. Civic resource links are public Village and county pages.
 
-## Notes
+## Environment
 
-Chrono, the legal billing prototype, stays on its own branch. This project is a clean public site on `main`.
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | HTTP port |
+| `DB_FILE` | `data/indiantown.db` | SQLite file |
