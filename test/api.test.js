@@ -46,6 +46,7 @@ describe("Indiantown Board API", () => {
     assert.ok(stats.listings >= 1);
     assert.ok(stats.businesses >= 1);
     assert.ok(stats.resources >= 1);
+    assert.ok(stats.rooms >= 1);
   });
 
   it("hides phone and email on listing cards", async () => {
@@ -119,6 +120,12 @@ describe("Indiantown Board API", () => {
   it("finds a listing through search", async () => {
     const data = await (await fetch(`${base}/api/search?q=goats`)).json();
     assert.ok(data.listings.some((row) => /goats/i.test(row.title)));
+  });
+
+  it("finds an approved chat room through search", async () => {
+    const data = await (await fetch(`${base}/api/search?q=Booker`)).json();
+    assert.ok(data.rooms.some((row) => /Booker Park/i.test(row.title)));
+    assert.ok(data.rooms.every((row) => row.status === "approved"));
   });
 
   it("serves the Indiantown Board page and not another product name", async () => {

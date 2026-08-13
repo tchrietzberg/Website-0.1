@@ -22,6 +22,17 @@ export const BUSINESS_CATEGORIES = [
   "other",
 ];
 
+export const ROOM_TOPICS = [
+  "community",
+  "events",
+  "jobs",
+  "housing",
+  "help",
+  "youth",
+  "spanish",
+  "other",
+];
+
 export const RESOURCE_CATEGORIES = [
   "government",
   "utilities",
@@ -149,4 +160,37 @@ export function validateNews(input) {
   const author = requireText(input.author, "author", { min: 2, max: 80 });
   if (!author.ok) return author;
   return { ok: true, value: { title: title.value, body: body.value, author: author.value } };
+}
+
+export function validateRoom(input) {
+  const title = requireText(input.title, "title", { min: 4, max: 80 });
+  if (!title.ok) return title;
+  const topic = trim(input.topic);
+  if (!ROOM_TOPICS.includes(topic)) {
+    return { ok: false, field: "topic", error: "Pick a chat topic." };
+  }
+  const description = requireText(input.description, "description", { min: 12, max: 800 });
+  if (!description.ok) return description;
+  const host_name = requireText(input.host_name, "host_name", { min: 2, max: 80 });
+  if (!host_name.ok) return host_name;
+  const host_email = requireEmail(input.host_email || input.email);
+  if (!host_email.ok) return { ...host_email, field: "host_email" };
+  return {
+    ok: true,
+    value: {
+      title: title.value,
+      topic,
+      description: description.value,
+      host_name: host_name.value,
+      host_email: host_email.value,
+    },
+  };
+}
+
+export function validateMessage(input) {
+  const author = requireText(input.author, "author", { min: 2, max: 40 });
+  if (!author.ok) return author;
+  const body = requireText(input.body, "body", { min: 1, max: 500 });
+  if (!body.ok) return body;
+  return { ok: true, value: { author: author.value, body: body.value } };
 }

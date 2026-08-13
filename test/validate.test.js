@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { validateBusiness, validateListing, validateNews } from "../src/validate.js";
+import { validateBusiness, validateListing, validateMessage, validateNews, validateRoom } from "../src/validate.js";
 
 describe("validateListing", () => {
   const good = {
@@ -72,5 +72,40 @@ describe("validateNews", () => {
       author: "Neighbors",
     });
     assert.equal(result.ok, true);
+  });
+});
+
+describe("validateRoom", () => {
+  const good = {
+    title: "Canal fishing tips",
+    topic: "community",
+    description: "Share safe spots and what is biting this week.",
+    host_name: "Tomás",
+    host_email: "tomas@example.com",
+  };
+
+  it("accepts a complete room request", () => {
+    const result = validateRoom(good);
+    assert.equal(result.ok, true);
+    assert.equal(result.value.topic, "community");
+  });
+
+  it("rejects an unknown topic", () => {
+    const result = validateRoom({ ...good, topic: "invoices" });
+    assert.equal(result.ok, false);
+    assert.equal(result.field, "topic");
+  });
+});
+
+describe("validateMessage", () => {
+  it("accepts a short chat line", () => {
+    const result = validateMessage({ author: "Neighbor", body: "I will bring extra bags." });
+    assert.equal(result.ok, true);
+  });
+
+  it("rejects an empty message", () => {
+    const result = validateMessage({ author: "Neighbor", body: "" });
+    assert.equal(result.ok, false);
+    assert.equal(result.field, "body");
   });
 });

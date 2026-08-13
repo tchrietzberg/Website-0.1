@@ -1,6 +1,6 @@
 # Indiantown Board
 
-A standalone community board for **Indiantown, Florida (34956)**. Neighbors can post classifieds, add a company with contact information, share news, and open a list of local resources.
+A standalone community board for **Indiantown, Florida (34956)**. Neighbors can post classifieds, add a company with contact information, share news, request topic chat rooms, and open a list of local resources.
 
 This project is only the Indiantown board. It does not share code, data, branding, or accounts with any other product.
 
@@ -12,8 +12,9 @@ This project is only the Indiantown board. It does not share code, data, brandin
 - **Resources** — Village Hall, utilities, schools, parks, 211, and 911
 - **About town** — a short Indiantown primer
 - English / Spanish toggle
-- Search across listings, businesses, news, and resources
+- Search across listings, businesses, news, chat rooms, and resources
 - Contact details stay hidden until someone taps **Show contact**
+- **Chat rooms** by topic. Anyone can request a room; it stays closed until an admin approves it. Admins can hide messages and close rooms.
 
 ## Security
 
@@ -52,3 +53,7 @@ Data is stored in `data/indiantown.db`. Sample businesses and listings are ficti
 | `PORT` | `3000` | HTTP port |
 | `DB_FILE` | `data/indiantown.db` | SQLite file |
 | `RATE_LIMIT_MAX` | `8` | Posts allowed per client in 10 minutes |
+| `ADMIN_EMAIL` | `admin@indiantown.example` | Admin sign-in email |
+| `ADMIN_PASSWORD` | `indiantown-admin` | Admin sign-in password (change this before any public use) |
+
+Admin review is at **http://localhost:3000/#/admin**.

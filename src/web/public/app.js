@@ -7,6 +7,7 @@ const copy = {
     navBoard: "Listings",
     navDirectory: "Businesses",
     navNews: "News",
+    navChat: "Chat",
     navResources: "Help",
     navAbout: "About",
     post: "Post",
@@ -17,6 +18,7 @@ const copy = {
     tabListing: "Listing",
     tabBusiness: "Business",
     tabNews: "News",
+    tabRoom: "Chat room",
     footer: "Village of Indiantown, Florida · 34956",
     heroKicker: "Village of Indiantown",
     heroTitle: "Welcome to Indiantown",
@@ -25,6 +27,26 @@ const copy = {
     businesses: "Businesses",
     news: "News",
     resources: "Help",
+    rooms: "Chat rooms",
+    requestRoom: "Request a room",
+    pendingNote: "An admin must approve a new room before people can chat.",
+    roomRequested: "Requested. An admin will review it.",
+    joinName: "Your name in this room",
+    send: "Send",
+    openRoom: "Open",
+    approve: "Approve",
+    closeRoom: "Close room",
+    hideMsg: "Hide",
+    adminTitle: "Admin review",
+    adminEmail: "Admin email",
+    adminPassword: "Password",
+    signIn: "Sign in",
+    signOut: "Sign out",
+    pending: "Pending",
+    approved: "Open",
+    closed: "Closed",
+    actionChat: "Join a chat",
+    actionChatHint: "Topic rooms after admin approval",
     latestBoard: "Latest listings",
     latestNews: "Latest news",
     seeBoard: "See all",
@@ -42,6 +64,16 @@ const copy = {
     reveal: "Show contact",
     hide: "Hide contact",
     agree: "I confirm this is a real local post for Indiantown, not spam.",
+    roomTopics: {
+      community: "Community",
+      events: "Events",
+      jobs: "Jobs",
+      housing: "Housing",
+      help: "Help",
+      youth: "Youth",
+      spanish: "Español",
+      other: "Other",
+    },
     listingCats: {
       "for-sale": "For sale",
       wanted: "Wanted",
@@ -92,6 +124,9 @@ const copy = {
       submitListing: "Post listing",
       submitBusiness: "Add company",
       submitNews: "Share note",
+      submitRoom: "Request room",
+      topic: "Topic",
+      host: "Your name",
     },
     posted: "Posted. It is live now.",
     needFix: "Check the fields and try again.",
@@ -107,6 +142,7 @@ const copy = {
     navBoard: "Anuncios",
     navDirectory: "Negocios",
     navNews: "Noticias",
+    navChat: "Chat",
     navResources: "Ayuda",
     navAbout: "Acerca",
     post: "Publicar",
@@ -117,6 +153,7 @@ const copy = {
     tabListing: "Anuncio",
     tabBusiness: "Negocio",
     tabNews: "Noticia",
+    tabRoom: "Sala",
     footer: "Villa de Indiantown, Florida · 34956",
     heroKicker: "Villa de Indiantown",
     heroTitle: "Bienvenido a Indiantown",
@@ -125,6 +162,26 @@ const copy = {
     businesses: "Negocios",
     news: "Noticias",
     resources: "Ayuda",
+    rooms: "Salas de chat",
+    requestRoom: "Pedir una sala",
+    pendingNote: "Un administrador debe aprobar la sala antes de que la gente pueda hablar.",
+    roomRequested: "Solicitada. Un administrador la revisará.",
+    joinName: "Su nombre en esta sala",
+    send: "Enviar",
+    openRoom: "Abrir",
+    approve: "Aprobar",
+    closeRoom: "Cerrar sala",
+    hideMsg: "Ocultar",
+    adminTitle: "Revisión de administrador",
+    adminEmail: "Correo de administrador",
+    adminPassword: "Contraseña",
+    signIn: "Entrar",
+    signOut: "Salir",
+    pending: "Pendiente",
+    approved: "Abierta",
+    closed: "Cerrada",
+    actionChat: "Entrar a un chat",
+    actionChatHint: "Salas por tema, con aprobación",
     latestBoard: "Anuncios recientes",
     latestNews: "Noticias recientes",
     seeBoard: "Ver todos",
@@ -142,6 +199,16 @@ const copy = {
     reveal: "Mostrar contacto",
     hide: "Ocultar contacto",
     agree: "Confirmo que esta es una publicación local real de Indiantown, no spam.",
+    roomTopics: {
+      community: "Comunidad",
+      events: "Eventos",
+      jobs: "Empleos",
+      housing: "Vivienda",
+      help: "Ayuda",
+      youth: "Jóvenes",
+      spanish: "Español",
+      other: "Otro",
+    },
     listingCats: {
       "for-sale": "Se vende",
       wanted: "Se busca",
@@ -192,6 +259,9 @@ const copy = {
       submitListing: "Publicar anuncio",
       submitBusiness: "Agregar empresa",
       submitNews: "Compartir nota",
+      submitRoom: "Pedir sala",
+      topic: "Tema",
+      host: "Su nombre",
     },
     posted: "Publicado. Ya está en línea.",
     needFix: "Revise los campos e intente de nuevo.",
@@ -208,8 +278,12 @@ const state = {
   sheetTab: "listing",
   listingCategory: "",
   businessCategory: "",
+  roomTopic: "",
   query: "",
   csrf: "",
+  admin: false,
+  chatName: localStorage.getItem("it-chat-name") || "",
+  poll: null,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -220,6 +294,7 @@ async function loadSession() {
   const res = await fetch("/api/session", { credentials: "same-origin" });
   const data = await res.json();
   state.csrf = data.csrf;
+  state.admin = Boolean(data.admin);
 }
 
 function applyChrome() {
@@ -358,12 +433,13 @@ async function renderHome() {
       <span><b>${counts.businesses}</b> ${t().businesses}</span>
       <span><b>${counts.news}</b> ${t().news}</span>
       <span><b>${counts.resources}</b> ${t().resources}</span>
+      <span><b>${counts.rooms || 0}</b> ${t().rooms}</span>
     </p>
   </section>
   <div class="actions">
     <button class="action" type="button" data-open-post data-tab="listing"><strong>${t().actionListing}</strong><span>${t().actionListingHint}</span></button>
     <button class="action" type="button" data-open-post data-tab="business"><strong>${t().actionBiz}</strong><span>${t().actionBizHint}</span></button>
-    <a class="action" href="#/resources" data-link><strong>${t().actionHelp}</strong><span>${t().actionHelpHint}</span></a>
+    <a class="action" href="#/chat" data-link><strong>${t().actionChat}</strong><span>${t().actionChatHint}</span></a>
   </div>
   <section>
     <div class="toolbar"><h2>${t().latestBoard}</h2><a href="#/board" data-link>${t().seeBoard}</a></div>
@@ -419,7 +495,8 @@ async function renderSearch() {
     <h2>${t().listings}</h2>${gridOrEmpty(data.listings.map(listingCard).join(""))}
     <h2>${t().businesses}</h2>${gridOrEmpty(data.businesses.map(businessCard).join(""))}
     <h2>${t().news}</h2>${gridOrEmpty(data.news.map(newsCard).join(""))}
-    <h2>${t().resources}</h2>${gridOrEmpty(data.resources.map(resourceCard).join(""))}`;
+    <h2>${t().resources}</h2>${gridOrEmpty(data.resources.map(resourceCard).join(""))}
+    <h2>${t().rooms}</h2>${gridOrEmpty((data.rooms || []).map(roomCard).join(""))}`;
 }
 
 function contactBlock(row, kind) {
@@ -458,6 +535,86 @@ async function renderDetail(kind, id) {
     </article>`;
 }
 
+function roomCard(row) {
+  return `<button class="card" data-open="chat" data-id="${row.id}">
+    <span class="tag">${t().roomTopics[row.topic] || row.topic}</span>
+    <strong>${escapeHtml(row.title)}</strong>
+    <span class="blurb">${escapeHtml(excerpt(row.description))}</span>
+    <span class="meta">${row.message_count || 0} · ${escapeHtml(row.host_name)}</span>
+  </button>`;
+}
+
+async function renderChat() {
+  const q = state.roomTopic ? `?topic=${encodeURIComponent(state.roomTopic)}` : "";
+  const rows = await api(`/api/rooms${q}`);
+  return `<p class="kicker">${t().navChat}</p><h1>${t().rooms}</h1>
+    <p class="lede">${t().pendingNote}</p>
+    <p><button type="button" class="primary" data-open-post data-tab="room">${t().requestRoom}</button>
+    <a href="#/admin" data-link>${t().adminTitle}</a></p>
+    ${chips(t().roomTopics, state.roomTopic, "room")}
+    ${gridOrEmpty(rows.map(roomCard).join(""))}`;
+}
+
+function messageLine(row) {
+  const hidden = Number(row.hidden) === 1;
+  return `<div class="msg ${hidden ? "is-hidden" : ""}">
+    <strong>${escapeHtml(row.author)}</strong>
+    <p>${escapeHtml(row.body)}</p>
+    ${state.admin && !hidden ? `<button type="button" class="ghost" data-hide-msg="${row.id}">${t().hideMsg}</button>` : ""}
+  </div>`;
+}
+
+async function renderChatRoom(id) {
+  const [room, messages] = await Promise.all([
+    api(`/api/rooms/${id}`),
+    api(`/api/rooms/${id}/messages`),
+  ]);
+  return `<p><a href="#/chat" data-link>${t().back}</a></p>
+    <article class="detail">
+      <span class="tag">${t().roomTopics[room.topic] || room.topic}</span>
+      <h1>${escapeHtml(room.title)}</h1>
+      <p>${escapeHtml(room.description)}</p>
+      <div class="chat-log" data-chat-log data-room-id="${room.id}">${messages.map(messageLine).join("")}</div>
+      <form class="stack chat-form" data-chat-form data-room-id="${room.id}">
+        ${field("author", t().joinName, "text", `value="${escapeAttr(state.chatName)}" required`)}
+        ${field("body", t().form.body, "text", "required maxlength=\"500\"")}
+        <button class="primary" type="submit">${t().send}</button>
+        <p class="status" data-form-status></p>
+      </form>
+    </article>`;
+}
+
+async function renderAdmin() {
+  if (!state.admin) {
+    return `<p class="kicker">${t().adminTitle}</p><h1>${t().signIn}</h1>
+      <form class="stack" data-admin-login>
+        ${field("email", t().adminEmail, "email", "required")}
+        ${field("password", t().adminPassword, "password", "required")}
+        <button class="primary" type="submit">${t().signIn}</button>
+        <p class="status" data-form-status></p>
+      </form>`;
+  }
+  const rows = await api("/api/admin/rooms");
+  return `<p class="kicker">${t().adminTitle}</p>
+    <div class="toolbar"><h1>${t().rooms}</h1>
+    <button type="button" class="ghost" data-admin-logout>${t().signOut}</button></div>
+    ${rows
+      .map(
+        (row) => `<article class="card is-static">
+        <span class="tag">${t()[row.status] || row.status} · ${t().roomTopics[row.topic] || row.topic}</span>
+        <strong>${escapeHtml(row.title)}</strong>
+        <p class="blurb">${escapeHtml(row.description)}</p>
+        <span class="meta">${escapeHtml(row.host_name)} · ${escapeHtml(row.host_email)}</span>
+        <p>
+          ${row.status === "pending" ? `<button type="button" class="primary" data-admin-room="${row.id}" data-admin-action="approve">${t().approve}</button>` : ""}
+          ${row.status === "approved" ? `<button type="button" class="ghost" data-admin-room="${row.id}" data-admin-action="close">${t().closeRoom}</button>` : ""}
+          ${row.status === "approved" ? `<a href="#/chat/${row.id}" data-link>${t().openRoom}</a>` : ""}
+        </p>
+      </article>`,
+      )
+      .join("")}`;
+}
+
 const routes = {
   "": renderHome,
   board: renderBoard,
@@ -466,16 +623,46 @@ const routes = {
   resources: renderResources,
   about: renderAbout,
   search: renderSearch,
+  chat: renderChat,
+  admin: renderAdmin,
 };
+
+function stopPoll() {
+  if (state.poll) {
+    clearInterval(state.poll);
+    state.poll = null;
+  }
+}
+
+function startPoll(roomId) {
+  stopPoll();
+  state.poll = setInterval(async () => {
+    const log = $("[data-chat-log]");
+    if (!log || log.dataset.roomId !== String(roomId)) {
+      stopPoll();
+      return;
+    }
+    try {
+      const messages = await api(`/api/rooms/${roomId}/messages`);
+      log.innerHTML = messages.map(messageLine).join("");
+    } catch {
+      /* keep the last good log */
+    }
+  }, 2500);
+}
 
 async function render() {
   applyChrome();
+  stopPoll();
   const { page, id } = parseHash(location.hash);
   const main = $("#main");
   main.innerHTML = "<p class='muted'>…</p>";
   try {
     if ((page === "listing" || page === "business") && id) {
       main.innerHTML = await renderDetail(page, id);
+    } else if (page === "chat" && id) {
+      main.innerHTML = await renderChatRoom(id);
+      startPoll(id);
     } else {
       main.innerHTML = await (routes[page] || renderHome)();
     }
@@ -542,10 +729,24 @@ function newsForm() {
   </form>`;
 }
 
+function roomForm() {
+  const f = t().form;
+  return `<form class="stack" data-form="room">
+    ${field("title", f.title)}
+    ${field("topic", f.topic, "select", options(t().roomTopics, "community"))}
+    ${field("description", f.description, "textarea")}
+    ${field("host_name", f.host)}
+    ${field("host_email", f.email, "email")}
+    ${honeypotAndAgree()}
+    <button class="primary" type="submit">${f.submitRoom}</button>
+    <p class="status" data-form-status></p>
+  </form>`;
+}
+
 function paintSheet() {
   const body = $("[data-sheet-body]");
-  body.innerHTML =
-    state.sheetTab === "business" ? businessForm() : state.sheetTab === "news" ? newsForm() : listingForm();
+  const forms = { business: businessForm, news: newsForm, room: roomForm, listing: listingForm };
+  body.innerHTML = (forms[state.sheetTab] || listingForm)();
   $$("[data-sheet-tab]").forEach((btn) => btn.classList.toggle("is-on", btn.dataset.sheetTab === state.sheetTab));
   $("[data-sheet-title]").textContent = t().post;
 }
@@ -588,7 +789,35 @@ document.addEventListener("click", (event) => {
     const group = chip.parentElement.dataset.chips;
     if (group === "listing") state.listingCategory = chip.dataset.chip;
     if (group === "business") state.businessCategory = chip.dataset.chip;
+    if (group === "room") state.roomTopic = chip.dataset.chip;
     render();
+    return;
+  }
+  const hideMsg = event.target.closest("[data-hide-msg]");
+  if (hideMsg) {
+    api(`/api/admin/messages/${hideMsg.dataset.hideMsg}/hide`, { method: "POST", body: "{}" })
+      .then(() => render())
+      .catch(() => {});
+    return;
+  }
+  const adminRoom = event.target.closest("[data-admin-room]");
+  if (adminRoom) {
+    api(`/api/admin/rooms/${adminRoom.dataset.adminRoom}/${adminRoom.dataset.adminAction}`, {
+      method: "POST",
+      body: "{}",
+    })
+      .then(() => render())
+      .catch(() => {});
+    return;
+  }
+  const logout = event.target.closest("[data-admin-logout]");
+  if (logout) {
+    api("/api/admin/logout", { method: "POST", body: "{}" })
+      .then(async () => {
+        await loadSession();
+        render();
+      })
+      .catch(() => {});
     return;
   }
   const reveal = event.target.closest("[data-reveal]");
@@ -612,6 +841,42 @@ document.addEventListener("submit", async (event) => {
     render();
     return;
   }
+  const adminLogin = event.target.closest("[data-admin-login]");
+  if (adminLogin) {
+    event.preventDefault();
+    const status = $("[data-form-status]", adminLogin);
+    const data = Object.fromEntries(new FormData(adminLogin));
+    try {
+      await api("/api/admin/login", { method: "POST", body: JSON.stringify(data) });
+      await loadSession();
+      render();
+    } catch (error) {
+      status.dataset.state = "error";
+      status.textContent = error.error || t().needFix;
+    }
+    return;
+  }
+  const chatForm = event.target.closest("[data-chat-form]");
+  if (chatForm) {
+    event.preventDefault();
+    const status = $("[data-form-status]", chatForm);
+    const data = Object.fromEntries(new FormData(chatForm));
+    state.chatName = String(data.author || "").trim();
+    localStorage.setItem("it-chat-name", state.chatName);
+    try {
+      await api(`/api/rooms/${chatForm.dataset.roomId}/messages`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      chatForm.elements.namedItem("body").value = "";
+      const messages = await api(`/api/rooms/${chatForm.dataset.roomId}/messages`);
+      $("[data-chat-log]").innerHTML = messages.map(messageLine).join("");
+    } catch (error) {
+      status.dataset.state = "error";
+      status.textContent = error.error || t().needFix;
+    }
+    return;
+  }
   const form = event.target.closest("[data-form]");
   if (!form) return;
   event.preventDefault();
@@ -622,12 +887,14 @@ document.addEventListener("submit", async (event) => {
       ? "/api/businesses"
       : form.dataset.form === "news"
         ? "/api/news"
-        : "/api/listings";
+        : form.dataset.form === "room"
+          ? "/api/rooms"
+          : "/api/listings";
   try {
     if (!state.csrf) await loadSession();
     await api(path, { method: "POST", body: JSON.stringify(data) });
     status.dataset.state = "ok";
-    status.textContent = t().posted;
+    status.textContent = form.dataset.form === "room" ? t().roomRequested : t().posted;
     form.reset();
     $("[data-sheet]")?.close();
     render();

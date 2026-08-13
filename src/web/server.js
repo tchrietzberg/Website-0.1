@@ -2,10 +2,22 @@ import { createServer } from "node:http";
 import { readFileSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isEmpty, openDb } from "../db.js";
-import { seed } from "../../seed/seed.js";
-import { createSecurity, publicBusiness, publicListing } from "../security.js";
-import { validateBusiness, validateListing, validateNews } from "../validate.js";
+import {
+  createMessage,
+  createRoom,
+  findAdmin,
+  getRoom,
+  hideMessage,
+  listAllRooms,
+  listApprovedRooms,
+  listMessages,
+  publicRoom,
+  setRoomStatus,
+} from "../chat.js";
+import { isEmpty, needsChatSeed, openDb } from "../db.js";
+import { seed, seedRooms } from "../../seed/seed.js";
+import { createSecurity, publicBusiness, publicListing, verifyPassword } from "../security.js";
+import { validateBusiness, validateListing, validateMessage, validateNews, validateRoom } from "../validate.js";
 import {
   createBusiness,
   createListing,
@@ -30,8 +42,18 @@ const MIME = {
   ".json": "application/json; charset=utf-8",
 };
 
+function requireAdmin(req, res, send, security) {
+  const admin = security.adminFromReq(req);
+  if (!admin) {
+    send(res, 401, { error: "Admin sign-in required." });
+    return null;
+  }
+  return admin;
+}
+
 export function createApp(db = openDb(), security = createSecurity()) {
   if (isEmpty(db)) seed(db);
+  else if (needsChatSeed(db)) seedRooms(db);
 
   function send(res, status, body, extra = {}) {
     const isJson = typeof body === "object" && !Buffer.isBuffer(body);
@@ -72,7 +94,13 @@ export function createApp(db = openDb(), security = createSecurity()) {
     try {
       if (pathname === "/api/session" && req.method === "GET") {
         const { token, setCookie } = security.issueToken(req);
-        return send(res, 200, { csrf: token }, setCookie ? { "Set-Cookie": setCookie } : {});
+        const admin = security.adminFromReq(req);
+        return send(
+          res,
+          200,
+          { csrf: token, admin: Boolean(admin) },
+          setCookie ? { "Set-Cookie": setCookie } : {},
+        );
       }
       if (pathname === "/api/stats" && req.method === "GET") {
         return send(res, 200, stats(db));
@@ -124,6 +152,91 @@ export function createApp(db = openDb(), security = createSecurity()) {
       if (pathname === "/api/resources" && req.method === "GET") {
         return send(res, 200, listResources(db));
       }
+
+      if (pathname === "/api/rooms" && req.method === "GET") {
+        return send(res, 200, listApprovedRooms(db, searchParams.get("topic") || ""));
+      }
+      if (pathname === "/api/rooms" && req.method === "POST") {
+        const body = await security.readJson(req);
+        const gate = security.guardPost(req, body);
+        if (!gate.ok) return send(res, gate.status, gate);
+        const parsed = validateRoom(body);
+        if (!parsed.ok) return send(res, 400, parsed);
+        const row = createRoom(db, parsed.value);
+        return send(res, 201, { id: row.id, status: row.status, title: row.title });
+      }
+      if (pathname.match(/^\/api\/rooms\/\d+\/messages$/) && req.method === "GET") {
+        const id = Number(pathname.split("/")[3]);
+        const room = getRoom(db, id);
+        const admin = security.adminFromReq(req);
+        if (!room || (room.status !== "approved" && !admin)) return send(res, 404, { error: "Not found" });
+        return send(res, 200, listMessages(db, id, { includeHidden: Boolean(admin) }));
+      }
+      if (pathname.match(/^\/api\/rooms\/\d+\/messages$/) && req.method === "POST") {
+        const id = Number(pathname.split("/")[3]);
+        const room = getRoom(db, id);
+        if (!room || room.status !== "approved") return send(res, 404, { error: "Room is not open." });
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false, maxHits: 40 });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const parsed = validateMessage(body);
+        if (!parsed.ok) return send(res, 400, parsed);
+        return send(res, 201, createMessage(db, id, parsed.value));
+      }
+      if (pathname.match(/^\/api\/rooms\/\d+$/) && req.method === "GET") {
+        const room = getRoom(db, Number(pathname.split("/")[3]));
+        const admin = security.adminFromReq(req);
+        if (!room || (room.status !== "approved" && !admin)) return send(res, 404, { error: "Not found" });
+        return send(res, 200, admin ? room : publicRoom(room));
+      }
+
+      if (pathname === "/api/admin/login" && req.method === "POST") {
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const row = findAdmin(db, body.email);
+        if (!row || !verifyPassword(body.password, row.password_hash)) {
+          return send(res, 401, { error: "Wrong email or password." });
+        }
+        const token = security.createAdminSession(row.email);
+        return send(res, 200, { admin: true, email: row.email }, { "Set-Cookie": security.adminCookie(token) });
+      }
+      if (pathname === "/api/admin/logout" && req.method === "POST") {
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        security.clearAdminSession(req);
+        return send(res, 200, { admin: false }, { "Set-Cookie": security.clearAdminCookie() });
+      }
+      if (pathname === "/api/admin/rooms" && req.method === "GET") {
+        if (!requireAdmin(req, res, send, security)) return;
+        return send(res, 200, listAllRooms(db));
+      }
+      if (pathname.match(/^\/api\/admin\/rooms\/\d+\/approve$/) && req.method === "POST") {
+        if (!requireAdmin(req, res, send, security)) return;
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const room = setRoomStatus(db, Number(pathname.split("/")[4]), "approved");
+        return room ? send(res, 200, room) : send(res, 404, { error: "Not found" });
+      }
+      if (pathname.match(/^\/api\/admin\/rooms\/\d+\/close$/) && req.method === "POST") {
+        if (!requireAdmin(req, res, send, security)) return;
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const room = setRoomStatus(db, Number(pathname.split("/")[4]), "closed");
+        return room ? send(res, 200, room) : send(res, 404, { error: "Not found" });
+      }
+      if (pathname.match(/^\/api\/admin\/messages\/\d+\/hide$/) && req.method === "POST") {
+        if (!requireAdmin(req, res, send, security)) return;
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const row = hideMessage(db, Number(pathname.split("/")[4]));
+        return row ? send(res, 200, row) : send(res, 404, { error: "Not found" });
+      }
+
       if (pathname.startsWith("/api/")) {
         return send(res, 404, { error: "Not found" });
       }

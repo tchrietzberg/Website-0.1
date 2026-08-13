@@ -2,7 +2,7 @@
   "name": "indiantown-board",
   "version": "0.1.0",
   "private": true,
-  "description": "Indiantown community board: local classifieds, business directory, news, and resources.",
+  "description": "Indiantown community board: local classifieds, business directory, news, chat rooms, and resources.",
   "type": "module",
   "scripts": {
     "start": "node src/web/server.js",

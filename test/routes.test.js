@@ -14,4 +14,8 @@ describe("parseHash", () => {
   it("opens the board", () => {
     assert.deepEqual(parseHash("#/board"), { page: "board", id: "" });
   });
+
+  it("opens a chat room", () => {
+    assert.deepEqual(parseHash("#/chat/2"), { page: "chat", id: "2" });
+  });
 });

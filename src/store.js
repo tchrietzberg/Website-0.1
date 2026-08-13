@@ -85,6 +85,7 @@ export function stats(db) {
     businesses: db.prepare("SELECT COUNT(*) AS n FROM businesses").get().n,
     news: db.prepare("SELECT COUNT(*) AS n FROM news").get().n,
     resources: db.prepare("SELECT COUNT(*) AS n FROM resources").get().n,
+    rooms: db.prepare("SELECT COUNT(*) AS n FROM rooms WHERE status = 'approved'").get().n,
   };
 }
 
@@ -93,7 +94,7 @@ export function searchAll(db, query) {
     .trim()
     .slice(0, 80)
     .replace(/[%_]/g, "");
-  if (q.length < 2) return { listings: [], businesses: [], news: [], resources: [] };
+  if (q.length < 2) return { listings: [], businesses: [], news: [], resources: [], rooms: [] };
   const like = `%${q}%`;
   return {
     listings: db
@@ -122,6 +123,13 @@ export function searchAll(db, query) {
       .prepare(
         `SELECT id, title, category, description, url, phone, address FROM resources
          WHERE title LIKE ? OR description LIKE ? LIMIT 10`,
+      )
+      .all(like, like),
+    rooms: db
+      .prepare(
+        `SELECT id, title, topic, description, host_name, status, created_at
+         FROM rooms WHERE status = 'approved' AND (title LIKE ? OR description LIKE ?)
+         LIMIT 10`,
       )
       .all(like, like),
   };

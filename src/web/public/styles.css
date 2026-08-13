@@ -290,6 +290,19 @@ textarea { min-height: 8rem; resize: vertical; }
 }
 .about-seal { width: 7rem; height: 7rem; display: block; margin: 0 0 1rem; }
 
+.chat-log {
+  display: grid;
+  gap: 0.7rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 0.85rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+.msg p { margin: 0.15rem 0 0; }
+.msg.is-hidden { opacity: 0.45; }
+
 @media (max-width: 860px) {
   .top {
     grid-template-columns: 1fr auto;

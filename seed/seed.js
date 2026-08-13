@@ -223,8 +223,68 @@ const resources = [
   },
 ];
 
+const rooms = [
+  {
+    title: "Saturday at Booker Park",
+    topic: "events",
+    description: "Who is bringing water, shade, and extra gloves for the park cleanup?",
+    host_name: "Parks neighbors",
+    host_email: "parks@example.com",
+    status: "approved",
+  },
+  {
+    title: "Jobs and rides this week",
+    topic: "jobs",
+    description: "Share grove, shop, and ride-share needs for people already in 34956.",
+    host_name: "Patricia Nguyen",
+    host_email: "pnguyen@example.com",
+    status: "approved",
+  },
+  {
+    title: "Spanish homework hour",
+    topic: "youth",
+    description: "Pending room for after-school help. Waiting on admin review.",
+    host_name: "Rosa Delgado",
+    host_email: "rosa@example.com",
+    status: "pending",
+  },
+];
+
+const roomMessages = [
+  { room: "Saturday at Booker Park", author: "Andre", body: "I can bring two extra rakes and be there at 8." },
+  { room: "Saturday at Booker Park", author: "Elena", body: "Cafecito for volunteers after we finish the north field." },
+  { room: "Jobs and rides this week", author: "Luis", body: "Need a ride to the west side of 710 Saturday morning." },
+];
+
+export function seedRooms(db, { force = false } = {}) {
+  const n = db.prepare("SELECT COUNT(*) AS n FROM rooms").get().n;
+  if (!force && n > 0) return { seeded: false };
+  const insertRoom = db.prepare(
+    `INSERT INTO rooms (title, topic, description, host_name, host_email, status)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const insertMsg = db.prepare("INSERT INTO messages (room_id, author, body) VALUES (?, ?, ?)");
+  for (const row of rooms) {
+    const result = insertRoom.run(
+      row.title,
+      row.topic,
+      row.description,
+      row.host_name,
+      row.host_email,
+      row.status,
+    );
+    for (const msg of roomMessages.filter((m) => m.room === row.title)) {
+      insertMsg.run(result.lastInsertRowid, msg.author, msg.body);
+    }
+  }
+  return { seeded: true };
+}
+
 export function seed(db, { force = false } = {}) {
-  if (!force && !isEmpty(db)) return { seeded: false };
+  if (!force && !isEmpty(db)) {
+    seedRooms(db);
+    return { seeded: false };
+  }
   const insertBiz = db.prepare(
     `INSERT INTO businesses
       (name, category, description, owner_name, phone, email, website, address)
@@ -276,6 +336,7 @@ export function seed(db, { force = false } = {}) {
     db.exec("ROLLBACK");
     throw error;
   }
+  seedRooms(db, { force: true });
   return { seeded: true };
 }
 
