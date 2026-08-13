@@ -19,6 +19,14 @@ Official Village business still lives at [indiantownfl.gov](https://www.indianto
 
 Node.js 22.13 or newer (uses built-in `node:sqlite`). No npm runtime dependencies.
 
+## Open the site
+
+```bash
+npm start
+```
+
+Then open **http://localhost:3000** in a browser. That is the direct address for this board. It is not deployed to a public domain yet.
+
 ## Commands
 
 ```bash
@@ -26,6 +34,8 @@ npm start          # http://localhost:3000 — seeds on first run
 npm run seed       # load sample Indiantown listings if the database is empty
 npm test
 ```
+
+The header and footer use the official Village of Indiantown seal.
 
 Data is stored in `data/indiantown.db`. Sample businesses and listings are fictional. Civic resource links are public Village and county pages.
 

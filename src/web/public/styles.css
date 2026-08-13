@@ -68,12 +68,12 @@ a:hover { color: var(--citrus); }
 }
 .brand small { color: var(--muted); letter-spacing: 0.08em; }
 .brand-mark {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.45rem;
-  background:
-    radial-gradient(circle at 70% 30%, var(--citrus) 0 0.35rem, transparent 0.36rem),
-    var(--palmetto);
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  box-shadow: 0 0 0 2px #fff8ea, 0 0 0 3px var(--line);
 }
 .nav {
   display: flex;
@@ -231,10 +231,27 @@ textarea { min-height: 7rem; resize: vertical; }
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.foot-seal, .about-seal {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+}
+.about-seal {
+  width: 8rem;
+  height: 8rem;
+  display: block;
+  margin: 0 0 1.2rem;
 }
 
 @media (max-width: 800px) {
   .top { flex-wrap: wrap; }
   .nav { margin-left: 0; width: 100%; }
   .hero { grid-template-columns: 1fr; }
+  .foot { flex-wrap: wrap; }
 }

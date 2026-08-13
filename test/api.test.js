@@ -90,7 +90,14 @@ describe("Indiantown Board API", () => {
   it("serves the Indiantown Board page and not another product name", async () => {
     const html = await (await fetch(`${base}/`)).text();
     assert.match(html, /Indiantown Board/);
+    assert.match(html, /village-seal\.png/);
     assert.doesNotMatch(html, /Chrono/i);
     assert.doesNotMatch(html, /legal billing/i);
+  });
+
+  it("serves the Village seal", async () => {
+    const res = await fetch(`${base}/village-seal.png`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /image\/png/);
   });
 });

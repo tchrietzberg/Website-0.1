@@ -345,7 +345,9 @@ async function renderResources() {
 }
 
 function renderAbout() {
-  return `<p class="kicker">34956</p><h1>${t().aboutTitle}</h1>
+  return `<p class="kicker">34956</p>
+    <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
+    <h1>${t().aboutTitle}</h1>
     <div class="prose">${t().aboutBody.map((p) => `<p>${p}</p>`).join("")}
     <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p></div>`;
 }
