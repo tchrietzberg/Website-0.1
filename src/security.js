@@ -2,6 +2,38 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 const COOKIE = "it_csrf";
 const ADMIN_COOKIE = "it_admin";
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"]);
+
+function parseHostPort(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  try {
+    if (raw.includes("://")) {
+      const url = new URL(raw);
+      return {
+        hostname: url.hostname.toLowerCase(),
+        port: url.port || (url.protocol === "https:" ? "443" : "80"),
+      };
+    }
+  } catch {
+    return null;
+  }
+  const host = raw.split(",")[0].trim().toLowerCase();
+  const ipv6 = host.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (ipv6) return { hostname: ipv6[1], port: ipv6[2] || "" };
+  const cut = host.lastIndexOf(":");
+  if (cut > 0 && /^\d+$/.test(host.slice(cut + 1))) {
+    return { hostname: host.slice(0, cut), port: host.slice(cut + 1) };
+  }
+  return { hostname: host, port: "" };
+}
+
+function hostsMatch(a, b) {
+  if (!a || !b) return false;
+  const sameName = a.hostname === b.hostname || (LOOPBACK.has(a.hostname) && LOOPBACK.has(b.hostname));
+  if (!sameName) return false;
+  return !a.port || !b.port || a.port === b.port;
+}
 
 export function hashPassword(password) {
   const salt = randomBytes(16).toString("hex");
@@ -67,22 +99,28 @@ export function createSecurity(options = {}) {
   }
 
   function sameOrigin(req) {
-    const host = req.headers.host;
-    const origin = req.headers.origin;
-    if (origin) {
-      try {
-        return new URL(origin).host === host;
-      } catch {
-        return false;
-      }
-    }
-    const referer = req.headers.referer;
-    if (!referer) return true;
+    const site = String(req.headers["sec-fetch-site"] || "");
+    if (site === "same-origin") return true;
+
+    const origin = String(req.headers.origin || "");
+    const referer = String(req.headers.referer || "");
+    const from = origin && origin !== "null" ? origin : referer;
+    if (!from) return true;
+
+    let incoming;
     try {
-      return new URL(referer).host === host;
+      incoming = parseHostPort(from);
     } catch {
       return false;
     }
+    if (!incoming) return false;
+
+    for (const raw of [req.headers.host, req.headers["x-forwarded-host"]]) {
+      for (const part of String(raw || "").split(",")) {
+        if (hostsMatch(incoming, parseHostPort(part.trim()))) return true;
+      }
+    }
+    return false;
   }
 
   function csrfOk(req) {
