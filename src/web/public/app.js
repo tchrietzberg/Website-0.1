@@ -486,8 +486,9 @@ async function renderNews() {
 }
 
 function formatDay(value) {
-  const date = new Date(String(value || "").replace(" ", "T") + "Z");
-  if (Number.isNaN(date.getTime())) return "";
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "";
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   return new Intl.DateTimeFormat(state.lang === "es" ? "es-US" : "en-US", {
     dateStyle: "medium",
   }).format(date);
