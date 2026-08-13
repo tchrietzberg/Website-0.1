@@ -4,31 +4,31 @@ const copy = {
   en: {
     brand: "Indiantown Board",
     navHome: "Home",
-    navBoard: "Board",
-    navDirectory: "Directory",
+    navBoard: "Listings",
+    navDirectory: "Businesses",
     navNews: "News",
-    navResources: "Resources",
-    navAbout: "About town",
+    navResources: "Help",
+    navAbout: "About",
     post: "Post",
     menu: "Menu",
     search: "Search",
     searchLabel: "Search Indiantown",
-    searchPh: "Search listings, businesses, news…",
+    searchPh: "Search…",
     tabListing: "Listing",
     tabBusiness: "Business",
     tabNews: "News",
     footer: "Village of Indiantown, Florida · 34956",
-    heroKicker: "Village of Indiantown · Treasure Coast",
-    heroTitle: "Find it in 34956.",
-    heroLede: "Buy, sell, hire, or list your company — only for people in and around Indiantown.",
+    heroKicker: "Village of Indiantown",
+    heroTitle: "Welcome to Indiantown",
+    heroLede: "Buy, sell, hire, or find a local business.",
     listings: "Listings",
     businesses: "Businesses",
-    news: "News notes",
-    resources: "Resources",
+    news: "News",
+    resources: "Help",
     latestBoard: "Latest listings",
-    latestNews: "Town notes",
-    seeBoard: "See all listings",
-    seeNews: "All news",
+    latestNews: "Latest news",
+    seeBoard: "See all",
+    seeNews: "See all",
     addCompany: "Add your company",
     all: "All",
     results: "Results",
@@ -104,31 +104,31 @@ const copy = {
   es: {
     brand: "Tablón de Indiantown",
     navHome: "Inicio",
-    navBoard: "Tablón",
-    navDirectory: "Directorio",
+    navBoard: "Anuncios",
+    navDirectory: "Negocios",
     navNews: "Noticias",
-    navResources: "Recursos",
-    navAbout: "El pueblo",
+    navResources: "Ayuda",
+    navAbout: "Acerca",
     post: "Publicar",
     menu: "Menú",
     search: "Buscar",
     searchLabel: "Buscar en Indiantown",
-    searchPh: "Buscar anuncios, negocios, noticias…",
+    searchPh: "Buscar…",
     tabListing: "Anuncio",
     tabBusiness: "Negocio",
     tabNews: "Noticia",
     footer: "Villa de Indiantown, Florida · 34956",
-    heroKicker: "Villa de Indiantown · Treasure Coast",
-    heroTitle: "Encuéntrelo en el 34956.",
-    heroLede: "Compre, venda, contrate o registre su empresa — solo para gente de Indiantown y alrededores.",
+    heroKicker: "Villa de Indiantown",
+    heroTitle: "Bienvenido a Indiantown",
+    heroLede: "Compre, venda, contrate o encuentre un negocio local.",
     listings: "Anuncios",
     businesses: "Negocios",
-    news: "Notas",
-    resources: "Recursos",
+    news: "Noticias",
+    resources: "Ayuda",
     latestBoard: "Anuncios recientes",
-    latestNews: "Notas del pueblo",
-    seeBoard: "Ver todos los anuncios",
-    seeNews: "Todas las noticias",
+    latestNews: "Noticias recientes",
+    seeBoard: "Ver todos",
+    seeNews: "Ver todas",
     addCompany: "Agregar su empresa",
     all: "Todo",
     results: "Resultados",
@@ -280,12 +280,18 @@ function chips(map, current, on) {
   return `<div class="chips" data-chips="${on}">${all}${rest}</div>`;
 }
 
+function excerpt(text, n = 90) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (value.length <= n) return value;
+  return `${value.slice(0, n).trim()}…`;
+}
+
 function listingCard(row) {
   return `<button class="card" data-open="listing" data-id="${row.id}">
     <span class="tag">${t().listingCats[row.category] || row.category}</span>
     <strong>${escapeHtml(row.title)}</strong>
-    <span class="price">${money(row.price_cents)}</span>
-    <span class="muted">${escapeHtml(row.neighborhood)}</span>
+    <span class="blurb">${escapeHtml(excerpt(row.description))}</span>
+    <span class="meta"><b class="price">${money(row.price_cents)}</b> · ${escapeHtml(row.neighborhood)}</span>
   </button>`;
 }
 
@@ -293,15 +299,16 @@ function businessCard(row) {
   return `<button class="card" data-open="business" data-id="${row.id}">
     <span class="tag">${t().bizCats[row.category] || row.category}</span>
     <strong>${escapeHtml(row.name)}</strong>
-    <span class="muted">${escapeHtml(row.address)}</span>
+    <span class="blurb">${escapeHtml(excerpt(row.description))}</span>
+    <span class="meta">${escapeHtml(row.address)}</span>
   </button>`;
 }
 
 function newsCard(row) {
-  return `<article class="card" style="cursor:default">
+  return `<article class="card is-static">
     <span class="tag">${escapeHtml(row.author)}</span>
     <strong>${escapeHtml(row.title)}</strong>
-    <p>${escapeHtml(row.body)}</p>
+    <p class="blurb">${escapeHtml(excerpt(row.body, 140))}</p>
   </article>`;
 }
 
@@ -346,12 +353,12 @@ async function renderHome() {
       <h1>${t().heroTitle}</h1>
       <p class="lede">${t().heroLede}</p>
     </div>
-    <div class="stats">
-      <div class="stat"><b>${counts.listings}</b>${t().listings}</div>
-      <div class="stat"><b>${counts.businesses}</b>${t().businesses}</div>
-      <div class="stat"><b>${counts.news}</b>${t().news}</div>
-      <div class="stat"><b>${counts.resources}</b>${t().resources}</div>
-    </div>
+    <p class="statline">
+      <span><b>${counts.listings}</b> ${t().listings}</span>
+      <span><b>${counts.businesses}</b> ${t().businesses}</span>
+      <span><b>${counts.news}</b> ${t().news}</span>
+      <span><b>${counts.resources}</b> ${t().resources}</span>
+    </p>
   </section>
   <div class="actions">
     <button class="action" type="button" data-open-post data-tab="listing"><strong>${t().actionListing}</strong><span>${t().actionListingHint}</span></button>
