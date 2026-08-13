@@ -14,6 +14,7 @@ import {
   publicRoom,
   setRoomStatus,
 } from "../chat.js";
+import { listZillowHomes } from "../homes.js";
 import { isEmpty, openDb } from "../db.js";
 import { ensureResources, seed } from "../../seed/seed.js";
 import { createSecurity, publicBusiness, publicListing, verifyPassword } from "../security.js";
@@ -105,6 +106,12 @@ export function createApp(db = openDb(), security = createSecurity()) {
       }
       if (pathname === "/api/stats" && req.method === "GET") {
         return send(res, 200, stats(db));
+      }
+      if (pathname === "/api/homes" && req.method === "GET") {
+        return send(res, 200, {
+          ...listZillowHomes(),
+          local: listListings(db, "housing").map(publicListing),
+        });
       }
       if (pathname === "/api/search" && req.method === "GET") {
         return send(res, 200, searchAll(db, searchParams.get("q") || ""));

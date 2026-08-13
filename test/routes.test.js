@@ -22,4 +22,8 @@ describe("parseHash", () => {
   it("opens a news story", () => {
     assert.deepEqual(parseHash("#/news/3"), { page: "news", id: "3" });
   });
+
+  it("opens homes", () => {
+    assert.deepEqual(parseHash("#/homes"), { page: "homes", id: "" });
+  });
 });

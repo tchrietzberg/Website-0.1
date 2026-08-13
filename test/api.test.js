@@ -160,6 +160,14 @@ describe("Indiantown Board API", () => {
     assert.ok(data.resources.some((row) => /Lahti/i.test(row.title)));
   });
 
+  it("lists recent Indiantown homes that open on Zillow", async () => {
+    const data = await (await fetch(`${base}/api/homes`)).json();
+    assert.ok(data.recent.length >= 4);
+    assert.ok(data.recent.every((row) => /zillow\.com/i.test(row.url)));
+    assert.match(data.links.sale, /zillow\.com\/indiantown-fl/);
+    assert.match(data.links.newest, /zillow\.com/);
+  });
+
   it("does not list chat rooms until one is approved", async () => {
     const rooms = await (await fetch(`${base}/api/rooms`)).json();
     assert.deepEqual(rooms, []);
@@ -172,6 +180,7 @@ describe("Indiantown Board API", () => {
     assert.match(html, /Indiantown Board/);
     assert.match(html, /village-seal\.png/);
     assert.match(html, /data-search-form/);
+    assert.match(html, /#\/homes/);
     assert.match(html, /English/);
     assert.match(html, /Español/);
     assert.match(html, /data-lang-set="en"/);

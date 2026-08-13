@@ -6,6 +6,7 @@ This project is only the Indiantown board. It does not share code, data, brandin
 
 ## What is here
 
+- **Homes** — recent Indiantown listings that open on Zillow, plus neighbor housing posts
 - **Board** — Craigslist-style listings: for sale, wanted, jobs, housing, services, community
 - **Directory** — add a local company (name, owner, phone, email, address, optional website)
 - **News** — short town notes anyone can post

@@ -4,6 +4,7 @@ const copy = {
   en: {
     brand: "Indiantown Board",
     navHome: "Home",
+    navHomes: "Homes",
     navBoard: "Listings",
     navDirectory: "Businesses",
     navNews: "News",
@@ -21,9 +22,23 @@ const copy = {
     tabNews: "News",
     tabRoom: "Chat room",
     footer: "Village of Indiantown, Florida · 34956",
-    heroKicker: "Village of Indiantown",
-    heroTitle: "Welcome to Indiantown",
-    heroLede: "Buy, sell, hire, or find a local business.",
+    heroKicker: "Treasure Coast · 34956",
+    heroTitle: "Find your place in Indiantown",
+    heroLede: "Homes on Zillow, neighbor listings, and local help — one village board.",
+    actionHomes: "Browse homes",
+    actionHomesHint: "Recent Zillow listings in 34956",
+    homesTitle: "Homes for sale",
+    homesIntro: "Recent Indiantown listings on Zillow. Open a card for photos, price, and the live listing.",
+    homesNote: "Price and availability are on Zillow and can change. This board does not sell these homes.",
+    zillowAll: "See all on Zillow",
+    zillowNewest: "Newest",
+    zillowRent: "For rent",
+    zillowSold: "Recently sold",
+    zillowNew: "New construction",
+    viewOnZillow: "View on Zillow",
+    localHousing: "Neighbor housing posts",
+    bedsBaths: "bd",
+    bathsShort: "ba",
     listings: "Listings",
     businesses: "Businesses",
     news: "News",
@@ -107,9 +122,9 @@ const copy = {
     },
     aboutTitle: "About Indiantown",
     aboutBody: [
-      "Indiantown is a rural village in Martin County on Florida’s Treasure Coast. It was incorporated on December 31, 2017 and is home to about 6,000 people.",
+      "Indiantown is a rural village in Martin County on Florida’s Treasure Coast. It was incorporated on December 31, 2017 and is home to about 6,000 people, with groves, the St. Lucie Canal, and new neighborhoods such as Terra Lago.",
       "Village Hall is at 15516 SW Osceola St., Suite B. Official business stays on indiantownfl.gov.",
-      "Search first. Then post a listing, add a company, or share a short town note. Contact details stay hidden until someone asks to see them.",
+      "Browse homes on Zillow, then post a listing, add a company, or share a short town note. Contact details stay hidden until someone asks to see them.",
     ],
     form: {
       title: "Title",
@@ -144,6 +159,7 @@ const copy = {
   es: {
     brand: "Tablón de Indiantown",
     navHome: "Inicio",
+    navHomes: "Casas",
     navBoard: "Anuncios",
     navDirectory: "Negocios",
     navNews: "Noticias",
@@ -161,9 +177,23 @@ const copy = {
     tabNews: "Noticia",
     tabRoom: "Sala",
     footer: "Villa de Indiantown, Florida · 34956",
-    heroKicker: "Villa de Indiantown",
-    heroTitle: "Bienvenido a Indiantown",
-    heroLede: "Compre, venda, contrate o encuentre un negocio local.",
+    heroKicker: "Treasure Coast · 34956",
+    heroTitle: "Encuentre su lugar en Indiantown",
+    heroLede: "Casas en Zillow, anuncios de vecinos y ayuda local en un solo tablón.",
+    actionHomes: "Ver casas",
+    actionHomesHint: "Listados recientes de Zillow en 34956",
+    homesTitle: "Casas en venta",
+    homesIntro: "Listados recientes de Indiantown en Zillow. Abra una tarjeta para fotos, precio y el anuncio en vivo.",
+    homesNote: "El precio y la disponibilidad están en Zillow y pueden cambiar. Este tablón no vende estas casas.",
+    zillowAll: "Ver todo en Zillow",
+    zillowNewest: "Más nuevas",
+    zillowRent: "En renta",
+    zillowSold: "Vendidas",
+    zillowNew: "Obra nueva",
+    viewOnZillow: "Ver en Zillow",
+    localHousing: "Vivienda de vecinos",
+    bedsBaths: "hab",
+    bathsShort: "baños",
     listings: "Anuncios",
     businesses: "Negocios",
     news: "Noticias",
@@ -247,9 +277,9 @@ const copy = {
     },
     aboutTitle: "Sobre Indiantown",
     aboutBody: [
-      "Indiantown es un pueblo rural en el condado de Martin, en la Treasure Coast de la Florida. Se incorporó el 31 de diciembre de 2017 y tiene unos 6,000 residentes.",
+      "Indiantown es un pueblo rural en el condado de Martin, en la Treasure Coast de la Florida. Se incorporó el 31 de diciembre de 2017 y tiene unos 6,000 residentes, con arboledas, el canal St. Lucie y barrios nuevos como Terra Lago.",
       "La alcaldía está en 15516 SW Osceola St., Suite B. Los trámites oficiales siguen en indiantownfl.gov.",
-      "Busque primero. Luego publique un anuncio, agregue una empresa o comparta una nota. Los datos de contacto se ocultan hasta que alguien pida verlos.",
+      "Vea casas en Zillow, publique un anuncio, agregue una empresa o comparta una nota. Los datos de contacto se ocultan hasta que alguien pida verlos.",
     ],
     form: {
       title: "Título",
@@ -439,30 +469,80 @@ function gridOrEmpty(html) {
   return html ? `<div class="grid">${html}</div>` : `<p class="empty">${t().empty}</p>`;
 }
 
+function zillowCard(row) {
+  const facts = [
+    row.beds != null ? `${row.beds} ${t().bedsBaths}` : "",
+    row.baths != null ? `${row.baths} ${t().bathsShort}` : "",
+    row.sqft ? `${row.sqft.toLocaleString(state.lang === "es" ? "es-US" : "en-US")} sqft` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `<a class="card home-card" href="${escapeAttr(row.url)}" target="_blank" rel="noopener">
+    <span class="tag">${escapeHtml(row.kind || "Zillow")}</span>
+    <strong>${row.price != null ? money(row.price * 100) : t().viewOnZillow}</strong>
+    <span class="blurb">${escapeHtml(row.address)}</span>
+    <span class="meta">${escapeHtml(facts)}</span>
+    <span class="meta">${t().viewOnZillow}</span>
+  </a>`;
+}
+
+function zillowLinks(links) {
+  return `<p class="zillow-links">
+    <a class="primary" href="${escapeAttr(links.sale)}" target="_blank" rel="noopener">${t().zillowAll}</a>
+    <a href="${escapeAttr(links.newest)}" target="_blank" rel="noopener">${t().zillowNewest}</a>
+    <a href="${escapeAttr(links.newHomes)}" target="_blank" rel="noopener">${t().zillowNew}</a>
+    <a href="${escapeAttr(links.rent)}" target="_blank" rel="noopener">${t().zillowRent}</a>
+    <a href="${escapeAttr(links.sold)}" target="_blank" rel="noopener">${t().zillowSold}</a>
+  </p>`;
+}
+
+async function renderHomes() {
+  const data = await api("/api/homes");
+  return `<p class="kicker">Zillow · 34956</p>
+    <h1>${t().homesTitle}</h1>
+    <p class="lede">${t().homesIntro}</p>
+    ${zillowLinks(data.links)}
+    <div class="grid home-grid">${data.recent.map(zillowCard).join("")}</div>
+    <p class="muted homes-note">${t().homesNote}</p>
+    <div class="toolbar"><h2>${t().localHousing}</h2><a href="#/board" data-link>${t().seeBoard}</a></div>
+    ${gridOrEmpty((data.local || []).map(listingCard).join(""))}`;
+}
+
 async function renderHome() {
-  const [counts, listings, news] = await Promise.all([
+  const [counts, listings, news, homes] = await Promise.all([
     api("/api/stats"),
     api("/api/listings"),
     api("/api/news"),
+    api("/api/homes"),
   ]);
-  return `<section class="hero">
+  return `<section class="hero hero-banner">
     <div>
       <p class="kicker">${t().heroKicker}</p>
       <h1>${t().heroTitle}</h1>
       <p class="lede">${t().heroLede}</p>
+      <p class="hero-actions">
+        <a class="primary" href="#/homes" data-link>${t().actionHomes}</a>
+        <button class="ghost" type="button" data-open-post data-tab="listing">${t().actionListing}</button>
+      </p>
     </div>
     <p class="statline">
+      <span><b>${homes.recent?.length || 0}</b> ${t().navHomes}</span>
       <span><b>${counts.listings}</b> ${t().listings}</span>
       <span><b>${counts.businesses}</b> ${t().businesses}</span>
       <span><b>${counts.news}</b> ${t().news}</span>
       <span><b>${counts.resources}</b> ${t().resources}</span>
-      <span><b>${counts.rooms || 0}</b> ${t().rooms}</span>
     </p>
   </section>
+  <section class="homes-strip">
+    <div class="toolbar"><h2>${t().homesTitle}</h2><a href="#/homes" data-link>${t().seeBoard}</a></div>
+    <p class="muted">${t().actionHomesHint}</p>
+    <div class="grid home-grid">${homes.recent.slice(0, 4).map(zillowCard).join("")}</div>
+    ${zillowLinks(homes.links)}
+  </section>
   <div class="actions">
+    <a class="action" href="#/homes" data-link><strong>${t().actionHomes}</strong><span>${t().actionHomesHint}</span></a>
     <button class="action" type="button" data-open-post data-tab="listing"><strong>${t().actionListing}</strong><span>${t().actionListingHint}</span></button>
     <button class="action" type="button" data-open-post data-tab="business"><strong>${t().actionBiz}</strong><span>${t().actionBizHint}</span></button>
-    <a class="action" href="#/chat" data-link><strong>${t().actionChat}</strong><span>${t().actionChatHint}</span></a>
   </div>
   <section>
     <div class="toolbar"><h2>${t().latestBoard}</h2><a href="#/board" data-link>${t().seeBoard}</a></div>
@@ -667,6 +747,7 @@ async function renderAdmin() {
 
 const routes = {
   "": renderHome,
+  homes: renderHomes,
   board: renderBoard,
   directory: renderDirectory,
   news: renderNews,
