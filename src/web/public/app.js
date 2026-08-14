@@ -53,6 +53,9 @@
     settingsTabOpen: {},
     matterDetailsOpen: true,
     matterListColumns: null,
+    intakeTab: 'call',
+    intakeSession: null,
+    intakeFlash: null,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -186,6 +189,11 @@
       void api('/api/dashboard');
     } else if (view === 'users') {
       if (canManageUsers()) void api('/api/timekeepers');
+    } else if (view === 'intake') {
+      if (canUseIntake()) {
+        void api('/api/intake/forms');
+        void api('/api/intake/sessions');
+      }
     } else if (view === 'settings') {
       void api('/api/settings');
       void api('/api/record-types');
@@ -197,6 +205,10 @@
 
   function canCreateMatter(user) {
     return !!user && ['admin', 'billing_clerk', 'attorney', 'paralegal'].includes(user.role);
+  }
+
+  function canUseIntake(user = state.user) {
+    return canCreateMatter(user);
   }
 
   function isAdminUser(user = state.user) {
@@ -4733,6 +4745,17 @@
     renderView();
   }
 
+  function goIntake() {
+    if (!canUseIntake()) return;
+    state.view = 'intake';
+    state.matterId = null;
+    state.contactId = null;
+    state.showCreateMatter = false;
+    state.showCreateContact = false;
+    renderShell();
+    void renderView();
+  }
+
   function goAddTimeEntry() {
     state.focusTimeEntry = true;
     state.view = 'time';
@@ -4775,6 +4798,7 @@
       users: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><path d="M17 8v6M14 11h6"/></svg>`,
       plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
       briefcase: `<svg ${common}><rect x="3.5" y="7.5" width="17" height="12.5" rx="2"/><path d="M9 7.5V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7.5"/><path d="M3.5 12.25h17"/><path d="M12 11.25v2.25"/></svg>`,
+      intake: `<svg ${common}><path d="M8 4.5h8.5A2.5 2.5 0 0 1 19 7v6.5A2.5 2.5 0 0 1 16.5 16H11l-4 3v-3H7A2.5 2.5 0 0 1 4.5 13.5v-3"/><path d="M8 8.5H4.5A1.5 1.5 0 0 1 3 7V5.5A1.5 1.5 0 0 1 4.5 4H8"/><path d="M5.2 6.2v1.1"/></svg>`,
     };
     return icons[name] || icons.matters;
   }
@@ -4792,6 +4816,7 @@
     // Matters + Contacts stay under Quick actions (create opens create + search/list).
     // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
+      canUseIntake() ? ['intake', 'Intake', 'intake', 'Call & portal'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
@@ -4815,6 +4840,9 @@
       state.view = items[0]?.[0] || 'settings';
     }
     if (state.view === 'users' && !canManageUsers()) {
+      state.view = items[0]?.[0] || 'settings';
+    }
+    if (state.view === 'intake' && !canUseIntake()) {
       state.view = items[0]?.[0] || 'settings';
     }
     const activeView = navActiveId(state.view);
@@ -4856,6 +4884,15 @@
               </span>
             </button>`
           : '',
+        canUseIntake()
+          ? `<button type="button" class="sidebar-action primary" id="sideIntake">
+              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('intake')}</span>
+              <span class="sidebar-action-text">
+                <strong>Intake</strong>
+                <small>Call, portal, custom fields</small>
+              </span>
+            </button>`
+          : '',
       ].filter(Boolean).join('');
       sidebarActions.innerHTML = `
         <section class="sidebar-section">
@@ -4870,6 +4907,8 @@
       if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
+      const sideIntake = $('#sideIntake');
+      if (sideIntake) sideIntake.onclick = () => goIntake();
     }
 
     nav.innerHTML = `
@@ -4923,6 +4962,274 @@
     ensureLookupBar();
   }
 
+  function intakeFieldInputs(fields, extracted) {
+    return (fields || []).map((field) => {
+      const val = extracted?.[String(field.id)] ?? extracted?.[field.id] ?? '';
+      const opts = Array.isArray(field.options) ? field.options : [];
+      if (opts.length) {
+        return `<label>${escapeHtml(field.label)}
+          <select data-intake-field="${field.id}">
+            <option value="">Select…</option>
+            ${opts.map((opt) => `<option value="${escapeHtml(opt)}"${String(val) === String(opt) ? ' selected' : ''}>${escapeHtml(opt)}</option>`).join('')}
+          </select>
+        </label>`;
+      }
+      return `<label>${escapeHtml(field.label)}
+        <input data-intake-field="${field.id}" value="${escapeHtml(val)}" />
+      </label>`;
+    }).join('');
+  }
+
+  function collectIntakePatch(root) {
+    const values = {};
+    root.querySelectorAll('[data-intake-field]').forEach((el) => {
+      const v = String(el.value || '').trim();
+      if (v) values[el.getAttribute('data-intake-field')] = v;
+    });
+    return {
+      contactName: root.querySelector('[name="intakeContactName"]')?.value || '',
+      contactEmail: root.querySelector('[name="intakeContactEmail"]')?.value || '',
+      contactPhone: root.querySelector('[name="intakeContactPhone"]')?.value || '',
+      matterName: root.querySelector('[name="intakeMatterName"]')?.value || '',
+      values,
+    };
+  }
+
+  async function renderIntake() {
+    if (!canUseIntake()) {
+      setMainHtml('<div class="card"><p class="error">You do not have access to intake.</p></div>');
+      return;
+    }
+    const tab = state.intakeTab || 'call';
+    const [formsRes, sessionsRes] = await Promise.all([
+      api('/api/intake/forms'),
+      api('/api/intake/sessions'),
+    ]);
+    if (!stillOnView('intake')) return;
+    const forms = formsRes.forms || [];
+    const form = forms[0] || null;
+    const sessions = sessionsRes.sessions || [];
+    let session = state.intakeSession;
+    if (session?.id) {
+      try {
+        const fresh = await api(`/api/intake/sessions/${session.id}`);
+        if (!stillOnView('intake')) return;
+        session = fresh.session || session;
+        state.intakeSession = session;
+      } catch {
+        session = state.intakeSession;
+      }
+    }
+    const extracted = session?.extracted || {};
+    const messages = session?.messages || [];
+    const flash = state.intakeFlash;
+    state.intakeFlash = null;
+    const portalUrl = form ? `${location.origin}/portal/intake/` : '';
+
+    setMainHtml(`
+      <div class="page-head">
+        <h1>Intake</h1>
+        <p class="muted">The intake agent collects custom fields from a phone call or the client portal, then files a contact and matter.</p>
+      </div>
+      ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
+      <div class="intake-tabs" role="tablist">
+        <button type="button" class="btn ${tab === 'call' ? 'primary' : ''}" data-intake-tab="call">Take a call</button>
+        <button type="button" class="btn ${tab === 'portal' ? 'primary' : ''}" data-intake-tab="portal">Client portal</button>
+        <button type="button" class="btn ${tab === 'sessions' ? 'primary' : ''}" data-intake-tab="sessions">Sessions</button>
+        <button type="button" class="btn ${tab === 'fields' ? 'primary' : ''}" data-intake-tab="fields">Fields</button>
+      </div>
+      ${tab === 'call' ? `
+        <div class="intake-grid">
+          <div class="card intake-agent">
+            <h2>AI intake agent</h2>
+            <p class="muted">Speak or type. The agent asks for each selected custom field and fills the worksheet as answers come in.</p>
+            <div class="intake-transcript" id="intakeTranscript">
+              ${(messages.length ? messages : [{ role: 'agent', content: form?.greeting || 'Start a call to begin.' }]).map((m) => `
+                <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
+              `).join('')}
+            </div>
+            <form id="intakeTalkForm" class="intake-talk">
+              <textarea id="intakeTalk" rows="2" placeholder="Type what the caller said, or use the microphone."></textarea>
+              <div class="row-actions">
+                <button type="button" class="btn" id="intakeStartCall">${session ? 'New call' : 'Start call'}</button>
+                <button type="button" class="btn" id="intakeListen">Listen</button>
+                <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>Send</button>
+              </div>
+            </form>
+          </div>
+          <div class="card">
+            <h2>Captured fields</h2>
+            <form id="intakeFileForm" class="stack">
+              <label>Contact name <input name="intakeContactName" value="${escapeHtml(extracted.contactName || '')}" /></label>
+              <label>Email <input name="intakeContactEmail" value="${escapeHtml(extracted.contactEmail || '')}" /></label>
+              <label>Phone <input name="intakeContactPhone" value="${escapeHtml(extracted.contactPhone || '')}" /></label>
+              <label>Matter name <input name="intakeMatterName" value="${escapeHtml(extracted.matterName || '')}" /></label>
+              ${intakeFieldInputs(session?.fields || form?.fields || [], extracted)}
+              <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>File contact &amp; matter</button>
+            </form>
+          </div>
+        </div>` : ''}
+      ${tab === 'portal' ? `
+        <div class="card stack">
+          <h2>Client portal</h2>
+          <p>Share a link. The client fills the same custom fields. You review the session here, then file it.</p>
+          <div class="row-actions">
+            <button type="button" class="btn primary" id="intakePortalLink">Create portal link</button>
+          </div>
+          <p id="intakePortalUrl" class="hint" hidden></p>
+        </div>` : ''}
+      ${tab === 'sessions' ? `
+        <div class="card">
+          <h2>Recent intake</h2>
+          ${sessions.length ? `<table class="data"><thead><tr><th>When</th><th>Channel</th><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
+            ${sessions.map((s) => `<tr>
+              <td>${escapeHtml((s.createdAt || '').replace('T', ' ').slice(0, 16))}</td>
+              <td>${escapeHtml(s.channel)}</td>
+              <td>${escapeHtml(s.extracted?.contactName || '—')}</td>
+              <td>${escapeHtml(s.status)}</td>
+              <td><button type="button" class="btn" data-open-session="${s.id}">Open</button></td>
+            </tr>`).join('')}
+          </tbody></table>` : '<p class="muted">No intake sessions yet.</p>'}
+        </div>` : ''}
+      ${tab === 'fields' && form ? `
+        <div class="card stack">
+          <h2>Fields collected on intake</h2>
+          <p class="muted">Choose which custom fields the agent and portal ask for.</p>
+          <form id="intakeFormSettings" class="stack">
+            <label>Form name <input name="name" value="${escapeHtml(form.name)}" /></label>
+            <label>Greeting <textarea name="greeting" rows="3">${escapeHtml(form.greeting || '')}</textarea></label>
+            <fieldset class="intake-field-picks">
+              <legend>Custom fields</legend>
+              ${(form.availableFields || []).map((field) => `
+                <label class="check-inline">
+                  <input type="checkbox" name="fieldIds" value="${field.id}" ${form.fieldIds.includes(field.id) ? 'checked' : ''} />
+                  ${escapeHtml(field.label)} <span class="muted">(${escapeHtml(field.appliesTo)})</span>
+                </label>`).join('')}
+            </fieldset>
+            <label class="check-inline"><input type="checkbox" name="autoFile" ${form.autoFile ? 'checked' : ''} /> Auto-file portal and phone submissions</label>
+            <button type="submit" class="btn primary">Save fields</button>
+          </form>
+        </div>` : ''}
+    `);
+
+    main.querySelectorAll('[data-intake-tab]').forEach((btn) => {
+      btn.onclick = () => {
+        state.intakeTab = btn.getAttribute('data-intake-tab');
+        void renderIntake();
+      };
+    });
+
+    const startBtn = $('#intakeStartCall');
+    if (startBtn) {
+      startBtn.onclick = async () => {
+        const created = await api('/api/intake/sessions', { method: 'POST', body: JSON.stringify({ channel: 'phone', formId: form?.id }) });
+        state.intakeSession = created.session;
+        state.intakeTab = 'call';
+        void renderIntake();
+      };
+    }
+
+    const talkForm = $('#intakeTalkForm');
+    if (talkForm) {
+      talkForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (!state.intakeSession?.id) return;
+        const box = $('#intakeTalk');
+        const text = String(box?.value || '').trim();
+        if (!text) return;
+        const out = await api(`/api/intake/sessions/${state.intakeSession.id}/message`, {
+          method: 'POST',
+          body: JSON.stringify({ text, source: 'typed' }),
+        });
+        state.intakeSession = out.session;
+        void renderIntake();
+      };
+    }
+
+    const listenBtn = $('#intakeListen');
+    if (listenBtn) {
+      listenBtn.onclick = () => {
+        const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!Speech) {
+          state.intakeFlash = { ok: false, text: 'This browser cannot take live speech. Type the caller’s answers, or POST a transcript to the phone webhook.' };
+          void renderIntake();
+          return;
+        }
+        const rec = new Speech();
+        rec.lang = 'en-US';
+        rec.interimResults = false;
+        rec.onresult = (ev) => {
+          const text = ev.results?.[0]?.[0]?.transcript || '';
+          const box = $('#intakeTalk');
+          if (box) box.value = text;
+        };
+        rec.start();
+      };
+    }
+
+    const fileForm = $('#intakeFileForm');
+    if (fileForm) {
+      fileForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (!state.intakeSession?.id) return;
+        try {
+          const out = await api(`/api/intake/sessions/${state.intakeSession.id}/file`, {
+            method: 'POST',
+            body: JSON.stringify(collectIntakePatch(fileForm)),
+          });
+          state.intakeSession = out.session;
+          state.intakeFlash = { ok: true, text: 'Intake filed. Contact and matter were created.' };
+          void renderIntake();
+        } catch (e) {
+          state.intakeFlash = { ok: false, text: e.message || 'Could not file intake.' };
+          void renderIntake();
+        }
+      };
+    }
+
+    const portalBtn = $('#intakePortalLink');
+    if (portalBtn && form) {
+      portalBtn.onclick = async () => {
+        const link = await api(`/api/intake/forms/${form.id}/portal-link`, { method: 'POST', body: '{}' });
+        const el = $('#intakePortalUrl');
+        if (el) {
+          el.hidden = false;
+          el.textContent = link.url || `${location.origin}${link.path}`;
+        }
+      };
+    }
+
+    main.querySelectorAll('[data-open-session]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.getAttribute('data-open-session'));
+        const out = await api(`/api/intake/sessions/${id}`);
+        state.intakeSession = out.session;
+        state.intakeTab = 'call';
+        void renderIntake();
+      };
+    });
+
+    const settingsForm = $('#intakeFormSettings');
+    if (settingsForm && form) {
+      settingsForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(settingsForm);
+        const fieldIds = [...settingsForm.querySelectorAll('input[name="fieldIds"]:checked')].map((el) => Number(el.value));
+        await api(`/api/intake/forms/${form.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: String(fd.get('name') || ''),
+            greeting: String(fd.get('greeting') || ''),
+            fieldIds,
+            autoFile: settingsForm.querySelector('[name="autoFile"]')?.checked === true,
+          }),
+        });
+        state.intakeFlash = { ok: true, text: 'Intake fields saved.' };
+        void renderIntake();
+      };
+    }
+  }
+
   async function renderView() {
     const token = ++state._renderToken;
     const view = state.view;
@@ -4943,6 +5250,7 @@
       else if (view === 'reports') await renderReports();
       else if (view === 'dashboard') await renderDashboard();
       else if (view === 'users') await renderUsers();
+      else if (view === 'intake') await renderIntake();
       else if (view === 'settings') await renderSettings();
       else if (view === 'audit') await renderAudit();
       else await renderMatters();
@@ -10413,6 +10721,15 @@
       ],
     },
     {
+      id: 'intake',
+      label: 'Client intake',
+      keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
+      answer: 'Open [[Intake|intake]] from the left sidebar. Start a call and speak or type — the agent fills the custom fields you selected under Fields. Share a client portal link for the same fields. File intake to create the contact and matter.',
+      links: [
+        { label: 'Open Intake', target: 'intake' },
+      ],
+    },
+    {
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
@@ -10604,6 +10921,8 @@
       } else if (key === 'contacts') {
         state.showCreateContact = false;
         await goAppView('contacts');
+      } else if (key === 'intake') {
+        goIntake();
       } else if (key === 'billing') {
         await goAppView('billing');
       } else if (key === 'reports') {

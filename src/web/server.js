@@ -27,6 +27,7 @@ const timezones = require('../services/timezones');
 const mail = require('../mail');
 const mfa = require('../mfa');
 const invoiceTemplates = require('../services/invoiceTemplates');
+const intakeSvc = require('../services/intake');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -235,6 +236,16 @@ function createServer(db = openDb()) {
           res.end(body);
           return;
         }
+        if (pathname.startsWith('/portal/intake/')) {
+          const portal = path.join(PUBLIC, 'portal.html');
+          const body = fs.readFileSync(portal);
+          res.writeHead(200, withSecHeaders(req, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+          }));
+          res.end(body);
+          return;
+        }
         if (serveStatic(req, res) !== false) return;
         return text(res, 404, 'not found', 'text/plain; charset=utf-8', req);
       }
@@ -242,6 +253,30 @@ function createServer(db = openDb()) {
       // Public security posture for the SPA (cookie-only / MFA availability)
       if (req.method === 'GET' && pathname === '/api/security-config') {
         return json(res, 200, security.publicSecurityConfig(), req);
+      }
+
+      if (req.method === 'GET' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+$/i)) {
+        const token = pathname.split('/').pop();
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        return json(res, 200, intakeSvc.portalForm(db, token), req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+$/i)) {
+        const token = pathname.split('/').pop();
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        const body = await parseBody(req);
+        return json(res, 200, { session: intakeSvc.submitPortal(db, token, body, req) }, req);
+      }
+      if (req.method === 'POST' && pathname === '/api/intake/phone/webhook') {
+        const secret = req.headers['x-intake-secret'] || url.searchParams.get('secret') || '';
+        if (!intakeSvc.verifyPhoneWebhookSecret(secret)) {
+          return json(res, 401, { error: 'unauthorized' }, req);
+        }
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        const body = await parseBody(req);
+        return json(res, 200, { session: intakeSvc.ingestPhoneCall(db, body, req) }, req);
       }
 
       // Auth
@@ -1909,6 +1944,58 @@ function createServer(db = openDb()) {
           return;
         }
         return json(res, 200, rows);
+      }
+
+      if (req.method === 'GET' && pathname === '/api/intake/forms') {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        return json(res, 200, { forms: intakeSvc.listForms(db, user) }, req);
+      }
+      if (req.method === 'POST' && pathname === '/api/intake/forms') {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const body = await parseBody(req);
+        return json(res, 200, { form: intakeSvc.saveForm(db, user, body) }, req);
+      }
+      if (req.method === 'PATCH' && pathname.match(/^\/api\/intake\/forms\/\d+$/)) {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const id = Number(pathname.split('/')[4]);
+        const body = await parseBody(req);
+        return json(res, 200, { form: intakeSvc.saveForm(db, user, body, id) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/intake\/forms\/\d+\/portal-link$/)) {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const id = Number(pathname.split('/')[4]);
+        const body = await parseBody(req);
+        const link = intakeSvc.createPortalLink(db, user, id, { days: body.days });
+        const origin = String(process.env.PUBLIC_ORIGIN || `http://${req.headers.host || 'localhost:3000'}`).replace(/\/$/, '');
+        return json(res, 200, { ...link, url: `${origin}${link.path}` }, req);
+      }
+      if (req.method === 'GET' && pathname === '/api/intake/sessions') {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        return json(res, 200, { sessions: intakeSvc.listSessions(db, user) }, req);
+      }
+      if (req.method === 'POST' && pathname === '/api/intake/sessions') {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const body = await parseBody(req);
+        return json(res, 200, { session: intakeSvc.startSession(db, user, body) }, req);
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/intake\/sessions\/\d+$/)) {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const id = Number(pathname.split('/')[4]);
+        const row = intakeSvc.getSession(db, id);
+        if (!row) return json(res, 404, { error: 'not found' }, req);
+        return json(res, 200, { session: intakeSvc.serializeSession(db, row, { includeMessages: true }) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/intake\/sessions\/\d+\/message$/)) {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const id = Number(pathname.split('/')[4]);
+        const body = await parseBody(req);
+        return json(res, 200, { session: intakeSvc.addTurn(db, user, id, body) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/intake\/sessions\/\d+\/file$/)) {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const id = Number(pathname.split('/')[4]);
+        const body = await parseBody(req);
+        return json(res, 200, { session: intakeSvc.fileSession(db, user, id, body) }, req);
       }
 
       if (req.method === 'GET' && pathname === '/api/audit-log') {

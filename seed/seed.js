@@ -6,6 +6,7 @@
 const { resetDb, setSetting, DEFAULT_DB } = require('../src/db');
 const { hashPassword } = require('../src/security');
 const customFields = require('../src/services/customFields');
+const intakeSvc = require('../src/services/intake');
 
 const dbFile = process.env.DB_FILE || DEFAULT_DB;
 const db = resetDb(dbFile);
@@ -83,6 +84,8 @@ customFields.createCustomField(db, avery, {
   fieldType: 'text',
   recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
 });
+
+intakeSvc.ensureDefaultForm(db, avery);
 
 console.log(`Seeded ${dbFile}`);
 console.log(`Demo logins: *@firm.example  password: ${demoPassword}`);

@@ -467,3 +467,58 @@ CREATE TABLE IF NOT EXISTS custom_reports (
 
 CREATE INDEX IF NOT EXISTS idx_custom_reports_active
   ON custom_reports(active, show_on_dashboard);
+
+-- Client intake: phone / portal / in-app agent sessions
+CREATE TABLE IF NOT EXISTS intake_forms (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  greeting TEXT,
+  matter_record_type_key TEXT NOT NULL DEFAULT 'billable',
+  contact_record_type_key TEXT NOT NULL DEFAULT 'client',
+  field_ids_json TEXT NOT NULL DEFAULT '[]',
+  portal_enabled INTEGER NOT NULL DEFAULT 1 CHECK (portal_enabled IN (0,1)),
+  phone_enabled INTEGER NOT NULL DEFAULT 1 CHECK (phone_enabled IN (0,1)),
+  auto_file INTEGER NOT NULL DEFAULT 0 CHECK (auto_file IN (0,1)),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS intake_portal_tokens (
+  token TEXT PRIMARY KEY,
+  form_id INTEGER NOT NULL REFERENCES intake_forms(id) ON DELETE CASCADE,
+  created_by INTEGER REFERENCES users(id),
+  expires_at TEXT,
+  revoked INTEGER NOT NULL DEFAULT 0 CHECK (revoked IN (0,1)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intake_portal_tokens_form ON intake_portal_tokens(form_id);
+
+CREATE TABLE IF NOT EXISTS intake_sessions (
+  id INTEGER PRIMARY KEY,
+  form_id INTEGER REFERENCES intake_forms(id),
+  channel TEXT NOT NULL CHECK (channel IN ('phone', 'portal', 'agent')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'completed', 'filed', 'abandoned')),
+  transcript TEXT,
+  extracted_json TEXT,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  matter_name TEXT,
+  client_id INTEGER REFERENCES clients(id),
+  matter_id INTEGER REFERENCES matters(id),
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_intake_sessions_status ON intake_sessions(status, created_at);
+
+CREATE TABLE IF NOT EXISTS intake_messages (
+  id INTEGER PRIMARY KEY,
+  session_id INTEGER NOT NULL REFERENCES intake_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'agent', 'system')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intake_messages_session ON intake_messages(session_id, id);

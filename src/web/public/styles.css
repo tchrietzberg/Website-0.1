@@ -4479,3 +4479,62 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
     transform: none !important;
   }
 }
+
+.intake-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+}
+.intake-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(18rem, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .intake-grid { grid-template-columns: 1fr; }
+}
+.intake-transcript {
+  max-height: 22rem;
+  overflow: auto;
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+  padding: 0.2rem;
+}
+.intake-msg {
+  border-radius: 12px;
+  padding: 0.65rem 0.8rem;
+  background: #f4f7fb;
+}
+.intake-msg.is-agent { background: #eef3f9; }
+.intake-msg.is-user { background: #fff; border: 1px solid var(--line, #d5d0c6); }
+.intake-msg p { margin: 0.25rem 0 0; }
+.intake-talk textarea { width: 100%; }
+.intake-field-picks {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid var(--line, #d5d0c6);
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+}
+.portal-body {
+  margin: 0;
+  min-height: 100vh;
+  background: #eef2f6;
+}
+.portal-shell {
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+.portal-card h1 { margin: 0.2rem 0 0.4rem; }
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #5a6b80;
+}
