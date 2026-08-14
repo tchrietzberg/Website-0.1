@@ -4884,15 +4884,6 @@
               </span>
             </button>`
           : '',
-        canUseIntake()
-          ? `<button type="button" class="sidebar-action primary" id="sideIntake">
-              <span class="sidebar-action-mark" aria-hidden="true">${navIcon('intake')}</span>
-              <span class="sidebar-action-text">
-                <strong>Intake</strong>
-                <small>Call, portal, custom fields</small>
-              </span>
-            </button>`
-          : '',
       ].filter(Boolean).join('');
       sidebarActions.innerHTML = `
         <section class="sidebar-section">
@@ -4907,8 +4898,6 @@
       if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
-      const sideIntake = $('#sideIntake');
-      if (sideIntake) sideIntake.onclick = () => goIntake();
     }
 
     nav.innerHTML = `
@@ -10724,7 +10713,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] from the left sidebar. Start a call and speak or type — the agent fills the custom fields you selected under Fields. Share a client portal link for the same fields. File intake to create the contact and matter.',
+      answer: 'Open [[Intake|intake]] under Navigate. Start a call and speak or type — the agent fills the custom fields you selected under Fields. Share a client portal link for the same fields. File intake to create the contact and matter.',
       links: [
         { label: 'Open Intake', target: 'intake' },
       ],
