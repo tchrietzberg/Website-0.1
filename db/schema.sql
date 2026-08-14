@@ -95,10 +95,7 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_listings_category ON listings(category);
 CREATE INDEX IF NOT EXISTS idx_listings_created ON listings(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category);
 CREATE INDEX IF NOT EXISTS idx_news_created ON news(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_news_status ON news(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_events_status ON events(status, starts_on);
 CREATE INDEX IF NOT EXISTS idx_rooms_status_topic ON rooms(status, topic);
 CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, id);

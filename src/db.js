@@ -33,6 +33,9 @@ export function migrate(db) {
   ensureColumn(db, "news", "reviewed_at", "TEXT");
   ensureColumn(db, "resources", "title_es", "TEXT");
   ensureColumn(db, "resources", "description_es", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_news_status ON news(status, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_events_status ON events(status, starts_on)");
 }
 
 export function ensureAdmin(
