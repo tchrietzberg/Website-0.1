@@ -28,8 +28,8 @@ const copy = {
     actionHomes: "Browse homes",
     actionHomesHint: "Recent Zillow listings in 34956",
     homesTitle: "Homes for sale",
-    homesIntro: "Recent Indiantown listings on Zillow. Open a card for photos, price, and the live listing.",
-    homesNote: "Price and availability are on Zillow and can change. This board does not sell these homes.",
+    homesIntro: "Recent Indiantown listings on Zillow. Each card has a home photo — open it for the live listing.",
+    homesNote: "Card photos are local previews. Official listing photos, price, and availability are on Zillow and can change. This board does not sell these homes.",
     zillowAll: "See all on Zillow",
     zillowNewest: "Newest",
     zillowRent: "For rent",
@@ -243,8 +243,8 @@ const copy = {
     actionHomes: "Ver casas",
     actionHomesHint: "Listados recientes de Zillow en 34956",
     homesTitle: "Casas en venta",
-    homesIntro: "Listados recientes de Indiantown en Zillow. Abra una tarjeta para fotos, precio y el anuncio en vivo.",
-    homesNote: "El precio y la disponibilidad están en Zillow y pueden cambiar. Este tablón no vende estas casas.",
+    homesIntro: "Listados recientes de Indiantown en Zillow. Cada tarjeta tiene foto de la casa — ábrala para el anuncio en vivo.",
+    homesNote: "Las fotos de las tarjetas son vistas previas locales. Las fotos oficiales, el precio y la disponibilidad están en Zillow y pueden cambiar. Este tablón no vende estas casas.",
     zillowAll: "Ver todo en Zillow",
     zillowNewest: "Más nuevas",
     zillowRent: "En renta",
@@ -597,12 +597,17 @@ function zillowCard(row) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const photo = row.photo
+    ? `<span class="home-photo"><img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.address)}" width="960" height="640" loading="lazy" /><span class="tag">${escapeHtml(row.kind || "Zillow")}</span></span>`
+    : `<span class="tag">${escapeHtml(row.kind || "Zillow")}</span>`;
   return `<a class="card home-card" href="${escapeAttr(row.url)}" target="_blank" rel="noopener">
-    <span class="tag">${escapeHtml(row.kind || "Zillow")}</span>
-    <strong>${row.price != null ? money(row.price * 100) : t().viewOnZillow}</strong>
-    <span class="blurb">${escapeHtml(row.address)}</span>
-    <span class="meta">${escapeHtml(facts)}</span>
-    <span class="meta">${t().viewOnZillow}</span>
+    ${photo}
+    <span class="home-body">
+      <strong>${row.price != null ? money(row.price * 100) : t().viewOnZillow}</strong>
+      <span class="blurb">${escapeHtml(row.address)}</span>
+      <span class="meta">${escapeHtml(facts)}</span>
+      <span class="meta">${t().viewOnZillow}</span>
+    </span>
   </a>`;
 }
 

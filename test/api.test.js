@@ -164,8 +164,12 @@ describe("Indiantown Board API", () => {
     const data = await (await fetch(`${base}/api/homes`)).json();
     assert.ok(data.recent.length >= 4);
     assert.ok(data.recent.every((row) => /zillow\.com/i.test(row.url)));
+    assert.ok(data.recent.every((row) => /^\/homes\/.+\.jpg$/.test(row.photo)));
     assert.match(data.links.sale, /zillow\.com\/indiantown-fl/);
     assert.match(data.links.newest, /zillow\.com/);
+    const photo = await fetch(`${base}${data.recent[0].photo}`);
+    assert.equal(photo.status, 200);
+    assert.match(photo.headers.get("content-type"), /image\/jpeg/);
   });
 
   it("does not list chat rooms until one is approved", async () => {

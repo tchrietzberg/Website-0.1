@@ -172,9 +172,38 @@ button, .ghost { font: inherit; border: 0; cursor: pointer; }
 }
 .hero-banner .ghost:hover { background: rgb(255 255 255 / 0.22); }
 .homes-strip { margin: 0 0 1.8rem; }
-.home-grid { grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); }
-.home-card { text-decoration: none; }
+.home-grid { grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr)); }
+.home-card { text-decoration: none; padding: 0; overflow: hidden; }
 .home-card strong { color: var(--palmetto-deep); }
+.home-photo {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  background: #d7e4dc;
+  overflow: hidden;
+}
+.home-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.home-photo .tag {
+  position: absolute;
+  left: 0.7rem;
+  bottom: 0.7rem;
+  margin: 0;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(14 64 38 / 0.88);
+  color: #fff;
+  font-size: 0.82rem;
+}
+.home-body {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.85rem 1rem 1rem;
+}
 .zillow-links {
   display: flex;
   flex-wrap: wrap;
