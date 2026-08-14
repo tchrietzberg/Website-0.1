@@ -365,6 +365,55 @@
     toggle.title = collapsed ? 'Expand Chrono' : 'Collapse Chrono';
   }
 
+  function analogClockSvgHtml() {
+    const ticks = [];
+    for (let i = 0; i < 60; i += 1) {
+      const hour = i % 5 === 0;
+      ticks.push(`
+        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
+          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
+          transform="rotate(${i * 6} 100 100)" />`);
+    }
+    const numerals = [
+      { n: '12', x: 100, y: 36 },
+      { n: '3', x: 168, y: 104 },
+      { n: '6', x: 100, y: 174 },
+      { n: '9', x: 32, y: 104 },
+    ].map(({ n, x, y }) => `
+      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
+        dominant-baseline="middle">${n}</text>`).join('');
+    return `
+      <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+        <circle class="login-clock-halo" cx="100" cy="100" r="99" />
+        <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
+        <circle class="login-clock-dial" cx="100" cy="100" r="88" />
+        <circle class="login-clock-ring" cx="100" cy="100" r="80" />
+        <circle class="login-clock-well" cx="100" cy="100" r="54" />
+        ${ticks.join('')}
+        ${numerals}
+        <g class="login-clock-hand-hour">
+          <line x1="100" y1="110" x2="100" y2="48" />
+        </g>
+        <g class="login-clock-hand-minute">
+          <line x1="100" y1="114" x2="100" y2="30" />
+        </g>
+        <g class="login-clock-hand-second">
+          <line x1="100" y1="122" x2="100" y2="22" />
+          <circle cx="100" cy="100" r="2.2" />
+        </g>
+        <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
+      </svg>`;
+  }
+
+  function ensureBrandClock() {
+    const host = $('#sidebarClock');
+    if (!host) return;
+    if (!host.querySelector('.login-clock-svg')) {
+      host.innerHTML = analogClockSvgHtml();
+    }
+    startAnalogClocks();
+  }
+
   function wireSidebarToggle() {
     const toggle = $('#sidebarToggle');
     if (!toggle || toggle.dataset.wired === '1') return;
@@ -374,6 +423,7 @@
       persistSidebarCollapsed();
       applySidebarCollapsed();
     });
+    ensureBrandClock();
   }
 
   function persistSession(token, csrf) {
@@ -4323,55 +4373,55 @@
     return `${window.location.origin}/auth?token=${encodeURIComponent(rawToken)}`;
   }
 
-  let loginClockRaf = null;
+  let analogClockRaf = null;
 
   function stopLoginClock() {
-    if (loginClockRaf != null) {
-      cancelAnimationFrame(loginClockRaf);
-      loginClockRaf = null;
+    if (analogClockRaf != null) {
+      cancelAnimationFrame(analogClockRaf);
+      analogClockRaf = null;
     }
   }
 
+  function tickAnalogClocks() {
+    const hourEls = document.querySelectorAll('.login-clock-hand-hour');
+    if (!hourEls.length) return false;
+    const now = new Date();
+    const ms = now.getMilliseconds();
+    const s = now.getSeconds() + ms / 1000;
+    const m = now.getMinutes() + s / 60;
+    const h = (now.getHours() % 12) + m / 60;
+    const hourRot = `rotate(${h * 30} 100 100)`;
+    const minuteRot = `rotate(${m * 6} 100 100)`;
+    const secondRot = `rotate(${s * 6} 100 100)`;
+    hourEls.forEach((el) => el.setAttribute('transform', hourRot));
+    document.querySelectorAll('.login-clock-hand-minute')
+      .forEach((el) => el.setAttribute('transform', minuteRot));
+    document.querySelectorAll('.login-clock-hand-second')
+      .forEach((el) => el.setAttribute('transform', secondRot));
+    return true;
+  }
+
+  function startAnalogClocks() {
+    tickAnalogClocks();
+    const reduceMotion = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;
+    if (analogClockRaf != null) return;
+    const loop = () => {
+      if (!tickAnalogClocks()) {
+        analogClockRaf = null;
+        return;
+      }
+      analogClockRaf = requestAnimationFrame(loop);
+    };
+    analogClockRaf = requestAnimationFrame(loop);
+  }
+
   function loginClockHtml() {
-    const ticks = [];
-    for (let i = 0; i < 60; i += 1) {
-      const hour = i % 5 === 0;
-      ticks.push(`
-        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
-          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
-          transform="rotate(${i * 6} 100 100)" />`);
-    }
-    const numerals = [
-      { n: '12', x: 100, y: 36 },
-      { n: '3', x: 168, y: 104 },
-      { n: '6', x: 100, y: 174 },
-      { n: '9', x: 32, y: 104 },
-    ].map(({ n, x, y }) => `
-      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
-        dominant-baseline="middle">${n}</text>`).join('');
     return `
       <div class="login-clock" aria-hidden="true">
         <div class="login-clock-glow"></div>
-        <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
-          <circle class="login-clock-halo" cx="100" cy="100" r="99" />
-          <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
-          <circle class="login-clock-dial" cx="100" cy="100" r="88" />
-          <circle class="login-clock-ring" cx="100" cy="100" r="80" />
-          <circle class="login-clock-well" cx="100" cy="100" r="54" />
-          ${ticks.join('')}
-          ${numerals}
-          <g class="login-clock-hand-hour">
-            <line x1="100" y1="110" x2="100" y2="48" />
-          </g>
-          <g class="login-clock-hand-minute">
-            <line x1="100" y1="114" x2="100" y2="30" />
-          </g>
-          <g class="login-clock-hand-second">
-            <line x1="100" y1="122" x2="100" y2="22" />
-            <circle cx="100" cy="100" r="2.2" />
-          </g>
-          <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
-        </svg>
+        ${analogClockSvgHtml()}
       </div>`;
   }
 
@@ -4380,40 +4430,7 @@
   }
 
   function wireLoginClock() {
-    const root = document.querySelector('.login-clock');
-    const hourEl = root?.querySelector('.login-clock-hand-hour');
-    const minuteEl = root?.querySelector('.login-clock-hand-minute');
-    const secondEl = root?.querySelector('.login-clock-hand-second');
-    if (!root || !hourEl || !minuteEl || !secondEl) return;
-
-    const tick = () => {
-      const now = new Date();
-      const ms = now.getMilliseconds();
-      const s = now.getSeconds() + ms / 1000;
-      const m = now.getMinutes() + s / 60;
-      const h = (now.getHours() % 12) + m / 60;
-      hourEl.setAttribute('transform', `rotate(${h * 30} 100 100)`);
-      minuteEl.setAttribute('transform', `rotate(${m * 6} 100 100)`);
-      secondEl.setAttribute('transform', `rotate(${s * 6} 100 100)`);
-    };
-
-    stopLoginClock();
-    tick();
-    const reduceMotion = window.matchMedia
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) return;
-
-    const loop = () => {
-      // Keep sweeping while the login clock remains in the DOM.
-      if (!document.body.classList.contains('login-mode')
-        || !document.contains(root)) {
-        loginClockRaf = null;
-        return;
-      }
-      tick();
-      loginClockRaf = requestAnimationFrame(loop);
-    };
-    loginClockRaf = requestAnimationFrame(loop);
+    startAnalogClocks();
   }
 
   async function finishAuthSession(data) {
@@ -4782,6 +4799,7 @@
   function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
     wireSidebarToggle();
+    ensureBrandClock();
     applySidebarCollapsed();
     document.body.classList.remove('login-mode');
     if (appEl) {
