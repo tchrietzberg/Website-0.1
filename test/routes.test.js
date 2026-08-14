@@ -26,4 +26,8 @@ describe("parseHash", () => {
   it("opens homes", () => {
     assert.deepEqual(parseHash("#/homes"), { page: "homes", id: "" });
   });
+
+  it("opens about", () => {
+    assert.deepEqual(parseHash("#/about"), { page: "about", id: "" });
+  });
 });

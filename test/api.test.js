@@ -194,4 +194,16 @@ describe("Indiantown Board API", () => {
     assert.equal(res.status, 200);
     assert.match(res.headers.get("content-type"), /image\/png/);
   });
+
+  it("ships About copy from the Indiantown Wikipedia page", async () => {
+    const js = await (await fetch(`${base}/app.js`)).text();
+    assert.match(js, /Where Great Things Grow/);
+    assert.match(js, /Seminole Inn/);
+    assert.match(js, /Circle T/);
+    assert.match(js, /Payson Park/);
+    assert.match(js, /6,560/);
+    assert.match(js, /en\.wikipedia\.org\/wiki\/Indiantown,_Florida/);
+    assert.match(js, /Davy Jones/);
+    assert.match(js, /Cómo se gobierna/);
+  });
 });
