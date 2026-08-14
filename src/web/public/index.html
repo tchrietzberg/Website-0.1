@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Indiantown Board — 34956</title>
+    <meta
+      name="description"
+      content="Homes on Zillow, local classifieds, businesses, news, and help for Indiantown, Florida 34956."
+    />
+    <link rel="icon" href="/village-seal.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/village-seal.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css?v=gmapplace" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="top">
+      <a class="brand" href="#/" data-link>
+        <img
+          class="brand-mark"
+          src="/village-seal.png"
+          width="72"
+          height="72"
+          alt="Village of Indiantown, Florida official seal"
+        />
+        <span>
+          <strong data-i18n="brand">Indiantown Board</strong>
+          <small>34956</small>
+        </span>
+      </a>
+      <form class="search" data-search-form>
+        <label class="sr-only" for="q" data-i18n="searchLabel">Search Indiantown</label>
+        <input id="q" name="q" type="search" maxlength="80" data-search-input data-i18n-placeholder="searchPh" placeholder="Search listings, businesses, news…" />
+        <button type="submit" class="primary" data-i18n="search">Search</button>
+      </form>
+      <div class="top-actions">
+        <div class="lang-switch" role="group" data-i18n-aria="langLabel" aria-label="Language">
+          <button type="button" class="lang-opt is-on" data-lang-set="en" aria-pressed="true">English</button>
+          <button type="button" class="lang-opt" data-lang-set="es" aria-pressed="false">Español</button>
+        </div>
+        <button type="button" class="post" data-open-post data-i18n="post">Post</button>
+        <button type="button" class="menu" data-menu-toggle aria-expanded="false" aria-controls="site-nav" data-i18n="menu">Menu</button>
+      </div>
+      <nav class="nav" id="site-nav" data-nav aria-label="Primary">
+        <a href="#/" data-link data-i18n="navHome">Home</a>
+        <a href="#/board" data-link data-i18n="navBoard">Listings</a>
+        <a href="#/directory" data-link data-i18n="navDirectory">Businesses</a>
+        <a href="#/news" data-link data-i18n="navNews">News</a>
+        <a href="#/events" data-link data-i18n="navEvents">Events</a>
+        <a href="#/facebook" data-link data-i18n="navFacebook">Facebook</a>
+        <a href="#/chat" data-link data-i18n="navChat">Chat</a>
+        <a href="#/resources" data-link data-i18n="navResources">Help</a>
+        <a href="#/homes" data-link data-i18n="navHomes">Homes</a>
+        <a href="#/about" data-link data-i18n="navAbout">About</a>
+      </nav>
+    </header>
+
+    <main id="main" class="main"></main>
+
+    <dialog class="sheet" data-sheet>
+      <form method="dialog" class="sheet-head">
+        <strong data-sheet-title>Post</strong>
+        <button value="close" aria-label="Close">×</button>
+      </form>
+      <div class="tabs" data-sheet-tabs>
+        <button type="button" data-sheet-tab="listing" class="is-on" data-i18n="tabListing">Listing</button>
+        <button type="button" data-sheet-tab="business" data-i18n="tabBusiness">Business</button>
+        <button type="button" data-sheet-tab="news" data-i18n="tabNews">News</button>
+        <button type="button" data-sheet-tab="event" data-i18n="tabEvent">Event</button>
+        <button type="button" data-sheet-tab="room" data-i18n="tabRoom">Chat room</button>
+      </div>
+      <div data-sheet-body></div>
+    </dialog>
+
+    <footer class="foot">
+      <img class="foot-seal" src="/village-seal.png" width="72" height="72" alt="Village of Indiantown, Florida official seal" />
+      <p data-i18n="footer">Village of Indiantown, Florida · 34956</p>
+      <div class="lang-switch" role="group" data-i18n-aria="langLabel" aria-label="Language">
+        <button type="button" class="lang-opt is-on" data-lang-set="en" aria-pressed="true">English</button>
+        <button type="button" class="lang-opt" data-lang-set="es" aria-pressed="false">Español</button>
+      </div>
+    </footer>
+    <script type="module" src="/app.js?v=gmapplace"></script>
+  </body>
+</html>
