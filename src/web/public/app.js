@@ -91,8 +91,8 @@ const copy = {
     reviewNews: "News to review",
     reviewEvents: "Events to review",
     aboutMapTitle: "Village map",
-    aboutMapIntro: "Village Hall, the inn, the library, Booker Park, Warfield Boulevard, and the canal.",
-    aboutMapNote: "The map is Google Maps. Tap a place for driving directions. Hours stay with each site.",
+    aboutMapIntro: "Directions sit with each historic photo and About note.",
+    aboutMapNote: "Google Maps opens driving directions for that place. Hours stay with each site.",
     openMap: "Get directions",
     photoTooBig: "Photo must be a JPEG or PNG under 700 KB.",
     aboutMapPlaces: [
@@ -100,31 +100,19 @@ const copy = {
         title: "Village Hall",
         blurb: "15516 SW Osceola St., Suite B",
         dest: "15516 SW Osceola St, Indiantown, FL 34956",
-      },
-      {
-        title: "Seminole Inn",
-        blurb: "Landmark inn on Warfield Boulevard",
-        dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
+        topic: "government",
       },
       {
         title: "Elisabeth Lahti Library",
         blurb: "15200 E. Thelma Waters Ave",
         dest: "Elisabeth Lahti Library, 15200 E Thelma Waters Ave, Indiantown, FL 34956",
+        topic: "village",
       },
       {
         title: "Booker Park",
         blurb: "15101 SW 169th Ave",
         dest: "Booker Park, 15101 SW 169th Ave, Indiantown, FL 34956",
-      },
-      {
-        title: "Warfield Boulevard",
-        blurb: "Main route through town",
-        dest: "Warfield Boulevard, Indiantown, FL 34956",
-      },
-      {
-        title: "St. Lucie Canal",
-        blurb: "C-44, the village’s southern edge",
-        dest: "St. Lucie Canal, Indiantown, FL 34956",
+        topic: "parks",
       },
     ],
     facebookTitle: "Official Facebook",
@@ -195,8 +183,8 @@ const copy = {
     aboutWikiLink: "Wikipedia: Indiantown, Florida",
     aboutPlacesTitle: "Historic places",
     aboutPlacesIntro: "The 1920s boom, the canal, and ranch country still shape the village.",
-    aboutPlacesNote: "Scenes of Indiantown’s historic places. Hours and official details stay with each site.",
-    aboutClick: "Click a place or a story for the full note.",
+    aboutPlacesNote: "Each place has the story and Google driving directions. Hours stay with each site.",
+    aboutClick: "Open a place for the full note, or tap Get directions for the drive.",
     aboutStoriesTitle: "Village stories",
     aboutSources: "Sources",
     aboutMissing: "That About note is not here.",
@@ -207,6 +195,7 @@ const copy = {
       title: "Seminole Inn",
       era: "1920s · National Register",
       caption: "The main building left from S. Davies Warfield’s model city — still the village’s landmark inn.",
+      dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
       body: [
         "S. Davies Warfield built the Seminole Inn in the 1920s as part of a planned model city around the Seaboard Air Line Railroad stop.",
         "The Florida land boom faded after 1926, Warfield died in 1927, and the 1928 Okeechobee hurricane stopped further growth. The inn is the main building left from that boom and is on the National Register of Historic Places.",
@@ -224,6 +213,7 @@ const copy = {
         title: "Warfield Boulevard",
         era: "1924",
         caption: "The main route through town, named for the railroad builder who planned a model city here.",
+        dest: "Warfield Boulevard, Indiantown, FL 34956",
         body: [
           "In 1924 S. Davies Warfield extended the Seaboard Air Line Railroad from Coleman to West Palm Beach, with a stop in Indiantown.",
           "He planned streets, housing, a school, a depot, and the Seminole Inn. Warfield Boulevard and Warfield Elementary still carry his name.",
@@ -240,6 +230,7 @@ const copy = {
         title: "St. Lucie Canal",
         era: "Southern border",
         caption: "Links Lake Okeechobee to the St. Lucie River near Stuart and still frames the village edge.",
+        dest: "St. Lucie Canal, Indiantown, FL 34956",
         body: [
           "The St. Lucie Canal is the village’s southern border. It is part of the Okeechobee Waterway.",
           "The canal links Lake Okeechobee to the St. Lucie River near Stuart, about 22 miles northeast of town.",
@@ -256,6 +247,7 @@ const copy = {
         title: "Seaboard railroad",
         era: "1924–1971",
         caption: "Passenger trains stopped here into the 1960s. The depot is gone; the rails still mark the boom years.",
+        dest: "Seaboard railroad, Indiantown, FL 34956",
         body: [
           "Warfield’s 1924 Seaboard extension put Indiantown on the map. Passenger trains stopped here into the 1960s.",
           "Amtrak ended that service in 1971. The depot was demolished a few years later.",
@@ -272,6 +264,7 @@ const copy = {
         title: "Circle T Rodeo Bowl",
         era: "1950s–1960s",
         caption: "About 15,000 people came in 1963, then one of Florida’s largest attractions.",
+        dest: "Circle T Ranch, Indiantown, FL 34956",
         body: [
           "In the 1950s and 1960s Indiantown was home to the Circle T Ranch and its Rodeo Bowl.",
           "The 1963 rodeo drew about 15,000 visitors — then one of Florida’s largest attractions.",
@@ -287,6 +280,7 @@ const copy = {
         title: "Payson Park",
         era: "Thoroughbreds",
         caption: "A well-known winter training ground. Davy Jones of The Monkees kept horses here.",
+        dest: "Payson Park Thoroughbred Training Center, Indiantown, FL 34956",
         body: [
           "Payson Park is one of the country’s well-known thoroughbred training centers.",
           "Trainers such as William Mott, Christophe Clement, and Shug McGaughey have wintered horses here.",
@@ -312,6 +306,7 @@ const copy = {
       {
         id: "village",
         title: "The village",
+        dest: "15516 SW Osceola St, Indiantown, FL 34956",
         links: [
           { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
           { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
@@ -324,6 +319,7 @@ const copy = {
       {
         id: "history",
         title: "History",
+        dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
         links: [
           { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
           { label: "1928 Okeechobee hurricane", href: "https://en.wikipedia.org/wiki/1928_Okeechobee_hurricane" },
@@ -351,6 +347,7 @@ const copy = {
       {
         id: "place",
         title: "Place",
+        dest: "St. Lucie Canal, Indiantown, FL 34956",
         links: [
           { label: "Wikipedia: St. Lucie Canal", href: "https://en.wikipedia.org/wiki/St._Lucie_Canal" },
           { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
@@ -362,6 +359,7 @@ const copy = {
       {
         id: "government",
         title: "How the village is run",
+        dest: "15516 SW Osceola St, Indiantown, FL 34956",
         links: [
           { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
           { label: "Village Hall", href: "https://www.indiantownfl.gov/" },
@@ -373,6 +371,7 @@ const copy = {
       {
         id: "parks",
         title: "Parks and getting around",
+        dest: "Booker Park, 15101 SW 169th Ave, Indiantown, FL 34956",
         links: [
           { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
           { label: "Martin County (MARTY)", href: "https://www.martin.fl.us/" },
@@ -518,8 +517,8 @@ const copy = {
     reviewNews: "Noticias por revisar",
     reviewEvents: "Eventos por revisar",
     aboutMapTitle: "Mapa del pueblo",
-    aboutMapIntro: "La alcaldía, el mesón, la biblioteca, Booker Park, Warfield Boulevard y el canal.",
-    aboutMapNote: "El mapa es de Google Maps. Toque un lugar para la ruta. Los horarios quedan en cada sitio.",
+    aboutMapIntro: "Las rutas van con cada foto histórica y cada nota.",
+    aboutMapNote: "Google Maps abre la ruta en auto. Los horarios quedan en cada sitio.",
     openMap: "Cómo llegar",
     photoTooBig: "La foto debe ser JPEG o PNG de menos de 700 KB.",
     aboutMapPlaces: [
@@ -527,31 +526,19 @@ const copy = {
         title: "Alcaldía",
         blurb: "15516 SW Osceola St., Suite B",
         dest: "15516 SW Osceola St, Indiantown, FL 34956",
-      },
-      {
-        title: "Seminole Inn",
-        blurb: "Mesón emblemático en Warfield Boulevard",
-        dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
+        topic: "government",
       },
       {
         title: "Biblioteca Elisabeth Lahti",
         blurb: "15200 E. Thelma Waters Ave",
         dest: "Elisabeth Lahti Library, 15200 E Thelma Waters Ave, Indiantown, FL 34956",
+        topic: "village",
       },
       {
         title: "Booker Park",
         blurb: "15101 SW 169th Ave",
         dest: "Booker Park, 15101 SW 169th Ave, Indiantown, FL 34956",
-      },
-      {
-        title: "Warfield Boulevard",
-        blurb: "Vía principal del pueblo",
-        dest: "Warfield Boulevard, Indiantown, FL 34956",
-      },
-      {
-        title: "Canal St. Lucie",
-        blurb: "C-44, el borde sur del pueblo",
-        dest: "St. Lucie Canal, Indiantown, FL 34956",
+        topic: "parks",
       },
     ],
     facebookTitle: "Facebook oficial",
@@ -622,8 +609,8 @@ const copy = {
     aboutWikiLink: "Wikipedia: Indiantown, Florida",
     aboutPlacesTitle: "Lugares históricos",
     aboutPlacesIntro: "El auge de los años 20, el canal y el campo ganadero aún marcan el pueblo.",
-    aboutPlacesNote: "Escenas de los lugares históricos de Indiantown. Horarios y datos oficiales quedan en cada sitio.",
-    aboutClick: "Toque un lugar o una historia para la nota completa.",
+    aboutPlacesNote: "Cada lugar tiene la nota y la ruta en Google Maps. Los horarios quedan en cada sitio.",
+    aboutClick: "Abra un lugar para la nota completa, o toque Cómo llegar para la ruta.",
     aboutStoriesTitle: "Historias del pueblo",
     aboutSources: "Fuentes",
     aboutMissing: "Esa nota no está aquí.",
@@ -634,6 +621,7 @@ const copy = {
       title: "Seminole Inn",
       era: "Años 20 · Registro Nacional",
       caption: "El edificio principal que queda de la ciudad modelo de S. Davies Warfield — aún el mesón emblemático.",
+      dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
       body: [
         "S. Davies Warfield construyó el Seminole Inn en los años 20 como parte de una ciudad modelo junto a la parada del ferrocarril Seaboard Air Line.",
         "El auge de tierras se apagó después de 1926, Warfield murió en 1927 y el huracán de Okeechobee de 1928 detuvo el crecimiento. El mesón es el edificio principal que queda de ese auge y está en el Registro Nacional de Lugares Históricos.",
@@ -651,6 +639,7 @@ const copy = {
         title: "Warfield Boulevard",
         era: "1924",
         caption: "La vía principal del pueblo, en honor al constructor del ferrocarril que planeó una ciudad modelo.",
+        dest: "Warfield Boulevard, Indiantown, FL 34956",
         body: [
           "En 1924 S. Davies Warfield extendió el ferrocarril Seaboard Air Line desde Coleman hasta West Palm Beach, con parada en Indiantown.",
           "Planeó calles, viviendas, una escuela, una estación y el Seminole Inn. Warfield Boulevard y Warfield Elementary aún llevan su nombre.",
@@ -667,6 +656,7 @@ const copy = {
         title: "Canal St. Lucie",
         era: "Límite sur",
         caption: "Une el lago Okeechobee con el río St. Lucie cerca de Stuart y sigue marcando el borde del pueblo.",
+        dest: "St. Lucie Canal, Indiantown, FL 34956",
         body: [
           "El canal St. Lucie es el límite sur del pueblo. Forma parte de la vía Okeechobee.",
           "Une el lago Okeechobee con el río St. Lucie cerca de Stuart, unas 22 millas al noreste.",
@@ -683,6 +673,7 @@ const copy = {
         title: "Ferrocarril Seaboard",
         era: "1924–1971",
         caption: "Los trenes de pasajeros pararon aquí hasta los años 60. Ya no está la estación; los rieles recuerdan el auge.",
+        dest: "Seaboard railroad, Indiantown, FL 34956",
         body: [
           "La extensión de Seaboard de 1924 puso a Indiantown en el mapa. Los trenes de pasajeros pararon aquí hasta los años 60.",
           "Amtrak terminó ese servicio en 1971. Luego demolieron la estación.",
@@ -699,6 +690,7 @@ const copy = {
         title: "Circle T Rodeo Bowl",
         era: "Años 50–60",
         caption: "Unos 15,000 visitantes en 1963, entonces una de las atracciones más grandes de la Florida.",
+        dest: "Circle T Ranch, Indiantown, FL 34956",
         body: [
           "En los años 50 y 60 Indiantown tenía el Circle T Ranch y su Rodeo Bowl.",
           "El rodeo de 1963 atrajo unos 15,000 visitantes, entonces una de las atracciones más grandes de la Florida.",
@@ -714,6 +706,7 @@ const copy = {
         title: "Payson Park",
         era: "Caballos de carrera",
         caption: "Un centro conocido de entrenamiento de invierno. Davy Jones de The Monkees tuvo caballos aquí.",
+        dest: "Payson Park Thoroughbred Training Center, Indiantown, FL 34956",
         body: [
           "Payson Park es uno de los centros de entrenamiento de caballos de carrera más conocidos del país.",
           "Entrenadores como William Mott, Christophe Clement y Shug McGaughey han invernado caballos aquí.",
@@ -739,6 +732,7 @@ const copy = {
       {
         id: "village",
         title: "El pueblo",
+        dest: "15516 SW Osceola St, Indiantown, FL 34956",
         links: [
           { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
           { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
@@ -751,6 +745,7 @@ const copy = {
       {
         id: "history",
         title: "Historia",
+        dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
         links: [
           { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
           { label: "Huracán de Okeechobee de 1928", href: "https://en.wikipedia.org/wiki/1928_Okeechobee_hurricane" },
@@ -778,6 +773,7 @@ const copy = {
       {
         id: "place",
         title: "Lugar",
+        dest: "St. Lucie Canal, Indiantown, FL 34956",
         links: [
           { label: "Wikipedia: Canal St. Lucie", href: "https://en.wikipedia.org/wiki/St._Lucie_Canal" },
           { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
@@ -789,6 +785,7 @@ const copy = {
       {
         id: "government",
         title: "Cómo se gobierna",
+        dest: "15516 SW Osceola St, Indiantown, FL 34956",
         links: [
           { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
           { label: "Alcaldía", href: "https://www.indiantownfl.gov/" },
@@ -800,6 +797,7 @@ const copy = {
       {
         id: "parks",
         title: "Parques y transporte",
+        dest: "Booker Park, 15101 SW 169th Ave, Indiantown, FL 34956",
         links: [
           { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
           { label: "Condado de Martin (MARTY)", href: "https://www.martin.fl.us/" },
@@ -1072,6 +1070,24 @@ function googleVillageEmbed() {
   return `https://www.google.com/maps?q=${encodeURIComponent("Indiantown, FL 34956")}&hl=${hl}&z=14&output=embed`;
 }
 
+function googlePlaceEmbed(query) {
+  const hl = state.lang === "es" ? "es" : "en";
+  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&hl=${hl}&z=16&output=embed`;
+}
+
+function aboutDirections(dest) {
+  if (!dest) return "";
+  return `<a class="place-dir" href="${escapeAttr(googleDirections(dest))}" target="_blank" rel="noopener">${escapeHtml(t().openMap)}</a>`;
+}
+
+function aboutPlaceMap(dest, title) {
+  if (!dest) return "";
+  return `<div class="about-topic-map">
+    <iframe class="about-map-frame" title="${escapeAttr(title)}" src="${escapeAttr(googlePlaceEmbed(dest))}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p class="place-actions">${aboutDirections(dest)}</p>
+  </div>`;
+}
+
 function gridOrEmpty(html) {
   return html ? `<div class="grid">${html}</div>` : `<p class="empty">${t().empty}</p>`;
 }
@@ -1327,31 +1343,51 @@ function aboutFact(row) {
 
 function aboutSectionCard(section) {
   const teaser = section.body?.[0] || "";
-  return `<a class="about-section-card" href="#/about/${encodeURIComponent(section.id)}" data-link>
-    <h2>${escapeHtml(section.title)}</h2>
-    <p>${escapeHtml(excerpt(teaser, 160))}</p>
-    <span class="read-more">${escapeHtml(t().readMore)}</span>
-  </a>`;
+  return `<article class="about-section-card">
+    <a href="#/about/${encodeURIComponent(section.id)}" data-link>
+      <h2>${escapeHtml(section.title)}</h2>
+      <p>${escapeHtml(excerpt(teaser, 160))}</p>
+      <span class="read-more">${escapeHtml(t().readMore)}</span>
+    </a>
+    ${section.dest ? `<p class="place-actions">${aboutDirections(section.dest)}</p>` : ""}
+  </article>`;
+}
+
+function civicPlaceCard(row) {
+  return `<article class="place is-civic">
+    <a class="place-media" href="#/about/${encodeURIComponent(row.topic)}" data-link>
+      <span class="place-caption">
+        <span class="tag">${escapeHtml(t().openMap)}</span>
+        <strong>${escapeHtml(row.title)}</strong>
+        <span class="blurb">${escapeHtml(row.blurb)}</span>
+        <span class="read-more">${escapeHtml(t().readMore)}</span>
+      </span>
+    </a>
+    <p class="place-actions">${aboutDirections(row.dest)}</p>
+  </article>`;
 }
 
 function placeCard(row, featured = false) {
-  const inner = `<img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="1280" height="853" loading="${featured ? "eager" : "lazy"}" />
+  const media = `<a class="place-media" ${row.id ? `href="#/about/${encodeURIComponent(row.id)}" data-link` : ""}>
+    <img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="1280" height="853" loading="${featured ? "eager" : "lazy"}" />
     <span class="place-caption">
       <span class="tag">${escapeHtml(row.era)}</span>
       <strong>${escapeHtml(row.title)}</strong>
       <span class="blurb">${escapeHtml(row.caption)}</span>
       ${row.id ? `<span class="read-more">${escapeHtml(t().readMore)}</span>` : ""}
-    </span>`;
-  if (!row.id) {
-    return `<figure class="place${featured ? " is-featured" : ""}">${inner}</figure>`;
-  }
-  return `<a class="place${featured ? " is-featured" : ""}" href="#/about/${encodeURIComponent(row.id)}" data-link>${inner}</a>`;
+    </span>
+  </a>
+  ${row.dest ? `<p class="place-actions">${aboutDirections(row.dest)}</p>` : ""}`;
+  return `<article class="place${featured ? " is-featured" : ""}">${media}</article>`;
 }
 
 function renderAbout() {
   const facts = t().aboutFacts.map(aboutFact).join("");
   const sections = t().aboutSections.map(aboutSectionCard).join("");
-  const places = t().aboutPlaces.map((row) => placeCard(row)).join("");
+  const places = [
+    ...t().aboutPlaces.map((row) => placeCard(row)),
+    ...t().aboutMapPlaces.map((row) => civicPlaceCard(row)),
+  ].join("");
   return `<article class="about-page">
     <header class="about-top">
       <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
@@ -1362,21 +1398,6 @@ function renderAbout() {
     ${placeCard(t().aboutFeatured, true)}
     <div class="about-body">
       <div class="facts">${facts}</div>
-      <section class="about-map">
-        <h2>${escapeHtml(t().aboutMapTitle)}</h2>
-        <p class="lede">${escapeHtml(t().aboutMapIntro)}</p>
-        <iframe class="about-map-frame" title="${escapeAttr(t().aboutMapTitle)}" src="${escapeAttr(googleVillageEmbed())}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-        <div class="about-map-places">${t()
-          .aboutMapPlaces.map(
-            (row) => `<a class="about-map-pin" href="${escapeAttr(googleDirections(row.dest))}" target="_blank" rel="noopener">
-            <strong>${escapeHtml(row.title)}</strong>
-            <span>${escapeHtml(row.blurb)}</span>
-            <span class="read-more">${escapeHtml(t().openMap)}</span>
-          </a>`,
-          )
-          .join("")}</div>
-        <p class="muted">${escapeHtml(t().aboutMapNote)}</p>
-      </section>
       <section class="about-places">
         <h2>${escapeHtml(t().aboutPlacesTitle)}</h2>
         <p class="lede">${escapeHtml(t().aboutPlacesIntro)}</p>
@@ -1420,6 +1441,7 @@ function renderAboutTopic(id) {
       <p><a href="#/about" data-link>${t().back}</a></p>
       ${photo ? "" : `<p class="kicker">${escapeHtml(t().aboutTitle)}</p><h1>${escapeHtml(row.title)}</h1>`}
       <div class="prose about-prose">${body}${aboutSourceLinks(row.links)}</div>
+      ${aboutPlaceMap(row.dest, row.title)}
     </div>
   </article>`;
 }

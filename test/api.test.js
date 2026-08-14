@@ -261,6 +261,9 @@ describe("Indiantown Board API", () => {
     assert.match(js, /about-map-frame/);
     assert.match(js, /google\.com\/maps/);
     assert.match(js, /maps\/dir\/\?api=1/);
+    assert.match(js, /place-dir/);
+    assert.match(js, /about-topic-map/);
+    assert.match(js, /Seminole Inn, 15885 SW Warfield Blvd/);
     assert.match(js, /latestJobs/);
     assert.match(js, /storm-strip/);
   });

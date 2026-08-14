@@ -426,12 +426,26 @@ a.fact:hover {
   color: inherit;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
-a.place:hover {
-  color: inherit;
+.place:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 28px rgb(14 64 38 / 0.14);
   border-color: var(--palmetto);
 }
+.place-media {
+  display: grid;
+  text-decoration: none;
+  color: inherit;
+  position: relative;
+}
+.place-media:hover { color: inherit; }
+.place-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.1rem;
+  padding: 0 1rem 1rem;
+}
+.place-dir { font-weight: 700; }
+.place.is-civic .place-caption { padding: 1.15rem 1.2rem 0.35rem; }
 .place img {
   width: 100%;
   height: 100%;
@@ -463,6 +477,11 @@ a.place:hover {
   border-left: 0;
   border-right: 0;
 }
+.place.is-featured:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: transparent;
+}
 .place.is-featured img {
   aspect-ratio: auto;
   min-height: min(88vh, 58rem);
@@ -482,11 +501,11 @@ a.place:hover {
 .place.is-featured .tag { color: #f4d7a8; }
 .place.is-featured .blurb { color: #e8f3ec; }
 .place.is-featured strong { font-size: clamp(1.6rem, 3.4vw, 2.4rem); font-family: var(--display); color: #fff; }
-a.place.is-featured:hover {
-  transform: none;
-  box-shadow: none;
-  border-color: transparent;
+.place.is-featured .place-actions {
+  padding: 0.85rem var(--gutter) 1.15rem;
+  background: var(--palmetto-deep);
 }
+.place.is-featured .place-dir { color: #f4d7a8; }
 .about-places,
 .about-stories { margin: 0 0 2rem; max-width: none; }
 .about-places h2,
@@ -520,8 +539,17 @@ a.place.is-featured:hover {
   border-color: var(--palmetto);
   box-shadow: 0 10px 28px rgb(14 64 38 / 0.12);
 }
+.about-section-card > a {
+  display: grid;
+  gap: 0.45rem;
+  text-decoration: none;
+  color: inherit;
+}
 .about-section-card h2 { margin: 0; font-size: 1.35rem; }
 .about-section-card p { margin: 0; color: var(--muted); }
+.about-section-card .place-actions { padding: 0.2rem 0 0; }
+.about-topic-map { margin: 1.4rem 0 0; max-width: 48rem; }
+.about-topic-map .place-actions { padding: 0.75rem 0 0; }
 .read-more {
   font-weight: 700;
   color: var(--palmetto);
