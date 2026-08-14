@@ -78,7 +78,7 @@ function ensureIntakeTables(db) {
     CREATE TABLE IF NOT EXISTS intake_sessions (
       id INTEGER PRIMARY KEY,
       form_id INTEGER REFERENCES intake_forms(id),
-      channel TEXT NOT NULL CHECK (channel IN ('phone', 'portal', 'agent')),
+      channel TEXT NOT NULL CHECK (channel IN ('phone', 'portal', 'agent', 'web_call')),
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'completed', 'filed', 'abandoned')),
       transcript TEXT,
       extracted_json TEXT,
@@ -101,7 +101,52 @@ function ensureIntakeTables(db) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS idx_intake_messages_session ON intake_messages(session_id, id);
+    CREATE TABLE IF NOT EXISTS intake_guest_tokens (
+      token_hash TEXT PRIMARY KEY,
+      session_id INTEGER NOT NULL UNIQUE REFERENCES intake_sessions(id) ON DELETE CASCADE,
+      portal_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_intake_guest_tokens_expires ON intake_guest_tokens(expires_at);
   `);
+  migrateWebCallChannel(db);
+}
+
+function migrateWebCallChannel(db) {
+  const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='intake_sessions'").get()?.sql || '';
+  if (!sql || sql.includes("'web_call'")) return;
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.exec(`
+      CREATE TABLE intake_sessions__web_call (
+        id INTEGER PRIMARY KEY,
+        form_id INTEGER REFERENCES intake_forms(id),
+        channel TEXT NOT NULL CHECK (channel IN ('phone', 'portal', 'agent', 'web_call')),
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'completed', 'filed', 'abandoned')),
+        transcript TEXT,
+        extracted_json TEXT,
+        contact_name TEXT,
+        contact_email TEXT,
+        contact_phone TEXT,
+        matter_name TEXT,
+        client_id INTEGER REFERENCES clients(id),
+        matter_id INTEGER REFERENCES matters(id),
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        completed_at TEXT
+      );
+      INSERT INTO intake_sessions__web_call
+        SELECT id, form_id, channel, status, transcript, extracted_json, contact_name, contact_email,
+               contact_phone, matter_name, client_id, matter_id, created_by, created_at, completed_at
+        FROM intake_sessions;
+      DROP TABLE intake_sessions;
+      ALTER TABLE intake_sessions__web_call RENAME TO intake_sessions;
+      CREATE INDEX IF NOT EXISTS idx_intake_sessions_status ON intake_sessions(status, created_at);
+    `);
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 function publicField(field) {
@@ -417,7 +462,7 @@ function getSession(db, sessionId) {
 function startSession(db, actor, input = {}) {
   assertStaff(actor);
   const form = getForm(db, input.formId) || ensureDefaultForm(db, actor);
-  const channel = ['phone', 'portal', 'agent'].includes(input.channel) ? input.channel : 'agent';
+  const channel = ['phone', 'portal', 'agent', 'web_call'].includes(input.channel) ? input.channel : 'agent';
   if (channel === 'phone' && !form.phone_enabled) {
     throw Object.assign(new Error('phone intake is disabled for this form'), { status: 400 });
   }
@@ -562,7 +607,22 @@ function createPortalLink(db, actor, formId, { days = 30 } = {}) {
     entityId: form.id,
     detail: { expires },
   });
-  return { token, expiresAt: expires, path: `/portal/intake/${token}` };
+  return { token, expiresAt: expires, ...publicIntakeUrls('', token) };
+}
+
+function publicIntakeUrls(origin, token) {
+  const base = String(origin || '').replace(/\/$/, '');
+  const path = `/portal/intake/${token}`;
+  const callPath = `/portal/intake/call/${token}`;
+  const callUrl = `${base}${callPath}`;
+  return {
+    path,
+    callPath,
+    url: base ? `${base}${path}` : path,
+    callUrl: base ? callUrl : callPath,
+    embedHtml: `<a href="${callUrl}" target="_blank" rel="noopener noreferrer">Start an intake call</a>`,
+    widgetHtml: `<script src="${base}/intake-widget.js" data-intake-token="${token}" data-intake-origin="${base}" async></script>`,
+  };
 }
 
 function readPortalToken(db, token) {
@@ -585,7 +645,7 @@ function checkPortalRateLimit(ip) {
     portalHits.set(key, { count: 1, resetAt: now + 10 * 60 * 1000 });
     return { ok: true };
   }
-  if (row.count >= 30) {
+  if (row.count >= 80) {
     return { ok: false, retryAfterSec: Math.ceil((row.resetAt - now) / 1000) };
   }
   row.count += 1;
@@ -705,6 +765,131 @@ function ingestPhoneCall(db, input = {}, req = null) {
   return serializeSession(db, getSession(db, sessionId), { includeMessages: true });
 }
 
+const GUEST_TTL_MS = 2 * 60 * 60 * 1000;
+
+function hashGuestToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function serializePublicSession(db, row) {
+  const full = serializeSession(db, row, { includeMessages: true });
+  return {
+    id: full.id,
+    status: full.status,
+    channel: full.channel,
+    messages: full.messages || [],
+    nextQuestion: full.nextQuestion,
+    readyToSubmit: !full.nextKey,
+    extracted: {
+      contactName: full.extracted?.contactName || '',
+      contactEmail: full.extracted?.contactEmail || '',
+      contactPhone: full.extracted?.contactPhone || '',
+      matterName: full.extracted?.matterName || '',
+    },
+  };
+}
+
+function readGuestSession(db, portalToken, sessionId, guestToken) {
+  const hit = readPortalToken(db, portalToken);
+  if (!hit) throw Object.assign(new Error('intake link is invalid or expired'), { status: 404 });
+  const raw = String(guestToken || '').trim();
+  if (!/^[a-f0-9]{32,96}$/i.test(raw)) {
+    throw Object.assign(new Error('call session is not valid'), { status: 401 });
+  }
+  const id = Number(sessionId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw Object.assign(new Error('call session is not valid'), { status: 404 });
+  }
+  const guest = db.prepare(`
+    SELECT * FROM intake_guest_tokens WHERE token_hash = ? AND session_id = ? AND portal_token = ?
+  `).get(hashGuestToken(raw), id, hit.token.token);
+  if (!guest || guest.expires_at < Date.now()) {
+    throw Object.assign(new Error('call session is not valid'), { status: 401 });
+  }
+  const session = getSession(db, id);
+  if (!session || session.form_id !== hit.form.id) {
+    throw Object.assign(new Error('call session is not valid'), { status: 404 });
+  }
+  return { hit, session, actor: portalActor(db, hit.token) };
+}
+
+function startWebCall(db, portalToken, req = null) {
+  ensureIntakeTables(db);
+  const hit = readPortalToken(db, portalToken);
+  if (!hit) throw Object.assign(new Error('intake link is invalid or expired'), { status: 404 });
+  const actor = portalActor(db, hit.token);
+  if (!actor) throw Object.assign(new Error('intake is not available'), { status: 503 });
+  const info = db.prepare(`
+    INSERT INTO intake_sessions(form_id, channel, status, created_by)
+    VALUES (?, 'web_call', 'open', ?)
+  `).run(hit.form.id, actor.id);
+  const id = Number(info.lastInsertRowid);
+  const greeting = defaultGreeting(hit.form);
+  addMessage(db, id, 'agent', greeting);
+  const first = unansweredPrompt(hit.form, {}, formFields(db, hit.form).selected);
+  addMessage(db, id, 'agent', first.question);
+  const guestToken = crypto.randomBytes(24).toString('hex');
+  db.prepare(`
+    INSERT INTO intake_guest_tokens(token_hash, session_id, portal_token, expires_at)
+    VALUES (?, ?, ?, ?)
+  `).run(hashGuestToken(guestToken), id, hit.token.token, Date.now() + GUEST_TTL_MS);
+  audit(db, {
+    actorId: actor.id,
+    action: 'intake.web_call_start',
+    entityType: 'intake_session',
+    entityId: id,
+    detail: { formId: hit.form.id },
+    req,
+  });
+  return {
+    guestToken,
+    session: serializePublicSession(db, getSession(db, id)),
+  };
+}
+
+function addWebCallTurn(db, portalToken, sessionId, guestToken, input = {}) {
+  const { session } = readGuestSession(db, portalToken, sessionId, guestToken);
+  if (session.status === 'filed' || session.status === 'completed') {
+    throw Object.assign(new Error('intake already submitted'), { status: 400 });
+  }
+  const text = String(input.text || input.transcript || '').trim();
+  if (!text) throw Object.assign(new Error('message required'), { status: 400 });
+  ingestText(db, session, text, { source: input.source || 'speech' });
+  return serializePublicSession(db, getSession(db, session.id));
+}
+
+function completeWebCall(db, portalToken, sessionId, guestToken, req = null) {
+  const { hit, session, actor } = readGuestSession(db, portalToken, sessionId, guestToken);
+  if (!actor) throw Object.assign(new Error('intake is not available'), { status: 503 });
+  if (session.status === 'filed') {
+    return serializePublicSession(db, session);
+  }
+  const extracted = sessionExtracted(session);
+  if (!extracted.contactName) throw Object.assign(new Error('name required'), { status: 400 });
+  db.prepare(`
+    UPDATE intake_sessions
+    SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE id = ?
+  `).run(session.id);
+  addMessage(db, session.id, 'system', 'Submitted from a website intake call.');
+  audit(db, {
+    actorId: actor.id,
+    action: 'intake.web_call_complete',
+    entityType: 'intake_session',
+    entityId: session.id,
+    detail: {
+      formId: hit.form.id,
+      contactEmail: extracted.contactEmail ? maskEmail(extracted.contactEmail) : null,
+      contactPhone: extracted.contactPhone ? maskPhone(extracted.contactPhone) : null,
+    },
+    req,
+  });
+  if (hit.form.auto_file) {
+    fileSession(db, actor, session.id);
+  }
+  return serializePublicSession(db, getSession(db, session.id));
+}
+
 module.exports = {
   STAFF_ROLES,
   ensureIntakeTables,
@@ -719,8 +904,12 @@ module.exports = {
   getSession,
   serializeSession,
   createPortalLink,
+  publicIntakeUrls,
   portalForm,
   submitPortal,
+  startWebCall,
+  addWebCallTurn,
+  completeWebCall,
   checkPortalRateLimit,
   verifyPhoneWebhookSecret,
   ingestPhoneCall,

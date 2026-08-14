@@ -53,9 +53,9 @@
     settingsTabOpen: {},
     matterDetailsOpen: true,
     matterListColumns: null,
-    intakeTab: 'call',
     intakeSession: null,
     intakeFlash: null,
+    intakeEmbed: null,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -4989,7 +4989,6 @@
       setMainHtml('<div class="card"><p class="error">You do not have access to intake.</p></div>');
       return;
     }
-    const tab = state.intakeTab || 'call';
     const [formsRes, sessionsRes] = await Promise.all([
       api('/api/intake/forms'),
       api('/api/intake/sessions'),
@@ -5013,107 +5012,96 @@
     const messages = session?.messages || [];
     const flash = state.intakeFlash;
     state.intakeFlash = null;
-    const portalUrl = form ? `${location.origin}/portal/intake/` : '';
+    const fieldChoices = form?.availableFields || [];
 
     setMainHtml(`
-      <div class="page-head">
-        <h1>Intake</h1>
-        <p class="muted">The intake agent collects custom fields from a phone call or the client portal, then files a contact and matter.</p>
+      <div class="page-head intake-head">
+        <div>
+          <h1>Intake</h1>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="intakeStartCall">${session ? 'New call' : 'Start call'}</button>
+          <button type="button" class="btn" id="intakeListen">Listen</button>
+          <button type="button" class="btn" id="intakeWebsiteBtn">Website call button</button>
+        </div>
       </div>
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
-      <div class="intake-tabs" role="tablist">
-        <button type="button" class="btn ${tab === 'call' ? 'primary' : ''}" data-intake-tab="call">Take a call</button>
-        <button type="button" class="btn ${tab === 'portal' ? 'primary' : ''}" data-intake-tab="portal">Client portal</button>
-        <button type="button" class="btn ${tab === 'sessions' ? 'primary' : ''}" data-intake-tab="sessions">Sessions</button>
-        <button type="button" class="btn ${tab === 'fields' ? 'primary' : ''}" data-intake-tab="fields">Fields</button>
-      </div>
-      ${tab === 'call' ? `
-        <div class="intake-grid">
-          <div class="card intake-agent">
-            <h2>AI intake agent</h2>
-            <p class="muted">Speak or type. The agent asks for each selected custom field and fills the worksheet as answers come in.</p>
-            <div class="intake-transcript" id="intakeTranscript">
-              ${(messages.length ? messages : [{ role: 'agent', content: form?.greeting || 'Start a call to begin.' }]).map((m) => `
-                <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
-              `).join('')}
+      ${state.intakeEmbed ? `
+        <div class="card intake-embed">
+          <p class="sidebar-label">Website call button</p>
+          <p class="muted">Paste the button on the firm site. Clients click it, speak or type, and the same intake fields are collected.</p>
+          <label>Call page
+            <input readonly value="${escapeHtml(state.intakeEmbed.callUrl)}" />
+          </label>
+          <label>Button HTML
+            <textarea readonly rows="2">${escapeHtml(state.intakeEmbed.embedHtml)}</textarea>
+          </label>
+          <label>Optional floating widget
+            <textarea readonly rows="3">${escapeHtml(state.intakeEmbed.widgetHtml)}</textarea>
+          </label>
+          <label>Form link
+            <input readonly value="${escapeHtml(state.intakeEmbed.url)}" />
+          </label>
+        </div>` : ''}
+      <div class="intake-grid">
+        <div class="card intake-agent">
+          <div class="intake-transcript" id="intakeTranscript">
+            ${(messages.length ? messages : [{ role: 'agent', content: form?.greeting || 'Start a call to begin.' }]).map((m) => `
+              <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
+            `).join('')}
+          </div>
+          <form id="intakeTalkForm" class="intake-talk">
+            <textarea id="intakeTalk" rows="2" placeholder="Caller answer or call transcript"></textarea>
+            <div class="row-actions">
+              <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>Send</button>
             </div>
-            <form id="intakeTalkForm" class="intake-talk">
-              <textarea id="intakeTalk" rows="2" placeholder="Type what the caller said, or use the microphone."></textarea>
-              <div class="row-actions">
-                <button type="button" class="btn" id="intakeStartCall">${session ? 'New call' : 'Start call'}</button>
-                <button type="button" class="btn" id="intakeListen">Listen</button>
-                <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>Send</button>
-              </div>
-            </form>
-          </div>
-          <div class="card">
-            <h2>Captured fields</h2>
-            <form id="intakeFileForm" class="stack">
-              <label>Contact name <input name="intakeContactName" value="${escapeHtml(extracted.contactName || '')}" /></label>
-              <label>Email <input name="intakeContactEmail" value="${escapeHtml(extracted.contactEmail || '')}" /></label>
-              <label>Phone <input name="intakeContactPhone" value="${escapeHtml(extracted.contactPhone || '')}" /></label>
-              <label>Matter name <input name="intakeMatterName" value="${escapeHtml(extracted.matterName || '')}" /></label>
-              ${intakeFieldInputs(session?.fields || form?.fields || [], extracted)}
-              <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>File contact &amp; matter</button>
-            </form>
-          </div>
-        </div>` : ''}
-      ${tab === 'portal' ? `
-        <div class="card stack">
-          <h2>Client portal</h2>
-          <p>Share a link. The client fills the same custom fields. You review the session here, then file it.</p>
-          <div class="row-actions">
-            <button type="button" class="btn primary" id="intakePortalLink">Create portal link</button>
-          </div>
-          <p id="intakePortalUrl" class="hint" hidden></p>
-        </div>` : ''}
-      ${tab === 'sessions' ? `
+          </form>
+        </div>
         <div class="card">
-          <h2>Recent intake</h2>
-          ${sessions.length ? `<table class="data"><thead><tr><th>When</th><th>Channel</th><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
-            ${sessions.map((s) => `<tr>
+          <form id="intakeFileForm" class="stack">
+            <label>Contact name <input name="intakeContactName" value="${escapeHtml(extracted.contactName || '')}" /></label>
+            <label>Email <input name="intakeContactEmail" value="${escapeHtml(extracted.contactEmail || '')}" /></label>
+            <label>Phone <input name="intakeContactPhone" value="${escapeHtml(extracted.contactPhone || '')}" /></label>
+            <label>Matter name <input name="intakeMatterName" value="${escapeHtml(extracted.matterName || '')}" /></label>
+            ${intakeFieldInputs(session?.fields || form?.fields || [], extracted)}
+            <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>File contact &amp; matter</button>
+          </form>
+          ${form ? `
+            <form id="intakeFormSettings" class="stack intake-field-settings">
+              <p class="sidebar-label">Custom fields to collect</p>
+              <div class="intake-field-picks">
+                ${fieldChoices.map((field) => `
+                  <label class="check-inline">
+                    <input type="checkbox" name="fieldIds" value="${field.id}" ${form.fieldIds.includes(field.id) ? 'checked' : ''} />
+                    ${escapeHtml(field.label)}
+                  </label>`).join('') || '<p class="muted">Add custom fields in Settings, then select them here.</p>'}
+              </div>
+              <label class="check-inline"><input type="checkbox" name="autoFile" ${form.autoFile ? 'checked' : ''} /> Auto-file portal, website, and phone submissions</label>
+              <input type="hidden" name="name" value="${escapeHtml(form.name)}" />
+              <input type="hidden" name="greeting" value="${escapeHtml(form.greeting || '')}" />
+              <button type="submit" class="btn">Save fields</button>
+            </form>` : ''}
+        </div>
+      </div>
+      ${sessions.length ? `
+        <div class="card">
+          <table class="data"><thead><tr><th>When</th><th>Channel</th><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
+            ${sessions.slice(0, 8).map((s) => `<tr>
               <td>${escapeHtml((s.createdAt || '').replace('T', ' ').slice(0, 16))}</td>
-              <td>${escapeHtml(s.channel)}</td>
+              <td>${escapeHtml({ phone: 'Phone', portal: 'Portal', agent: 'Agent', web_call: 'Website call' }[s.channel] || s.channel)}</td>
               <td>${escapeHtml(s.extracted?.contactName || '—')}</td>
               <td>${escapeHtml(s.status)}</td>
               <td><button type="button" class="btn" data-open-session="${s.id}">Open</button></td>
             </tr>`).join('')}
-          </tbody></table>` : '<p class="muted">No intake sessions yet.</p>'}
-        </div>` : ''}
-      ${tab === 'fields' && form ? `
-        <div class="card stack">
-          <h2>Fields collected on intake</h2>
-          <p class="muted">Choose which custom fields the agent and portal ask for.</p>
-          <form id="intakeFormSettings" class="stack">
-            <label>Form name <input name="name" value="${escapeHtml(form.name)}" /></label>
-            <label>Greeting <textarea name="greeting" rows="3">${escapeHtml(form.greeting || '')}</textarea></label>
-            <fieldset class="intake-field-picks">
-              <legend>Custom fields</legend>
-              ${(form.availableFields || []).map((field) => `
-                <label class="check-inline">
-                  <input type="checkbox" name="fieldIds" value="${field.id}" ${form.fieldIds.includes(field.id) ? 'checked' : ''} />
-                  ${escapeHtml(field.label)} <span class="muted">(${escapeHtml(field.appliesTo)})</span>
-                </label>`).join('')}
-            </fieldset>
-            <label class="check-inline"><input type="checkbox" name="autoFile" ${form.autoFile ? 'checked' : ''} /> Auto-file portal and phone submissions</label>
-            <button type="submit" class="btn primary">Save fields</button>
-          </form>
+          </tbody></table>
         </div>` : ''}
     `);
-
-    main.querySelectorAll('[data-intake-tab]').forEach((btn) => {
-      btn.onclick = () => {
-        state.intakeTab = btn.getAttribute('data-intake-tab');
-        void renderIntake();
-      };
-    });
 
     const startBtn = $('#intakeStartCall');
     if (startBtn) {
       startBtn.onclick = async () => {
         const created = await api('/api/intake/sessions', { method: 'POST', body: JSON.stringify({ channel: 'phone', formId: form?.id }) });
         state.intakeSession = created.session;
-        state.intakeTab = 'call';
         void renderIntake();
       };
     }
@@ -5176,15 +5164,21 @@
       };
     }
 
-    const portalBtn = $('#intakePortalLink');
-    if (portalBtn && form) {
-      portalBtn.onclick = async () => {
-        const link = await api(`/api/intake/forms/${form.id}/portal-link`, { method: 'POST', body: '{}' });
-        const el = $('#intakePortalUrl');
-        if (el) {
-          el.hidden = false;
-          el.textContent = link.url || `${location.origin}${link.path}`;
-        }
+    const websiteBtn = $('#intakeWebsiteBtn');
+    if (websiteBtn && form) {
+      websiteBtn.onclick = async () => {
+        const link = await api(`/api/intake/forms/${form.id}/portal-link`, {
+          method: 'POST',
+          body: JSON.stringify({ days: 365 }),
+        });
+        const origin = location.origin;
+        state.intakeEmbed = {
+          url: link.url || `${origin}${link.path}`,
+          callUrl: link.callUrl || `${origin}${link.callPath || `/portal/intake/call/${link.token}`}`,
+          embedHtml: link.embedHtml || `<a href="${origin}/portal/intake/call/${link.token}" target="_blank" rel="noopener noreferrer">Start an intake call</a>`,
+          widgetHtml: link.widgetHtml || `<script src="${origin}/intake-widget.js" data-intake-token="${link.token}" data-intake-origin="${origin}" async></script>`,
+        };
+        void renderIntake();
       };
     }
 
@@ -5193,7 +5187,6 @@
         const id = Number(btn.getAttribute('data-open-session'));
         const out = await api(`/api/intake/sessions/${id}`);
         state.intakeSession = out.session;
-        state.intakeTab = 'call';
         void renderIntake();
       };
     });
@@ -10713,7 +10706,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Start a call and speak or type — the agent fills the custom fields you selected under Fields. Share a client portal link for the same fields. File intake to create the contact and matter.',
+      answer: 'Open [[Intake|intake]] under Navigate. Start a staff call, or use Website call button to put a Start an intake call control on the firm site. Clients speak or type; the agent fills the selected custom fields. File intake to create the contact and matter.',
       links: [
         { label: 'Open Intake', target: 'intake' },
       ],

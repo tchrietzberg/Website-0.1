@@ -175,4 +175,72 @@ describe('intake agent', () => {
     assert.equal(phone.json.session.channel, 'phone');
     delete process.env.INTAKE_PHONE_WEBHOOK_SECRET;
   });
+
+  it('lets a client start a website intake call from a portal token', async () => {
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    const cookie = sessionCookie(login.setCookie);
+    const auth = {
+      cookies: cookie,
+      headers: {
+        'X-CSRF-Token': login.json.csrf,
+        Authorization: `Bearer ${login.json.token}`,
+      },
+    };
+    const forms = await request(port, 'GET', '/api/intake/forms', auth);
+    const formId = forms.json.forms[0].id;
+    const link = await request(port, 'POST', `/api/intake/forms/${formId}/portal-link`, {
+      ...auth,
+      body: { days: 365 },
+    });
+    assert.equal(link.status, 200, JSON.stringify(link.json));
+    assert.match(link.json.callPath, /\/portal\/intake\/call\//);
+    assert.match(link.json.embedHtml, /Start an intake call/);
+    const token = link.json.token;
+
+    const page = await request(port, 'GET', `/portal/intake/call/${token}`);
+    assert.equal(page.status, 200);
+    assert.match(page.raw, /portal-call\.js/);
+
+    const denied = await request(port, 'POST', `/api/portal/intake/${token}/call/1/message`, {
+      body: { text: 'My name is Jordan Client.' },
+    });
+    assert.equal(denied.status, 401);
+
+    const started = await request(port, 'POST', `/api/portal/intake/${token}/call`, { body: {} });
+    assert.equal(started.status, 200, JSON.stringify(started.json));
+    assert.equal(started.json.session.channel, 'web_call');
+    assert.ok(started.json.guestToken);
+    const sessionId = started.json.session.id;
+
+    const turn = await request(port, 'POST', `/api/portal/intake/${token}/call/${sessionId}/message`, {
+      headers: { 'X-Intake-Guest': started.json.guestToken },
+      body: { text: 'My name is Jordan Client. Email is jordan.client@example.com. Phone is 312-555-0148. Matter is Client v. Acme. Case stage is Discovery.' },
+    });
+    assert.equal(turn.status, 200, JSON.stringify(turn.json));
+    assert.equal(turn.json.session.extracted.contactName, 'Jordan Client');
+
+    const done = await request(port, 'POST', `/api/portal/intake/${token}/call/${sessionId}/complete`, {
+      headers: { 'X-Intake-Guest': started.json.guestToken },
+      body: {},
+    });
+    assert.equal(done.status, 200, JSON.stringify(done.json));
+    assert.equal(done.json.session.status, 'completed');
+
+    const widget = await new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port, path: '/intake-widget.js' }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          corp: res.headers['cross-origin-resource-policy'],
+          raw: Buffer.concat(chunks).toString('utf8'),
+        }));
+      }).on('error', reject);
+    });
+    assert.equal(widget.status, 200);
+    assert.equal(widget.corp, 'cross-origin');
+    assert.match(widget.raw, /chronoIntakeCall/);
+  });
 });

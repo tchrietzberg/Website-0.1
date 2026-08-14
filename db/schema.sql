@@ -468,7 +468,7 @@ CREATE TABLE IF NOT EXISTS custom_reports (
 CREATE INDEX IF NOT EXISTS idx_custom_reports_active
   ON custom_reports(active, show_on_dashboard);
 
--- Client intake: phone / portal / in-app agent sessions
+-- Client intake: phone / portal / website call / in-app agent sessions
 CREATE TABLE IF NOT EXISTS intake_forms (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -498,7 +498,7 @@ CREATE INDEX IF NOT EXISTS idx_intake_portal_tokens_form ON intake_portal_tokens
 CREATE TABLE IF NOT EXISTS intake_sessions (
   id INTEGER PRIMARY KEY,
   form_id INTEGER REFERENCES intake_forms(id),
-  channel TEXT NOT NULL CHECK (channel IN ('phone', 'portal', 'agent')),
+  channel TEXT NOT NULL CHECK (channel IN ('phone', 'portal', 'agent', 'web_call')),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'completed', 'filed', 'abandoned')),
   transcript TEXT,
   extracted_json TEXT,
@@ -522,3 +522,12 @@ CREATE TABLE IF NOT EXISTS intake_messages (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_intake_messages_session ON intake_messages(session_id, id);
+
+CREATE TABLE IF NOT EXISTS intake_guest_tokens (
+  token_hash TEXT PRIMARY KEY,
+  session_id INTEGER NOT NULL UNIQUE REFERENCES intake_sessions(id) ON DELETE CASCADE,
+  portal_token TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intake_guest_tokens_expires ON intake_guest_tokens(expires_at);

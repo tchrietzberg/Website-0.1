@@ -170,6 +170,9 @@ function serveStatic(req, res) {
   const headers = withSecHeaders(req, {
     'Content-Type': types[ext] || 'application/octet-stream',
   });
+  if (urlPath === '/intake-widget.js') {
+    headers['Cross-Origin-Resource-Policy'] = 'cross-origin';
+  }
   if (ext === '.html') {
     headers['Cache-Control'] = 'no-store';
   } else if (ext === '.js' || ext === '.css') {
@@ -236,6 +239,16 @@ function createServer(db = openDb()) {
           res.end(body);
           return;
         }
+        if (pathname.startsWith('/portal/intake/call/')) {
+          const callPage = path.join(PUBLIC, 'portal-call.html');
+          const body = fs.readFileSync(callPage);
+          res.writeHead(200, withSecHeaders(req, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+          }));
+          res.end(body);
+          return;
+        }
         if (pathname.startsWith('/portal/intake/')) {
           const portal = path.join(PUBLIC, 'portal.html');
           const body = fs.readFileSync(portal);
@@ -267,6 +280,32 @@ function createServer(db = openDb()) {
         if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
         const body = await parseBody(req);
         return json(res, 200, { session: intakeSvc.submitPortal(db, token, body, req) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call$/i)) {
+        const token = pathname.split('/')[4];
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        return json(res, 200, intakeSvc.startWebCall(db, token, req), req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call\/\d+\/message$/i)) {
+        const parts = pathname.split('/');
+        const token = parts[4];
+        const sessionId = Number(parts[6]);
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        const body = await parseBody(req);
+        const guest = req.headers['x-intake-guest'] || body.guestToken || '';
+        return json(res, 200, { session: intakeSvc.addWebCallTurn(db, token, sessionId, guest, body) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call\/\d+\/complete$/i)) {
+        const parts = pathname.split('/');
+        const token = parts[4];
+        const sessionId = Number(parts[6]);
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        const body = await parseBody(req);
+        const guest = req.headers['x-intake-guest'] || body.guestToken || '';
+        return json(res, 200, { session: intakeSvc.completeWebCall(db, token, sessionId, guest, req) }, req);
       }
       if (req.method === 'POST' && pathname === '/api/intake/phone/webhook') {
         const secret = req.headers['x-intake-secret'] || url.searchParams.get('secret') || '';
@@ -1967,7 +2006,7 @@ function createServer(db = openDb()) {
         const body = await parseBody(req);
         const link = intakeSvc.createPortalLink(db, user, id, { days: body.days });
         const origin = String(process.env.PUBLIC_ORIGIN || `http://${req.headers.host || 'localhost:3000'}`).replace(/\/$/, '');
-        return json(res, 200, { ...link, url: `${origin}${link.path}` }, req);
+        return json(res, 200, { ...link, ...intakeSvc.publicIntakeUrls(origin, link.token) }, req);
       }
       if (req.method === 'GET' && pathname === '/api/intake/sessions') {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;

@@ -47,6 +47,7 @@
         <p class="eyebrow">Client portal</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')} · ${escapeHtml(form.greeting || '')}</p>
+        <p><a class="help-go" href="/portal/intake/call/${encodeURIComponent(token)}">Prefer to talk? Start an intake call</a></p>
         <form id="portalForm" class="stack">
           <label>Your name <input name="contactName" required autocomplete="name" /></label>
           <label>Email <input name="contactEmail" type="email" autocomplete="email" /></label>
