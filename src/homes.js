@@ -21,7 +21,6 @@ export const ZILLOW_RECENT = [
     baths: 2,
     sqft: 1397,
     kind: "New construction",
-    photo: "/homes/seminole-crossing.jpg",
     url: "https://www.zillow.com/homedetails/134-SW-Seminole-Crossing-Ct-SW-Indiantown-FL-34956/462604650_zpid/",
   },
   {
@@ -32,7 +31,6 @@ export const ZILLOW_RECENT = [
     baths: 2,
     sqft: 1607,
     kind: "New construction",
-    photo: "/homes/reed-rd.jpg",
     url: "https://www.zillow.com/homedetails/13784-SW-Reed-Rd-Indiantown-FL-34956/463080100_zpid/",
   },
   {
@@ -43,7 +41,6 @@ export const ZILLOW_RECENT = [
     baths: 2,
     sqft: 1840,
     kind: "For sale",
-    photo: "/homes/new-dawn-14417.jpg",
     url: zillowSearch("14417 SW New Dawn Rd, Indiantown, FL 34956"),
   },
   {
@@ -54,7 +51,6 @@ export const ZILLOW_RECENT = [
     baths: 2,
     sqft: 1840,
     kind: "For sale",
-    photo: "/homes/vine-15975.jpg",
     url: zillowSearch("15975 SW Vine Dr, Indiantown, FL 34956"),
   },
   {
@@ -65,7 +61,6 @@ export const ZILLOW_RECENT = [
     baths: 3,
     sqft: 2168,
     kind: "New construction",
-    photo: "/homes/new-dawn-14516.jpg",
     url: zillowSearch("14516 SW New Dawn Rd, Indiantown, FL 34956"),
   },
   {
@@ -76,7 +71,6 @@ export const ZILLOW_RECENT = [
     baths: 2,
     sqft: 1607,
     kind: "New construction",
-    photo: "/homes/vine-13671.jpg",
     url: zillowSearch("13671 SW Vine Dr, Indiantown, FL 34956"),
   },
 ];

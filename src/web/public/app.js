@@ -30,8 +30,8 @@ const copy = {
     actionHomes: "Browse homes",
     actionHomesHint: "Recent Zillow listings in 34956",
     homesTitle: "Homes for sale",
-    homesIntro: "Recent Indiantown listings on Zillow. Each card has a home photo — open it for the live listing.",
-    homesNote: "Card photos are local previews. Official listing photos, price, and availability are on Zillow and can change. This board does not sell these homes.",
+    homesIntro: "Recent Indiantown listings on Zillow. Open a card for photos, price, and the live listing.",
+    homesNote: "Photos, price, and availability are on Zillow and can change. This board does not sell these homes.",
     zillowAll: "See all on Zillow",
     zillowNewest: "Newest",
     zillowRent: "For rent",
@@ -288,8 +288,8 @@ const copy = {
     actionHomes: "Ver casas",
     actionHomesHint: "Listados recientes de Zillow en 34956",
     homesTitle: "Casas en venta",
-    homesIntro: "Listados recientes de Indiantown en Zillow. Cada tarjeta tiene foto de la casa — ábrala para el anuncio en vivo.",
-    homesNote: "Las fotos de las tarjetas son vistas previas locales. Las fotos oficiales, el precio y la disponibilidad están en Zillow y pueden cambiar. Este tablón no vende estas casas.",
+    homesIntro: "Listados recientes de Indiantown en Zillow. Abra una tarjeta para fotos, precio y el anuncio en vivo.",
+    homesNote: "Las fotos, el precio y la disponibilidad están en Zillow y pueden cambiar. Este tablón no vende estas casas.",
     zillowAll: "Ver todo en Zillow",
     zillowNewest: "Más nuevas",
     zillowRent: "En renta",
@@ -683,17 +683,12 @@ function zillowCard(row) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const photo = row.photo
-    ? `<span class="home-photo"><img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.address)}" width="960" height="640" loading="lazy" /><span class="tag">${escapeHtml(row.kind || "Zillow")}</span></span>`
-    : `<span class="tag">${escapeHtml(row.kind || "Zillow")}</span>`;
   return `<a class="card home-card" href="${escapeAttr(row.url)}" target="_blank" rel="noopener">
-    ${photo}
-    <span class="home-body">
-      <strong>${row.price != null ? money(row.price * 100) : t().viewOnZillow}</strong>
-      <span class="blurb">${escapeHtml(row.address)}</span>
-      <span class="meta">${escapeHtml(facts)}</span>
-      <span class="meta">${t().viewOnZillow}</span>
-    </span>
+    <span class="tag">${escapeHtml(row.kind || "Zillow")}</span>
+    <strong>${row.price != null ? money(row.price * 100) : t().viewOnZillow}</strong>
+    <span class="blurb">${escapeHtml(row.address)}</span>
+    <span class="meta">${escapeHtml(facts)}</span>
+    <span class="meta">${t().viewOnZillow}</span>
   </a>`;
 }
 
@@ -843,21 +838,27 @@ function renderAbout() {
     )
     .join("");
   const places = t().aboutPlaces.map((row) => placeCard(row)).join("");
-  return `<p class="kicker">34956 · ${escapeHtml(t().aboutMotto)}</p>
-    <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
-    <h1>${t().aboutTitle}</h1>
+  return `<article class="about-page">
+    <header class="about-top">
+      <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
+      <p class="kicker">34956 · ${escapeHtml(t().aboutMotto)}</p>
+      <h1>${t().aboutTitle}</h1>
+    </header>
     ${placeCard(t().aboutFeatured, true)}
-    <div class="facts">${facts}</div>
-    <section class="about-places">
-      <h2>${escapeHtml(t().aboutPlacesTitle)}</h2>
-      <p class="lede">${escapeHtml(t().aboutPlacesIntro)}</p>
-      <div class="place-gallery">${places}</div>
-      <p class="muted">${escapeHtml(t().aboutPlacesNote)}</p>
-    </section>
-    <div class="prose about-prose">${sections}
-    <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p>
-    <p class="muted">${escapeHtml(t().aboutWiki)} <a href="https://en.wikipedia.org/wiki/Indiantown,_Florida" target="_blank" rel="noopener">${escapeHtml(t().aboutWikiLink)}</a></p>
-    </div>`;
+    <div class="about-body">
+      <div class="facts">${facts}</div>
+      <section class="about-places">
+        <h2>${escapeHtml(t().aboutPlacesTitle)}</h2>
+        <p class="lede">${escapeHtml(t().aboutPlacesIntro)}</p>
+        <div class="place-gallery">${places}</div>
+        <p class="muted">${escapeHtml(t().aboutPlacesNote)}</p>
+      </section>
+      <div class="prose about-prose">${sections}
+      <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p>
+      <p class="muted">${escapeHtml(t().aboutWiki)} <a href="https://en.wikipedia.org/wiki/Indiantown,_Florida" target="_blank" rel="noopener">${escapeHtml(t().aboutWikiLink)}</a></p>
+      </div>
+    </div>
+  </article>`;
 }
 
 async function renderSearch() {
@@ -1029,6 +1030,7 @@ async function render() {
   stopPoll();
   const { page, id } = parseHash(location.hash);
   const main = $("#main");
+  main.classList.toggle("is-about", page === "about");
   main.innerHTML = "<p class='muted'>…</p>";
   try {
     if ((page === "listing" || page === "business") && id) {
