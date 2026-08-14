@@ -147,6 +147,7 @@
     clearViewLoadingArm();
     state._viewPaintToken = state._renderToken;
     main.innerHTML = html;
+    armAutohideNotices(main);
   }
 
   function showViewLoading() {
@@ -445,11 +446,44 @@
     return `<${tag}${wrap}>${escapeHtml(s)}</${tag}>`;
   }
 
+  const SUCCESS_NOTICE_HIDE_MS = 4000;
+
+  function successNoticeAutohideMs(notice) {
+    if (!notice || typeof notice !== 'object') return 0;
+    if (notice.autohide === true) return SUCCESS_NOTICE_HIDE_MS;
+    const ms = Number(notice.autohide);
+    return Number.isFinite(ms) && ms > 0 ? ms : 0;
+  }
+
+  /** Fade and remove success notices marked with data-autohide. */
+  function armAutohideNotices(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll('.success-notice[data-autohide]').forEach((el) => {
+      if (el.dataset.autohideArmed === '1') return;
+      el.dataset.autohideArmed = '1';
+      const ms = Number(el.getAttribute('data-autohide')) || SUCCESS_NOTICE_HIDE_MS;
+      window.setTimeout(() => {
+        if (!el.isConnected) return;
+        el.classList.add('is-leaving');
+        let removed = false;
+        const remove = () => {
+          if (removed) return;
+          removed = true;
+          el.remove();
+        };
+        el.addEventListener('animationend', remove, { once: true });
+        window.setTimeout(remove, 700);
+      }, ms);
+    });
+  }
+
   /** Modern success notice: title + optional detail line. */
   function successNoticeHtml(notice) {
     if (!notice) return '';
+    const hideMs = successNoticeAutohideMs(notice);
+    const hideAttr = hideMs ? ` data-autohide="${hideMs}"` : '';
     if (typeof notice === 'string') {
-      return `<div class="success-notice" role="status">
+      return `<div class="success-notice" role="status"${hideAttr}>
         <span class="success-notice-icon" aria-hidden="true">
           <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
             <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.6"/>
@@ -463,7 +497,7 @@
     }
     const title = notice.title || 'Saved';
     const detail = notice.detail || '';
-    return `<div class="success-notice" role="status">
+    return `<div class="success-notice" role="status"${hideAttr}>
       <span class="success-notice-icon" aria-hidden="true">
         <svg viewBox="0 0 20 20" width="18" height="18" fill="none">
           <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.6"/>
@@ -5354,6 +5388,7 @@
           state.matterCreateFlash = {
             title: 'Matter created',
             detail: page.matter.name,
+            autohide: true,
           };
           state.showPostCreateFields = true;
           state.editingMatterFieldId = null;
