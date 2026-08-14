@@ -165,10 +165,14 @@ describe("Indiantown Board API", () => {
     assert.ok(data.pages.length >= 4);
     assert.ok(data.pages.every((row) => /facebook\.com/i.test(row.href)));
     assert.ok(data.pages.every((row) => /facebook\.com\/plugins\/page\.php/.test(row.embed)));
+    assert.ok(data.pages.every((row) => /tabs=timeline/.test(row.embed)));
     assert.ok(data.pages.every((row) => /^https:\/\//.test(row.site) && !/facebook\.com/i.test(row.site)));
     assert.ok(data.pages.some((row) => /villageofindiantown/i.test(row.href)));
     assert.ok(data.pages.some((row) => /itownchamber/i.test(row.href)));
     assert.ok(data.pages.some((row) => /indiantownfl\.gov/i.test(row.site)));
+    const js = await (await fetch(`${base}/app.js`)).text();
+    assert.match(js, /fb-post-grid/);
+    assert.match(js, /pages\.map\(facebookPostCard\)/);
   });
 
   it("lists recent Indiantown homes that open on Zillow", async () => {

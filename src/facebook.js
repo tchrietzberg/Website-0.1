@@ -3,10 +3,10 @@ function pagePlugin(href) {
     href,
     tabs: "timeline",
     width: "500",
-    height: "560",
-    small_header: "false",
+    height: "430",
+    small_header: "true",
     adapt_container_width: "true",
-    hide_cover: "false",
+    hide_cover: "true",
     show_facepile: "false",
   });
   return `https://www.facebook.com/plugins/page.php?${query}`;

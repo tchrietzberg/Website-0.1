@@ -69,7 +69,8 @@ const copy = {
     latestBoard: "Latest listings",
     latestNews: "Latest news",
     facebookTitle: "Official Facebook",
-    facebookIntro: "Posts from official Village, Chamber, Library, County, and Sheriff pages. Village business still stays on indiantownfl.gov.",
+    facebookIntro: "The latest public post from each official Village, Chamber, Library, County, and Sheriff page. Village business still stays on indiantownfl.gov.",
+    facebookLatest: "Latest posts",
     facebookNote: "Timelines use Facebook’s official page embed. This board does not copy or scrape posts.",
     facebookPages: "Official pages",
     openFacebook: "Open on Facebook",
@@ -334,7 +335,8 @@ const copy = {
     latestBoard: "Anuncios recientes",
     latestNews: "Noticias recientes",
     facebookTitle: "Facebook oficial",
-    facebookIntro: "Publicaciones de las páginas oficiales del Pueblo, la Cámara, la biblioteca, el condado y el Sheriff. Los trámites del pueblo siguen en indiantownfl.gov.",
+    facebookIntro: "La publicación pública más reciente de cada página oficial del Pueblo, la Cámara, la biblioteca, el condado y el Sheriff. Los trámites del pueblo siguen en indiantownfl.gov.",
+    facebookLatest: "Publicaciones recientes",
     facebookNote: "Las líneas de tiempo usan el embed oficial de Facebook. Este tablón no copia ni extrae publicaciones.",
     facebookPages: "Páginas oficiales",
     openFacebook: "Abrir en Facebook",
@@ -540,7 +542,6 @@ const state = {
   businessCategory: "",
   roomTopic: "",
   resourceCategory: "",
-  facebookPage: "village",
   query: "",
   csrf: "",
   admin: false,
@@ -817,36 +818,30 @@ function facebookPageCard(row) {
 }
 
 function facebookEmbed(row) {
-  return `<iframe class="fb-frame" title="${escapeAttr(row.name)}" src="${escapeAttr(row.embed)}" width="500" height="560" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
+  return `<iframe class="fb-frame" title="${escapeAttr(`${row.name} latest posts`)}" src="${escapeAttr(row.embed)}" width="500" height="430" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
+}
+
+function facebookPostCard(row) {
+  return `<article class="card is-static fb-post-card">
+    <span class="tag">${escapeHtml(row.kind)}</span>
+    <strong>${escapeHtml(row.name)}</strong>
+    <div class="fb-embed">${facebookEmbed(row)}</div>
+    <p class="meta">
+      <a href="${escapeAttr(row.href)}" target="_blank" rel="noopener">${t().openFacebook}</a>
+      · <a href="${escapeAttr(row.site)}" target="_blank" rel="noopener">${t().officialSite}</a>
+    </p>
+  </article>`;
 }
 
 async function renderFacebook() {
   const data = await api("/api/facebook");
   const pages = data.pages || [];
-  const current = pages.find((row) => row.id === state.facebookPage) || pages[0];
-  const chips = pages
-    .map(
-      (row) =>
-        `<button type="button" class="chip ${current?.id === row.id ? "is-on" : ""}" data-chip="${escapeAttr(row.id)}">${escapeHtml(row.name)}</button>`,
-    )
-    .join("");
   return `<p class="kicker">Facebook · 34956</p>
     <h1>${t().facebookTitle}</h1>
     <p class="lede">${t().facebookIntro}</p>
-    <div class="chips" data-chips="facebook">${chips}</div>
-    ${
-      current
-        ? `<div class="fb-stage">
-      <div class="fb-embed">${facebookEmbed(current)}</div>
-      <div class="fb-aside">
-        ${facebookPageCard(current)}
-        <p class="muted">${t().facebookNote}</p>
-      </div>
-    </div>`
-        : `<p class="empty">${t().empty}</p>`
-    }
-    <div class="toolbar"><h2>${t().facebookPages}</h2></div>
-    <div class="grid fb-page-grid">${pages.map(facebookPageCard).join("")}</div>`;
+    <div class="toolbar"><h2>${t().facebookLatest}</h2></div>
+    ${pages.length ? `<div class="grid fb-post-grid">${pages.map(facebookPostCard).join("")}</div>` : `<p class="empty">${t().empty}</p>`}
+    <p class="muted">${t().facebookNote}</p>`;
 }
 
 function formatDay(value) {
@@ -1235,7 +1230,6 @@ document.addEventListener("click", (event) => {
     if (group === "business") state.businessCategory = chip.dataset.chip;
     if (group === "room") state.roomTopic = chip.dataset.chip;
     if (group === "resource") state.resourceCategory = chip.dataset.chip;
-    if (group === "facebook") state.facebookPage = chip.dataset.chip;
     render();
     return;
   }
