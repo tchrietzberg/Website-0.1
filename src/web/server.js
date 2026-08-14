@@ -285,7 +285,8 @@ function createServer(db = openDb()) {
         const token = pathname.split('/')[4];
         const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
         if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
-        return json(res, 200, intakeSvc.startWebCall(db, token, req), req);
+        const body = await parseBody(req);
+        return json(res, 200, intakeSvc.startWebCall(db, token, req, body), req);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call\/\d+\/message$/i)) {
         const parts = pathname.split('/');
@@ -2004,7 +2005,7 @@ function createServer(db = openDb()) {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
         const id = Number(pathname.split('/')[4]);
         const body = await parseBody(req);
-        const link = intakeSvc.createPortalLink(db, user, id, { days: body.days });
+        const link = intakeSvc.createPortalLink(db, user, id, { days: body.days, reuse: body.reuse === true });
         const origin = String(process.env.PUBLIC_ORIGIN || `http://${req.headers.host || 'localhost:3000'}`).replace(/\/$/, '');
         return json(res, 200, { ...link, ...intakeSvc.publicIntakeUrls(origin, link.token) }, req);
       }

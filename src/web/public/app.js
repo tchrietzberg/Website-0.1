@@ -4969,6 +4969,36 @@
     }).join('');
   }
 
+  function intakeEmbedFromLink(link) {
+    const origin = location.origin;
+    const token = link?.token || '';
+    return {
+      url: link.url || `${origin}${link.path || ''}`,
+      callUrl: link.callUrl || `${origin}${link.callPath || `/portal/intake/call/${token}`}`,
+      testCallUrl: link.testCallUrl || `${origin}${link.callPath || `/portal/intake/call/${token}`}?test=1`,
+      embedHtml: link.embedHtml || `<a href="${origin}/portal/intake/call/${token}" target="_blank" rel="noopener noreferrer">Start an intake call</a>`,
+      widgetHtml: link.widgetHtml || `<script src="${origin}/intake-widget.js" data-intake-token="${token}" data-intake-origin="${origin}" async></script>`,
+    };
+  }
+
+  function openExternalIntakeCall(url) {
+    const width = 440;
+    const height = 740;
+    const left = Math.max(0, Math.round(((window.screen?.width || 1200) - width) / 2));
+    const top = Math.max(0, Math.round(((window.screen?.height || 800) - height) / 2));
+    window.open(url, 'chronoIntakeCall', `popup=yes,width=${width},height=${height},left=${left},top=${top}`);
+  }
+
+  async function ensureIntakeWebsiteEmbed(form) {
+    if (state.intakeEmbed?.testCallUrl || state.intakeEmbed?.callUrl) return state.intakeEmbed;
+    const link = await api(`/api/intake/forms/${form.id}/portal-link`, {
+      method: 'POST',
+      body: JSON.stringify({ days: 365, reuse: true }),
+    });
+    state.intakeEmbed = intakeEmbedFromLink(link);
+    return state.intakeEmbed;
+  }
+
   function collectIntakePatch(root) {
     const values = {};
     root.querySelectorAll('[data-intake-field]').forEach((el) => {
@@ -5023,13 +5053,18 @@
           <button type="button" class="btn" id="intakeStartCall">${session ? 'New call' : 'Start call'}</button>
           <button type="button" class="btn" id="intakeListen">Listen</button>
           <button type="button" class="btn" id="intakeWebsiteBtn">Website call button</button>
+          <button type="button" class="btn primary" id="intakeTestWebsiteCall">Test website call</button>
         </div>
       </div>
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
       ${state.intakeEmbed ? `
         <div class="card intake-embed">
           <p class="sidebar-label">Website call button</p>
-          <p class="muted">Paste the button on the firm site. Clients click it, speak or type, and the same intake fields are collected.</p>
+          <p class="muted">This is the same button clients will click on the firm site. Use Test website call to walk through it now.</p>
+          <div class="intake-embed-preview">
+            <button type="button" class="btn primary" id="intakeEmbedTestBtn">Start an intake call</button>
+            <span class="hint">Preview — opens the external client page</span>
+          </div>
           <label>Call page
             <input readonly value="${escapeHtml(state.intakeEmbed.callUrl)}" />
           </label>
@@ -5088,7 +5123,7 @@
           <table class="data"><thead><tr><th>When</th><th>Channel</th><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
             ${sessions.slice(0, 8).map((s) => `<tr>
               <td>${escapeHtml((s.createdAt || '').replace('T', ' ').slice(0, 16))}</td>
-              <td>${escapeHtml({ phone: 'Phone', portal: 'Portal', agent: 'Agent', web_call: 'Website call' }[s.channel] || s.channel)}</td>
+              <td>${escapeHtml(s.test && s.channel === 'web_call' ? 'Website call (test)' : ({ phone: 'Phone', portal: 'Portal', agent: 'Agent', web_call: 'Website call' }[s.channel] || s.channel))}</td>
               <td>${escapeHtml(s.extracted?.contactName || '—')}</td>
               <td>${escapeHtml(s.status)}</td>
               <td><button type="button" class="btn" data-open-session="${s.id}">Open</button></td>
@@ -5167,20 +5202,22 @@
     const websiteBtn = $('#intakeWebsiteBtn');
     if (websiteBtn && form) {
       websiteBtn.onclick = async () => {
-        const link = await api(`/api/intake/forms/${form.id}/portal-link`, {
-          method: 'POST',
-          body: JSON.stringify({ days: 365 }),
-        });
-        const origin = location.origin;
-        state.intakeEmbed = {
-          url: link.url || `${origin}${link.path}`,
-          callUrl: link.callUrl || `${origin}${link.callPath || `/portal/intake/call/${link.token}`}`,
-          embedHtml: link.embedHtml || `<a href="${origin}/portal/intake/call/${link.token}" target="_blank" rel="noopener noreferrer">Start an intake call</a>`,
-          widgetHtml: link.widgetHtml || `<script src="${origin}/intake-widget.js" data-intake-token="${link.token}" data-intake-origin="${origin}" async></script>`,
-        };
+        await ensureIntakeWebsiteEmbed(form);
         void renderIntake();
       };
     }
+
+    const openTestCall = async () => {
+      if (!form) return;
+      const embed = await ensureIntakeWebsiteEmbed(form);
+      openExternalIntakeCall(embed.testCallUrl || `${embed.callUrl}?test=1`);
+      state.intakeFlash = { ok: true, text: 'Opened the external website call. This is the same page clients get from the button.' };
+      void renderIntake();
+    };
+    const testBtn = $('#intakeTestWebsiteCall');
+    if (testBtn) testBtn.onclick = () => void openTestCall();
+    const previewBtn = $('#intakeEmbedTestBtn');
+    if (previewBtn) previewBtn.onclick = () => void openTestCall();
 
     main.querySelectorAll('[data-open-session]').forEach((btn) => {
       btn.onclick = async () => {
@@ -10706,7 +10743,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Start a staff call, or use Website call button to put a Start an intake call control on the firm site. Clients speak or type; the agent fills the selected custom fields. File intake to create the contact and matter.',
+      answer: 'Open [[Intake|intake]] under Navigate. Use Test website call to try the same page the firm-site button opens. Website call button copies that button for the external site. Clients speak or type; the agent fills the selected custom fields. File intake to create the contact and matter. Test calls are not auto-filed.',
       links: [
         { label: 'Open Intake', target: 'intake' },
       ],

@@ -90,7 +90,8 @@ function ensureIntakeTables(db) {
       matter_id INTEGER REFERENCES matters(id),
       created_by INTEGER REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      completed_at TEXT
+      completed_at TEXT,
+      test INTEGER NOT NULL DEFAULT 0 CHECK (test IN (0,1))
     );
     CREATE INDEX IF NOT EXISTS idx_intake_sessions_status ON intake_sessions(status, created_at);
     CREATE TABLE IF NOT EXISTS intake_messages (
@@ -111,6 +112,13 @@ function ensureIntakeTables(db) {
     CREATE INDEX IF NOT EXISTS idx_intake_guest_tokens_expires ON intake_guest_tokens(expires_at);
   `);
   migrateWebCallChannel(db);
+  migrateSessionTestFlag(db);
+}
+
+function migrateSessionTestFlag(db) {
+  const cols = db.prepare('PRAGMA table_info(intake_sessions)').all();
+  if (cols.some((col) => col.name === 'test')) return;
+  db.exec('ALTER TABLE intake_sessions ADD COLUMN test INTEGER NOT NULL DEFAULT 0 CHECK (test IN (0,1))');
 }
 
 function migrateWebCallChannel(db) {
@@ -134,11 +142,12 @@ function migrateWebCallChannel(db) {
         matter_id INTEGER REFERENCES matters(id),
         created_by INTEGER REFERENCES users(id),
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        completed_at TEXT
+        completed_at TEXT,
+        test INTEGER NOT NULL DEFAULT 0 CHECK (test IN (0,1))
       );
       INSERT INTO intake_sessions__web_call
         SELECT id, form_id, channel, status, transcript, extracted_json, contact_name, contact_email,
-               contact_phone, matter_name, client_id, matter_id, created_by, created_at, completed_at
+               contact_phone, matter_name, client_id, matter_id, created_by, created_at, completed_at, 0
         FROM intake_sessions;
       DROP TABLE intake_sessions;
       ALTER TABLE intake_sessions__web_call RENAME TO intake_sessions;
@@ -448,6 +457,7 @@ function serializeSession(db, row, { includeMessages = false } = {}) {
     matterId: row.matter_id,
     createdAt: row.created_at,
     completedAt: row.completed_at,
+    test: !!row.test,
   };
   if (includeMessages) out.messages = listMessages(db, row.id);
   return out;
@@ -590,10 +600,21 @@ function listSessions(db, actor) {
   `).all().map((row) => serializeSession(db, row));
 }
 
-function createPortalLink(db, actor, formId, { days = 30 } = {}) {
+function createPortalLink(db, actor, formId, { days = 30, reuse = false } = {}) {
   assertStaff(actor);
   const form = getForm(db, formId) || ensureDefaultForm(db, actor);
   if (!form.portal_enabled) throw Object.assign(new Error('portal intake is disabled'), { status: 400 });
+  if (reuse) {
+    const existing = db.prepare(`
+      SELECT * FROM intake_portal_tokens
+      WHERE form_id = ? AND revoked = 0
+        AND (expires_at IS NULL OR expires_at > ?)
+      ORDER BY created_at DESC LIMIT 1
+    `).get(form.id, new Date().toISOString());
+    if (existing) {
+      return { token: existing.token, expiresAt: existing.expires_at, reused: true, ...publicIntakeUrls('', existing.token) };
+    }
+  }
   const token = crypto.randomBytes(24).toString('hex');
   const expires = new Date(Date.now() + Math.max(1, Number(days) || 30) * 86400000).toISOString();
   db.prepare(`
@@ -622,6 +643,7 @@ function publicIntakeUrls(origin, token) {
     callUrl: base ? callUrl : callPath,
     embedHtml: `<a href="${callUrl}" target="_blank" rel="noopener noreferrer">Start an intake call</a>`,
     widgetHtml: `<script src="${base}/intake-widget.js" data-intake-token="${token}" data-intake-origin="${base}" async></script>`,
+    testCallUrl: `${base ? callUrl : callPath}?test=1`,
   };
 }
 
@@ -780,6 +802,7 @@ function serializePublicSession(db, row) {
     messages: full.messages || [],
     nextQuestion: full.nextQuestion,
     readyToSubmit: !full.nextKey,
+    test: !!full.test,
     extracted: {
       contactName: full.extracted?.contactName || '',
       contactEmail: full.extracted?.contactEmail || '',
@@ -813,19 +836,21 @@ function readGuestSession(db, portalToken, sessionId, guestToken) {
   return { hit, session, actor: portalActor(db, hit.token) };
 }
 
-function startWebCall(db, portalToken, req = null) {
+function startWebCall(db, portalToken, req = null, input = {}) {
   ensureIntakeTables(db);
   const hit = readPortalToken(db, portalToken);
   if (!hit) throw Object.assign(new Error('intake link is invalid or expired'), { status: 404 });
   const actor = portalActor(db, hit.token);
   if (!actor) throw Object.assign(new Error('intake is not available'), { status: 503 });
+  const isTest = input.test === true;
   const info = db.prepare(`
-    INSERT INTO intake_sessions(form_id, channel, status, created_by)
-    VALUES (?, 'web_call', 'open', ?)
-  `).run(hit.form.id, actor.id);
+    INSERT INTO intake_sessions(form_id, channel, status, created_by, test)
+    VALUES (?, 'web_call', 'open', ?, ?)
+  `).run(hit.form.id, actor.id, isTest ? 1 : 0);
   const id = Number(info.lastInsertRowid);
   const greeting = defaultGreeting(hit.form);
   addMessage(db, id, 'agent', greeting);
+  if (isTest) addMessage(db, id, 'system', 'Test call from the website button preview.');
   const first = unansweredPrompt(hit.form, {}, formFields(db, hit.form).selected);
   addMessage(db, id, 'agent', first.question);
   const guestToken = crypto.randomBytes(24).toString('hex');
@@ -838,7 +863,7 @@ function startWebCall(db, portalToken, req = null) {
     action: 'intake.web_call_start',
     entityType: 'intake_session',
     entityId: id,
-    detail: { formId: hit.form.id },
+    detail: { formId: hit.form.id, test: isTest },
     req,
   });
   return {
@@ -871,7 +896,9 @@ function completeWebCall(db, portalToken, sessionId, guestToken, req = null) {
     SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
     WHERE id = ?
   `).run(session.id);
-  addMessage(db, session.id, 'system', 'Submitted from a website intake call.');
+  addMessage(db, session.id, 'system', session.test
+    ? 'Submitted from a website intake test call.'
+    : 'Submitted from a website intake call.');
   audit(db, {
     actorId: actor.id,
     action: 'intake.web_call_complete',
@@ -879,12 +906,13 @@ function completeWebCall(db, portalToken, sessionId, guestToken, req = null) {
     entityId: session.id,
     detail: {
       formId: hit.form.id,
+      test: !!session.test,
       contactEmail: extracted.contactEmail ? maskEmail(extracted.contactEmail) : null,
       contactPhone: extracted.contactPhone ? maskPhone(extracted.contactPhone) : null,
     },
     req,
   });
-  if (hit.form.auto_file) {
+  if (hit.form.auto_file && !session.test) {
     fileSession(db, actor, session.id);
   }
   return serializePublicSession(db, getSession(db, session.id));

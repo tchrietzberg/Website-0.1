@@ -243,4 +243,63 @@ describe('intake agent', () => {
     assert.equal(widget.corp, 'cross-origin');
     assert.match(widget.raw, /chronoIntakeCall/);
   });
+
+  it('reuses the website button link and records a test call without auto-file', async () => {
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    const cookie = sessionCookie(login.setCookie);
+    const auth = {
+      cookies: cookie,
+      headers: {
+        'X-CSRF-Token': login.json.csrf,
+        Authorization: `Bearer ${login.json.token}`,
+      },
+    };
+    const forms = await request(port, 'GET', '/api/intake/forms', auth);
+    const formId = forms.json.forms[0].id;
+    await request(port, 'PATCH', `/api/intake/forms/${formId}`, {
+      ...auth,
+      body: { autoFile: true, fieldIds: forms.json.forms[0].fieldIds, name: forms.json.forms[0].name },
+    });
+    const first = await request(port, 'POST', `/api/intake/forms/${formId}/portal-link`, {
+      ...auth,
+      body: { days: 365, reuse: true },
+    });
+    const again = await request(port, 'POST', `/api/intake/forms/${formId}/portal-link`, {
+      ...auth,
+      body: { days: 365, reuse: true },
+    });
+    assert.equal(again.status, 200, JSON.stringify(again.json));
+    assert.equal(again.json.token, first.json.token);
+    assert.equal(again.json.reused, true);
+    assert.match(again.json.testCallUrl, /\?test=1$/);
+
+    const token = first.json.token;
+    const started = await request(port, 'POST', `/api/portal/intake/${token}/call`, {
+      body: { test: true },
+    });
+    assert.equal(started.status, 200, JSON.stringify(started.json));
+    assert.equal(started.json.session.test, true);
+    const sessionId = started.json.session.id;
+    await request(port, 'POST', `/api/portal/intake/${token}/call/${sessionId}/message`, {
+      headers: { 'X-Intake-Guest': started.json.guestToken },
+      body: { text: 'My name is Test Caller. Email is test.caller@example.com. Phone is 617-555-0101. Matter is Test website call.' },
+    });
+    const done = await request(port, 'POST', `/api/portal/intake/${token}/call/${sessionId}/complete`, {
+      headers: { 'X-Intake-Guest': started.json.guestToken },
+      body: {},
+    });
+    assert.equal(done.status, 200, JSON.stringify(done.json));
+    assert.equal(done.json.session.status, 'completed');
+    assert.equal(done.json.session.test, true);
+
+    const listed = await request(port, 'GET', '/api/intake/sessions', auth);
+    const row = (listed.json.sessions || []).find((s) => s.id === sessionId);
+    assert.ok(row);
+    assert.equal(row.test, true);
+    assert.equal(row.status, 'completed');
+    assert.equal(row.clientId, null);
+    assert.equal(row.matterId, null);
+  });
 });

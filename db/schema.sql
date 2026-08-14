@@ -510,7 +510,8 @@ CREATE TABLE IF NOT EXISTS intake_sessions (
   matter_id INTEGER REFERENCES matters(id),
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  completed_at TEXT
+  completed_at TEXT,
+  test INTEGER NOT NULL DEFAULT 0 CHECK (test IN (0,1))
 );
 CREATE INDEX IF NOT EXISTS idx_intake_sessions_status ON intake_sessions(status, created_at);
 

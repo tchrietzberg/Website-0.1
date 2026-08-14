@@ -2,6 +2,7 @@
   const root = document.getElementById('portalCallRoot');
   const parts = location.pathname.split('/').filter(Boolean);
   const token = String(parts[3] || '').trim();
+  const isTest = new URLSearchParams(location.search).get('test') === '1';
   let guestToken = '';
   let session = null;
   let listening = false;
@@ -76,9 +77,9 @@
     const canSpeak = !!speechEngine();
     root.innerHTML = `
       <div class="card portal-card portal-call-card">
-        <p class="eyebrow">Intake call</p>
+        <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
-        <p class="muted">${escapeHtml(firmName || 'the firm')}</p>
+        <p class="muted">${escapeHtml(firmName || 'the firm')}${isTest ? ' · This is the same page the external website button opens.' : ''}</p>
         <div class="intake-transcript" id="intakeCallTranscript"></div>
         <p id="intakeCallError" class="error" hidden></p>
         <form id="intakeCallTalk" class="intake-talk">
@@ -166,7 +167,7 @@
     setError('');
     try {
       await api(`/api/portal/intake/${token}/call/${session.id}/complete`, {});
-      root.innerHTML = `<div class="card portal-card"><h1>Thank you</h1><p>Your information was received. The firm will review it shortly.</p></div>`;
+      root.innerHTML = `<div class="card portal-card"><h1>Thank you</h1><p>${isTest ? 'Test call received. Open Intake in Chrono to review the Website call (test) session. It is not auto-filed.' : 'Your information was received. The firm will review it shortly.'}</p></div>`;
     } catch (e) {
       setError(e.message || 'Could not submit intake.');
     }
@@ -175,7 +176,7 @@
   async function startCall(form, firmName) {
     setError('');
     try {
-      const out = await api(`/api/portal/intake/${token}/call`, {});
+      const out = await api(`/api/portal/intake/${token}/call`, isTest ? { test: true } : {});
       guestToken = out.guestToken || '';
       session = out.session;
       paintCall(form, firmName);
@@ -199,13 +200,14 @@
     const form = data.form || {};
     root.innerHTML = `
       <div class="card portal-card">
-        <p class="eyebrow">Intake call</p>
+        <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
         <p>${escapeHtml(form.greeting || 'Start a short call to share the information we need for a new matter.')}</p>
+        ${isTest ? '<p class="hint">This is a test of the button you will put on the firm website. Speak or type, then submit. Chrono will list it as a website test call.</p>' : ''}
         <p id="intakeCallError" class="error" hidden></p>
         <div class="row-actions">
-          <button type="button" class="btn primary" id="intakeCallStart">Start intake call</button>
+          <button type="button" class="btn primary" id="intakeCallStart">${isTest ? 'Start test call' : 'Start intake call'}</button>
         </div>
       </div>`;
     document.getElementById('intakeCallStart').onclick = () => void startCall(form, data.firmName);
