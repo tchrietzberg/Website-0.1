@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS listings (
   phone TEXT NOT NULL,
   email TEXT NOT NULL,
   neighborhood TEXT NOT NULL,
+  photo TEXT,
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'hidden')),
+  reviewed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -32,6 +35,8 @@ CREATE TABLE IF NOT EXISTS news (
   title TEXT NOT NULL,
   body TEXT NOT NULL,
   author TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'hidden')),
+  reviewed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -40,10 +45,25 @@ CREATE TABLE IF NOT EXISTS resources (
   title TEXT NOT NULL,
   category TEXT NOT NULL,
   description TEXT NOT NULL,
+  title_es TEXT,
+  description_es TEXT,
   url TEXT,
   phone TEXT,
   address TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  place TEXT NOT NULL,
+  starts_on TEXT NOT NULL,
+  host_name TEXT NOT NULL,
+  host_email TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'hidden')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reviewed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS admins (
@@ -75,7 +95,10 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_listings_category ON listings(category);
 CREATE INDEX IF NOT EXISTS idx_listings_created ON listings(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(category);
 CREATE INDEX IF NOT EXISTS idx_news_created ON news(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_news_status ON news(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status, starts_on);
 CREATE INDEX IF NOT EXISTS idx_rooms_status_topic ON rooms(status, topic);
 CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, id);

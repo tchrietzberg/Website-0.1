@@ -118,6 +118,36 @@ export function validateListing(input) {
   };
 }
 
+export function validateEvent(input) {
+  const title = requireText(input.title, "title", { min: 4, max: 80 });
+  if (!title.ok) return title;
+  const body = requireText(input.body, "body", { min: 12, max: 2000 });
+  if (!body.ok) return body;
+  const place = requireText(input.place, "place", { min: 2, max: 120 });
+  if (!place.ok) return place;
+  const starts_on = trim(input.starts_on);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(starts_on)) {
+    return { ok: false, field: "starts_on", error: "Pick a date." };
+  }
+  const day = new Date(`${starts_on}T12:00:00`);
+  if (Number.isNaN(day.getTime())) return { ok: false, field: "starts_on", error: "Pick a date." };
+  const host_name = requireText(input.host_name, "host_name", { min: 2, max: 80 });
+  if (!host_name.ok) return host_name;
+  const host_email = requireEmail(input.host_email || input.email);
+  if (!host_email.ok) return { ...host_email, field: "host_email" };
+  return {
+    ok: true,
+    value: {
+      title: title.value,
+      body: body.value,
+      place: place.value,
+      starts_on,
+      host_name: host_name.value,
+      host_email: host_email.value,
+    },
+  };
+}
+
 export function validateBusiness(input) {
   const name = requireText(input.name, "name", { min: 2, max: 80 });
   if (!name.ok) return name;

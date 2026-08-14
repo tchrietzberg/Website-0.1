@@ -53,7 +53,7 @@ export function verifyPassword(password, stored) {
 export function createSecurity(options = {}) {
   const rateMax = Number(options.rateMax ?? process.env.RATE_LIMIT_MAX ?? 8);
   const rateWindowMs = Number(options.rateWindowMs ?? 10 * 60 * 1000);
-  const maxBody = Number(options.maxBody ?? 32 * 1024);
+  const maxBody = Number(options.maxBody ?? 900 * 1024);
   const hits = new Map();
   const adminSessions = new Map();
 
@@ -70,7 +70,7 @@ export function createSecurity(options = {}) {
         "font-src https://fonts.gstatic.com",
         "script-src 'self'",
         "connect-src 'self'",
-        "frame-src https://www.facebook.com https://web.facebook.com",
+        "frame-src https://www.facebook.com https://web.facebook.com https://www.openstreetmap.org",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",

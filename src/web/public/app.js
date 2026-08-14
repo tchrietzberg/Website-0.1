@@ -8,6 +8,7 @@ const copy = {
     navBoard: "Listings",
     navDirectory: "Businesses",
     navNews: "News",
+    navEvents: "Events",
     navFacebook: "Facebook",
     navChat: "Chat",
     navResources: "Help",
@@ -21,6 +22,7 @@ const copy = {
     tabListing: "Listing",
     tabBusiness: "Business",
     tabNews: "News",
+    tabEvent: "Event",
     tabRoom: "Chat room",
     footer: "Village of Indiantown, Florida · 34956",
     heroKicker: "Treasure Coast · 34956",
@@ -68,6 +70,63 @@ const copy = {
     actionChatHint: "Topic rooms after admin approval",
     latestBoard: "Latest listings",
     latestNews: "Latest news",
+    latestJobs: "Jobs",
+    latestEvents: "Upcoming events",
+    eventsTitle: "Events",
+    eventsIntro: "Official Village, Chamber, and library dates, plus neighbor events after review.",
+    eventsOfficial: "Official calendars",
+    eventsCommunity: "Neighbor events",
+    eventsNote: "Agendas and tickets stay on each official site. Neighbor events wait for admin review.",
+    addEvent: "Add an event",
+    openCalendar: "Open calendar",
+    stormTitle: "Storms and the canal",
+    stormIntro: "Official weather, county emergency, and St. Lucie Canal links. Call 911 if someone is in danger.",
+    jobsIntro: "Grove, weekend, and local help wanted from neighbors.",
+    seeJobs: "See jobs",
+    seeEvents: "See events",
+    postedPending: "Sent. An admin will review it before it is public.",
+    hidden: "Hidden",
+    hidePost: "Hide",
+    reviewListings: "Listings to review",
+    reviewNews: "News to review",
+    reviewEvents: "Events to review",
+    aboutMapTitle: "Village map",
+    aboutMapIntro: "Village Hall, the inn, the library, Booker Park, Warfield Boulevard, and the canal.",
+    aboutMapNote: "Map tiles are from OpenStreetMap. Hours stay with each site.",
+    openMap: "Open map",
+    photoTooBig: "Photo must be a JPEG or PNG under 700 KB.",
+    aboutMapPlaces: [
+      {
+        title: "Village Hall",
+        blurb: "15516 SW Osceola St., Suite B",
+        href: "https://www.openstreetmap.org/search?query=15516%20SW%20Osceola%20St%20Indiantown%20FL",
+      },
+      {
+        title: "Seminole Inn",
+        blurb: "Landmark inn on Warfield Boulevard",
+        href: "https://www.openstreetmap.org/search?query=Seminole%20Inn%20Indiantown%20FL",
+      },
+      {
+        title: "Elisabeth Lahti Library",
+        blurb: "15200 E. Thelma Waters Ave",
+        href: "https://www.openstreetmap.org/search?query=Elisabeth%20Lahti%20Library%20Indiantown",
+      },
+      {
+        title: "Booker Park",
+        blurb: "15101 SW 169th Ave",
+        href: "https://www.openstreetmap.org/search?query=Booker%20Park%20Indiantown%20FL",
+      },
+      {
+        title: "Warfield Boulevard",
+        blurb: "Main route through town",
+        href: "https://www.openstreetmap.org/search?query=Warfield%20Boulevard%20Indiantown%20FL",
+      },
+      {
+        title: "St. Lucie Canal",
+        blurb: "C-44, the village’s southern edge",
+        href: "https://www.openstreetmap.org/search?query=St.%20Lucie%20Canal%20Indiantown",
+      },
+    ],
     facebookTitle: "Official Facebook",
     facebookIntro: "The latest public post from each official Village, Chamber, Library, County, and Sheriff page. Village business still stays on indiantownfl.gov.",
     facebookLatest: "Latest posts",
@@ -120,7 +179,7 @@ const copy = {
       care: "Care",
       other: "Other",
     },
-    resourceIntro: "Official Village, county, and local contacts. Call 911 if someone is in danger.",
+    resourceIntro: "Official Village, county, and local contacts in English and Spanish. Storm, canal, and 911 links are at the top. Call 911 if someone is in danger.",
     resCats: {
       safety: "Safety",
       government: "Government",
@@ -353,9 +412,13 @@ const copy = {
       submitListing: "Post listing",
       submitBusiness: "Add company",
       submitNews: "Share note",
+      submitEvent: "Request event",
       submitRoom: "Request room",
       topic: "Topic",
       host: "Your name",
+      photo: "Photo (optional)",
+      place: "Place",
+      startsOn: "Date",
     },
     posted: "Posted. It is live now.",
     needFix: "Check the fields and try again.",
@@ -372,6 +435,7 @@ const copy = {
     navBoard: "Anuncios",
     navDirectory: "Negocios",
     navNews: "Noticias",
+    navEvents: "Eventos",
     navFacebook: "Facebook",
     navChat: "Chat",
     navResources: "Ayuda",
@@ -385,6 +449,7 @@ const copy = {
     tabListing: "Anuncio",
     tabBusiness: "Negocio",
     tabNews: "Noticia",
+    tabEvent: "Evento",
     tabRoom: "Sala",
     footer: "Villa de Indiantown, Florida · 34956",
     heroKicker: "Treasure Coast · 34956",
@@ -432,6 +497,63 @@ const copy = {
     actionChatHint: "Salas por tema, con aprobación",
     latestBoard: "Anuncios recientes",
     latestNews: "Noticias recientes",
+    latestJobs: "Empleos",
+    latestEvents: "Próximos eventos",
+    eventsTitle: "Eventos",
+    eventsIntro: "Fechas oficiales de la Villa, la Cámara y la biblioteca, más eventos de vecinos después de la revisión.",
+    eventsOfficial: "Calendarios oficiales",
+    eventsCommunity: "Eventos de vecinos",
+    eventsNote: "Las agendas y los boletos quedan en cada sitio oficial. Los eventos de vecinos esperan revisión.",
+    addEvent: "Agregar un evento",
+    openCalendar: "Abrir calendario",
+    stormTitle: "Tormentas y el canal",
+    stormIntro: "Clima oficial, emergencias del condado y el canal St. Lucie. Llame al 911 si alguien está en peligro.",
+    jobsIntro: "Trabajo en los huertos, fines de semana y ayuda local de vecinos.",
+    seeJobs: "Ver empleos",
+    seeEvents: "Ver eventos",
+    postedPending: "Enviado. Un administrador lo revisará antes de que sea público.",
+    hidden: "Oculto",
+    hidePost: "Ocultar",
+    reviewListings: "Anuncios por revisar",
+    reviewNews: "Noticias por revisar",
+    reviewEvents: "Eventos por revisar",
+    aboutMapTitle: "Mapa del pueblo",
+    aboutMapIntro: "La alcaldía, el mesón, la biblioteca, Booker Park, Warfield Boulevard y el canal.",
+    aboutMapNote: "El mapa es de OpenStreetMap. Los horarios quedan en cada sitio.",
+    openMap: "Abrir mapa",
+    photoTooBig: "La foto debe ser JPEG o PNG de menos de 700 KB.",
+    aboutMapPlaces: [
+      {
+        title: "Alcaldía",
+        blurb: "15516 SW Osceola St., Suite B",
+        href: "https://www.openstreetmap.org/search?query=15516%20SW%20Osceola%20St%20Indiantown%20FL",
+      },
+      {
+        title: "Seminole Inn",
+        blurb: "Mesón emblemático en Warfield Boulevard",
+        href: "https://www.openstreetmap.org/search?query=Seminole%20Inn%20Indiantown%20FL",
+      },
+      {
+        title: "Biblioteca Elisabeth Lahti",
+        blurb: "15200 E. Thelma Waters Ave",
+        href: "https://www.openstreetmap.org/search?query=Elisabeth%20Lahti%20Library%20Indiantown",
+      },
+      {
+        title: "Booker Park",
+        blurb: "15101 SW 169th Ave",
+        href: "https://www.openstreetmap.org/search?query=Booker%20Park%20Indiantown%20FL",
+      },
+      {
+        title: "Warfield Boulevard",
+        blurb: "Vía principal del pueblo",
+        href: "https://www.openstreetmap.org/search?query=Warfield%20Boulevard%20Indiantown%20FL",
+      },
+      {
+        title: "Canal St. Lucie",
+        blurb: "C-44, el borde sur del pueblo",
+        href: "https://www.openstreetmap.org/search?query=St.%20Lucie%20Canal%20Indiantown",
+      },
+    ],
     facebookTitle: "Facebook oficial",
     facebookIntro: "La publicación pública más reciente de cada página oficial del Pueblo, la Cámara, la biblioteca, el condado y el Sheriff. Los trámites del pueblo siguen en indiantownfl.gov.",
     facebookLatest: "Publicaciones recientes",
@@ -484,7 +606,7 @@ const copy = {
       care: "Cuidado",
       other: "Otro",
     },
-    resourceIntro: "Contactos oficiales del pueblo, el condado y la zona. Llame al 911 si hay peligro.",
+    resourceIntro: "Contactos oficiales del pueblo, el condado y la zona en inglés y español. Arriba están tormenta, canal y 911. Llame al 911 si hay peligro.",
     resCats: {
       safety: "Seguridad",
       government: "Gobierno",
@@ -717,9 +839,13 @@ const copy = {
       submitListing: "Publicar anuncio",
       submitBusiness: "Agregar empresa",
       submitNews: "Compartir nota",
+      submitEvent: "Pedir evento",
       submitRoom: "Pedir sala",
       topic: "Tema",
       host: "Su nombre",
+      photo: "Foto (opcional)",
+      place: "Lugar",
+      startsOn: "Fecha",
     },
     posted: "Publicado. Ya está en línea.",
     needFix: "Revise los campos e intente de nuevo.",
@@ -829,11 +955,17 @@ function excerpt(text, n = 90) {
 }
 
 function listingCard(row) {
-  return `<button class="card" data-open="listing" data-id="${row.id}">
-    <span class="tag">${t().listingCats[row.category] || row.category}</span>
-    <strong>${escapeHtml(row.title)}</strong>
-    <span class="blurb">${escapeHtml(excerpt(row.description))}</span>
-    <span class="meta"><b class="price">${money(row.price_cents)}</b> · ${escapeHtml(row.neighborhood)}</span>
+  const photo = row.photo
+    ? `<img src="${escapeAttr(row.photo)}" alt="" width="960" height="600" loading="lazy" />`
+    : "";
+  return `<button class="card listing-card" data-open="listing" data-id="${row.id}">
+    ${photo}
+    <span class="listing-body">
+      <span class="tag">${t().listingCats[row.category] || row.category}</span>
+      <strong>${escapeHtml(row.title)}</strong>
+      <span class="blurb">${escapeHtml(excerpt(row.description))}</span>
+      <span class="meta"><b class="price">${money(row.price_cents)}</b> · ${escapeHtml(row.neighborhood)}</span>
+    </span>
   </button>`;
 }
 
@@ -856,6 +988,8 @@ function newsCard(row) {
 }
 
 function resourceCard(row) {
+  const title = state.lang === "es" && row.title_es ? row.title_es : row.title;
+  const description = state.lang === "es" && row.description_es ? row.description_es : row.description;
   const link = row.url
     ? `<a href="${escapeAttr(row.url)}" target="_blank" rel="noopener">${t().website}</a>`
     : "";
@@ -864,11 +998,57 @@ function resourceCard(row) {
     : "";
   return `<article class="card is-static">
     <span class="tag">${t().resCats[row.category] || row.category}</span>
-    <strong>${escapeHtml(row.title)}</strong>
-    <p class="blurb">${escapeHtml(row.description)}</p>
+    <strong>${escapeHtml(title)}</strong>
+    <p class="blurb">${escapeHtml(description)}</p>
     ${phone}
     <span class="muted">${escapeHtml(row.address || "")}</span>
     ${link}
+  </article>`;
+}
+
+function stormCard(row) {
+  const title = state.lang === "es" ? row.title_es || row.title : row.title;
+  const blurb = state.lang === "es" ? row.blurb_es || row.blurb : row.blurb;
+  const href = row.href.startsWith("tel:") ? row.href : row.site || row.href;
+  const phone = row.phone
+    ? `<a class="phone-link" href="tel:${escapeAttr(row.phone)}">${escapeHtml(row.phone)}</a>`
+    : "";
+  return `<article class="card is-static storm-card">
+    <strong>${escapeHtml(title)}</strong>
+    <p class="blurb">${escapeHtml(blurb)}</p>
+    ${phone}
+    <a href="${escapeAttr(href)}" ${href.startsWith("tel:") ? "" : 'target="_blank" rel="noopener"'}>${href.startsWith("tel:") ? t().call : t().officialSite}</a>
+  </article>`;
+}
+
+function stormStrip(links) {
+  return `<section class="storm-strip">
+    <div class="toolbar"><h2>${t().stormTitle}</h2><a href="#/resources" data-link>${t().actionHelp}</a></div>
+    <p class="muted">${t().stormIntro}</p>
+    <div class="grid storm-grid">${links.map(stormCard).join("")}</div>
+  </section>`;
+}
+
+function officialEventCard(row) {
+  const title = state.lang === "es" ? row.title_es || row.title : row.title;
+  const when = state.lang === "es" ? row.when_es || row.when : row.when;
+  const body = state.lang === "es" ? row.body_es || row.body : row.body;
+  return `<article class="card is-static">
+    <span class="tag">${escapeHtml(row.source)}</span>
+    <strong>${escapeHtml(title)}</strong>
+    <p class="blurb">${escapeHtml(when)} · ${escapeHtml(row.place)}</p>
+    <p class="muted">${escapeHtml(body)}</p>
+    <a href="${escapeAttr(row.href)}" target="_blank" rel="noopener">${t().openCalendar}</a>
+  </article>`;
+}
+
+function communityEventCard(row) {
+  return `<article class="card is-static">
+    <span class="tag">${escapeHtml(formatDay(row.starts_on) || row.starts_on)}</span>
+    <strong>${escapeHtml(row.title)}</strong>
+    <p class="blurb">${escapeHtml(row.place)}</p>
+    <p class="muted">${escapeHtml(excerpt(row.body, 140))}</p>
+    <span class="meta">${escapeHtml(row.host_name)}</span>
   </article>`;
 }
 
@@ -927,10 +1107,13 @@ async function renderHomes() {
 }
 
 async function renderHome() {
-  const [counts, listings, news, homes, facebook] = await Promise.all([
+  const [counts, listings, jobs, news, events, storm, homes, facebook] = await Promise.all([
     api("/api/stats"),
     api("/api/listings"),
+    api("/api/listings?category=jobs"),
     api("/api/news"),
+    api("/api/events"),
+    api("/api/storm"),
     api("/api/homes"),
     api("/api/facebook"),
   ]);
@@ -948,13 +1131,20 @@ async function renderHome() {
       <span><b>${counts.listings}</b> ${t().listings}</span>
       <span><b>${counts.businesses}</b> ${t().businesses}</span>
       <span><b>${counts.news}</b> ${t().news}</span>
+      <span><b>${counts.events || 0}</b> ${t().navEvents}</span>
       <span><b>${counts.resources}</b> ${t().resources}</span>
       <span><b>${homes.recent?.length || 0}</b> ${t().navHomes}</span>
     </p>
   </section>
+  ${stormStrip(storm.links || [])}
   <section>
     <div class="toolbar"><h2>${t().latestBoard}</h2><a href="#/board" data-link>${t().seeBoard}</a></div>
     ${gridOrEmpty(listings.slice(0, 6).map(listingCard).join(""))}
+  </section>
+  <section>
+    <div class="toolbar"><h2>${t().latestJobs}</h2><a href="#/board" data-link>${t().seeJobs}</a></div>
+    <p class="muted">${t().jobsIntro}</p>
+    ${gridOrEmpty(jobs.slice(0, 4).map(listingCard).join(""))}
   </section>
   <div class="actions">
     <a class="action" href="#/board" data-link><strong>${t().actionBoard}</strong><span>${t().actionBoardHint}</span></a>
@@ -964,6 +1154,10 @@ async function renderHome() {
   <section>
     <div class="toolbar"><h2>${t().latestNews}</h2><a href="#/news" data-link>${t().seeNews}</a></div>
     ${gridOrEmpty(news.slice(0, 3).map(newsCard).join(""))}
+  </section>
+  <section>
+    <div class="toolbar"><h2>${t().latestEvents}</h2><a href="#/events" data-link>${t().seeEvents}</a></div>
+    ${gridOrEmpty([...(events.official || []).slice(0, 2).map(officialEventCard), ...(events.community || []).slice(0, 2).map(communityEventCard)].join(""))}
   </section>
   <section class="facebook-strip">
     <div class="toolbar"><h2>${t().facebookTitle}</h2><a href="#/facebook" data-link>${t().seeBoard}</a></div>
@@ -999,6 +1193,18 @@ async function renderNews() {
   const rows = await api("/api/news");
   return `<p class="kicker">${t().navNews}</p><h1>${t().news}</h1>
     ${gridOrEmpty(rows.map(newsCard).join(""))}`;
+}
+
+async function renderEvents() {
+  const data = await api("/api/events");
+  return `<p class="kicker">34956</p><h1>${t().eventsTitle}</h1>
+    <p class="lede">${t().eventsIntro}</p>
+    <p><button type="button" class="primary" data-open-post data-tab="event">${t().addEvent}</button></p>
+    <h2>${t().eventsOfficial}</h2>
+    ${gridOrEmpty((data.official || []).map(officialEventCard).join(""))}
+    <h2>${t().eventsCommunity}</h2>
+    ${gridOrEmpty((data.community || []).map(communityEventCard).join(""))}
+    <p class="muted">${t().eventsNote}</p>`;
 }
 
 function facebookPageCard(row) {
@@ -1075,9 +1281,10 @@ async function renderNewsStory(id) {
 
 async function renderResources() {
   const q = state.resourceCategory ? `?category=${encodeURIComponent(state.resourceCategory)}` : "";
-  const rows = await api(`/api/resources${q}`);
+  const [rows, storm] = await Promise.all([api(`/api/resources${q}`), api("/api/storm")]);
   return `<p class="kicker">${t().navResources}</p><h1>${t().resources}</h1>
     <p class="lede">${t().resourceIntro}</p>
+    ${stormStrip(storm.links || [])}
     ${chips(t().resCats, state.resourceCategory, "resource")}
     ${gridOrEmpty(rows.map(resourceCard).join(""))}`;
 }
@@ -1146,6 +1353,21 @@ function renderAbout() {
     ${placeCard(t().aboutFeatured, true)}
     <div class="about-body">
       <div class="facts">${facts}</div>
+      <section class="about-map">
+        <h2>${escapeHtml(t().aboutMapTitle)}</h2>
+        <p class="lede">${escapeHtml(t().aboutMapIntro)}</p>
+        <iframe class="about-map-frame" title="${escapeAttr(t().aboutMapTitle)}" src="https://www.openstreetmap.org/export/embed.html?bbox=-80.53%2C26.99%2C-80.42%2C27.06&amp;layer=mapnik&amp;marker=27.0273%2C-80.4731" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        <div class="about-map-places">${t()
+          .aboutMapPlaces.map(
+            (row) => `<a class="about-map-pin" href="${escapeAttr(row.href)}" target="_blank" rel="noopener">
+            <strong>${escapeHtml(row.title)}</strong>
+            <span>${escapeHtml(row.blurb)}</span>
+            <span class="read-more">${escapeHtml(t().openMap)}</span>
+          </a>`,
+          )
+          .join("")}</div>
+        <p class="muted">${escapeHtml(t().aboutMapNote)}</p>
+      </section>
       <section class="about-places">
         <h2>${escapeHtml(t().aboutPlacesTitle)}</h2>
         <p class="lede">${escapeHtml(t().aboutPlacesIntro)}</p>
@@ -1201,7 +1423,8 @@ async function renderSearch() {
     <h2>${t().businesses}</h2>${gridOrEmpty(data.businesses.map(businessCard).join(""))}
     <h2>${t().news}</h2>${gridOrEmpty(data.news.map(newsCard).join(""))}
     <h2>${t().resources}</h2>${gridOrEmpty(data.resources.map(resourceCard).join(""))}
-    <h2>${t().rooms}</h2>${gridOrEmpty((data.rooms || []).map(roomCard).join(""))}`;
+    <h2>${t().rooms}</h2>${gridOrEmpty((data.rooms || []).map(roomCard).join(""))}
+    <h2>${t().eventsTitle}</h2>${gridOrEmpty((data.events || []).map(communityEventCard).join(""))}`;
 }
 
 function contactBlock(row, kind) {
@@ -1222,6 +1445,7 @@ async function renderDetail(kind, id) {
   if (kind === "listing") {
     return `<p><a href="#/board" data-link>${t().back}</a></p>
       <article class="detail">
+        ${row.photo ? `<img class="detail-photo" src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="960" height="600" />` : ""}
         <span class="tag">${t().listingCats[row.category]}</span>
         <h1>${escapeHtml(row.title)}</h1>
         <p class="price">${money(row.price_cents)}</p>
@@ -1299,11 +1523,27 @@ async function renderAdmin() {
         <p class="status" data-form-status></p>
       </form>`;
   }
-  const rows = await api("/api/admin/rooms");
+  const data = await api("/api/admin/review");
+  const reviewCard = (kind, row, extra) => `<article class="card is-static">
+      <span class="tag">${t()[row.status] || row.status}</span>
+      <strong>${escapeHtml(row.title)}</strong>
+      <p class="blurb">${escapeHtml(extra)}</p>
+      <p>
+        ${row.status === "pending" ? `<button type="button" class="primary" data-admin-review="${kind}" data-id="${row.id}" data-admin-action="approve">${t().approve}</button>` : ""}
+        ${row.status === "pending" || row.status === "approved" ? `<button type="button" class="ghost" data-admin-review="${kind}" data-id="${row.id}" data-admin-action="hide">${t().hidePost}</button>` : ""}
+      </p>
+    </article>`;
   return `<p class="kicker">${t().adminTitle}</p>
-    <div class="toolbar"><h1>${t().rooms}</h1>
+    <div class="toolbar"><h1>${t().adminTitle}</h1>
     <button type="button" class="ghost" data-admin-logout>${t().signOut}</button></div>
-    ${rows
+    <h2>${t().reviewListings}</h2>
+    ${gridOrEmpty((data.listings || []).map((row) => reviewCard("listings", row, row.neighborhood)).join(""))}
+    <h2>${t().reviewNews}</h2>
+    ${gridOrEmpty((data.news || []).map((row) => reviewCard("news", row, row.author)).join(""))}
+    <h2>${t().reviewEvents}</h2>
+    ${gridOrEmpty((data.events || []).map((row) => reviewCard("events", row, `${row.starts_on} · ${row.place}`)).join(""))}
+    <h2>${t().rooms}</h2>
+    ${(data.rooms || [])
       .map(
         (row) => `<article class="card is-static">
         <span class="tag">${t()[row.status] || row.status} · ${t().roomTopics[row.topic] || row.topic}</span>
@@ -1326,6 +1566,7 @@ const routes = {
   board: renderBoard,
   directory: renderDirectory,
   news: renderNews,
+  events: renderEvents,
   facebook: renderFacebook,
   resources: renderResources,
   about: renderAbout,
@@ -1407,6 +1648,7 @@ function listingForm() {
     ${field("phone", f.phone, "tel")}
     ${field("email", f.email, "email")}
     ${field("neighborhood", f.neighborhood)}
+    ${field("photo", f.photo, "file", 'accept="image/jpeg,image/png"')}
     ${honeypotAndAgree()}
     <button class="primary" type="submit">${f.submitListing}</button>
     <p class="status" data-form-status></p>
@@ -1442,6 +1684,21 @@ function newsForm() {
   </form>`;
 }
 
+function eventForm() {
+  const f = t().form;
+  return `<form class="stack" data-form="event">
+    ${field("title", f.title)}
+    ${field("body", f.body, "textarea")}
+    ${field("place", f.place)}
+    ${field("starts_on", f.startsOn, "date")}
+    ${field("host_name", f.host)}
+    ${field("host_email", f.email, "email")}
+    ${honeypotAndAgree()}
+    <button class="primary" type="submit">${f.submitEvent}</button>
+    <p class="status" data-form-status></p>
+  </form>`;
+}
+
 function roomForm() {
   const f = t().form;
   return `<form class="stack" data-form="room">
@@ -1458,7 +1715,7 @@ function roomForm() {
 
 function paintSheet() {
   const body = $("[data-sheet-body]");
-  const forms = { business: businessForm, news: newsForm, room: roomForm, listing: listingForm };
+  const forms = { business: businessForm, news: newsForm, event: eventForm, room: roomForm, listing: listingForm };
   body.innerHTML = (forms[state.sheetTab] || listingForm)();
   $$("[data-sheet-tab]").forEach((btn) => btn.classList.toggle("is-on", btn.dataset.sheetTab === state.sheetTab));
   $("[data-sheet-title]").textContent = t().post;
@@ -1510,6 +1767,16 @@ document.addEventListener("click", (event) => {
   const hideMsg = event.target.closest("[data-hide-msg]");
   if (hideMsg) {
     api(`/api/admin/messages/${hideMsg.dataset.hideMsg}/hide`, { method: "POST", body: "{}" })
+      .then(() => render())
+      .catch(() => {});
+    return;
+  }
+  const review = event.target.closest("[data-admin-review]");
+  if (review) {
+    api(`/api/admin/${review.dataset.adminReview}/${review.dataset.id}/${review.dataset.adminAction}`, {
+      method: "POST",
+      body: "{}",
+    })
       .then(() => render())
       .catch(() => {});
     return;
@@ -1596,19 +1863,40 @@ document.addEventListener("submit", async (event) => {
   event.preventDefault();
   const status = $("[data-form-status]", form);
   const data = Object.fromEntries(new FormData(form));
+  const file = form.elements.namedItem("photo")?.files?.[0];
+  delete data.photo;
   const path =
     form.dataset.form === "business"
       ? "/api/businesses"
       : form.dataset.form === "news"
         ? "/api/news"
-        : form.dataset.form === "room"
-          ? "/api/rooms"
-          : "/api/listings";
+        : form.dataset.form === "event"
+          ? "/api/events"
+          : form.dataset.form === "room"
+            ? "/api/rooms"
+            : "/api/listings";
   try {
+    if (file) {
+      if (file.size > 700_000 || !/^image\/(jpeg|png)$/.test(file.type)) {
+        status.dataset.state = "error";
+        status.textContent = t().photoTooBig;
+        return;
+      }
+      data.photo = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("photo"));
+        reader.readAsDataURL(file);
+      });
+    }
     if (!state.csrf) await loadSession();
     await api(path, { method: "POST", body: JSON.stringify(data) });
     status.dataset.state = "ok";
-    status.textContent = form.dataset.form === "room" ? t().roomRequested : t().posted;
+    status.textContent = ["listing", "news", "event"].includes(form.dataset.form)
+      ? t().postedPending
+      : form.dataset.form === "room"
+        ? t().roomRequested
+        : t().posted;
     form.reset();
     $("[data-sheet]")?.close();
     render();

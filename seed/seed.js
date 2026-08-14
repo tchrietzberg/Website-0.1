@@ -138,6 +138,153 @@ const listings = [
   },
 ];
 
+const events = [
+  {
+    title: "Youth baseball sign-up at Booker Park",
+    body: "Registration tables Saturday morning. Bring a birth certificate and proof of address. Volunteers needed for concession.",
+    place: "Booker Park, 15101 SW 169th Ave",
+    starts_on: "2026-08-16",
+    host_name: "Parks neighbors",
+    host_email: "parks@indiantown.example",
+  },
+  {
+    title: "Saturday rummage at the fellowship hall",
+    body: "Clothes, toys, and kitchen goods. 8 a.m. to noon. Tables are free for neighbors who want to sell. Bring your own shade.",
+    place: "Downtown fellowship hall",
+    starts_on: "2026-08-23",
+    host_name: "Hope Fellowship Volunteers",
+    host_email: "events@hopefellowship.example",
+  },
+];
+
+const resourceEs = {
+  "911 Emergency": {
+    title_es: "911 Emergencia",
+    description_es: "Policía, fuego y emergencia médica. Use este número solo si alguien está en peligro.",
+  },
+  "Police (Martin County Sheriff)": {
+    title_es: "Policía (Sheriff del condado de Martin)",
+    description_es: "Despacho que no es de emergencia para Indiantown. La Villa no tiene policía propia.",
+  },
+  "Sheriff — Indiantown district": {
+    title_es: "Sheriff — distrito de Indiantown",
+    description_es: "Unidad de Indiantown y delitos agrícolas. En una emergencia, llame primero al 911.",
+  },
+  "Fire Rescue Station 24": {
+    title_es: "Estación 24 de bomberos y rescate",
+    description_es: "Estación de Martin County Fire Rescue que sirve a Indiantown. Fuego, rescate y ambulancia. En emergencia llame al 911.",
+  },
+  "Poison Control": {
+    title_es: "Control de envenenamiento",
+    description_es: "Ayuda las 24 horas por veneno para personas y mascotas.",
+  },
+  "National Weather Service — Melbourne": {
+    title_es: "Servicio Meteorológico Nacional — Melbourne",
+    description_es: "Vigilancia, avisos y pronósticos para el condado de Martin y Treasure Coast.",
+  },
+  "Martin County Emergency Management": {
+    title_es: "Emergencias del condado de Martin",
+    description_es: "Planes de tormenta, refugios y avisos de recuperación del condado.",
+  },
+  "St. Lucie Canal (SFWMD)": {
+    title_es: "Canal St. Lucie (SFWMD)",
+    description_es: "Avisos del canal C-44 y del Distrito de Gestión del Agua del Sur de la Florida.",
+  },
+  "Village of Indiantown": {
+    title_es: "Villa de Indiantown",
+    description_es: "Alcaldía: permisos, parques, servicios y contactos. Lunes a viernes 8 a.m.–5 p.m.",
+  },
+  "Village Council": {
+    title_es: "Concejo de la Villa",
+    description_es: "Alcalde y concejo. Reuniones regulares el 2.º y 4.º jueves a las 6 p.m. en el salón del Concejo.",
+  },
+  "Village Clerk": {
+    title_es: "Secretaría de la Villa",
+    description_es: "Agendas, actas, registros públicos y apoyo al concejo.",
+  },
+  "Building and permits": {
+    title_es: "Construcción y permisos",
+    description_es: "Permisos de construcción, zonificación y entradas por Civic Access. Horario lunes a viernes 8 a.m.–4 p.m.",
+  },
+  "Code compliance": {
+    title_es: "Cumplimiento de códigos",
+    description_es: "Reporte maleza, chatarra u otros problemas del código de la Villa.",
+  },
+  "Martin County": {
+    title_es: "Condado de Martin",
+    description_es: "Servicios del condado, avisos de emergencia e información de propiedades.",
+  },
+  "Alert Martin": {
+    title_es: "Alert Martin",
+    description_es: "Regístrese para alertas de emergencia del condado por teléfono, texto o correo.",
+  },
+  "Water and wastewater billing": {
+    title_es: "Facturación de agua y alcantarillado",
+    description_es: "Pague una factura de agua o alcantarillado de la Villa, vea el saldo o actualice el contacto de su cuenta.",
+  },
+  "Public works": {
+    title_es: "Obras públicas",
+    description_es: "Calles, drenaje y trabajo de campo de los servicios de la Villa.",
+  },
+  "Garbage and recycling": {
+    title_es: "Basura y reciclaje",
+    description_es: "La recolecta de la Villa es por Waste Management: basura mar/vie, reciclaje mar, jardín mié. Llame si faltó la recolecta o para artículos grandes.",
+  },
+  "FPL power": {
+    title_es: "Electricidad FPL",
+    description_es: "Reporte un apagón o un cable caído. Llame al 911 si un cable toca a una persona o bloquea una vía con peligro inmediato.",
+  },
+  "Warfield Elementary School": {
+    title_es: "Escuela primaria Warfield",
+    description_es: "Escuela primaria del distrito escolar de Martin en Indiantown.",
+  },
+  "Indiantown Middle School": {
+    title_es: "Escuela intermedia de Indiantown",
+    description_es: "Escuela intermedia del distrito escolar de Martin en Farm Road.",
+  },
+  "Martin County School District": {
+    title_es: "Distrito escolar del condado de Martin",
+    description_es: "Inscripción, calendarios, autobuses y oficinas del distrito.",
+  },
+  "Elisabeth Lahti Library": {
+    title_es: "Biblioteca Elisabeth Lahti",
+    description_es: "Biblioteca pública de Indiantown. Mar 12–8; mié–sáb 10–5:30. Cerrado domingo y lunes.",
+  },
+  "Florida Community Health Centers": {
+    title_es: "Florida Community Health Centers",
+    description_es: "Clínica de Indiantown: atención primaria, pediatría, dental y salud de la mujer. Hay tarifa según ingresos.",
+  },
+  "Florida 211": {
+    title_es: "Florida 211",
+    description_es: "Ayuda gratis y confidencial para encontrar comida, vivienda y asistencia local.",
+  },
+  "Domestic violence help": {
+    title_es: "Ayuda por violencia doméstica",
+    description_es: "Línea de violencia doméstica de la Florida. 24 horas. Llame al 911 si está en peligro inmediato.",
+  },
+  "Animal Services": {
+    title_es: "Servicios de animales",
+    description_es: "Servicios de animales del condado de Martin para animales perdidos, heridos o peligrosos. Llame al 911 si atacan a una persona.",
+  },
+  "Indiantown Post Office": {
+    title_es: "Correo de Indiantown",
+    description_es: "Ventanilla de USPS, apartados y citas de pasaporte.",
+  },
+  "Parks and Recreation": {
+    title_es: "Parques y Recreación",
+    description_es: "Parques, campos y programas de recreación de la Villa.",
+  },
+  "Booker Park": {
+    title_es: "Booker Park",
+    description_es: "Parque del barrio para deportes, inscripciones y reuniones de fin de semana.",
+  },
+};
+
+function withEs(row) {
+  const es = resourceEs[row.title] || {};
+  return { ...row, title_es: es.title_es || "", description_es: es.description_es || "" };
+}
+
 const news = [
   {
     title: "Village Council meets Tuesday at Village Hall",
@@ -196,6 +343,30 @@ const resources = [
     url: "https://www.poison.org/",
     phone: "1-800-222-1222",
     address: "",
+  },
+  {
+    title: "National Weather Service — Melbourne",
+    category: "safety",
+    description: "Watches, warnings, and forecasts for Martin County and the Treasure Coast.",
+    url: "https://www.weather.gov/mlb/",
+    phone: "",
+    address: "NWS Melbourne",
+  },
+  {
+    title: "Martin County Emergency Management",
+    category: "safety",
+    description: "County storm plans, shelters, and recovery notices.",
+    url: "https://www.martin.fl.us/EM",
+    phone: "(772) 287-1652",
+    address: "Martin County Emergency Management",
+  },
+  {
+    title: "St. Lucie Canal (SFWMD)",
+    category: "safety",
+    description: "C-44 canal water and South Florida Water Management District notices.",
+    url: "https://www.sfwmd.gov/",
+    phone: "",
+    address: "St. Lucie Canal / C-44",
   },
   {
     title: "Village of Indiantown",
@@ -378,24 +549,57 @@ const resources = [
 export function ensureResources(db) {
   const find = db.prepare("SELECT id FROM resources WHERE title = ?");
   const insert = db.prepare(
-    `INSERT INTO resources (title, category, description, url, phone, address)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO resources (title, category, description, title_es, description_es, url, phone, address)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const update = db.prepare(
-    `UPDATE resources SET category = ?, description = ?, url = ?, phone = ?, address = ?
+    `UPDATE resources SET category = ?, description = ?, title_es = ?, description_es = ?, url = ?, phone = ?, address = ?
      WHERE title = ?`,
   );
   for (const title of ["Emergency"]) {
     db.prepare("DELETE FROM resources WHERE title = ?").run(title);
   }
-  for (const row of resources) {
+  for (const raw of resources) {
+    const row = withEs(raw);
     if (find.get(row.title)) {
-      update.run(row.category, row.description, row.url, row.phone, row.address, row.title);
+      update.run(
+        row.category,
+        row.description,
+        row.title_es,
+        row.description_es,
+        row.url,
+        row.phone,
+        row.address,
+        row.title,
+      );
     } else {
-      insert.run(row.title, row.category, row.description, row.url, row.phone, row.address);
+      insert.run(
+        row.title,
+        row.category,
+        row.description,
+        row.title_es,
+        row.description_es,
+        row.url,
+        row.phone,
+        row.address,
+      );
     }
   }
   return { count: db.prepare("SELECT COUNT(*) AS n FROM resources").get().n };
+}
+
+export function ensureEvents(db) {
+  const find = db.prepare("SELECT id FROM events WHERE title = ? AND starts_on = ?");
+  const insert = db.prepare(
+    `INSERT INTO events (title, body, place, starts_on, host_name, host_email, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'approved')`,
+  );
+  for (const row of events) {
+    if (!find.get(row.title, row.starts_on)) {
+      insert.run(row.title, row.body, row.place, row.starts_on, row.host_name, row.host_email);
+    }
+  }
+  return { count: db.prepare("SELECT COUNT(*) AS n FROM events").get().n };
 }
 
 export function clearChatRooms(db) {
@@ -407,6 +611,7 @@ export function clearChatRooms(db) {
 export function seed(db, { force = false } = {}) {
   if (!force && !isEmpty(db)) {
     ensureResources(db);
+    ensureEvents(db);
     return { seeded: false };
   }
   const insertBiz = db.prepare(
@@ -416,13 +621,19 @@ export function seed(db, { force = false } = {}) {
   );
   const insertListing = db.prepare(
     `INSERT INTO listings
-      (title, category, description, price_cents, contact_name, phone, email, neighborhood)
+      (title, category, description, price_cents, contact_name, phone, email, neighborhood, photo, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+  );
+  const insertNews = db.prepare(
+    "INSERT INTO news (title, body, author, status) VALUES (?, ?, ?, 'approved')",
+  );
+  const insertRes = db.prepare(
+    `INSERT INTO resources (title, category, description, title_es, description_es, url, phone, address)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  const insertNews = db.prepare("INSERT INTO news (title, body, author) VALUES (?, ?, ?)");
-  const insertRes = db.prepare(
-    `INSERT INTO resources (title, category, description, url, phone, address)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+  const insertEvent = db.prepare(
+    `INSERT INTO events (title, body, place, starts_on, host_name, host_email, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'approved')`,
   );
 
   db.exec("BEGIN");
@@ -449,11 +660,25 @@ export function seed(db, { force = false } = {}) {
         row.phone,
         row.email,
         row.neighborhood,
+        row.photo || null,
       );
     }
     for (const row of news) insertNews.run(row.title, row.body, row.author);
-    for (const row of resources) {
-      insertRes.run(row.title, row.category, row.description, row.url, row.phone, row.address);
+    for (const raw of resources) {
+      const row = withEs(raw);
+      insertRes.run(
+        row.title,
+        row.category,
+        row.description,
+        row.title_es,
+        row.description_es,
+        row.url,
+        row.phone,
+        row.address,
+      );
+    }
+    for (const row of events) {
+      insertEvent.run(row.title, row.body, row.place, row.starts_on, row.host_name, row.host_email);
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -467,9 +692,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const db = openDb();
   const result = seed(db, { force: process.argv.includes("--force") });
   const help = ensureResources(db);
+  const townEvents = ensureEvents(db);
   if (process.argv.includes("--reset-chat")) clearChatRooms(db);
   const rooms = db.prepare("SELECT COUNT(*) AS n FROM rooms").get().n;
   console.log(result.seeded ? "Seeded Indiantown Board." : "Updated existing Indiantown Board data.");
   console.log(`Help contacts: ${help.count}`);
+  console.log(`Events: ${townEvents.count}`);
   console.log(`Chat rooms: ${rooms}`);
 }

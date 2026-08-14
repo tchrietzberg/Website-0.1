@@ -14,8 +14,25 @@ export function openDb(file = process.env.DB_FILE || join(root, "data", "indiant
   db.exec("PRAGMA foreign_keys = ON");
   const schema = readFileSync(join(root, "db", "schema.sql"), "utf8");
   db.exec(schema);
+  migrate(db);
   ensureAdmin(db);
   return db;
+}
+
+function ensureColumn(db, table, column, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some((row) => row.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+}
+
+export function migrate(db) {
+  ensureColumn(db, "listings", "photo", "TEXT");
+  ensureColumn(db, "listings", "status", "TEXT NOT NULL DEFAULT 'approved'");
+  ensureColumn(db, "listings", "reviewed_at", "TEXT");
+  ensureColumn(db, "news", "status", "TEXT NOT NULL DEFAULT 'approved'");
+  ensureColumn(db, "news", "reviewed_at", "TEXT");
+  ensureColumn(db, "resources", "title_es", "TEXT");
+  ensureColumn(db, "resources", "description_es", "TEXT");
 }
 
 export function ensureAdmin(

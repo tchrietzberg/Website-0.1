@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { validateBusiness, validateListing, validateMessage, validateNews, validateRoom } from "../src/validate.js";
+import { validateBusiness, validateEvent, validateListing, validateMessage, validateNews, validateRoom } from "../src/validate.js";
 
 describe("validateListing", () => {
   const good = {
@@ -72,6 +72,34 @@ describe("validateNews", () => {
       author: "Neighbors",
     });
     assert.equal(result.ok, true);
+  });
+});
+
+describe("validateEvent", () => {
+  it("accepts a dated neighbor event", () => {
+    const result = validateEvent({
+      title: "Canal clean-up Saturday",
+      body: "Meet at the boat ramp with gloves and water.",
+      place: "St. Lucie Canal boat ramp",
+      starts_on: "2026-08-22",
+      host_name: "Neighbors",
+      host_email: "neighbors@example.com",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.value.starts_on, "2026-08-22");
+  });
+
+  it("rejects a missing date", () => {
+    const result = validateEvent({
+      title: "Canal clean-up Saturday",
+      body: "Meet at the boat ramp with gloves and water.",
+      place: "St. Lucie Canal boat ramp",
+      starts_on: "soon",
+      host_name: "Neighbors",
+      host_email: "neighbors@example.com",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.field, "starts_on");
   });
 });
 

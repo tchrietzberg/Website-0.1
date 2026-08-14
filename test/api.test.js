@@ -4,6 +4,7 @@ import { openDb } from "../src/db.js";
 import { seed } from "../seed/seed.js";
 import { createSecurity } from "../src/security.js";
 import { listen } from "../src/web/server.js";
+import { solidPng } from "../src/png.js";
 
 let server;
 let base;
@@ -97,6 +98,25 @@ describe("Indiantown Board API", () => {
     assert.equal(res.status, 201);
     const row = await res.json();
     assert.equal(row.price_cents, 12000);
+    assert.equal(row.status, "pending");
+    const publicRows = await (await fetch(`${base}/api/listings`)).json();
+    assert.ok(!publicRows.some((item) => item.id === row.id));
+    assert.equal((await fetch(`${base}/api/listings/${row.id}`)).status, 404);
+
+    const login = await post(
+      "/api/admin/login",
+      { email: "admin@indiantown.example", password: "indiantown-admin" },
+      auth,
+    );
+    assert.equal(login.status, 200);
+    const adminCookie = [auth.cookie, login.headers.getSetCookie?.()[0] || login.headers.get("set-cookie")]
+      .filter(Boolean)
+      .join("; ");
+    const admin = { csrf: auth.csrf, cookie: adminCookie };
+    const approved = await post(`/api/admin/listings/${row.id}/approve`, {}, admin);
+    assert.equal(approved.status, 200);
+    const live = await (await fetch(`${base}/api/listings/${row.id}`)).json();
+    assert.equal(live.title, "Two goats, bottle trained");
   });
 
   it("does not accept a listing outside the town board categories", async () => {
@@ -129,8 +149,8 @@ describe("Indiantown Board API", () => {
   });
 
   it("finds a listing through search", async () => {
-    const data = await (await fetch(`${base}/api/search?q=goats`)).json();
-    assert.ok(data.listings.some((row) => /goats/i.test(row.title)));
+    const data = await (await fetch(`${base}/api/search?q=mower`)).json();
+    assert.ok(data.listings.some((row) => /mower/i.test(row.title)));
   });
 
   it("lists police, fire, library, and council contacts", async () => {
@@ -199,6 +219,7 @@ describe("Indiantown Board API", () => {
     assert.match(html, /data-search-form/);
     assert.match(html, /#\/homes/);
     assert.match(html, /#\/facebook/);
+    assert.match(html, /#\/events/);
     const nav = html.match(/<nav class="nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/href="([^"]+)"/g)].map((row) => row[1]);
     assert.deepEqual(links.slice(0, 3), ["#/", "#/board", "#/directory"]);
@@ -237,5 +258,87 @@ describe("Indiantown Board API", () => {
     const photo = await fetch(`${base}/about/seminole-inn.jpg`);
     assert.equal(photo.status, 200);
     assert.match(photo.headers.get("content-type"), /image\/jpeg/);
+    assert.match(js, /about-map-frame/);
+    assert.match(js, /openstreetmap\.org\/export\/embed/);
+    assert.match(js, /latestJobs/);
+    assert.match(js, /storm-strip/);
   });
+
+  it("lists official storm links and dated events", async () => {
+    const storm = await (await fetch(`${base}/api/storm`)).json();
+    assert.ok(storm.links.some((row) => /weather\.gov\/mlb/i.test(row.href)));
+    assert.ok(storm.links.some((row) => /sfwmd\.gov/i.test(row.href)));
+    assert.ok(storm.links.some((row) => row.phone === "911"));
+    const events = await (await fetch(`${base}/api/events`)).json();
+    assert.ok(events.official.some((row) => /indiantownfl\.gov/i.test(row.href)));
+    assert.ok(events.official.some((row) => /indiantownchamber\.com/i.test(row.href)));
+    assert.ok(events.community.some((row) => /Booker Park/i.test(row.place)));
+    assert.ok(events.community.every((row) => row.host_email === undefined));
+  });
+
+  it("keeps a new news note pending until an admin approves it", async () => {
+    const auth = await session();
+    const res = await post(
+      "/api/news",
+      {
+        title: "Canal water after the rain",
+        body: "Stay off the banks if the water is high. Official notices stay with the water district.",
+        author: "Neighbor",
+      },
+      auth,
+    );
+    assert.equal(res.status, 201);
+    const row = await res.json();
+    assert.equal(row.status, "pending");
+    const publicNews = await (await fetch(`${base}/api/news`)).json();
+    assert.ok(!publicNews.some((item) => item.id === row.id));
+  });
+
+  it("accepts a listing photo after admin review", async () => {
+    const auth = await session();
+    const png = solidPng(12, 8, 23, 99, 60);
+    const res = await post(
+      "/api/listings",
+      {
+        title: "Extra shade tent",
+        category: "for-sale",
+        description: "Pop-up tent used two Saturdays at the rummage. You pick up on Osceola.",
+        price: "40",
+        contact_name: "Ana",
+        phone: "7725550488",
+        email: "ana@example.com",
+        neighborhood: "Osceola Street",
+        photo: `data:image/png;base64,${png.toString("base64")}`,
+      },
+      auth,
+    );
+    assert.equal(res.status, 201);
+    const row = await res.json();
+    assert.match(row.photo, /\/uploads\/listings\/\d+\.png/);
+    assert.equal(row.status, "pending");
+
+    const login = await post(
+      "/api/admin/login",
+      { email: "admin@indiantown.example", password: "indiantown-admin" },
+      auth,
+    );
+    const adminCookie = [auth.cookie, login.headers.getSetCookie?.()[0] || login.headers.get("set-cookie")]
+      .filter(Boolean)
+      .join("; ");
+    assert.equal((await post(`/api/admin/listings/${row.id}/approve`, {}, { csrf: auth.csrf, cookie: adminCookie })).status, 200);
+    const photo = await fetch(`${base}${row.photo}`);
+    assert.equal(photo.status, 200);
+    assert.match(photo.headers.get("content-type"), /image\/png/);
+  });
+
+  it("ships Spanish help copy on civic resources", async () => {
+    const rows = await (await fetch(`${base}/api/resources`)).json();
+    const library = rows.find((row) => /Lahti/i.test(row.title));
+    assert.match(library.title_es, /Biblioteca/);
+    assert.match(library.description_es, /Cerrado/);
+    const weather = rows.find((row) => /Weather Service/i.test(row.title));
+    assert.ok(weather?.url.includes("weather.gov/mlb"));
+    assert.match(weather.title_es, /Meteorológico/);
+  });
+
 });

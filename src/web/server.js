@@ -14,24 +14,43 @@ import {
   publicRoom,
   setRoomStatus,
 } from "../chat.js";
+import { listOfficialEvents } from "../events.js";
 import { listFacebookPages } from "../facebook.js";
 import { listZillowHomes } from "../homes.js";
 import { isEmpty, openDb } from "../db.js";
-import { ensureResources, seed } from "../../seed/seed.js";
+import { ensureEvents, ensureResources, seed } from "../../seed/seed.js";
 import { createSecurity, publicBusiness, publicListing, verifyPassword } from "../security.js";
-import { validateBusiness, validateListing, validateMessage, validateNews, validateRoom } from "../validate.js";
+import { listStormLinks } from "../storm.js";
+import { decodeListingPhoto, readListingUpload, saveListingPhoto } from "../uploads.js";
+import {
+  validateBusiness,
+  validateEvent,
+  validateListing,
+  validateMessage,
+  validateNews,
+  validateRoom,
+} from "../validate.js";
 import {
   createBusiness,
+  createEvent,
   createListing,
   createNews,
   getBusiness,
+  getEvent,
   getListing,
   getNews,
   listBusinesses,
+  listEvents,
   listListings,
   listNews,
   listResources,
+  listReviewQueue,
+  publicEvent,
   searchAll,
+  setEventStatus,
+  setListingPhoto,
+  setListingStatus,
+  setNewsStatus,
   stats,
 } from "../store.js";
 
@@ -58,7 +77,10 @@ function requireAdmin(req, res, send, security) {
 
 export function createApp(db = openDb(), security = createSecurity()) {
   if (isEmpty(db)) seed(db);
-  else ensureResources(db);
+  else {
+    ensureResources(db);
+    ensureEvents(db);
+  }
 
   function send(res, status, body, extra = {}) {
     const isJson = typeof body === "object" && !Buffer.isBuffer(body);
@@ -119,6 +141,24 @@ export function createApp(db = openDb(), security = createSecurity()) {
           local: listListings(db, "housing").map(publicListing),
         });
       }
+      if (pathname === "/api/storm" && req.method === "GET") {
+        return send(res, 200, { links: listStormLinks() });
+      }
+      if (pathname === "/api/events" && req.method === "GET") {
+        return send(res, 200, {
+          official: listOfficialEvents(),
+          community: listEvents(db).map(publicEvent),
+        });
+      }
+      if (pathname === "/api/events" && req.method === "POST") {
+        const body = await security.readJson(req);
+        const gate = security.guardPost(req, body);
+        if (!gate.ok) return send(res, gate.status, gate);
+        const parsed = validateEvent(body);
+        if (!parsed.ok) return send(res, 400, parsed);
+        const row = createEvent(db, parsed.value);
+        return send(res, 201, { id: row.id, status: row.status, title: row.title });
+      }
       if (pathname === "/api/search" && req.method === "GET") {
         return send(res, 200, searchAll(db, searchParams.get("q") || ""));
       }
@@ -131,11 +171,19 @@ export function createApp(db = openDb(), security = createSecurity()) {
         if (!gate.ok) return send(res, gate.status, gate);
         const parsed = validateListing(body);
         if (!parsed.ok) return send(res, 400, parsed);
-        return send(res, 201, publicListing(createListing(db, parsed.value)));
+        const photo = decodeListingPhoto(body.photo);
+        if (!photo.ok) return send(res, 400, photo);
+        let row = createListing(db, parsed.value);
+        if (photo.value) {
+          row = setListingPhoto(db, row.id, saveListingPhoto(row.id, photo.value));
+        }
+        return send(res, 201, publicListing(row));
       }
       if (pathname.startsWith("/api/listings/") && req.method === "GET") {
         const row = getListing(db, Number(pathname.slice("/api/listings/".length)));
-        return row ? send(res, 200, row) : send(res, 404, { error: "Not found" });
+        const admin = security.adminFromReq(req);
+        if (!row || (row.status !== "approved" && !admin)) return send(res, 404, { error: "Not found" });
+        return send(res, 200, row);
       }
       if (pathname === "/api/businesses" && req.method === "GET") {
         return send(res, 200, listBusinesses(db, searchParams.get("category") || "").map(publicBusiness));
@@ -161,11 +209,14 @@ export function createApp(db = openDb(), security = createSecurity()) {
         if (!gate.ok) return send(res, gate.status, gate);
         const parsed = validateNews(body);
         if (!parsed.ok) return send(res, 400, parsed);
-        return send(res, 201, createNews(db, parsed.value));
+        const row = createNews(db, parsed.value);
+        return send(res, 201, { id: row.id, status: row.status, title: row.title });
       }
       if (pathname.startsWith("/api/news/") && req.method === "GET") {
         const row = getNews(db, Number(pathname.slice("/api/news/".length)));
-        return row ? send(res, 200, row) : send(res, 404, { error: "Not found" });
+        const admin = security.adminFromReq(req);
+        if (!row || (row.status !== "approved" && !admin)) return send(res, 404, { error: "Not found" });
+        return send(res, 200, row);
       }
       if (pathname === "/api/resources" && req.method === "GET") {
         return send(res, 200, listResources(db, searchParams.get("category") || ""));
@@ -226,6 +277,40 @@ export function createApp(db = openDb(), security = createSecurity()) {
         security.clearAdminSession(req);
         return send(res, 200, { admin: false }, { "Set-Cookie": security.clearAdminCookie() });
       }
+      if (pathname === "/api/admin/review" && req.method === "GET") {
+        if (!requireAdmin(req, res, send, security)) return;
+        return send(res, 200, { ...listReviewQueue(db), rooms: listAllRooms(db) });
+      }
+      if (pathname.match(/^\/api\/admin\/listings\/\d+\/(approve|hide)$/) && req.method === "POST") {
+        if (!requireAdmin(req, res, send, security)) return;
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const id = Number(pathname.split("/")[4]);
+        const next = pathname.endsWith("/approve") ? "approved" : "hidden";
+        const row = setListingStatus(db, id, next);
+        return row ? send(res, 200, publicListing(row)) : send(res, 404, { error: "Not found" });
+      }
+      if (pathname.match(/^\/api\/admin\/news\/\d+\/(approve|hide)$/) && req.method === "POST") {
+        if (!requireAdmin(req, res, send, security)) return;
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const id = Number(pathname.split("/")[4]);
+        const next = pathname.endsWith("/approve") ? "approved" : "hidden";
+        const row = setNewsStatus(db, id, next);
+        return row ? send(res, 200, row) : send(res, 404, { error: "Not found" });
+      }
+      if (pathname.match(/^\/api\/admin\/events\/\d+\/(approve|hide)$/) && req.method === "POST") {
+        if (!requireAdmin(req, res, send, security)) return;
+        const body = await security.readJson(req);
+        const gate = security.guardWrite(req, body, { requireAgree: false });
+        if (!gate.ok) return send(res, gate.status, gate);
+        const id = Number(pathname.split("/")[4]);
+        const next = pathname.endsWith("/approve") ? "approved" : "hidden";
+        const row = setEventStatus(db, id, next);
+        return row ? send(res, 200, publicEvent(row)) : send(res, 404, { error: "Not found" });
+      }
       if (pathname === "/api/admin/rooms" && req.method === "GET") {
         if (!requireAdmin(req, res, send, security)) return;
         return send(res, 200, listAllRooms(db));
@@ -257,6 +342,11 @@ export function createApp(db = openDb(), security = createSecurity()) {
 
       if (pathname.startsWith("/api/")) {
         return send(res, 404, { error: "Not found" });
+      }
+      if (pathname.startsWith("/uploads/listings/")) {
+        const file = readListingUpload(pathname);
+        if (!file) return send(res, 404, { error: "Not found" });
+        return send(res, 200, file.body, { "Content-Type": file.type });
       }
       if (serveStatic(req, res, url)) return;
       send(res, 404, { error: "Not found" });
