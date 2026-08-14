@@ -355,6 +355,7 @@
     if (!sidebar) return;
     const collapsed = !!state.sidebarCollapsed;
     sidebar.classList.toggle('is-collapsed', collapsed);
+    if (appEl) appEl.classList.toggle('sidebar-collapsed', collapsed);
     const toggle = $('#sidebarToggle');
     if (!toggle) return;
     toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
@@ -4512,6 +4513,7 @@
     if (sidebar) sidebar.hidden = true;
     if (appEl) {
       appEl.classList.remove('app-shell');
+      appEl.classList.remove('sidebar-collapsed');
       appEl.classList.add('login-mode');
     }
     document.body.classList.add('login-mode');
