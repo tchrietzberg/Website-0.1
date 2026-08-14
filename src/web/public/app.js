@@ -48,6 +48,7 @@
     contactCreateFlash: null,
     contactListFlash: null,
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
+    sidebarCollapsed: false,
     settingsBillingFlash: null,
     settingsTabOpen: {},
     matterDetailsOpen: true,
@@ -340,6 +341,40 @@
 
   try { localStorage.removeItem('billing_token'); } catch { /* ignore */ }
   try { state.token = sessionStorage.getItem(TOKEN_KEY) || null; } catch { state.token = null; }
+
+  const SIDEBAR_COLLAPSED_KEY = 'chrono_sidebar_collapsed';
+  try { state.sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { /* ignore */ }
+
+  function persistSidebarCollapsed() {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, state.sidebarCollapsed ? '1' : '0');
+    } catch { /* ignore quota / private mode */ }
+  }
+
+  function applySidebarCollapsed() {
+    if (!sidebar) return;
+    const collapsed = !!state.sidebarCollapsed;
+    sidebar.classList.toggle('is-collapsed', collapsed);
+    const toggle = $('#sidebarToggle');
+    if (!toggle) return;
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute(
+      'aria-label',
+      collapsed ? 'Expand Chrono sidebar' : 'Collapse Chrono sidebar',
+    );
+    toggle.title = collapsed ? 'Expand Chrono' : 'Collapse Chrono';
+  }
+
+  function wireSidebarToggle() {
+    const toggle = $('#sidebarToggle');
+    if (!toggle || toggle.dataset.wired === '1') return;
+    toggle.dataset.wired = '1';
+    toggle.addEventListener('click', () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      persistSidebarCollapsed();
+      applySidebarCollapsed();
+    });
+  }
 
   function persistSession(token, csrf) {
     if (csrf) state.csrf = csrf;
@@ -4746,6 +4781,8 @@
 
   function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
+    wireSidebarToggle();
+    applySidebarCollapsed();
     document.body.classList.remove('login-mode');
     if (appEl) {
       appEl.classList.remove('login-mode');
