@@ -818,18 +818,23 @@ function facebookPageCard(row) {
 }
 
 function facebookEmbed(row) {
-  return `<iframe class="fb-frame" title="${escapeAttr(`${row.name} latest posts`)}" src="${escapeAttr(row.embed)}" width="500" height="800" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
+  return `<iframe class="fb-frame" title="${escapeAttr(`${row.name} latest posts`)}" src="${escapeAttr(row.embed)}" width="500" height="600" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
 }
 
 function facebookPostCard(row) {
   return `<article class="card is-static fb-post-card">
-    <span class="tag">${escapeHtml(row.kind)}</span>
-    <strong>${escapeHtml(row.name)}</strong>
+    <header class="fb-post-head">
+      <div>
+        <span class="tag">${escapeHtml(row.kind)}</span>
+        <strong>${escapeHtml(row.name)}</strong>
+        <p class="blurb">${escapeHtml(row.blurb)}</p>
+      </div>
+      <p class="meta fb-post-links">
+        <a href="${escapeAttr(row.href)}" target="_blank" rel="noopener">${t().openFacebook}</a>
+        <a href="${escapeAttr(row.site)}" target="_blank" rel="noopener">${t().officialSite}</a>
+      </p>
+    </header>
     <div class="fb-embed">${facebookEmbed(row)}</div>
-    <p class="meta">
-      <a href="${escapeAttr(row.href)}" target="_blank" rel="noopener">${t().openFacebook}</a>
-      · <a href="${escapeAttr(row.site)}" target="_blank" rel="noopener">${t().officialSite}</a>
-    </p>
   </article>`;
 }
 

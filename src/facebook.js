@@ -3,7 +3,7 @@ function pagePlugin(href) {
     href,
     tabs: "timeline",
     width: "500",
-    height: "800",
+    height: "600",
     small_header: "true",
     adapt_container_width: "true",
     hide_cover: "true",
