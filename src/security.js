@@ -70,6 +70,7 @@ export function createSecurity(options = {}) {
         "font-src https://fonts.gstatic.com",
         "script-src 'self'",
         "connect-src 'self'",
+        "frame-src https://www.facebook.com https://web.facebook.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",

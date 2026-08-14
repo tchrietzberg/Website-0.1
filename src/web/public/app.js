@@ -8,6 +8,7 @@ const copy = {
     navBoard: "Listings",
     navDirectory: "Businesses",
     navNews: "News",
+    navFacebook: "Facebook",
     navChat: "Chat",
     navResources: "Help",
     navAbout: "About",
@@ -67,6 +68,12 @@ const copy = {
     actionChatHint: "Topic rooms after admin approval",
     latestBoard: "Latest listings",
     latestNews: "Latest news",
+    facebookTitle: "Official Facebook",
+    facebookIntro: "Posts from official Village, Chamber, Library, County, and Sheriff pages. Village business still stays on indiantownfl.gov.",
+    facebookNote: "Timelines use Facebook’s official page embed. This board does not copy or scrape posts.",
+    facebookPages: "Official pages",
+    openFacebook: "Open on Facebook",
+    officialSite: "Official site",
     seeBoard: "See all",
     seeNews: "See all",
     readStory: "Read story",
@@ -266,6 +273,7 @@ const copy = {
     navBoard: "Anuncios",
     navDirectory: "Negocios",
     navNews: "Noticias",
+    navFacebook: "Facebook",
     navChat: "Chat",
     navResources: "Ayuda",
     navAbout: "Acerca",
@@ -325,6 +333,12 @@ const copy = {
     actionChatHint: "Salas por tema, con aprobación",
     latestBoard: "Anuncios recientes",
     latestNews: "Noticias recientes",
+    facebookTitle: "Facebook oficial",
+    facebookIntro: "Publicaciones de las páginas oficiales del Pueblo, la Cámara, la biblioteca, el condado y el Sheriff. Los trámites del pueblo siguen en indiantownfl.gov.",
+    facebookNote: "Las líneas de tiempo usan el embed oficial de Facebook. Este tablón no copia ni extrae publicaciones.",
+    facebookPages: "Páginas oficiales",
+    openFacebook: "Abrir en Facebook",
+    officialSite: "Sitio oficial",
     seeBoard: "Ver todos",
     seeNews: "Ver todas",
     readStory: "Leer nota",
@@ -526,6 +540,7 @@ const state = {
   businessCategory: "",
   roomTopic: "",
   resourceCategory: "",
+  facebookPage: "village",
   query: "",
   csrf: "",
   admin: false,
@@ -715,11 +730,12 @@ async function renderHomes() {
 }
 
 async function renderHome() {
-  const [counts, listings, news, homes] = await Promise.all([
+  const [counts, listings, news, homes, facebook] = await Promise.all([
     api("/api/stats"),
     api("/api/listings"),
     api("/api/news"),
     api("/api/homes"),
+    api("/api/facebook"),
   ]);
   return `<section class="hero hero-banner">
     <div>
@@ -752,6 +768,11 @@ async function renderHome() {
     <div class="toolbar"><h2>${t().latestNews}</h2><a href="#/news" data-link>${t().seeNews}</a></div>
     ${gridOrEmpty(news.slice(0, 3).map(newsCard).join(""))}
   </section>
+  <section class="facebook-strip">
+    <div class="toolbar"><h2>${t().facebookTitle}</h2><a href="#/facebook" data-link>${t().seeBoard}</a></div>
+    <p class="muted">${t().facebookIntro}</p>
+    <div class="grid fb-page-grid">${facebook.pages.map(facebookPageCard).join("")}</div>
+  </section>
   <section class="homes-strip">
     <div class="toolbar"><h2>${t().homesTitle}</h2><a href="#/homes" data-link>${t().seeBoard}</a></div>
     <p class="muted">${t().actionHomesHint}</p>
@@ -781,6 +802,51 @@ async function renderNews() {
   const rows = await api("/api/news");
   return `<p class="kicker">${t().navNews}</p><h1>${t().news}</h1>
     ${gridOrEmpty(rows.map(newsCard).join(""))}`;
+}
+
+function facebookPageCard(row) {
+  return `<article class="card is-static fb-page-card">
+    <span class="tag">${escapeHtml(row.kind)}</span>
+    <strong>${escapeHtml(row.name)}</strong>
+    <p class="blurb">${escapeHtml(row.blurb)}</p>
+    <p class="meta">
+      <a href="${escapeAttr(row.href)}" target="_blank" rel="noopener">${t().openFacebook}</a>
+      · <a href="${escapeAttr(row.site)}" target="_blank" rel="noopener">${t().officialSite}</a>
+    </p>
+  </article>`;
+}
+
+function facebookEmbed(row) {
+  return `<iframe class="fb-frame" title="${escapeAttr(row.name)}" src="${escapeAttr(row.embed)}" width="500" height="560" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
+}
+
+async function renderFacebook() {
+  const data = await api("/api/facebook");
+  const pages = data.pages || [];
+  const current = pages.find((row) => row.id === state.facebookPage) || pages[0];
+  const chips = pages
+    .map(
+      (row) =>
+        `<button type="button" class="chip ${current?.id === row.id ? "is-on" : ""}" data-chip="${escapeAttr(row.id)}">${escapeHtml(row.name)}</button>`,
+    )
+    .join("");
+  return `<p class="kicker">Facebook · 34956</p>
+    <h1>${t().facebookTitle}</h1>
+    <p class="lede">${t().facebookIntro}</p>
+    <div class="chips" data-chips="facebook">${chips}</div>
+    ${
+      current
+        ? `<div class="fb-stage">
+      <div class="fb-embed">${facebookEmbed(current)}</div>
+      <div class="fb-aside">
+        ${facebookPageCard(current)}
+        <p class="muted">${t().facebookNote}</p>
+      </div>
+    </div>`
+        : `<p class="empty">${t().empty}</p>`
+    }
+    <div class="toolbar"><h2>${t().facebookPages}</h2></div>
+    <div class="grid fb-page-grid">${pages.map(facebookPageCard).join("")}</div>`;
 }
 
 function formatDay(value) {
@@ -994,6 +1060,7 @@ const routes = {
   board: renderBoard,
   directory: renderDirectory,
   news: renderNews,
+  facebook: renderFacebook,
   resources: renderResources,
   about: renderAbout,
   search: renderSearch,
@@ -1168,6 +1235,7 @@ document.addEventListener("click", (event) => {
     if (group === "business") state.businessCategory = chip.dataset.chip;
     if (group === "room") state.roomTopic = chip.dataset.chip;
     if (group === "resource") state.resourceCategory = chip.dataset.chip;
+    if (group === "facebook") state.facebookPage = chip.dataset.chip;
     render();
     return;
   }

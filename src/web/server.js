@@ -14,6 +14,7 @@ import {
   publicRoom,
   setRoomStatus,
 } from "../chat.js";
+import { listFacebookPages } from "../facebook.js";
 import { listZillowHomes } from "../homes.js";
 import { isEmpty, openDb } from "../db.js";
 import { ensureResources, seed } from "../../seed/seed.js";
@@ -108,6 +109,9 @@ export function createApp(db = openDb(), security = createSecurity()) {
       }
       if (pathname === "/api/stats" && req.method === "GET") {
         return send(res, 200, stats(db));
+      }
+      if (pathname === "/api/facebook" && req.method === "GET") {
+        return send(res, 200, { pages: listFacebookPages() });
       }
       if (pathname === "/api/homes" && req.method === "GET") {
         return send(res, 200, {

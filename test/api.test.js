@@ -160,6 +160,17 @@ describe("Indiantown Board API", () => {
     assert.ok(data.resources.some((row) => /Lahti/i.test(row.title)));
   });
 
+  it("lists official Indiantown Facebook pages", async () => {
+    const data = await (await fetch(`${base}/api/facebook`)).json();
+    assert.ok(data.pages.length >= 4);
+    assert.ok(data.pages.every((row) => /facebook\.com/i.test(row.href)));
+    assert.ok(data.pages.every((row) => /facebook\.com\/plugins\/page\.php/.test(row.embed)));
+    assert.ok(data.pages.every((row) => /^https:\/\//.test(row.site) && !/facebook\.com/i.test(row.site)));
+    assert.ok(data.pages.some((row) => /villageofindiantown/i.test(row.href)));
+    assert.ok(data.pages.some((row) => /itownchamber/i.test(row.href)));
+    assert.ok(data.pages.some((row) => /indiantownfl\.gov/i.test(row.site)));
+  });
+
   it("lists recent Indiantown homes that open on Zillow", async () => {
     const data = await (await fetch(`${base}/api/homes`)).json();
     assert.ok(data.recent.length >= 4);
@@ -182,6 +193,7 @@ describe("Indiantown Board API", () => {
     assert.match(html, /village-seal\.png/);
     assert.match(html, /data-search-form/);
     assert.match(html, /#\/homes/);
+    assert.match(html, /#\/facebook/);
     const nav = html.match(/<nav class="nav"[\s\S]*?<\/nav>/)[0];
     const links = [...nav.matchAll(/href="([^"]+)"/g)].map((row) => row[1]);
     assert.deepEqual(links.slice(0, 3), ["#/", "#/board", "#/directory"]);
