@@ -31,6 +31,11 @@ describe("parseHash", () => {
     assert.deepEqual(parseHash("#/about"), { page: "about", id: "" });
   });
 
+  it("opens about topics", () => {
+    assert.deepEqual(parseHash("#/about/history"), { page: "about", id: "history" });
+    assert.deepEqual(parseHash("#/about/seminole-inn"), { page: "about", id: "seminole-inn" });
+  });
+
   it("opens facebook", () => {
     assert.deepEqual(parseHash("#/facebook"), { page: "facebook", id: "" });
   });

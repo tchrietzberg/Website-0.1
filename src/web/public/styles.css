@@ -354,9 +354,17 @@ h2 { font-size: 1.45rem; margin: 0; }
   border-radius: 0.8rem;
   background: var(--paper);
   border: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .fact strong { display: block; font-size: 1.08rem; }
 .fact span { color: var(--muted); font-size: 0.88rem; }
+a.fact:hover {
+  color: inherit;
+  border-color: var(--palmetto);
+  box-shadow: 0 6px 18px rgb(14 64 38 / 0.1);
+}
 .place {
   margin: 0;
   background: var(--card);
@@ -365,6 +373,15 @@ h2 { font-size: 1.45rem; margin: 0; }
   box-shadow: var(--shadow);
   overflow: hidden;
   display: grid;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+a.place:hover {
+  color: inherit;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgb(14 64 38 / 0.14);
+  border-color: var(--palmetto);
 }
 .place img {
   width: 100%;
@@ -373,7 +390,8 @@ h2 { font-size: 1.45rem; margin: 0; }
   display: block;
   aspect-ratio: 16 / 10;
 }
-.place figcaption {
+.place figcaption,
+.place-caption {
   display: grid;
   gap: 0.25rem;
   padding: 0.85rem 1rem 1rem;
@@ -402,7 +420,8 @@ h2 { font-size: 1.45rem; margin: 0; }
   height: min(92vh, 62rem);
   object-fit: cover;
 }
-.place.is-featured figcaption {
+.place.is-featured figcaption,
+.place.is-featured .place-caption {
   position: absolute;
   left: 0;
   right: 0;
@@ -414,9 +433,54 @@ h2 { font-size: 1.45rem; margin: 0; }
 .place.is-featured .tag { color: #f4d7a8; }
 .place.is-featured .blurb { color: #e8f3ec; }
 .place.is-featured strong { font-size: clamp(1.6rem, 3.4vw, 2.4rem); font-family: var(--display); color: #fff; }
-.about-places { margin: 0 0 2rem; max-width: none; }
-.about-places h2 { margin: 0 0 0.4rem; font-size: clamp(1.6rem, 3vw, 2.1rem); }
-.about-places .lede { margin: 0 0 1.1rem; max-width: 42rem; }
+a.place.is-featured:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+.about-places,
+.about-stories { margin: 0 0 2rem; max-width: none; }
+.about-places h2,
+.about-stories h2 { margin: 0 0 0.4rem; font-size: clamp(1.6rem, 3vw, 2.1rem); }
+.about-places .lede,
+.about-top .lede { margin: 0 0 1.1rem; max-width: 42rem; }
+.about-section-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.95rem;
+  margin: 0 0 1.4rem;
+}
+@media (min-width: 720px) {
+  .about-section-grid { grid-template-columns: 1fr 1fr; }
+}
+.about-section-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1.15rem 1.2rem 1.2rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.about-section-card:hover {
+  color: inherit;
+  transform: translateY(-2px);
+  border-color: var(--palmetto);
+  box-shadow: 0 10px 28px rgb(14 64 38 / 0.12);
+}
+.about-section-card h2 { margin: 0; font-size: 1.35rem; }
+.about-section-card p { margin: 0; color: var(--muted); }
+.read-more {
+  font-weight: 700;
+  color: var(--palmetto);
+  font-size: 0.98rem;
+}
+.place.is-featured .read-more { color: #f4d7a8; }
+.about-sources { margin-top: 1.2rem; }
+.about-topic-page .about-body { padding-top: 1.2rem; }
 .place-gallery {
   display: grid;
   grid-template-columns: 1fr;

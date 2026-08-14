@@ -137,64 +137,138 @@ const copy = {
     aboutPlacesTitle: "Historic places",
     aboutPlacesIntro: "The 1920s boom, the canal, and ranch country still shape the village.",
     aboutPlacesNote: "Scenes of Indiantown’s historic places. Hours and official details stay with each site.",
+    aboutClick: "Click a place or a story for the full note.",
+    aboutStoriesTitle: "Village stories",
+    aboutSources: "Sources",
+    aboutMissing: "That About note is not here.",
+    readMore: "Read more",
     aboutFeatured: {
+      id: "seminole-inn",
       photo: "/about/seminole-inn.jpg",
       title: "Seminole Inn",
       era: "1920s · National Register",
       caption: "The main building left from S. Davies Warfield’s model city — still the village’s landmark inn.",
+      body: [
+        "S. Davies Warfield built the Seminole Inn in the 1920s as part of a planned model city around the Seaboard Air Line Railroad stop.",
+        "The Florida land boom faded after 1926, Warfield died in 1927, and the 1928 Okeechobee hurricane stopped further growth. The inn is the main building left from that boom and is on the National Register of Historic Places.",
+        "It still stands as the village landmark on the main route through town.",
+      ],
+      links: [
+        { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
+      ],
     },
     aboutPlaces: [
       {
+        id: "warfield-blvd",
         photo: "/about/warfield-blvd.jpg",
         title: "Warfield Boulevard",
         era: "1924",
         caption: "The main route through town, named for the railroad builder who planned a model city here.",
+        body: [
+          "In 1924 S. Davies Warfield extended the Seaboard Air Line Railroad from Coleman to West Palm Beach, with a stop in Indiantown.",
+          "He planned streets, housing, a school, a depot, and the Seminole Inn. Warfield Boulevard and Warfield Elementary still carry his name.",
+          "He hoped Indiantown would become the railroad’s southern hub. After he died in 1927, that plan ended, but the boulevard is still the main street.",
+        ],
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "Seaboard Air Line Railroad", href: "https://en.wikipedia.org/wiki/Seaboard_Air_Line_Railroad" },
+        ],
       },
       {
+        id: "st-lucie-canal",
         photo: "/about/st-lucie-canal.jpg",
         title: "St. Lucie Canal",
         era: "Southern border",
         caption: "Links Lake Okeechobee to the St. Lucie River near Stuart and still frames the village edge.",
+        body: [
+          "The St. Lucie Canal is the village’s southern border. It is part of the Okeechobee Waterway.",
+          "The canal links Lake Okeechobee to the St. Lucie River near Stuart, about 22 miles northeast of town.",
+          "Indiantown sits 12 miles east of Port Mayaca on the lake and about 36 feet above sea level.",
+        ],
+        links: [
+          { label: "Wikipedia: St. Lucie Canal", href: "https://en.wikipedia.org/wiki/St._Lucie_Canal" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
       },
       {
+        id: "seaboard-rail",
         photo: "/about/seaboard-rail.jpg",
         title: "Seaboard railroad",
         era: "1924–1971",
         caption: "Passenger trains stopped here into the 1960s. The depot is gone; the rails still mark the boom years.",
+        body: [
+          "Warfield’s 1924 Seaboard extension put Indiantown on the map. Passenger trains stopped here into the 1960s.",
+          "Amtrak ended that service in 1971. The depot was demolished a few years later.",
+          "The Seminole Inn is the main building left from the railroad boom.",
+        ],
+        links: [
+          { label: "Seaboard Air Line Railroad", href: "https://en.wikipedia.org/wiki/Seaboard_Air_Line_Railroad" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
       },
       {
+        id: "circle-t",
         photo: "/about/circle-t-rodeo.jpg",
         title: "Circle T Rodeo Bowl",
         era: "1950s–1960s",
         caption: "About 15,000 people came in 1963, then one of Florida’s largest attractions.",
+        body: [
+          "In the 1950s and 1960s Indiantown was home to the Circle T Ranch and its Rodeo Bowl.",
+          "The 1963 rodeo drew about 15,000 visitors — then one of Florida’s largest attractions.",
+          "The ranch was later sold and used as a filming studio. Neighbors still talk about bringing the rodeo back.",
+        ],
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
       },
       {
+        id: "payson-park",
         photo: "/about/payson-park.jpg",
         title: "Payson Park",
         era: "Thoroughbreds",
         caption: "A well-known winter training ground. Davy Jones of The Monkees kept horses here.",
+        body: [
+          "Payson Park is one of the country’s well-known thoroughbred training centers.",
+          "Trainers such as William Mott, Christophe Clement, and Shug McGaughey have wintered horses here.",
+          "Davy Jones of The Monkees kept horses in Indiantown and died here in 2012.",
+        ],
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "Village parks", href: "https://www.indiantownfl.gov/" },
+        ],
       },
     ],
     aboutFacts: [
-      { label: "Population (2020)", value: "6,560" },
-      { label: "Land", value: "14.2 sq mi" },
-      { label: "Settled", value: "1890s" },
-      { label: "Incorporated", value: "Dec. 31, 2017" },
-      { label: "Elevation", value: "36 ft" },
-      { label: "ZIP / area", value: "34956 · 772" },
-      { label: "Government", value: "Council–manager" },
-      { label: "Time zone", value: "Eastern" },
+      { label: "Population (2020)", value: "6,560", topic: "people" },
+      { label: "Land", value: "14.2 sq mi", topic: "place" },
+      { label: "Settled", value: "1890s", topic: "history" },
+      { label: "Incorporated", value: "Dec. 31, 2017", topic: "government" },
+      { label: "Elevation", value: "36 ft", topic: "place" },
+      { label: "ZIP / area", value: "34956 · 772", topic: "village" },
+      { label: "Government", value: "Council–manager", topic: "government" },
+      { label: "Time zone", value: "Eastern", topic: "village" },
     ],
     aboutSections: [
       {
+        id: "village",
         title: "The village",
+        links: [
+          { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
         body: [
           "Indiantown is a village in western Martin County, in the interior of Florida’s Treasure Coast. About 6,560 people lived here at the 2020 census. The median age was 30. It is a rural community first established in the early 1900s and incorporated on December 31, 2017.",
           "A mayor and a five-member council are elected at-large. A village manager runs day-to-day work. The village motto is “Where Great Things Grow.” Village Hall is at 15516 SW Osceola St., Suite B. Official business stays on indiantownfl.gov.",
         ],
       },
       {
+        id: "history",
         title: "History",
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "1928 Okeechobee hurricane", href: "https://en.wikipedia.org/wiki/1928_Okeechobee_hurricane" },
+        ],
         body: [
           "Seminole people first used this higher ground as a trading post after the First Seminole War, with hunting and fishing nearby. White American settlers arrived in the 1890s.",
           "In 1924 S. Davies Warfield extended the Seaboard Air Line Railroad from Coleman to West Palm Beach, with a stop in Indiantown, and planned a model city. Warfield Boulevard and Warfield Elementary still carry his name. He built housing, a school, a depot, and the Seminole Inn, now on the National Register of Historic Places. He hoped Indiantown would become the railroad’s southern hub.",
@@ -203,7 +277,12 @@ const copy = {
         ],
       },
       {
+        id: "people",
         title: "People and work",
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "U.S. Census", href: "https://data.census.gov/" },
+        ],
         body: [
           "From the 1980s, Maya families from Guatemala settled here while fleeing civil war and genocide. By around 2010, several thousand Maya lived in and around Indiantown. Many spoke a Mayan language first. Some said the name “Indiantown” itself drew Indigenous families here.",
           "The census count grew from 5,588 in 2000 to 6,083 in 2010 and 6,560 in 2020. In 2020 about 70 percent of residents identified as Hispanic or Latino, 17 percent as White (not Hispanic), and 12 percent as Black. About 32 percent were under 18. There were 1,777 households, and 46 percent of them had children at home.",
@@ -211,26 +290,45 @@ const copy = {
         ],
       },
       {
+        id: "place",
         title: "Place",
+        links: [
+          { label: "Wikipedia: St. Lucie Canal", href: "https://en.wikipedia.org/wiki/St._Lucie_Canal" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
         body: [
           "Indiantown is 12 miles east of Port Mayaca on Lake Okeechobee, 22 miles southwest of Stuart, and 36 miles northwest of West Palm Beach. It covers about 14.4 square miles, including a small share of water, and sits about 36 feet above sea level. The St. Lucie Canal is the southern border and links Lake Okeechobee to the St. Lucie River near Stuart.",
         ],
       },
       {
+        id: "government",
         title: "How the village is run",
+        links: [
+          { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
+          { label: "Village Hall", href: "https://www.indiantownfl.gov/" },
+        ],
         body: [
           "Residents voted to incorporate in 2017. The measure passed with about 63 percent support after the Florida Legislature authorized a village government. Indiantown uses a council–manager form: five council members set policy, and a manager handles daily operations. The first permanent village manager started on December 17, 2018.",
         ],
       },
       {
+        id: "parks",
         title: "Parks and getting around",
+        links: [
+          { label: "Village of Indiantown", href: "https://www.indiantownfl.gov/" },
+          { label: "Martin County (MARTY)", href: "https://www.martin.fl.us/" },
+        ],
         body: [
           "Payson Park is one of the country’s well-known thoroughbred training centers. Trainers such as William Mott, Christophe Clement, and Shug McGaughey have wintered horses here. Davy Jones of The Monkees also kept horses in Indiantown and died here in 2012.",
           "Village parks include Booker Park, Big Mound Park, Post Family Park, and Timer Powers Park. Martin County Public Transit (MARTY) runs a bus through town.",
         ],
       },
       {
+        id: "notable",
         title: "People from Indiantown",
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
         body: [
           "NFL players Charles Emanuel, Cleveland Gary, and Corey McIntyre are from Indiantown. Patrick Sheltra won the 2010 ARCA Racing Series championship. Musician and actor Davy Jones lived here later in life.",
           "Browse homes on Zillow, then post a listing, add a company, or share a short town note. Contact details stay hidden until someone asks to see them.",
@@ -403,64 +501,138 @@ const copy = {
     aboutPlacesTitle: "Lugares históricos",
     aboutPlacesIntro: "El auge de los años 20, el canal y el campo ganadero aún marcan el pueblo.",
     aboutPlacesNote: "Escenas de los lugares históricos de Indiantown. Horarios y datos oficiales quedan en cada sitio.",
+    aboutClick: "Toque un lugar o una historia para la nota completa.",
+    aboutStoriesTitle: "Historias del pueblo",
+    aboutSources: "Fuentes",
+    aboutMissing: "Esa nota no está aquí.",
+    readMore: "Leer más",
     aboutFeatured: {
+      id: "seminole-inn",
       photo: "/about/seminole-inn.jpg",
       title: "Seminole Inn",
       era: "Años 20 · Registro Nacional",
       caption: "El edificio principal que queda de la ciudad modelo de S. Davies Warfield — aún el mesón emblemático.",
+      body: [
+        "S. Davies Warfield construyó el Seminole Inn en los años 20 como parte de una ciudad modelo junto a la parada del ferrocarril Seaboard Air Line.",
+        "El auge de tierras se apagó después de 1926, Warfield murió en 1927 y el huracán de Okeechobee de 1928 detuvo el crecimiento. El mesón es el edificio principal que queda de ese auge y está en el Registro Nacional de Lugares Históricos.",
+        "Sigue en pie como el hito del pueblo en la vía principal.",
+      ],
+      links: [
+        { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
+      ],
     },
     aboutPlaces: [
       {
+        id: "warfield-blvd",
         photo: "/about/warfield-blvd.jpg",
         title: "Warfield Boulevard",
         era: "1924",
         caption: "La vía principal del pueblo, en honor al constructor del ferrocarril que planeó una ciudad modelo.",
+        body: [
+          "En 1924 S. Davies Warfield extendió el ferrocarril Seaboard Air Line desde Coleman hasta West Palm Beach, con parada en Indiantown.",
+          "Planeó calles, viviendas, una escuela, una estación y el Seminole Inn. Warfield Boulevard y Warfield Elementary aún llevan su nombre.",
+          "Quería que Indiantown fuera el hub sur del ferrocarril. Tras su muerte en 1927 ese plan terminó, pero el bulevar sigue siendo la calle principal.",
+        ],
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "Ferrocarril Seaboard Air Line", href: "https://en.wikipedia.org/wiki/Seaboard_Air_Line_Railroad" },
+        ],
       },
       {
+        id: "st-lucie-canal",
         photo: "/about/st-lucie-canal.jpg",
         title: "Canal St. Lucie",
         era: "Límite sur",
         caption: "Une el lago Okeechobee con el río St. Lucie cerca de Stuart y sigue marcando el borde del pueblo.",
+        body: [
+          "El canal St. Lucie es el límite sur del pueblo. Forma parte de la vía Okeechobee.",
+          "Une el lago Okeechobee con el río St. Lucie cerca de Stuart, unas 22 millas al noreste.",
+          "Indiantown está a 12 millas al este de Port Mayaca, en el lago, y a unos 36 pies sobre el nivel del mar.",
+        ],
+        links: [
+          { label: "Wikipedia: Canal St. Lucie", href: "https://en.wikipedia.org/wiki/St._Lucie_Canal" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
       },
       {
+        id: "seaboard-rail",
         photo: "/about/seaboard-rail.jpg",
         title: "Ferrocarril Seaboard",
         era: "1924–1971",
         caption: "Los trenes de pasajeros pararon aquí hasta los años 60. Ya no está la estación; los rieles recuerdan el auge.",
+        body: [
+          "La extensión de Seaboard de 1924 puso a Indiantown en el mapa. Los trenes de pasajeros pararon aquí hasta los años 60.",
+          "Amtrak terminó ese servicio en 1971. Luego demolieron la estación.",
+          "El Seminole Inn es el edificio principal que queda del auge del ferrocarril.",
+        ],
+        links: [
+          { label: "Ferrocarril Seaboard Air Line", href: "https://en.wikipedia.org/wiki/Seaboard_Air_Line_Railroad" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
       },
       {
+        id: "circle-t",
         photo: "/about/circle-t-rodeo.jpg",
         title: "Circle T Rodeo Bowl",
         era: "Años 50–60",
         caption: "Unos 15,000 visitantes en 1963, entonces una de las atracciones más grandes de la Florida.",
+        body: [
+          "En los años 50 y 60 Indiantown tenía el Circle T Ranch y su Rodeo Bowl.",
+          "El rodeo de 1963 atrajo unos 15,000 visitantes, entonces una de las atracciones más grandes de la Florida.",
+          "Luego vendieron el rancho y lo usaron como estudio de cine. La gente aún habla de revivir el rodeo.",
+        ],
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
       },
       {
+        id: "payson-park",
         photo: "/about/payson-park.jpg",
         title: "Payson Park",
         era: "Caballos de carrera",
         caption: "Un centro conocido de entrenamiento de invierno. Davy Jones de The Monkees tuvo caballos aquí.",
+        body: [
+          "Payson Park es uno de los centros de entrenamiento de caballos de carrera más conocidos del país.",
+          "Entrenadores como William Mott, Christophe Clement y Shug McGaughey han invernado caballos aquí.",
+          "Davy Jones de The Monkees tuvo caballos en Indiantown y murió aquí en 2012.",
+        ],
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "Parques del pueblo", href: "https://www.indiantownfl.gov/" },
+        ],
       },
     ],
     aboutFacts: [
-      { label: "Población (2020)", value: "6,560" },
-      { label: "Tierra", value: "14.2 mi²" },
-      { label: "Asentado", value: "1890s" },
-      { label: "Incorporado", value: "31 dic. 2017" },
-      { label: "Elevación", value: "36 pies" },
-      { label: "ZIP / área", value: "34956 · 772" },
-      { label: "Gobierno", value: "Concejo y gerente" },
-      { label: "Huso horario", value: "Este" },
+      { label: "Población (2020)", value: "6,560", topic: "people" },
+      { label: "Tierra", value: "14.2 mi²", topic: "place" },
+      { label: "Asentado", value: "1890s", topic: "history" },
+      { label: "Incorporado", value: "31 dic. 2017", topic: "government" },
+      { label: "Elevación", value: "36 pies", topic: "place" },
+      { label: "ZIP / área", value: "34956 · 772", topic: "village" },
+      { label: "Gobierno", value: "Concejo y gerente", topic: "government" },
+      { label: "Huso horario", value: "Este", topic: "village" },
     ],
     aboutSections: [
       {
+        id: "village",
         title: "El pueblo",
+        links: [
+          { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
         body: [
           "Indiantown es un pueblo en el oeste del condado de Martin, en el interior de la Treasure Coast de la Florida. En el censo de 2020 vivían unas 6,560 personas. La edad mediana era 30 años. Es una comunidad rural fundada a principios del siglo XX e incorporada el 31 de diciembre de 2017.",
           "Un alcalde y un concejo de cinco miembros se eligen en todo el pueblo. Un administrador dirige el día a día. El lema es “Where Great Things Grow.” La alcaldía está en 15516 SW Osceola St., Suite B. Los trámites oficiales siguen en indiantownfl.gov.",
         ],
       },
       {
+        id: "history",
         title: "Historia",
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "Huracán de Okeechobee de 1928", href: "https://en.wikipedia.org/wiki/1928_Okeechobee_hurricane" },
+        ],
         body: [
           "El pueblo seminole usó primero este terreno más alto como puesto de trueque después de la Primera Guerra Seminole, con caza y pesca cerca. Colonos estadounidenses blancos llegaron en la década de 1890.",
           "En 1924 S. Davies Warfield extendió el ferrocarril Seaboard Air Line desde Coleman hasta West Palm Beach, con parada en Indiantown, y planeó una ciudad modelo. Warfield Boulevard y Warfield Elementary aún llevan su nombre. Construyó viviendas, una escuela, una estación y el Seminole Inn, hoy en el Registro Nacional de Lugares Históricos. Quería que Indiantown fuera el hub sur del ferrocarril.",
@@ -469,7 +641,12 @@ const copy = {
         ],
       },
       {
+        id: "people",
         title: "Gente y trabajo",
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+          { label: "Censo de EE. UU.", href: "https://data.census.gov/" },
+        ],
         body: [
           "Desde los años 80, familias mayas de Guatemala se establecieron aquí al huir de la guerra civil y el genocidio. Hacia 2010, varios miles de mayas vivían en Indiantown y alrededores. Muchos hablaban primero una lengua maya. Algunos dijeron que el nombre “Indiantown” atrajo a familias indígenas.",
           "El censo pasó de 5,588 en 2000 a 6,083 en 2010 y 6,560 en 2020. En 2020 cerca del 70 por ciento se identificó como hispano o latino, el 17 por ciento como blanco (no hispano) y el 12 por ciento como negro. Un 32 por ciento tenía menos de 18 años. Había 1,777 hogares y el 46 por ciento tenía niños en casa.",
@@ -477,26 +654,45 @@ const copy = {
         ],
       },
       {
+        id: "place",
         title: "Lugar",
+        links: [
+          { label: "Wikipedia: Canal St. Lucie", href: "https://en.wikipedia.org/wiki/St._Lucie_Canal" },
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
         body: [
           "Indiantown está a 12 millas al este de Port Mayaca, en el lago Okeechobee; a 22 millas al suroeste de Stuart; y a 36 millas al noroeste de West Palm Beach. Cubre unas 14.4 millas cuadradas, con una parte pequeña de agua, y está a unos 36 pies sobre el nivel del mar. El canal St. Lucie es el límite sur y une el lago Okeechobee con el río St. Lucie cerca de Stuart.",
         ],
       },
       {
+        id: "government",
         title: "Cómo se gobierna",
+        links: [
+          { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
+          { label: "Alcaldía", href: "https://www.indiantownfl.gov/" },
+        ],
         body: [
           "Los residentes votaron incorporar el pueblo en 2017. La medida pasó con cerca del 63 por ciento después de que la Legislatura de la Florida autorizara un gobierno municipal. Indiantown usa el modelo concejo–gerente: cinco concejales fijan la política y un gerente dirige las operaciones. El primer gerente permanente empezó el 17 de diciembre de 2018.",
         ],
       },
       {
+        id: "parks",
         title: "Parques y transporte",
+        links: [
+          { label: "Villa de Indiantown", href: "https://www.indiantownfl.gov/" },
+          { label: "Condado de Martin (MARTY)", href: "https://www.martin.fl.us/" },
+        ],
         body: [
           "Payson Park es uno de los centros de entrenamiento de caballos de carrera más conocidos del país. Entrenadores como William Mott, Christophe Clement y Shug McGaughey han invernado caballos aquí. Davy Jones de The Monkees también tuvo caballos en Indiantown y murió aquí en 2012.",
           "Los parques del pueblo incluyen Booker Park, Big Mound Park, Post Family Park y Timer Powers Park. Martin County Public Transit (MARTY) tiene autobús por el pueblo.",
         ],
       },
       {
+        id: "notable",
         title: "Gente de Indiantown",
+        links: [
+          { label: "Wikipedia: Indiantown, Florida", href: "https://en.wikipedia.org/wiki/Indiantown,_Florida" },
+        ],
         body: [
           "Los jugadores de la NFL Charles Emanuel, Cleveland Gary y Corey McIntyre son de Indiantown. Patrick Sheltra ganó el campeonato ARCA Racing Series de 2010. El músico y actor Davy Jones vivió aquí en sus últimos años.",
           "Vea casas en Zillow, publique un anuncio, agregue una empresa o comparta una nota. Los datos de contacto se ocultan hasta que alguien pida verlos.",
@@ -886,33 +1082,66 @@ async function renderResources() {
     ${gridOrEmpty(rows.map(resourceCard).join(""))}`;
 }
 
+function aboutTopics() {
+  const copy = t();
+  return [
+    { ...copy.aboutFeatured, kind: "place" },
+    ...copy.aboutPlaces.map((row) => ({ ...row, kind: "place" })),
+    ...copy.aboutSections.map((row) => ({ ...row, kind: "section" })),
+  ];
+}
+
+function findAboutTopic(id) {
+  return aboutTopics().find((row) => row.id === id) || null;
+}
+
+function aboutSourceLinks(links) {
+  if (!links?.length) return "";
+  return `<p class="about-sources"><strong>${escapeHtml(t().aboutSources)}</strong>
+    ${links
+      .map((link) => `<a href="${escapeAttr(link.href)}" target="_blank" rel="noopener">${escapeHtml(link.label)}</a>`)
+      .join(" · ")}</p>`;
+}
+
+function aboutFact(row) {
+  const inner = `<span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.value)}</strong>`;
+  if (!row.topic) return `<div class="fact">${inner}</div>`;
+  return `<a class="fact is-link" href="#/about/${encodeURIComponent(row.topic)}" data-link>${inner}</a>`;
+}
+
+function aboutSectionCard(section) {
+  const teaser = section.body?.[0] || "";
+  return `<a class="about-section-card" href="#/about/${encodeURIComponent(section.id)}" data-link>
+    <h2>${escapeHtml(section.title)}</h2>
+    <p>${escapeHtml(excerpt(teaser, 160))}</p>
+    <span class="read-more">${escapeHtml(t().readMore)}</span>
+  </a>`;
+}
+
 function placeCard(row, featured = false) {
-  return `<figure class="place${featured ? " is-featured" : ""}">
-    <img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="1280" height="853" loading="${featured ? "eager" : "lazy"}" />
-    <figcaption>
+  const inner = `<img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="1280" height="853" loading="${featured ? "eager" : "lazy"}" />
+    <span class="place-caption">
       <span class="tag">${escapeHtml(row.era)}</span>
       <strong>${escapeHtml(row.title)}</strong>
       <span class="blurb">${escapeHtml(row.caption)}</span>
-    </figcaption>
-  </figure>`;
+      ${row.id ? `<span class="read-more">${escapeHtml(t().readMore)}</span>` : ""}
+    </span>`;
+  if (!row.id) {
+    return `<figure class="place${featured ? " is-featured" : ""}">${inner}</figure>`;
+  }
+  return `<a class="place${featured ? " is-featured" : ""}" href="#/about/${encodeURIComponent(row.id)}" data-link>${inner}</a>`;
 }
 
 function renderAbout() {
-  const facts = t()
-    .aboutFacts.map((row) => `<div class="fact"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.value)}</strong></div>`)
-    .join("");
-  const sections = t()
-    .aboutSections.map(
-      (section) =>
-        `<h2>${escapeHtml(section.title)}</h2>${section.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}`,
-    )
-    .join("");
+  const facts = t().aboutFacts.map(aboutFact).join("");
+  const sections = t().aboutSections.map(aboutSectionCard).join("");
   const places = t().aboutPlaces.map((row) => placeCard(row)).join("");
   return `<article class="about-page">
     <header class="about-top">
       <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
       <p class="kicker">34956 · ${escapeHtml(t().aboutMotto)}</p>
       <h1>${t().aboutTitle}</h1>
+      <p class="lede">${escapeHtml(t().aboutClick)}</p>
     </header>
     ${placeCard(t().aboutFeatured, true)}
     <div class="about-body">
@@ -923,10 +1152,43 @@ function renderAbout() {
         <div class="place-gallery">${places}</div>
         <p class="muted">${escapeHtml(t().aboutPlacesNote)}</p>
       </section>
-      <div class="prose about-prose">${sections}
-      <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p>
-      <p class="muted">${escapeHtml(t().aboutWiki)} <a href="https://en.wikipedia.org/wiki/Indiantown,_Florida" target="_blank" rel="noopener">${escapeHtml(t().aboutWikiLink)}</a></p>
+      <section class="about-stories">
+        <h2>${escapeHtml(t().aboutStoriesTitle)}</h2>
+        <div class="about-section-grid">${sections}</div>
+        <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p>
+        <p class="muted">${escapeHtml(t().aboutWiki)} <a href="https://en.wikipedia.org/wiki/Indiantown,_Florida" target="_blank" rel="noopener">${escapeHtml(t().aboutWikiLink)}</a></p>
+      </section>
+    </div>
+  </article>`;
+}
+
+function renderAboutTopic(id) {
+  const row = findAboutTopic(id);
+  if (!row) {
+    return `<article class="about-page about-topic-page">
+      <div class="about-body">
+        <p><a href="#/about" data-link>${t().back}</a></p>
+        <h1>${escapeHtml(t().aboutMissing)}</h1>
       </div>
+    </article>`;
+  }
+  const photo = row.photo
+    ? `<figure class="place is-featured about-topic-hero">
+        <img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="1280" height="853" />
+        <figcaption class="place-caption">
+          ${row.era ? `<span class="tag">${escapeHtml(row.era)}</span>` : ""}
+          <strong>${escapeHtml(row.title)}</strong>
+          ${row.caption ? `<span class="blurb">${escapeHtml(row.caption)}</span>` : ""}
+        </figcaption>
+      </figure>`
+    : "";
+  const body = (row.body || []).map((p) => `<p>${escapeHtml(p)}</p>`).join("");
+  return `<article class="about-page about-topic-page">
+    ${photo}
+    <div class="about-body">
+      <p><a href="#/about" data-link>${t().back}</a></p>
+      ${photo ? "" : `<p class="kicker">${escapeHtml(t().aboutTitle)}</p><h1>${escapeHtml(row.title)}</h1>`}
+      <div class="prose about-prose">${body}${aboutSourceLinks(row.links)}</div>
     </div>
   </article>`;
 }
@@ -1107,6 +1369,8 @@ async function render() {
   try {
     if ((page === "listing" || page === "business") && id) {
       main.innerHTML = await renderDetail(page, id);
+    } else if (page === "about" && id) {
+      main.innerHTML = renderAboutTopic(id);
     } else if (page === "news" && id) {
       main.innerHTML = await renderNewsStory(id);
     } else if (page === "chat" && id) {

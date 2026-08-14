@@ -229,6 +229,11 @@ describe("Indiantown Board API", () => {
     assert.match(js, /Davy Jones/);
     assert.match(js, /Cómo se gobierna/);
     assert.match(js, /\/about\/seminole-inn\.jpg/);
+    assert.match(js, /#\/about\/\$\{encodeURIComponent/);
+    assert.match(js, /about-section-card/);
+    assert.match(js, /id: "history"/);
+    assert.match(js, /id: "seminole-inn"/);
+    assert.match(js, /function renderAboutTopic/);
     const photo = await fetch(`${base}/about/seminole-inn.jpg`);
     assert.equal(photo.status, 200);
     assert.match(photo.headers.get("content-type"), /image\/jpeg/);
