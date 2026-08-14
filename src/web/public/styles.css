@@ -147,7 +147,8 @@ button, .ghost { font: inherit; border: 0; cursor: pointer; }
 .menu { display: none; }
 
 .main { width: min(68rem, 100%); margin: 0 auto; padding: 1.75rem var(--gutter) 4rem; }
-.main.is-about { width: 100%; max-width: none; padding: 0 0 4rem; }
+.main.is-about,
+.main.is-facebook { width: 100%; max-width: none; padding: 0 0 4rem; }
 .hero { margin: 0 0 1.4rem; }
 .hero-banner {
   position: relative;
@@ -173,22 +174,44 @@ button, .ghost { font: inherit; border: 0; cursor: pointer; }
 }
 .hero-banner .ghost:hover { background: rgb(255 255 255 / 0.22); }
 .homes-strip, .facebook-strip { margin: 0 0 1.8rem; }
+.facebook-page { padding: 0 0 2rem; }
+.facebook-top { padding: 1.5rem var(--gutter) 0.6rem; }
+.facebook-top h1 { font-size: clamp(2.1rem, 5vw, 3.4rem); }
+.facebook-top .lede { max-width: 46rem; }
+.facebook-latest { padding: 0.4rem var(--gutter) 0.8rem; font-size: clamp(1.5rem, 3vw, 2rem); }
+.facebook-note { padding: 0  var(--gutter); }
 .fb-page-grid { grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
-.fb-post-grid { grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); }
-.fb-post-card { padding: 0.9rem 0.95rem 1rem; }
+.fb-post-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.4rem;
+  padding: 0 var(--gutter);
+}
+.fb-post-card {
+  padding: 1.1rem 1.15rem 1.2rem;
+  min-height: 92vh;
+}
 .fb-embed {
+  --fb-w: 500px;
+  --fb-h: 800px;
+  --fb-scale: min(2.15, (100vw - 4.5rem) / 500);
+  width: min(100%, calc(var(--fb-w) * var(--fb-scale)));
+  height: calc(var(--fb-h) * var(--fb-scale));
+  max-height: 86vh;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 0.7rem;
   overflow: hidden;
-  margin: 0.65rem 0 0.7rem;
+  margin: 0.85rem auto 0.9rem;
 }
 .fb-frame {
   display: block;
-  width: 100%;
-  height: 26.8rem;
+  width: var(--fb-w);
+  height: var(--fb-h);
   border: 0;
   background: #fff;
+  transform: scale(var(--fb-scale));
+  transform-origin: top left;
 }
 .home-grid { grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); }
 .home-card { text-decoration: none; }

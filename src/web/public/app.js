@@ -818,7 +818,7 @@ function facebookPageCard(row) {
 }
 
 function facebookEmbed(row) {
-  return `<iframe class="fb-frame" title="${escapeAttr(`${row.name} latest posts`)}" src="${escapeAttr(row.embed)}" width="500" height="430" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
+  return `<iframe class="fb-frame" title="${escapeAttr(`${row.name} latest posts`)}" src="${escapeAttr(row.embed)}" width="500" height="800" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; clipboard-write"></iframe>`;
 }
 
 function facebookPostCard(row) {
@@ -836,12 +836,16 @@ function facebookPostCard(row) {
 async function renderFacebook() {
   const data = await api("/api/facebook");
   const pages = data.pages || [];
-  return `<p class="kicker">Facebook · 34956</p>
-    <h1>${t().facebookTitle}</h1>
-    <p class="lede">${t().facebookIntro}</p>
-    <div class="toolbar"><h2>${t().facebookLatest}</h2></div>
-    ${pages.length ? `<div class="grid fb-post-grid">${pages.map(facebookPostCard).join("")}</div>` : `<p class="empty">${t().empty}</p>`}
-    <p class="muted">${t().facebookNote}</p>`;
+  return `<article class="facebook-page">
+    <header class="facebook-top">
+      <p class="kicker">Facebook · 34956</p>
+      <h1>${t().facebookTitle}</h1>
+      <p class="lede">${t().facebookIntro}</p>
+    </header>
+    <h2 class="facebook-latest">${t().facebookLatest}</h2>
+    ${pages.length ? `<div class="fb-post-grid">${pages.map(facebookPostCard).join("")}</div>` : `<p class="empty">${t().empty}</p>`}
+    <p class="muted facebook-note">${t().facebookNote}</p>
+  </article>`;
 }
 
 function formatDay(value) {
@@ -1093,6 +1097,7 @@ async function render() {
   const { page, id } = parseHash(location.hash);
   const main = $("#main");
   main.classList.toggle("is-about", page === "about");
+  main.classList.toggle("is-facebook", page === "facebook");
   main.innerHTML = "<p class='muted'>…</p>";
   try {
     if ((page === "listing" || page === "business") && id) {

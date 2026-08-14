@@ -166,6 +166,7 @@ describe("Indiantown Board API", () => {
     assert.ok(data.pages.every((row) => /facebook\.com/i.test(row.href)));
     assert.ok(data.pages.every((row) => /facebook\.com\/plugins\/page\.php/.test(row.embed)));
     assert.ok(data.pages.every((row) => /tabs=timeline/.test(row.embed)));
+    assert.ok(data.pages.every((row) => /height=800/.test(row.embed)));
     assert.ok(data.pages.every((row) => /^https:\/\//.test(row.site) && !/facebook\.com/i.test(row.site)));
     assert.ok(data.pages.some((row) => /villageofindiantown/i.test(row.href)));
     assert.ok(data.pages.some((row) => /itownchamber/i.test(row.href)));
