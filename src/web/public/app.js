@@ -52,7 +52,6 @@
     settingsTabOpen: {},
     matterDetailsOpen: true,
     matterListColumns: null,
-    sidebarSectionOpen: { quickActions: true, navigate: true },
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -4726,24 +4725,6 @@
     return icons[name] || icons.matters;
   }
 
-  function wireSidebarSection(root) {
-    if (!root) return;
-    root.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
-      const body = el.querySelector('.sidebar-section-body');
-      const syncBody = () => {
-        if (!body) return;
-        // Keep the whole section body out of layout when collapsed.
-        body.hidden = !el.open;
-      };
-      syncBody();
-      el.addEventListener('toggle', () => {
-        const key = el.getAttribute('data-sidebar-section');
-        if (key) state.sidebarSectionOpen[key] = el.open;
-        syncBody();
-      });
-    });
-  }
-
   function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
     document.body.classList.remove('login-mode');
@@ -4789,12 +4770,6 @@
     }
     state._shellSig = sig;
 
-    if (!state.sidebarSectionOpen || typeof state.sidebarSectionOpen !== 'object') {
-      state.sidebarSectionOpen = { quickActions: true, navigate: true };
-    }
-    const quickOpen = state.sidebarSectionOpen.quickActions !== false;
-    const navOpen = state.sidebarSectionOpen.navigate !== false;
-
     if (sidebarActions) {
       const quickButtons = [
         canCreateMatter(state.user) && roleCanModify('matter')
@@ -4826,30 +4801,23 @@
           : '',
       ].filter(Boolean).join('');
       sidebarActions.innerHTML = `
-        <details class="sidebar-section" data-sidebar-section="quickActions" ${quickOpen ? 'open' : ''}>
-          <summary class="sidebar-section-summary">
-            <span class="sidebar-label">Quick actions</span>
-            <span class="sidebar-section-chevron" aria-hidden="true">▸</span>
-          </summary>
+        <section class="sidebar-section">
+          <p class="sidebar-label">Quick actions</p>
           <div class="sidebar-section-body">
             ${quickButtons || '<p class="sidebar-section-empty muted">No quick actions for your role</p>'}
           </div>
-        </details>`;
+        </section>`;
       const sideAddMatter = $('#sideAddMatter');
       if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
       const sideAddContact = $('#sideAddContact');
       if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
-      wireSidebarSection(sidebarActions);
     }
 
     nav.innerHTML = `
-      <details class="sidebar-section" data-sidebar-section="navigate" ${navOpen ? 'open' : ''}>
-        <summary class="sidebar-section-summary">
-          <span class="sidebar-label">Navigate</span>
-          <span class="sidebar-section-chevron" aria-hidden="true">▸</span>
-        </summary>
+      <section class="sidebar-section">
+        <p class="sidebar-label">Navigate</p>
         <div class="sidebar-section-body">
           ${items.map(([id, label, icon, hint]) =>
             `<button type="button" data-view="${id}"
@@ -4862,8 +4830,7 @@
             </button>`
           ).join('')}
         </div>
-      </details>`;
-    wireSidebarSection(nav);
+      </section>`;
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.addEventListener('pointerenter', () => prefetchView(b.dataset.view));
       b.addEventListener('focus', () => prefetchView(b.dataset.view));
