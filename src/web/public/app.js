@@ -121,10 +121,70 @@ const copy = {
       parks: "Parks",
     },
     aboutTitle: "About Indiantown",
-    aboutBody: [
-      "Indiantown is a rural village in Martin County on Florida’s Treasure Coast. It was incorporated on December 31, 2017 and is home to about 6,000 people, with groves, the St. Lucie Canal, and new neighborhoods such as Terra Lago.",
-      "Village Hall is at 15516 SW Osceola St., Suite B. Official business stays on indiantownfl.gov.",
-      "Browse homes on Zillow, then post a listing, add a company, or share a short town note. Contact details stay hidden until someone asks to see them.",
+    aboutMotto: "Where Great Things Grow",
+    aboutWiki: "Town history and facts are adapted from Wikipedia and U.S. Census figures.",
+    aboutWikiLink: "Wikipedia: Indiantown, Florida",
+    aboutFacts: [
+      { label: "Population (2020)", value: "6,560" },
+      { label: "Land", value: "14.2 sq mi" },
+      { label: "Settled", value: "1890s" },
+      { label: "Incorporated", value: "Dec. 31, 2017" },
+      { label: "Elevation", value: "36 ft" },
+      { label: "ZIP / area", value: "34956 · 772" },
+      { label: "Government", value: "Council–manager" },
+      { label: "Time zone", value: "Eastern" },
+    ],
+    aboutSections: [
+      {
+        title: "The village",
+        body: [
+          "Indiantown is a village in western Martin County, in the interior of Florida’s Treasure Coast. About 6,560 people lived here at the 2020 census. The median age was 30. It is a rural community first established in the early 1900s and incorporated on December 31, 2017.",
+          "A mayor and a five-member council are elected at-large. A village manager runs day-to-day work. The village motto is “Where Great Things Grow.” Village Hall is at 15516 SW Osceola St., Suite B. Official business stays on indiantownfl.gov.",
+        ],
+      },
+      {
+        title: "History",
+        body: [
+          "Seminole people first used this higher ground as a trading post after the First Seminole War, with hunting and fishing nearby. White American settlers arrived in the 1890s.",
+          "In 1924 S. Davies Warfield extended the Seaboard Air Line Railroad from Coleman to West Palm Beach, with a stop in Indiantown, and planned a model city. Warfield Boulevard and Warfield Elementary still carry his name. He built housing, a school, a depot, and the Seminole Inn, now on the National Register of Historic Places. He hoped Indiantown would become the railroad’s southern hub.",
+          "The 1920s Florida land boom faded after 1926, Warfield died in 1927, and the 1928 Okeechobee hurricane stopped further growth. In 1952 the Indiantown Company took over local development and added water and sewer, housing, docks on the St. Lucie River, and a 6,000-foot airstrip for small cargo and civilian flights.",
+          "In the 1950s and 1960s the Circle T Ranch and Rodeo Bowl drew huge crowds — about 15,000 people in 1963, then one of Florida’s largest attractions. The ranch was later sold and used as a filming studio. Seaboard passenger trains stopped here into the 1960s. Amtrak ended that service in 1971, and the depot was later demolished. The Seminole Inn is the main building left from the 1920s boom.",
+        ],
+      },
+      {
+        title: "People and work",
+        body: [
+          "From the 1980s, Maya families from Guatemala settled here while fleeing civil war and genocide. By around 2010, several thousand Maya lived in and around Indiantown. Many spoke a Mayan language first. Some said the name “Indiantown” itself drew Indigenous families here.",
+          "The census count grew from 5,588 in 2000 to 6,083 in 2010 and 6,560 in 2020. In 2020 about 70 percent of residents identified as Hispanic or Latino, 17 percent as White (not Hispanic), and 12 percent as Black. About 32 percent were under 18. There were 1,777 households, and 46 percent of them had children at home.",
+          "Seasonal agriculture still anchors the local economy. The village also sits near major roads and works as a small transport hub. Neighbors still talk about bringing the rodeo back and pointing visitors to nearby wetlands.",
+        ],
+      },
+      {
+        title: "Place",
+        body: [
+          "Indiantown is 12 miles east of Port Mayaca on Lake Okeechobee, 22 miles southwest of Stuart, and 36 miles northwest of West Palm Beach. It covers about 14.4 square miles, including a small share of water, and sits about 36 feet above sea level. The St. Lucie Canal is the southern border and links Lake Okeechobee to the St. Lucie River near Stuart.",
+        ],
+      },
+      {
+        title: "How the village is run",
+        body: [
+          "Residents voted to incorporate in 2017. The measure passed with about 63 percent support after the Florida Legislature authorized a village government. Indiantown uses a council–manager form: five council members set policy, and a manager handles daily operations. The first permanent village manager started on December 17, 2018.",
+        ],
+      },
+      {
+        title: "Parks and getting around",
+        body: [
+          "Payson Park is one of the country’s well-known thoroughbred training centers. Trainers such as William Mott, Christophe Clement, and Shug McGaughey have wintered horses here. Davy Jones of The Monkees also kept horses in Indiantown and died here in 2012.",
+          "Village parks include Booker Park, Big Mound Park, Post Family Park, and Timer Powers Park. Martin County Public Transit (MARTY) runs a bus through town.",
+        ],
+      },
+      {
+        title: "People from Indiantown",
+        body: [
+          "NFL players Charles Emanuel, Cleveland Gary, and Corey McIntyre are from Indiantown. Patrick Sheltra won the 2010 ARCA Racing Series championship. Musician and actor Davy Jones lived here later in life.",
+          "Browse homes on Zillow, then post a listing, add a company, or share a short town note. Contact details stay hidden until someone asks to see them.",
+        ],
+      },
     ],
     form: {
       title: "Title",
@@ -276,10 +336,70 @@ const copy = {
       parks: "Parques",
     },
     aboutTitle: "Sobre Indiantown",
-    aboutBody: [
-      "Indiantown es un pueblo rural en el condado de Martin, en la Treasure Coast de la Florida. Se incorporó el 31 de diciembre de 2017 y tiene unos 6,000 residentes, con arboledas, el canal St. Lucie y barrios nuevos como Terra Lago.",
-      "La alcaldía está en 15516 SW Osceola St., Suite B. Los trámites oficiales siguen en indiantownfl.gov.",
-      "Vea casas en Zillow, publique un anuncio, agregue una empresa o comparta una nota. Los datos de contacto se ocultan hasta que alguien pida verlos.",
+    aboutMotto: "Where Great Things Grow",
+    aboutWiki: "La historia y las cifras se adaptan de Wikipedia y del censo de EE. UU.",
+    aboutWikiLink: "Wikipedia: Indiantown, Florida",
+    aboutFacts: [
+      { label: "Población (2020)", value: "6,560" },
+      { label: "Tierra", value: "14.2 mi²" },
+      { label: "Asentado", value: "1890s" },
+      { label: "Incorporado", value: "31 dic. 2017" },
+      { label: "Elevación", value: "36 pies" },
+      { label: "ZIP / área", value: "34956 · 772" },
+      { label: "Gobierno", value: "Concejo y gerente" },
+      { label: "Huso horario", value: "Este" },
+    ],
+    aboutSections: [
+      {
+        title: "El pueblo",
+        body: [
+          "Indiantown es un pueblo en el oeste del condado de Martin, en el interior de la Treasure Coast de la Florida. En el censo de 2020 vivían unas 6,560 personas. La edad mediana era 30 años. Es una comunidad rural fundada a principios del siglo XX e incorporada el 31 de diciembre de 2017.",
+          "Un alcalde y un concejo de cinco miembros se eligen en todo el pueblo. Un administrador dirige el día a día. El lema es “Where Great Things Grow.” La alcaldía está en 15516 SW Osceola St., Suite B. Los trámites oficiales siguen en indiantownfl.gov.",
+        ],
+      },
+      {
+        title: "Historia",
+        body: [
+          "El pueblo seminole usó primero este terreno más alto como puesto de trueque después de la Primera Guerra Seminole, con caza y pesca cerca. Colonos estadounidenses blancos llegaron en la década de 1890.",
+          "En 1924 S. Davies Warfield extendió el ferrocarril Seaboard Air Line desde Coleman hasta West Palm Beach, con parada en Indiantown, y planeó una ciudad modelo. Warfield Boulevard y Warfield Elementary aún llevan su nombre. Construyó viviendas, una escuela, una estación y el Seminole Inn, hoy en el Registro Nacional de Lugares Históricos. Quería que Indiantown fuera el hub sur del ferrocarril.",
+          "El auge de tierras de los años 20 se apagó después de 1926, Warfield murió en 1927 y el huracán de Okeechobee de 1928 detuvo el crecimiento. En 1952 la Indiantown Company retomó el desarrollo y añadió agua y alcantarillado, viviendas, muelles en el río St. Lucie y una pista de 6,000 pies para carga pequeña y vuelos civiles.",
+          "En los años 50 y 60 el Circle T Ranch y el Rodeo Bowl atrajeron grandes multitudes: unos 15,000 visitantes en 1963, entonces una de las atracciones más grandes de la Florida. Luego vendieron el rancho y lo usaron como estudio de cine. Los trenes de pasajeros de Seaboard pararon aquí hasta los años 60. Amtrak terminó ese servicio en 1971 y luego demolieron la estación. El Seminole Inn es el edificio principal que queda del auge de los años 20.",
+        ],
+      },
+      {
+        title: "Gente y trabajo",
+        body: [
+          "Desde los años 80, familias mayas de Guatemala se establecieron aquí al huir de la guerra civil y el genocidio. Hacia 2010, varios miles de mayas vivían en Indiantown y alrededores. Muchos hablaban primero una lengua maya. Algunos dijeron que el nombre “Indiantown” atrajo a familias indígenas.",
+          "El censo pasó de 5,588 en 2000 a 6,083 en 2010 y 6,560 en 2020. En 2020 cerca del 70 por ciento se identificó como hispano o latino, el 17 por ciento como blanco (no hispano) y el 12 por ciento como negro. Un 32 por ciento tenía menos de 18 años. Había 1,777 hogares y el 46 por ciento tenía niños en casa.",
+          "La agricultura de temporada sigue sosteniendo la economía. El pueblo también está cerca de carreteras importantes y funciona como un pequeño hub de transporte. La gente aún habla de revivir el rodeo y de mostrar los humedales cercanos a los visitantes.",
+        ],
+      },
+      {
+        title: "Lugar",
+        body: [
+          "Indiantown está a 12 millas al este de Port Mayaca, en el lago Okeechobee; a 22 millas al suroeste de Stuart; y a 36 millas al noroeste de West Palm Beach. Cubre unas 14.4 millas cuadradas, con una parte pequeña de agua, y está a unos 36 pies sobre el nivel del mar. El canal St. Lucie es el límite sur y une el lago Okeechobee con el río St. Lucie cerca de Stuart.",
+        ],
+      },
+      {
+        title: "Cómo se gobierna",
+        body: [
+          "Los residentes votaron incorporar el pueblo en 2017. La medida pasó con cerca del 63 por ciento después de que la Legislatura de la Florida autorizara un gobierno municipal. Indiantown usa el modelo concejo–gerente: cinco concejales fijan la política y un gerente dirige las operaciones. El primer gerente permanente empezó el 17 de diciembre de 2018.",
+        ],
+      },
+      {
+        title: "Parques y transporte",
+        body: [
+          "Payson Park es uno de los centros de entrenamiento de caballos de carrera más conocidos del país. Entrenadores como William Mott, Christophe Clement y Shug McGaughey han invernado caballos aquí. Davy Jones de The Monkees también tuvo caballos en Indiantown y murió aquí en 2012.",
+          "Los parques del pueblo incluyen Booker Park, Big Mound Park, Post Family Park y Timer Powers Park. Martin County Public Transit (MARTY) tiene autobús por el pueblo.",
+        ],
+      },
+      {
+        title: "Gente de Indiantown",
+        body: [
+          "Los jugadores de la NFL Charles Emanuel, Cleveland Gary y Corey McIntyre son de Indiantown. Patrick Sheltra ganó el campeonato ARCA Racing Series de 2010. El músico y actor Davy Jones vivió aquí en sus últimos años.",
+          "Vea casas en Zillow, publique un anuncio, agregue una empresa o comparta una nota. Los datos de contacto se ocultan hasta que alguien pida verlos.",
+        ],
+      },
     ],
     form: {
       title: "Título",
@@ -611,11 +731,23 @@ async function renderResources() {
 }
 
 function renderAbout() {
-  return `<p class="kicker">34956</p>
+  const facts = t()
+    .aboutFacts.map((row) => `<div class="fact"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.value)}</strong></div>`)
+    .join("");
+  const sections = t()
+    .aboutSections.map(
+      (section) =>
+        `<h2>${escapeHtml(section.title)}</h2>${section.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}`,
+    )
+    .join("");
+  return `<p class="kicker">34956 · ${escapeHtml(t().aboutMotto)}</p>
     <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
     <h1>${t().aboutTitle}</h1>
-    <div class="prose">${t().aboutBody.map((p) => `<p>${p}</p>`).join("")}
-    <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p></div>`;
+    <div class="facts">${facts}</div>
+    <div class="prose about-prose">${sections}
+    <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p>
+    <p class="muted">${escapeHtml(t().aboutWiki)} <a href="https://en.wikipedia.org/wiki/Indiantown,_Florida" target="_blank" rel="noopener">${escapeHtml(t().aboutWikiLink)}</a></p>
+    </div>`;
 }
 
 async function renderSearch() {
