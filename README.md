@@ -16,6 +16,8 @@ npm start        # serves http://localhost:3000
 npm test         # runs the money-path test suite (32 tests)
 ```
 
+`npm start` also seeds demo logins when the database has no users (non-production only). That covers a first Cloud Agent boot where the schema exists but sign-in would otherwise fail with "Invalid email or password".
+
 ## Quick start (Docker)
 
 ```bash

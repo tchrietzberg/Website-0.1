@@ -27,6 +27,7 @@ const timezones = require('../services/timezones');
 const mail = require('../mail');
 const mfa = require('../mfa');
 const invoiceTemplates = require('../services/invoiceTemplates');
+const { applyDemoSeed } = require('../../seed/seed');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -1960,6 +1961,14 @@ function createServer(db = openDb()) {
 if (require.main === module) {
   const db = openDb(DEFAULT_DB);
   migrate(db);
+  // Fresh Cloud Agent / local DBs often have schema but no users. Seed demo
+  // logins so avery@firm.example works — never in production or on a live domain.
+  if (!security.isProduction() && !security.liveDomainConfigured()) {
+    const seedResult = applyDemoSeed(db);
+    if (seedResult.seeded) {
+      console.info(`[boot] empty users table — seeded ${seedResult.userCount} demo logins`);
+    }
+  }
   const server = createServer(db);
   const bindHost = process.env.BIND_HOST || '0.0.0.0';
   // Help detect stale processes after code deploys (delete routes, etc.).
