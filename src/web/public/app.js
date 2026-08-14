@@ -24,7 +24,9 @@ const copy = {
     footer: "Village of Indiantown, Florida · 34956",
     heroKicker: "Treasure Coast · 34956",
     heroTitle: "Find your place in Indiantown",
-    heroLede: "Homes on Zillow, neighbor listings, and local help — one village board.",
+    heroLede: "Neighbor listings first — plus local help and homes on Zillow.",
+    actionBoard: "See listings",
+    actionBoardHint: "For sale, jobs, housing, and help from neighbors",
     actionHomes: "Browse homes",
     actionHomesHint: "Recent Zillow listings in 34956",
     homesTitle: "Homes for sale",
@@ -239,7 +241,9 @@ const copy = {
     footer: "Villa de Indiantown, Florida · 34956",
     heroKicker: "Treasure Coast · 34956",
     heroTitle: "Encuentre su lugar en Indiantown",
-    heroLede: "Casas en Zillow, anuncios de vecinos y ayuda local en un solo tablón.",
+    heroLede: "Primero los anuncios de vecinos — más ayuda local y casas en Zillow.",
+    actionBoard: "Ver anuncios",
+    actionBoardHint: "Ventas, empleos, vivienda y ayuda de vecinos",
     actionHomes: "Ver casas",
     actionHomesHint: "Listados recientes de Zillow en 34956",
     homesTitle: "Casas en venta",
@@ -646,36 +650,36 @@ async function renderHome() {
       <h1>${t().heroTitle}</h1>
       <p class="lede">${t().heroLede}</p>
       <p class="hero-actions">
-        <a class="primary" href="#/homes" data-link>${t().actionHomes}</a>
+        <a class="primary" href="#/board" data-link>${t().actionBoard}</a>
         <button class="ghost" type="button" data-open-post data-tab="listing">${t().actionListing}</button>
       </p>
     </div>
     <p class="statline">
-      <span><b>${homes.recent?.length || 0}</b> ${t().navHomes}</span>
       <span><b>${counts.listings}</b> ${t().listings}</span>
       <span><b>${counts.businesses}</b> ${t().businesses}</span>
       <span><b>${counts.news}</b> ${t().news}</span>
       <span><b>${counts.resources}</b> ${t().resources}</span>
+      <span><b>${homes.recent?.length || 0}</b> ${t().navHomes}</span>
     </p>
+  </section>
+  <section>
+    <div class="toolbar"><h2>${t().latestBoard}</h2><a href="#/board" data-link>${t().seeBoard}</a></div>
+    ${gridOrEmpty(listings.slice(0, 6).map(listingCard).join(""))}
+  </section>
+  <div class="actions">
+    <a class="action" href="#/board" data-link><strong>${t().actionBoard}</strong><span>${t().actionBoardHint}</span></a>
+    <button class="action" type="button" data-open-post data-tab="listing"><strong>${t().actionListing}</strong><span>${t().actionListingHint}</span></button>
+    <button class="action" type="button" data-open-post data-tab="business"><strong>${t().actionBiz}</strong><span>${t().actionBizHint}</span></button>
+  </div>
+  <section>
+    <div class="toolbar"><h2>${t().latestNews}</h2><a href="#/news" data-link>${t().seeNews}</a></div>
+    ${gridOrEmpty(news.slice(0, 3).map(newsCard).join(""))}
   </section>
   <section class="homes-strip">
     <div class="toolbar"><h2>${t().homesTitle}</h2><a href="#/homes" data-link>${t().seeBoard}</a></div>
     <p class="muted">${t().actionHomesHint}</p>
     <div class="grid home-grid">${homes.recent.slice(0, 4).map(zillowCard).join("")}</div>
     ${zillowLinks(homes.links)}
-  </section>
-  <div class="actions">
-    <a class="action" href="#/homes" data-link><strong>${t().actionHomes}</strong><span>${t().actionHomesHint}</span></a>
-    <button class="action" type="button" data-open-post data-tab="listing"><strong>${t().actionListing}</strong><span>${t().actionListingHint}</span></button>
-    <button class="action" type="button" data-open-post data-tab="business"><strong>${t().actionBiz}</strong><span>${t().actionBizHint}</span></button>
-  </div>
-  <section>
-    <div class="toolbar"><h2>${t().latestBoard}</h2><a href="#/board" data-link>${t().seeBoard}</a></div>
-    ${gridOrEmpty(listings.slice(0, 4).map(listingCard).join(""))}
-  </section>
-  <section>
-    <div class="toolbar"><h2>${t().latestNews}</h2><a href="#/news" data-link>${t().seeNews}</a></div>
-    ${gridOrEmpty(news.slice(0, 3).map(newsCard).join(""))}
   </section>`;
 }
 

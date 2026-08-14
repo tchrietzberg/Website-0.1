@@ -185,6 +185,11 @@ describe("Indiantown Board API", () => {
     assert.match(html, /village-seal\.png/);
     assert.match(html, /data-search-form/);
     assert.match(html, /#\/homes/);
+    const nav = html.match(/<nav class="nav"[\s\S]*?<\/nav>/)[0];
+    const links = [...nav.matchAll(/href="([^"]+)"/g)].map((row) => row[1]);
+    assert.deepEqual(links.slice(0, 3), ["#/", "#/board", "#/directory"]);
+    assert.notEqual(links[1], "#/homes");
+    assert.ok(links.indexOf("#/homes") > links.indexOf("#/board"));
     assert.match(html, /English/);
     assert.match(html, /Español/);
     assert.match(html, /data-lang-set="en"/);
