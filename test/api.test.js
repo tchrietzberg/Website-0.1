@@ -214,5 +214,9 @@ describe("Indiantown Board API", () => {
     assert.match(js, /en\.wikipedia\.org\/wiki\/Indiantown,_Florida/);
     assert.match(js, /Davy Jones/);
     assert.match(js, /Cómo se gobierna/);
+    assert.match(js, /\/about\/seminole-inn\.jpg/);
+    const photo = await fetch(`${base}/about/seminole-inn.jpg`);
+    assert.equal(photo.status, 200);
+    assert.match(photo.headers.get("content-type"), /image\/jpeg/);
   });
 });

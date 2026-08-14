@@ -126,6 +126,47 @@ const copy = {
     aboutMotto: "Where Great Things Grow",
     aboutWiki: "Town history and facts are adapted from Wikipedia and U.S. Census figures.",
     aboutWikiLink: "Wikipedia: Indiantown, Florida",
+    aboutPlacesTitle: "Historic places",
+    aboutPlacesIntro: "The 1920s boom, the canal, and ranch country still shape the village.",
+    aboutPlacesNote: "Scenes of Indiantown’s historic places. Hours and official details stay with each site.",
+    aboutFeatured: {
+      photo: "/about/seminole-inn.jpg",
+      title: "Seminole Inn",
+      era: "1920s · National Register",
+      caption: "The main building left from S. Davies Warfield’s model city — still the village’s landmark inn.",
+    },
+    aboutPlaces: [
+      {
+        photo: "/about/warfield-blvd.jpg",
+        title: "Warfield Boulevard",
+        era: "1924",
+        caption: "The main route through town, named for the railroad builder who planned a model city here.",
+      },
+      {
+        photo: "/about/st-lucie-canal.jpg",
+        title: "St. Lucie Canal",
+        era: "Southern border",
+        caption: "Links Lake Okeechobee to the St. Lucie River near Stuart and still frames the village edge.",
+      },
+      {
+        photo: "/about/seaboard-rail.jpg",
+        title: "Seaboard railroad",
+        era: "1924–1971",
+        caption: "Passenger trains stopped here into the 1960s. The depot is gone; the rails still mark the boom years.",
+      },
+      {
+        photo: "/about/circle-t-rodeo.jpg",
+        title: "Circle T Rodeo Bowl",
+        era: "1950s–1960s",
+        caption: "About 15,000 people came in 1963, then one of Florida’s largest attractions.",
+      },
+      {
+        photo: "/about/payson-park.jpg",
+        title: "Payson Park",
+        era: "Thoroughbreds",
+        caption: "A well-known winter training ground. Davy Jones of The Monkees kept horses here.",
+      },
+    ],
     aboutFacts: [
       { label: "Population (2020)", value: "6,560" },
       { label: "Land", value: "14.2 sq mi" },
@@ -343,6 +384,47 @@ const copy = {
     aboutMotto: "Where Great Things Grow",
     aboutWiki: "La historia y las cifras se adaptan de Wikipedia y del censo de EE. UU.",
     aboutWikiLink: "Wikipedia: Indiantown, Florida",
+    aboutPlacesTitle: "Lugares históricos",
+    aboutPlacesIntro: "El auge de los años 20, el canal y el campo ganadero aún marcan el pueblo.",
+    aboutPlacesNote: "Escenas de los lugares históricos de Indiantown. Horarios y datos oficiales quedan en cada sitio.",
+    aboutFeatured: {
+      photo: "/about/seminole-inn.jpg",
+      title: "Seminole Inn",
+      era: "Años 20 · Registro Nacional",
+      caption: "El edificio principal que queda de la ciudad modelo de S. Davies Warfield — aún el mesón emblemático.",
+    },
+    aboutPlaces: [
+      {
+        photo: "/about/warfield-blvd.jpg",
+        title: "Warfield Boulevard",
+        era: "1924",
+        caption: "La vía principal del pueblo, en honor al constructor del ferrocarril que planeó una ciudad modelo.",
+      },
+      {
+        photo: "/about/st-lucie-canal.jpg",
+        title: "Canal St. Lucie",
+        era: "Límite sur",
+        caption: "Une el lago Okeechobee con el río St. Lucie cerca de Stuart y sigue marcando el borde del pueblo.",
+      },
+      {
+        photo: "/about/seaboard-rail.jpg",
+        title: "Ferrocarril Seaboard",
+        era: "1924–1971",
+        caption: "Los trenes de pasajeros pararon aquí hasta los años 60. Ya no está la estación; los rieles recuerdan el auge.",
+      },
+      {
+        photo: "/about/circle-t-rodeo.jpg",
+        title: "Circle T Rodeo Bowl",
+        era: "Años 50–60",
+        caption: "Unos 15,000 visitantes en 1963, entonces una de las atracciones más grandes de la Florida.",
+      },
+      {
+        photo: "/about/payson-park.jpg",
+        title: "Payson Park",
+        era: "Caballos de carrera",
+        caption: "Un centro conocido de entrenamiento de invierno. Davy Jones de The Monkees tuvo caballos aquí.",
+      },
+    ],
     aboutFacts: [
       { label: "Población (2020)", value: "6,560" },
       { label: "Tierra", value: "14.2 mi²" },
@@ -739,6 +821,17 @@ async function renderResources() {
     ${gridOrEmpty(rows.map(resourceCard).join(""))}`;
 }
 
+function placeCard(row, featured = false) {
+  return `<figure class="place${featured ? " is-featured" : ""}">
+    <img src="${escapeAttr(row.photo)}" alt="${escapeAttr(row.title)}" width="1280" height="853" loading="${featured ? "eager" : "lazy"}" />
+    <figcaption>
+      <span class="tag">${escapeHtml(row.era)}</span>
+      <strong>${escapeHtml(row.title)}</strong>
+      <span class="blurb">${escapeHtml(row.caption)}</span>
+    </figcaption>
+  </figure>`;
+}
+
 function renderAbout() {
   const facts = t()
     .aboutFacts.map((row) => `<div class="fact"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.value)}</strong></div>`)
@@ -749,10 +842,18 @@ function renderAbout() {
         `<h2>${escapeHtml(section.title)}</h2>${section.body.map((p) => `<p>${escapeHtml(p)}</p>`).join("")}`,
     )
     .join("");
+  const places = t().aboutPlaces.map((row) => placeCard(row)).join("");
   return `<p class="kicker">34956 · ${escapeHtml(t().aboutMotto)}</p>
     <img class="about-seal" src="/village-seal.png" width="160" height="160" alt="Village of Indiantown, Florida official seal" />
     <h1>${t().aboutTitle}</h1>
+    ${placeCard(t().aboutFeatured, true)}
     <div class="facts">${facts}</div>
+    <section class="about-places">
+      <h2>${escapeHtml(t().aboutPlacesTitle)}</h2>
+      <p class="lede">${escapeHtml(t().aboutPlacesIntro)}</p>
+      <div class="place-gallery">${places}</div>
+      <p class="muted">${escapeHtml(t().aboutPlacesNote)}</p>
+    </section>
     <div class="prose about-prose">${sections}
     <p class="note">Village of Indiantown · <a href="https://www.indiantownfl.gov/" target="_blank" rel="noopener">indiantownfl.gov</a> · (772) 597-9900</p>
     <p class="muted">${escapeHtml(t().aboutWiki)} <a href="https://en.wikipedia.org/wiki/Indiantown,_Florida" target="_blank" rel="noopener">${escapeHtml(t().aboutWikiLink)}</a></p>
