@@ -195,20 +195,21 @@ body {
 
 .sidebar.is-collapsed {
   position: fixed;
-  left: 0.55rem;
-  top: 0.55rem;
+  left: 0.4rem;
+  top: 0.82rem;
   z-index: 60;
   width: auto;
   min-width: 0;
   max-width: none;
   min-height: 0;
   height: auto;
-  padding: 0.28rem 0.32rem;
+  padding: 0;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
+  border: none;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 10px 24px rgba(8, 20, 40, 0.32);
+  background: transparent;
+  box-shadow: none;
 }
 
 #app.app-shell.sidebar-collapsed .workspace {
@@ -219,7 +220,7 @@ body {
 }
 
 #app.app-shell.sidebar-collapsed .lookup-bar:not([hidden]) {
-  padding-left: 5.1rem;
+  padding-left: 2.5rem;
 }
 
 .sidebar.is-collapsed .sidebar-panel {
@@ -227,32 +228,33 @@ body {
 }
 
 .sidebar.is-collapsed .sidebar-brand {
-  white-space: nowrap;
-  gap: 0.2rem;
-  padding: 0.32rem 0.28rem 0.32rem 0.32rem;
-  border-bottom: none;
-  border-radius: 12px;
+  width: 1.7rem;
+  height: 1.7rem;
+  min-width: 1.7rem;
+  padding: 0;
+  gap: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background:
+    radial-gradient(120% 70% at 0% 0%, rgba(70, 120, 190, 0.28) 0%, transparent 55%),
+    linear-gradient(180deg, var(--sidebar-top) 0%, var(--sidebar-mid) 48%, var(--sidebar-bottom) 100%);
+  box-shadow: 0 6px 14px rgba(8, 20, 40, 0.28);
+  -webkit-justify-content: center;
+  justify-content: center;
 }
 
-.sidebar.is-collapsed .sidebar-brand-lead {
-  -webkit-flex: 0 0 auto;
-  flex: 0 0 auto;
-}
-
-.sidebar.is-collapsed .sidebar-brand-text {
-  display: none;
-}
-
+.sidebar.is-collapsed .sidebar-brand-lead,
+.sidebar.is-collapsed .sidebar-brand-text,
 .sidebar.is-collapsed .brand-clock {
-  width: 2.7rem;
-  height: 2.7rem;
+  display: none;
 }
 
 .sidebar.is-collapsed .sidebar-brand-chevron {
   -webkit-transform: rotate(180deg);
   transform: rotate(180deg);
-  font-size: 1.05rem;
-  padding: 0 0.15rem;
+  font-size: 0.82rem;
+  padding: 0;
+  color: #f7f9fc;
 }
 
 .sidebar-brand-chevron {
@@ -264,8 +266,10 @@ body {
   transition: transform 160ms ease;
 }
 
-.sidebar-brand:hover {
-  background: rgba(255, 255, 255, 0.06);
+.sidebar.is-collapsed .sidebar-brand:hover {
+  background:
+    radial-gradient(120% 70% at 0% 0%, rgba(90, 140, 210, 0.32) 0%, transparent 55%),
+    linear-gradient(180deg, var(--sidebar-mid) 0%, var(--sidebar-bottom) 100%);
 }
 
 .sidebar-brand:hover .sidebar-brand-chevron {
@@ -4177,16 +4181,18 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
     padding-bottom: 0.15rem;
   }
   .sidebar.is-collapsed {
-    left: 0.45rem;
-    top: 0.45rem;
+    left: 0.35rem;
+    top: 0.7rem;
     width: auto;
     max-width: none;
     min-width: 0;
-    padding: 0.28rem 0.32rem;
+    padding: 0;
     border-radius: 999px;
   }
   .sidebar.is-collapsed .sidebar-brand {
-    padding: 0.28rem 0.28rem;
+    width: 1.7rem;
+    height: 1.7rem;
+    padding: 0;
   }
   .sidebar-actions,
   .sidebar-nav {
