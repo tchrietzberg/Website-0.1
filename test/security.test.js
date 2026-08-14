@@ -45,7 +45,7 @@ describe("board security", () => {
     assert.equal(res.headers.get("x-frame-options"), "DENY");
     assert.match(res.headers.get("content-security-policy"), /default-src 'self'/);
     assert.match(res.headers.get("content-security-policy"), /frame-src https:\/\/www\.facebook\.com/);
-    assert.match(res.headers.get("content-security-policy"), /openstreetmap\.org/);
+    assert.match(res.headers.get("content-security-policy"), /google\.com/);
   });
 
   it("rejects a post without a CSRF token", async () => {

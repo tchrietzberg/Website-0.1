@@ -259,7 +259,8 @@ describe("Indiantown Board API", () => {
     assert.equal(photo.status, 200);
     assert.match(photo.headers.get("content-type"), /image\/jpeg/);
     assert.match(js, /about-map-frame/);
-    assert.match(js, /openstreetmap\.org\/export\/embed/);
+    assert.match(js, /google\.com\/maps/);
+    assert.match(js, /maps\/dir\/\?api=1/);
     assert.match(js, /latestJobs/);
     assert.match(js, /storm-strip/);
   });

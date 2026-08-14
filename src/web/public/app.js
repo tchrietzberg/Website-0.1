@@ -92,39 +92,39 @@ const copy = {
     reviewEvents: "Events to review",
     aboutMapTitle: "Village map",
     aboutMapIntro: "Village Hall, the inn, the library, Booker Park, Warfield Boulevard, and the canal.",
-    aboutMapNote: "Map tiles are from OpenStreetMap. Hours stay with each site.",
-    openMap: "Open map",
+    aboutMapNote: "The map is Google Maps. Tap a place for driving directions. Hours stay with each site.",
+    openMap: "Get directions",
     photoTooBig: "Photo must be a JPEG or PNG under 700 KB.",
     aboutMapPlaces: [
       {
         title: "Village Hall",
         blurb: "15516 SW Osceola St., Suite B",
-        href: "https://www.openstreetmap.org/search?query=15516%20SW%20Osceola%20St%20Indiantown%20FL",
+        dest: "15516 SW Osceola St, Indiantown, FL 34956",
       },
       {
         title: "Seminole Inn",
         blurb: "Landmark inn on Warfield Boulevard",
-        href: "https://www.openstreetmap.org/search?query=Seminole%20Inn%20Indiantown%20FL",
+        dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
       },
       {
         title: "Elisabeth Lahti Library",
         blurb: "15200 E. Thelma Waters Ave",
-        href: "https://www.openstreetmap.org/search?query=Elisabeth%20Lahti%20Library%20Indiantown",
+        dest: "Elisabeth Lahti Library, 15200 E Thelma Waters Ave, Indiantown, FL 34956",
       },
       {
         title: "Booker Park",
         blurb: "15101 SW 169th Ave",
-        href: "https://www.openstreetmap.org/search?query=Booker%20Park%20Indiantown%20FL",
+        dest: "Booker Park, 15101 SW 169th Ave, Indiantown, FL 34956",
       },
       {
         title: "Warfield Boulevard",
         blurb: "Main route through town",
-        href: "https://www.openstreetmap.org/search?query=Warfield%20Boulevard%20Indiantown%20FL",
+        dest: "Warfield Boulevard, Indiantown, FL 34956",
       },
       {
         title: "St. Lucie Canal",
         blurb: "C-44, the village’s southern edge",
-        href: "https://www.openstreetmap.org/search?query=St.%20Lucie%20Canal%20Indiantown",
+        dest: "St. Lucie Canal, Indiantown, FL 34956",
       },
     ],
     facebookTitle: "Official Facebook",
@@ -519,39 +519,39 @@ const copy = {
     reviewEvents: "Eventos por revisar",
     aboutMapTitle: "Mapa del pueblo",
     aboutMapIntro: "La alcaldía, el mesón, la biblioteca, Booker Park, Warfield Boulevard y el canal.",
-    aboutMapNote: "El mapa es de OpenStreetMap. Los horarios quedan en cada sitio.",
-    openMap: "Abrir mapa",
+    aboutMapNote: "El mapa es de Google Maps. Toque un lugar para la ruta. Los horarios quedan en cada sitio.",
+    openMap: "Cómo llegar",
     photoTooBig: "La foto debe ser JPEG o PNG de menos de 700 KB.",
     aboutMapPlaces: [
       {
         title: "Alcaldía",
         blurb: "15516 SW Osceola St., Suite B",
-        href: "https://www.openstreetmap.org/search?query=15516%20SW%20Osceola%20St%20Indiantown%20FL",
+        dest: "15516 SW Osceola St, Indiantown, FL 34956",
       },
       {
         title: "Seminole Inn",
         blurb: "Mesón emblemático en Warfield Boulevard",
-        href: "https://www.openstreetmap.org/search?query=Seminole%20Inn%20Indiantown%20FL",
+        dest: "Seminole Inn, 15885 SW Warfield Blvd, Indiantown, FL 34956",
       },
       {
         title: "Biblioteca Elisabeth Lahti",
         blurb: "15200 E. Thelma Waters Ave",
-        href: "https://www.openstreetmap.org/search?query=Elisabeth%20Lahti%20Library%20Indiantown",
+        dest: "Elisabeth Lahti Library, 15200 E Thelma Waters Ave, Indiantown, FL 34956",
       },
       {
         title: "Booker Park",
         blurb: "15101 SW 169th Ave",
-        href: "https://www.openstreetmap.org/search?query=Booker%20Park%20Indiantown%20FL",
+        dest: "Booker Park, 15101 SW 169th Ave, Indiantown, FL 34956",
       },
       {
         title: "Warfield Boulevard",
         blurb: "Vía principal del pueblo",
-        href: "https://www.openstreetmap.org/search?query=Warfield%20Boulevard%20Indiantown%20FL",
+        dest: "Warfield Boulevard, Indiantown, FL 34956",
       },
       {
         title: "Canal St. Lucie",
         blurb: "C-44, el borde sur del pueblo",
-        href: "https://www.openstreetmap.org/search?query=St.%20Lucie%20Canal%20Indiantown",
+        dest: "St. Lucie Canal, Indiantown, FL 34956",
       },
     ],
     facebookTitle: "Facebook oficial",
@@ -1063,6 +1063,15 @@ function escapeAttr(value) {
   return escapeHtml(value).replaceAll("'", "&#39;");
 }
 
+function googleDirections(query) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}`;
+}
+
+function googleVillageEmbed() {
+  const hl = state.lang === "es" ? "es" : "en";
+  return `https://www.google.com/maps?q=${encodeURIComponent("Indiantown, FL 34956")}&hl=${hl}&z=14&output=embed`;
+}
+
 function gridOrEmpty(html) {
   return html ? `<div class="grid">${html}</div>` : `<p class="empty">${t().empty}</p>`;
 }
@@ -1356,10 +1365,10 @@ function renderAbout() {
       <section class="about-map">
         <h2>${escapeHtml(t().aboutMapTitle)}</h2>
         <p class="lede">${escapeHtml(t().aboutMapIntro)}</p>
-        <iframe class="about-map-frame" title="${escapeAttr(t().aboutMapTitle)}" src="https://www.openstreetmap.org/export/embed.html?bbox=-80.53%2C26.99%2C-80.42%2C27.06&amp;layer=mapnik&amp;marker=27.0273%2C-80.4731" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+        <iframe class="about-map-frame" title="${escapeAttr(t().aboutMapTitle)}" src="${escapeAttr(googleVillageEmbed())}" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
         <div class="about-map-places">${t()
           .aboutMapPlaces.map(
-            (row) => `<a class="about-map-pin" href="${escapeAttr(row.href)}" target="_blank" rel="noopener">
+            (row) => `<a class="about-map-pin" href="${escapeAttr(googleDirections(row.dest))}" target="_blank" rel="noopener">
             <strong>${escapeHtml(row.title)}</strong>
             <span>${escapeHtml(row.blurb)}</span>
             <span class="read-more">${escapeHtml(t().openMap)}</span>

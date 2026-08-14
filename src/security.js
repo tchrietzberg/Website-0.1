@@ -70,7 +70,7 @@ export function createSecurity(options = {}) {
         "font-src https://fonts.gstatic.com",
         "script-src 'self'",
         "connect-src 'self'",
-        "frame-src https://www.facebook.com https://web.facebook.com https://www.openstreetmap.org",
+        "frame-src https://www.facebook.com https://web.facebook.com https://www.google.com https://maps.google.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",
