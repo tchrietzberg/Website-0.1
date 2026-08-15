@@ -953,9 +953,6 @@ async function startDial(db, input = {}, req = null) {
   ensureIntakeTables(db);
   const phone = phoneDial.normalizePhone(input.phone || input.to);
   if (!phone) throw Object.assign(new Error('enter a valid phone number'), { status: 400 });
-  if (!phoneDial.configured(db)) {
-    throw Object.assign(new Error('phone dialing is not configured. Open Settings → Phone dialing and save your Twilio account SID and from number.'), { status: 503 });
-  }
   let form;
   let actor;
   let portalToken = null;
@@ -1009,6 +1006,7 @@ async function startDial(db, input = {}, req = null) {
   return {
     callSid: placed.sid,
     stub: !!placed.stub,
+    telUrl: phoneDial.telUrl(phone),
     toMasked: maskPhone(phone),
     guestToken,
     session: serializePublicSession(db, getSession(db, id)),

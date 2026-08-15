@@ -387,7 +387,6 @@ describe('intake agent', () => {
   });
 
   it('lets any signed-in firm user list intake forms and dial', async () => {
-    process.env.TWILIO_STUB = '1';
     db.prepare(
       "INSERT INTO users(email,name,role,password_hash) VALUES ('pat@firm.example','Pat','paralegal',?)"
     ).run(hashPassword('demo-change-me'));
@@ -412,7 +411,8 @@ describe('intake agent', () => {
     });
     assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
     assert.equal(dialed.json.session.channel, 'phone');
-    delete process.env.TWILIO_STUB;
+    assert.equal(dialed.json.stub, true);
+    assert.equal(dialed.json.telUrl, 'tel:+12025550147');
   });
 
   it('saves Twilio in Settings so dialing works without env vars', async () => {
@@ -436,17 +436,21 @@ describe('intake agent', () => {
 
     const before = await request(port, 'GET', '/api/settings', auth);
     assert.equal(before.status, 200);
-    assert.equal(before.json.dial.configured, false);
+    assert.equal(before.json.dial.configured, true);
+    assert.equal(before.json.dial.canDial, true);
+    assert.equal(before.json.dial.carrier, false);
     assert.equal(before.json.dial.fromEnv, false);
 
     const forms = await request(port, 'GET', '/api/intake/forms', auth);
     const formId = forms.json.forms[0].id;
-    const blocked = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+    const localDial = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
       ...auth,
       body: { phone: '415-555-0199', test: true },
     });
-    assert.equal(blocked.status, 503);
-    assert.match(String(blocked.json.message || blocked.json.error), /Settings/);
+    assert.equal(localDial.status, 200, JSON.stringify(localDial.json));
+    assert.equal(localDial.json.stub, true);
+    assert.equal(localDial.json.telUrl, 'tel:+14155550199');
+    assert.match(String(localDial.json.callSid), /^CA_LOCAL_/);
 
     const badSid = await request(port, 'PATCH', '/api/settings', {
       ...auth,
@@ -466,6 +470,7 @@ describe('intake agent', () => {
     });
     assert.equal(saved.status, 200, JSON.stringify(saved.json));
     assert.equal(saved.json.dial.configured, true);
+    assert.equal(saved.json.dial.carrier, true);
     assert.equal(saved.json.dial.fromNumber, '+14155550100');
     assert.match(String(saved.json.dial.accountSidMasked), /ACab/);
     assert.equal(saved.json.dial.fromEnv, false);

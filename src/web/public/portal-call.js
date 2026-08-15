@@ -227,7 +227,9 @@
       const hint = document.getElementById('intakeDialStatus');
       if (hint) {
         hint.hidden = false;
-        hint.textContent = `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.`;
+        hint.textContent = out.stub
+          ? `Intake started for ${out.toMasked || 'that number'}. Continue here — the agent will ask the questions.`
+          : `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.`;
       }
       stopPoll();
       pollTimer = setInterval(() => void refreshSession(), 2500);
@@ -248,21 +250,19 @@
       return;
     }
     const form = data.form || {};
-    const dial = data.dial || {};
     root.innerHTML = `
       <div class="card portal-card">
         <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
         <p>${escapeHtml(form.greeting || 'Start a short call to share the information we need for a new matter.')}</p>
-        <p>Enter a phone number. We will call it and the intake agent will collect the information live.</p>
+        <p>Enter a phone number and start the intake call. No Twilio token is required.</p>
         <form id="intakeDialForm" class="stack intake-dial">
           <label>Phone number <input id="intakeDialPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" /></label>
           <div class="row-actions">
             <button type="submit" class="btn primary" id="intakeDialBtn">Call this number</button>
           </div>
         </form>
-        ${dial.configured ? '' : '<p class="hint">Phone dialing is not configured yet. The firm admin can save Twilio in Settings → Phone dialing.</p>'}
         <p id="intakeCallError" class="error" hidden></p>
         <p class="muted">Or continue in this browser:</p>
         <div class="row-actions">

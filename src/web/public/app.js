@@ -5049,7 +5049,6 @@
     state.intakeFlash = null;
     const fieldChoices = form?.availableFields || [];
     const dial = formsRes.dial || {};
-    const isAdmin = state.user.role === 'admin';
 
     setMainHtml(`
       <div class="page-head intake-head">
@@ -5066,11 +5065,10 @@
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
       <div class="card intake-dial-card">
         <p class="sidebar-label">Dial a test call</p>
-        <p class="muted">Calls a real phone. The person answers and the intake agent asks the same questions the website button uses.</p>
-        ${dial.configured
-          ? `<p class="hint">Ready to dial${dial.fromMasked ? ` from ${escapeHtml(dial.fromMasked)}` : ''}.</p>`
-          : `<p class="hint">Phone dialing is not configured. ${isAdmin ? 'Save Twilio in Settings → Phone dialing.' : 'Ask an admin to save Twilio in Settings → Phone dialing.'}</p>
-             ${isAdmin ? '<button type="button" class="linkish" id="intakeOpenPhoneSettings">Open Phone dialing settings</button>' : ''}`}
+        <p class="muted">Enter a number and call. No Twilio token is required. Chrono starts the intake agent here; your device places the call.</p>
+        ${dial.carrier
+          ? `<p class="hint">A Twilio number is saved${dial.fromMasked ? ` (${escapeHtml(dial.fromMasked)})` : ''}. Chrono will also try to ring the phone from that number.</p>`
+          : '<p class="hint">Call this number opens your phone. Use Listen or type the answers in the agent panel.</p>'}
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
           <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
           <button type="submit" class="btn primary">Call this number</button>
@@ -5238,15 +5236,6 @@
     const previewBtn = $('#intakeEmbedTestBtn');
     if (previewBtn) previewBtn.onclick = () => void openTestCall();
 
-    const openPhoneSettings = $('#intakeOpenPhoneSettings');
-    if (openPhoneSettings) {
-      openPhoneSettings.onclick = () => {
-        if (!state.settingsTabOpen) state.settingsTabOpen = {};
-        state.settingsTabOpen['phone-dialing'] = true;
-        void goHelpTarget('settings-phone-dialing');
-      };
-    }
-
     const staffDial = $('#intakeStaffDialForm');
     if (staffDial && form) {
       staffDial.onsubmit = async (ev) => {
@@ -5263,7 +5252,20 @@
             body: JSON.stringify({ phone, test: true }),
           });
           state.intakeSession = out.session;
-          state.intakeFlash = { ok: true, text: `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.` };
+          if (out.stub && out.telUrl) {
+            const link = document.createElement('a');
+            link.href = out.telUrl;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+          }
+          state.intakeFlash = {
+            ok: true,
+            text: out.stub
+              ? `Calling ${out.toMasked || 'that number'} from this device. Use Listen or type the answers here.`
+              : `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.`,
+          };
           void renderIntake();
         } catch (e) {
           if (!state.user || e.code === 'sign in required') {
@@ -10128,14 +10130,14 @@
         id: 'phoneDialingCard',
         tabKey: 'phone-dialing',
         title: 'Phone dialing',
-        meta: settings.dial?.configured ? 'Ready' : 'Not configured',
+        meta: settings.dial?.carrier ? 'Twilio number saved' : 'Device calling',
         open: settingsTabOpen('phone-dialing'),
         bodyHtml: `
-          <p class="hint">Twilio places the outbound intake calls. Save the account SID and the Twilio number that rings people. Environment variables override these values when set.</p>
-          ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables. Settings below are stored but not used until those env vars are cleared.</p>' : ''}
-          ${settings.dial?.configured
-            ? `<p class="muted">Configured${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
-            : '<p class="muted">Not configured yet. Calls will not ring until the account SID and from number are saved.</p>'}
+          <p class="hint">Intake can call without Twilio. Saving a Twilio number is optional — Chrono will try to ring from that number when a carrier secret is available. You can always call from this device.</p>
+          ${settings.dial?.fromEnv ? '<p class="ok-banner">A TWILIO_* environment number is set. Settings below are stored but env vars win for the carrier number.</p>' : ''}
+          ${settings.dial?.carrier
+            ? `<p class="muted">Twilio number saved${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
+            : '<p class="muted">No Twilio number saved. Dial a test call still works from this device.</p>'}
           <form id="twilioDialForm" class="stack">
             <label>Twilio account SID
               <input name="accountSid" autocomplete="off" spellcheck="false"
@@ -10439,9 +10441,7 @@
           });
           if (!state.settingsTabOpen) state.settingsTabOpen = {};
           state.settingsTabOpen['phone-dialing'] = true;
-          state.settingsTwilioFlash = state.settings.dial?.configured
-            ? 'Phone dialing saved. Intake can now call real numbers.'
-            : 'Saved. Add the account SID and from number to finish setup.';
+          state.settingsTwilioFlash = 'Phone dialing settings saved. Intake can call with or without Twilio.';
           await renderSettings();
         } catch (e) {
           if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -10856,7 +10856,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call to ring a real phone, or use Test website call for the same page the firm-site button opens. The person answers and the agent collects the selected custom fields. Test calls are not auto-filed. Admins save Twilio in [[Phone dialing|settings-phone-dialing]].',
+      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call to ring a number from this device — no Twilio token is required. Test website call opens the same page the firm-site button uses. The agent collects the selected custom fields. Test calls are not auto-filed. A Twilio number in [[Phone dialing|settings-phone-dialing]] is optional.',
       links: [
         { label: 'Open Intake', target: 'intake' },
         { label: 'Phone dialing', target: 'settings-phone-dialing' },
