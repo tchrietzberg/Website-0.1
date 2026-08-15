@@ -5,6 +5,7 @@
   const isTest = new URLSearchParams(location.search).get('test') === '1';
   let guestToken = '';
   let session = null;
+  let pollTimer = null;
   let listening = false;
   let recognition = null;
   let sending = false;
@@ -81,6 +82,7 @@
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(firmName || 'the firm')}${isTest ? ' · This is the same page the external website button opens.' : ''}</p>
         <div class="intake-transcript" id="intakeCallTranscript"></div>
+        <p id="intakeDialStatus" class="hint" hidden></p>
         <p id="intakeCallError" class="error" hidden></p>
         <form id="intakeCallTalk" class="intake-talk">
           <textarea id="intakeCallText" rows="2" placeholder="Type an answer if you prefer not to speak"></textarea>
@@ -173,6 +175,30 @@
     }
   }
 
+  function stopPoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  async function refreshSession() {
+    if (!session?.id || !guestToken) return;
+    try {
+      const res = await fetch(`/api/portal/intake/${token}/call/${session.id}`, {
+        headers: { Accept: 'application/json', 'X-Intake-Guest': guestToken },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.session) {
+        session = data.session;
+        renderMessages();
+        updateDone();
+        if (session.status === 'completed' || session.status === 'filed') {
+          stopPoll();
+          stopListen();
+        }
+      }
+    } catch { /* keep last transcript */ }
+  }
+
   async function startCall(form, firmName) {
     setError('');
     try {
@@ -183,6 +209,30 @@
       if (speechEngine()) startListen();
     } catch (e) {
       setError(e.message || 'Could not start the intake call.');
+    }
+  }
+
+  async function dialNumber(form, firmName) {
+    const phone = String(document.getElementById('intakeDialPhone')?.value || '').trim();
+    setError('');
+    if (!phone) {
+      setError('Enter the phone number to call.');
+      return;
+    }
+    try {
+      const out = await api(`/api/portal/intake/${token}/call/dial`, { phone, test: isTest });
+      guestToken = out.guestToken || '';
+      session = out.session;
+      paintCall(form, firmName);
+      const hint = document.getElementById('intakeDialStatus');
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.`;
+      }
+      stopPoll();
+      pollTimer = setInterval(() => void refreshSession(), 2500);
+    } catch (e) {
+      setError(e.message || 'Could not place the call.');
     }
   }
 
@@ -198,18 +248,31 @@
       return;
     }
     const form = data.form || {};
+    const dial = data.dial || {};
     root.innerHTML = `
       <div class="card portal-card">
         <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
         <p>${escapeHtml(form.greeting || 'Start a short call to share the information we need for a new matter.')}</p>
-        ${isTest ? '<p class="hint">This is a test of the button you will put on the firm website. Speak or type, then submit. Chrono will list it as a website test call.</p>' : ''}
+        <p>Enter a phone number. We will call it and the intake agent will collect the information live.</p>
+        <form id="intakeDialForm" class="stack intake-dial">
+          <label>Phone number <input id="intakeDialPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" /></label>
+          <div class="row-actions">
+            <button type="submit" class="btn primary" id="intakeDialBtn">Call this number</button>
+          </div>
+        </form>
+        ${dial.configured ? '' : '<p class="hint">Phone dialing needs a Twilio number (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER).</p>'}
         <p id="intakeCallError" class="error" hidden></p>
+        <p class="muted">Or continue in this browser:</p>
         <div class="row-actions">
-          <button type="button" class="btn primary" id="intakeCallStart">${isTest ? 'Start test call' : 'Start intake call'}</button>
+          <button type="button" class="btn" id="intakeCallStart">${isTest ? 'Type a test call' : 'Type instead'}</button>
         </div>
       </div>`;
+    document.getElementById('intakeDialForm').onsubmit = (ev) => {
+      ev.preventDefault();
+      void dialNumber(form, data.firmName);
+    };
     document.getElementById('intakeCallStart').onclick = () => void startCall(form, data.firmName);
   }
 

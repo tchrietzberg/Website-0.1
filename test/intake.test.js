@@ -8,6 +8,7 @@ const { hashPassword } = require('../src/security');
 const { createServer } = require('../src/web/server');
 const customFields = require('../src/services/customFields');
 const intakeSvc = require('../src/services/intake');
+const phoneDial = require('../src/services/phoneDial');
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -301,5 +302,87 @@ describe('intake agent', () => {
     assert.equal(row.status, 'completed');
     assert.equal(row.clientId, null);
     assert.equal(row.matterId, null);
+  });
+
+  it('dials a test phone number and runs the intake agent on the live call', async () => {
+    process.env.TWILIO_STUB = '1';
+    process.env.INTAKE_PHONE_WEBHOOK_SECRET = 'intake-voice-test-secret-32chars';
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    const cookie = sessionCookie(login.setCookie);
+    const auth = {
+      cookies: cookie,
+      headers: {
+        'X-CSRF-Token': login.json.csrf,
+        Authorization: `Bearer ${login.json.token}`,
+      },
+    };
+    const forms = await request(port, 'GET', '/api/intake/forms', auth);
+    const formId = forms.json.forms[0].id;
+    assert.equal(forms.json.dial.configured, true);
+
+    const bad = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+      ...auth,
+      body: { phone: '123', test: true },
+    });
+    assert.equal(bad.status, 400);
+
+    const dialed = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+      ...auth,
+      body: { phone: '415-555-0199', test: true },
+    });
+    assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
+    assert.equal(dialed.json.session.channel, 'phone');
+    assert.equal(dialed.json.session.test, true);
+    assert.match(String(dialed.json.callSid), /^CA_TEST_/);
+    assert.match(dialed.json.toMasked, /0199|199/);
+    const sessionId = dialed.json.session.id;
+    const sig = phoneDial.voiceSig(sessionId);
+
+    const pickup = await request(port, 'POST', `/api/intake/phone/voice?sid=${sessionId}&sig=${sig}`, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    assert.equal(pickup.status, 200);
+    assert.match(pickup.raw, /<Gather/);
+    assert.match(pickup.raw, /Say/);
+
+    const payload = new URLSearchParams({ SpeechResult: 'My name is Riley Dial. Email is riley.dial@example.com. Matter is Dial v. Acme. Case stage is Trial.' }).toString();
+    const turn = await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        path: `/api/intake/phone/voice?sid=${sessionId}&sig=${sig}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(payload),
+          Origin: `http://127.0.0.1:${port}`,
+        },
+      }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode, raw: Buffer.concat(chunks).toString('utf8') }));
+      });
+      req.on('error', reject);
+      req.write(payload);
+      req.end();
+    });
+    assert.equal(turn.status, 200);
+    assert.match(turn.raw, /<Say|<Hangup/);
+
+    const link = await request(port, 'POST', `/api/intake/forms/${formId}/portal-link`, {
+      ...auth,
+      body: { days: 365, reuse: true },
+    });
+    const siteDial = await request(port, 'POST', `/api/portal/intake/${link.json.token}/call/dial`, {
+      body: { phone: '212-555-0188', test: true },
+    });
+    assert.equal(siteDial.status, 200, JSON.stringify(siteDial.json));
+    assert.equal(siteDial.json.session.test, true);
+    assert.ok(siteDial.json.guestToken);
+
+    delete process.env.TWILIO_STUB;
+    delete process.env.INTAKE_PHONE_WEBHOOK_SECRET;
   });
 });

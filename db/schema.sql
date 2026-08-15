@@ -532,3 +532,10 @@ CREATE TABLE IF NOT EXISTS intake_guest_tokens (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_intake_guest_tokens_expires ON intake_guest_tokens(expires_at);
+
+CREATE TABLE IF NOT EXISTS intake_phone_calls (
+  call_sid TEXT PRIMARY KEY,
+  session_id INTEGER NOT NULL REFERENCES intake_sessions(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_intake_phone_calls_session ON intake_phone_calls(session_id);

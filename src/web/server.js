@@ -28,6 +28,7 @@ const mail = require('../mail');
 const mfa = require('../mfa');
 const invoiceTemplates = require('../services/invoiceTemplates');
 const intakeSvc = require('../services/intake');
+const phoneDial = require('../services/phoneDial');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -60,6 +61,20 @@ function text(res, status, body, type = 'text/plain; charset=utf-8', req = null)
 
 function parseBody(req) {
   return security.parseBodyLimited(req);
+}
+
+function parseForm(req) {
+  return security.parseFormLimited(req);
+}
+
+function xml(res, status, body, req = null) {
+  const headers = {
+    'Content-Type': 'text/xml; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    ...(req ? security.securityHeaders(req) : {}),
+  };
+  res.writeHead(status, headers);
+  res.end(body);
 }
 
 function currentSession(db, req) {
@@ -280,6 +295,36 @@ function createServer(db = openDb()) {
         if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
         const body = await parseBody(req);
         return json(res, 200, { session: intakeSvc.submitPortal(db, token, body, req) }, req);
+      }
+      if (req.method === 'GET' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call\/\d+$/i)) {
+        const parts = pathname.split('/');
+        const token = parts[4];
+        const sessionId = Number(parts[6]);
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        const guest = req.headers['x-intake-guest'] || url.searchParams.get('guest') || '';
+        return json(res, 200, { session: intakeSvc.publicSession(db, token, sessionId, guest) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call\/dial$/i)) {
+        const token = pathname.split('/')[4];
+        const limit = intakeSvc.checkPortalRateLimit(security.clientIp(req));
+        if (!limit.ok) return json(res, 429, { error: 'too many requests' }, req);
+        const body = await parseBody(req);
+        return json(res, 200, await intakeSvc.startDial(db, {
+          portalToken: token,
+          phone: body.phone,
+          test: body.test === true,
+        }, req), req);
+      }
+      if ((req.method === 'GET' || req.method === 'POST') && pathname === '/api/intake/phone/voice') {
+        const sid = url.searchParams.get('sid');
+        const sig = url.searchParams.get('sig');
+        const body = req.method === 'POST' ? await parseForm(req) : {};
+        const speech = body.SpeechResult || body.speechResult || '';
+        const twiml = speech
+          ? intakeSvc.voiceTurn(db, sid, sig, body, req)
+          : intakeSvc.voicePrompt(db, sid, sig, req);
+        return xml(res, 200, twiml, req);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/portal\/intake\/[a-f0-9]+\/call$/i)) {
         const token = pathname.split('/')[4];
@@ -1988,7 +2033,7 @@ function createServer(db = openDb()) {
 
       if (req.method === 'GET' && pathname === '/api/intake/forms') {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
-        return json(res, 200, { forms: intakeSvc.listForms(db, user) }, req);
+        return json(res, 200, { forms: intakeSvc.listForms(db, user), dial: phoneDial.status() }, req);
       }
       if (req.method === 'POST' && pathname === '/api/intake/forms') {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
@@ -2000,6 +2045,17 @@ function createServer(db = openDb()) {
         const id = Number(pathname.split('/')[4]);
         const body = await parseBody(req);
         return json(res, 200, { form: intakeSvc.saveForm(db, user, body, id) }, req);
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/intake\/forms\/\d+\/dial$/)) {
+        if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
+        const id = Number(pathname.split('/')[4]);
+        const body = await parseBody(req);
+        return json(res, 200, await intakeSvc.startDial(db, {
+          actor: user,
+          formId: id,
+          phone: body.phone,
+          test: body.test !== false,
+        }, req), req);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/intake\/forms\/\d+\/portal-link$/)) {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;

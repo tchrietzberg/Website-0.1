@@ -4548,6 +4548,19 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
 }
+.intake-dial-card .intake-dial-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+.intake-dial-card .intake-dial-form input {
+  min-width: 14rem;
+  flex: 1 1 14rem;
+}
+.intake-dial {
+  margin: 0.75rem 0 0;
+}
 .intake-embed-preview {
   display: flex;
   flex-wrap: wrap;

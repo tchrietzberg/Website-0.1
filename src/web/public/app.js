@@ -5057,6 +5057,14 @@
         </div>
       </div>
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
+      <div class="card intake-dial-card">
+        <p class="sidebar-label">Dial a test call</p>
+        <p class="muted">Calls a real phone. The person answers and the intake agent asks the same questions the website button uses.</p>
+        <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
+          <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
+          <button type="submit" class="btn primary">Call this number</button>
+        </form>
+      </div>
       ${state.intakeEmbed ? `
         <div class="card intake-embed">
           <p class="sidebar-label">Website call button</p>
@@ -5123,7 +5131,7 @@
           <table class="data"><thead><tr><th>When</th><th>Channel</th><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
             ${sessions.slice(0, 8).map((s) => `<tr>
               <td>${escapeHtml((s.createdAt || '').replace('T', ' ').slice(0, 16))}</td>
-              <td>${escapeHtml(s.test && s.channel === 'web_call' ? 'Website call (test)' : ({ phone: 'Phone', portal: 'Portal', agent: 'Agent', web_call: 'Website call' }[s.channel] || s.channel))}</td>
+              <td>${escapeHtml(s.test && s.channel === 'phone' ? 'Phone (test)' : s.test && s.channel === 'web_call' ? 'Website call (test)' : ({ phone: 'Phone', portal: 'Portal', agent: 'Agent', web_call: 'Website call' }[s.channel] || s.channel))}</td>
               <td>${escapeHtml(s.extracted?.contactName || '—')}</td>
               <td>${escapeHtml(s.status)}</td>
               <td><button type="button" class="btn" data-open-session="${s.id}">Open</button></td>
@@ -5218,6 +5226,31 @@
     if (testBtn) testBtn.onclick = () => void openTestCall();
     const previewBtn = $('#intakeEmbedTestBtn');
     if (previewBtn) previewBtn.onclick = () => void openTestCall();
+
+    const staffDial = $('#intakeStaffDialForm');
+    if (staffDial && form) {
+      staffDial.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const phone = String(staffDial.querySelector('[name="phone"]')?.value || '').trim();
+        if (!phone) {
+          state.intakeFlash = { ok: false, text: 'Enter the phone number to call.' };
+          void renderIntake();
+          return;
+        }
+        try {
+          const out = await api(`/api/intake/forms/${form.id}/dial`, {
+            method: 'POST',
+            body: JSON.stringify({ phone, test: true }),
+          });
+          state.intakeSession = out.session;
+          state.intakeFlash = { ok: true, text: `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.` };
+          void renderIntake();
+        } catch (e) {
+          state.intakeFlash = { ok: false, text: e.message || 'Could not place the call.' };
+          void renderIntake();
+        }
+      };
+    }
 
     main.querySelectorAll('[data-open-session]').forEach((btn) => {
       btn.onclick = async () => {
@@ -10743,7 +10776,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Use Test website call to try the same page the firm-site button opens. Website call button copies that button for the external site. Clients speak or type; the agent fills the selected custom fields. File intake to create the contact and matter. Test calls are not auto-filed.',
+      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call to ring a real phone, or use Test website call for the same page the firm-site button opens. The person answers and the agent collects the selected custom fields. Test calls are not auto-filed. Phone dialing needs Twilio credentials.',
       links: [
         { label: 'Open Intake', target: 'intake' },
       ],

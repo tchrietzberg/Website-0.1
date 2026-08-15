@@ -7,6 +7,7 @@ const clientsSvc = require('./clients');
 const matterSvc = require('./matters');
 const fieldTypes = require('./fieldTypes');
 const permissions = require('./permissions');
+const phoneDial = require('./phoneDial');
 
 const STAFF_ROLES = ['admin', 'attorney', 'paralegal', 'billing_clerk'];
 const STANDARD_KEYS = ['contactName', 'contactEmail', 'contactPhone', 'matterName'];
@@ -110,6 +111,12 @@ function ensureIntakeTables(db) {
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     CREATE INDEX IF NOT EXISTS idx_intake_guest_tokens_expires ON intake_guest_tokens(expires_at);
+    CREATE TABLE IF NOT EXISTS intake_phone_calls (
+      call_sid TEXT PRIMARY KEY,
+      session_id INTEGER NOT NULL REFERENCES intake_sessions(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_intake_phone_calls_session ON intake_phone_calls(session_id);
   `);
   migrateWebCallChannel(db);
   migrateSessionTestFlag(db);
@@ -682,6 +689,7 @@ function portalForm(db, token) {
     firmName,
     form: serializeForm(db, hit.form),
     expiresAt: hit.token.expires_at,
+    dial: phoneDial.status(),
   };
 }
 
@@ -918,6 +926,138 @@ function completeWebCall(db, portalToken, sessionId, guestToken, req = null) {
   return serializePublicSession(db, getSession(db, session.id));
 }
 
+function finishPhoneIfReady(db, session, actor) {
+  const form = getForm(db, session.form_id) || ensureDefaultForm(db, actor);
+  const fields = formFields(db, form).selected;
+  const extracted = sessionExtracted(getSession(db, session.id));
+  const prompt = unansweredPrompt(form, extracted, fields);
+  if (prompt.key) return serializeSession(db, getSession(db, session.id), { includeMessages: true });
+  db.prepare(`
+    UPDATE intake_sessions
+    SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE id = ? AND status NOT IN ('filed', 'completed')
+  `).run(session.id);
+  if (form.auto_file && !session.test && actor) {
+    try { fileSession(db, actor, session.id); } catch { /* leave completed for staff review */ }
+  }
+  return serializeSession(db, getSession(db, session.id), { includeMessages: true });
+}
+
+async function startDial(db, input = {}, req = null) {
+  ensureIntakeTables(db);
+  const phone = phoneDial.normalizePhone(input.phone || input.to);
+  if (!phone) throw Object.assign(new Error('enter a valid phone number'), { status: 400 });
+  if (!phoneDial.configured()) {
+    throw Object.assign(new Error('phone dialing is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER.'), { status: 503 });
+  }
+  let form;
+  let actor;
+  let portalToken = null;
+  if (input.portalToken) {
+    const hit = readPortalToken(db, input.portalToken);
+    if (!hit) throw Object.assign(new Error('intake link is invalid or expired'), { status: 404 });
+    if (!hit.form.phone_enabled) throw Object.assign(new Error('phone intake is disabled'), { status: 400 });
+    form = hit.form;
+    actor = portalActor(db, hit.token);
+    portalToken = hit.token.token;
+  } else {
+    assertStaff(input.actor);
+    form = getForm(db, input.formId) || ensureDefaultForm(db, input.actor);
+    if (!form.phone_enabled) throw Object.assign(new Error('phone intake is disabled'), { status: 400 });
+    actor = input.actor;
+  }
+  if (!actor) throw Object.assign(new Error('intake is not available'), { status: 503 });
+  const isTest = input.test === true;
+  const info = db.prepare(`
+    INSERT INTO intake_sessions(form_id, channel, status, created_by, test, contact_phone)
+    VALUES (?, 'phone', 'open', ?, ?, ?)
+  `).run(form.id, actor.id, isTest ? 1 : 0, phone);
+  const id = Number(info.lastInsertRowid);
+  persistExtracted(db, id, { contactPhone: phone });
+  const greeting = defaultGreeting(form);
+  addMessage(db, id, 'agent', greeting);
+  addMessage(db, id, 'system', isTest
+    ? `Test dial to ${maskPhone(phone)}.`
+    : `Outbound intake call to ${maskPhone(phone)}.`);
+  const first = unansweredPrompt(form, { contactPhone: phone }, formFields(db, form).selected);
+  addMessage(db, id, 'agent', first.question);
+  let guestToken = null;
+  if (portalToken) {
+    guestToken = crypto.randomBytes(24).toString('hex');
+    db.prepare(`
+      INSERT INTO intake_guest_tokens(token_hash, session_id, portal_token, expires_at)
+      VALUES (?, ?, ?, ?)
+    `).run(hashGuestToken(guestToken), id, portalToken, Date.now() + GUEST_TTL_MS);
+  }
+  const actionUrl = phoneDial.voiceActionUrl(req, id);
+  const placed = await phoneDial.placeCall({ to: phone, url: actionUrl });
+  db.prepare('INSERT INTO intake_phone_calls(call_sid, session_id) VALUES (?, ?)').run(placed.sid, id);
+  audit(db, {
+    actorId: actor.id,
+    action: 'intake.dial',
+    entityType: 'intake_session',
+    entityId: id,
+    detail: { formId: form.id, test: isTest, to: maskPhone(phone), stub: !!placed.stub },
+    req,
+  });
+  return {
+    callSid: placed.sid,
+    stub: !!placed.stub,
+    toMasked: maskPhone(phone),
+    guestToken,
+    session: serializePublicSession(db, getSession(db, id)),
+  };
+}
+
+function assertVoiceSession(db, sessionId, sig) {
+  const id = Number(sessionId);
+  if (!Number.isInteger(id) || id <= 0 || !phoneDial.verifyVoiceSig(id, sig)) {
+    throw Object.assign(new Error('call session is not valid'), { status: 401 });
+  }
+  const session = getSession(db, id);
+  if (!session) throw Object.assign(new Error('call session is not valid'), { status: 404 });
+  return session;
+}
+
+function voicePrompt(db, sessionId, sig, req = null) {
+  const session = assertVoiceSession(db, sessionId, sig);
+  const serialized = serializeSession(db, session, { includeMessages: true });
+  const actionUrl = phoneDial.voiceActionUrl(req, session.id);
+  if (session.status === 'filed' || session.status === 'completed') {
+    return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.');
+  }
+  const hasUser = (serialized.messages || []).some((m) => m.role === 'user');
+  const say = hasUser
+    ? serialized.nextQuestion
+    : [serialized.greeting, serialized.nextQuestion].filter(Boolean).join(' ');
+  return phoneDial.gatherTwiml(say, actionUrl);
+}
+
+function voiceTurn(db, sessionId, sig, input = {}, req = null) {
+  const session = assertVoiceSession(db, sessionId, sig);
+  const actionUrl = phoneDial.voiceActionUrl(req, session.id);
+  if (session.status === 'filed' || session.status === 'completed') {
+    return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.');
+  }
+  const text = String(input.SpeechResult || input.speechResult || input.text || '').trim();
+  if (text) {
+    ingestText(db, session, text, { source: 'speech' });
+  }
+  const actor = session.created_by
+    ? db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(session.created_by)
+    : db.prepare("SELECT * FROM users WHERE role = 'admin' AND active = 1 ORDER BY id LIMIT 1").get();
+  const latest = finishPhoneIfReady(db, getSession(db, session.id), actor);
+  if (latest.status === 'completed' || latest.status === 'filed') {
+    return phoneDial.hangupTwiml('Thank you. I have everything I need. Goodbye.');
+  }
+  return phoneDial.gatherTwiml(latest.nextQuestion || 'Please repeat that.', actionUrl);
+}
+
+function publicSession(db, portalToken, sessionId, guestToken) {
+  const { session } = readGuestSession(db, portalToken, sessionId, guestToken);
+  return serializePublicSession(db, session);
+}
+
 module.exports = {
   STAFF_ROLES,
   ensureIntakeTables,
@@ -938,6 +1078,10 @@ module.exports = {
   startWebCall,
   addWebCallTurn,
   completeWebCall,
+  startDial,
+  voicePrompt,
+  voiceTurn,
+  publicSession,
   checkPortalRateLimit,
   verifyPhoneWebhookSecret,
   ingestPhoneCall,

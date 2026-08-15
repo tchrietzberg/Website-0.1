@@ -433,7 +433,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
   return headers;
 }
 
-function parseBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
+function readBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -446,13 +446,23 @@ function parseBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
       }
       chunks.push(c);
     });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve({});
-      try { resolve(JSON.parse(raw)); }
-      catch { reject(new Error('invalid JSON body')); }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
+  });
+}
+
+function parseBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
+  return readBodyLimited(req, { limit }).then((raw) => {
+    if (!raw) return {};
+    try { return JSON.parse(raw); }
+    catch { throw new Error('invalid JSON body'); }
+  });
+}
+
+function parseFormLimited(req, { limit = MAX_BODY_BYTES } = {}) {
+  return readBodyLimited(req, { limit }).then((raw) => {
+    if (!raw) return {};
+    return Object.fromEntries(new URLSearchParams(raw));
   });
 }
 
@@ -527,6 +537,7 @@ module.exports = {
   assertCsrf,
   securityHeaders,
   parseBodyLimited,
+  parseFormLimited,
   cookieHeader,
   clearCookie,
   sessionSetCookie,
