@@ -385,4 +385,33 @@ describe('intake agent', () => {
     delete process.env.TWILIO_STUB;
     delete process.env.INTAKE_PHONE_WEBHOOK_SECRET;
   });
+
+  it('lets any signed-in firm user list intake forms and dial', async () => {
+    process.env.TWILIO_STUB = '1';
+    db.prepare(
+      "INSERT INTO users(email,name,role,password_hash) VALUES ('pat@firm.example','Pat','paralegal',?)"
+    ).run(hashPassword('demo-change-me'));
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'pat@firm.example', password: 'demo-change-me' },
+    });
+    assert.equal(login.status, 200);
+    const cookie = sessionCookie(login.setCookie);
+    const auth = {
+      cookies: cookie,
+      headers: {
+        'X-CSRF-Token': login.json.csrf,
+        Authorization: `Bearer ${login.json.token}`,
+      },
+    };
+    const forms = await request(port, 'GET', '/api/intake/forms', auth);
+    assert.equal(forms.status, 200, JSON.stringify(forms.json));
+    const formId = forms.json.forms[0].id;
+    const dialed = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+      ...auth,
+      body: { phone: '202-555-0147', test: true },
+    });
+    assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
+    assert.equal(dialed.json.session.channel, 'phone');
+    delete process.env.TWILIO_STUB;
+  });
 });

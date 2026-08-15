@@ -15,12 +15,18 @@ const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const PHONE_RE = /(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}/;
 const portalHits = new Map();
 
-function assertStaff(actor) {
-  if (!actor?.id || !STAFF_ROLES.includes(actor.role)) {
+function assertStaff(actor, db = null) {
+  if (!actor?.id) {
     const err = new Error('forbidden');
     err.status = 403;
     throw err;
   }
+  if (STAFF_ROLES.includes(actor.role)) return;
+  if (db && permissions.isKnownRole(db, actor.role)) return;
+  if (db && db.prepare('SELECT id FROM users WHERE id = ? AND active = 1').get(actor.id)) return;
+  const err = new Error('forbidden');
+  err.status = 403;
+  throw err;
 }
 
 function maskPhone(value) {
@@ -245,7 +251,7 @@ function ensureDefaultForm(db, actor = null) {
 }
 
 function listForms(db, actor) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   ensureDefaultForm(db, actor);
   return db.prepare('SELECT * FROM intake_forms WHERE active = 1 ORDER BY id')
     .all()
@@ -260,7 +266,7 @@ function getForm(db, formId) {
 }
 
 function saveForm(db, actor, input = {}, formId = null) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   ensureDefaultForm(db, actor);
   const name = String(input.name || 'New matter intake').trim() || 'New matter intake';
   const greeting = String(input.greeting || defaultGreeting()).trim();
@@ -477,7 +483,7 @@ function getSession(db, sessionId) {
 }
 
 function startSession(db, actor, input = {}) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   const form = getForm(db, input.formId) || ensureDefaultForm(db, actor);
   const channel = ['phone', 'portal', 'agent', 'web_call'].includes(input.channel) ? input.channel : 'agent';
   if (channel === 'phone' && !form.phone_enabled) {
@@ -521,7 +527,7 @@ function ingestText(db, session, text, { actor = null, source = 'typed' } = {}) 
 }
 
 function addTurn(db, actor, sessionId, input = {}) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   const session = getSession(db, sessionId);
   if (!session) throw Object.assign(new Error('intake session not found'), { status: 404 });
   if (session.status === 'filed') throw Object.assign(new Error('intake already filed'), { status: 400 });
@@ -544,7 +550,7 @@ function splitCustomValues(extracted, fields) {
 }
 
 function fileSession(db, actor, sessionId, patch = {}) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   permissions.assertCanModifyRecords(db, actor, 'contact');
   permissions.assertCanModifyRecords(db, actor, 'matter');
   const session = getSession(db, sessionId);
@@ -600,7 +606,7 @@ function fileSession(db, actor, sessionId, patch = {}) {
 }
 
 function listSessions(db, actor) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   ensureIntakeTables(db);
   return db.prepare(`
     SELECT * FROM intake_sessions ORDER BY id DESC LIMIT 50
@@ -608,7 +614,7 @@ function listSessions(db, actor) {
 }
 
 function createPortalLink(db, actor, formId, { days = 30, reuse = false } = {}) {
-  assertStaff(actor);
+  assertStaff(actor, db);
   const form = getForm(db, formId) || ensureDefaultForm(db, actor);
   if (!form.portal_enabled) throw Object.assign(new Error('portal intake is disabled'), { status: 400 });
   if (reuse) {
@@ -961,7 +967,7 @@ async function startDial(db, input = {}, req = null) {
     actor = portalActor(db, hit.token);
     portalToken = hit.token.token;
   } else {
-    assertStaff(input.actor);
+    assertStaff(input.actor, db);
     form = getForm(db, input.formId) || ensureDefaultForm(db, input.actor);
     if (!form.phone_enabled) throw Object.assign(new Error('phone intake is disabled'), { status: 400 });
     actor = input.actor;

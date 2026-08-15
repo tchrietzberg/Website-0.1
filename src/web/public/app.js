@@ -208,7 +208,7 @@
   }
 
   function canUseIntake(user = state.user) {
-    return canCreateMatter(user);
+    return !!user?.id;
   }
 
   function isAdminUser(user = state.user) {
@@ -5015,6 +5015,10 @@
   }
 
   async function renderIntake() {
+    if (!state.user) {
+      renderLogin();
+      return;
+    }
     if (!canUseIntake()) {
       setMainHtml('<div class="card"><p class="error">You do not have access to intake.</p></div>');
       return;
@@ -5246,6 +5250,10 @@
           state.intakeFlash = { ok: true, text: `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.` };
           void renderIntake();
         } catch (e) {
+          if (!state.user || e.code === 'sign in required') {
+            renderLogin();
+            return;
+          }
           state.intakeFlash = { ok: false, text: e.message || 'Could not place the call.' };
           void renderIntake();
         }
