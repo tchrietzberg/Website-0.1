@@ -50,30 +50,63 @@
   }
 
   const INTAKE_OPENING = 'This is Chrono calling about a new matter. May I have your full name?';
+  const INTAKE_AUDIO = {
+    ring: '/audio/intake-ringback.wav?v=259',
+    opening: '/audio/intake-opening.wav?v=259',
+  };
+  let audioCtx = null;
 
-  function speakTextNow(text) {
-    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!spoken) return false;
-    const Utter = window.SpeechSynthesisUtterance;
-    const synth = window.speechSynthesis;
-    if (!Utter || !synth) return false;
-    const speak = () => {
-      try { synth.cancel(); } catch { /* ignore */ }
-      try { synth.resume(); } catch { /* ignore */ }
+  function unlockAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    void audioCtx.resume();
+    const buf = audioCtx.createBuffer(1, 1, 22050);
+    const tick = audioCtx.createBufferSource();
+    tick.buffer = buf;
+    tick.connect(audioCtx.destination);
+    tick.start();
+    return audioCtx;
+  }
+
+  async function playClip(ctx, url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('audio missing');
+    const buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+    await new Promise((resolve) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.onended = () => resolve();
+      src.start();
+    });
+  }
+
+  function speakTextNow(text, { ring = false } = {}) {
+    const ctx = unlockAudio();
+    const spoken = String(text || INTAKE_OPENING);
+    const start = (async () => {
+      try {
+        if (ctx) {
+          if (ring) await playClip(ctx, INTAKE_AUDIO.ring);
+          await playClip(ctx, INTAKE_AUDIO.opening);
+          if (speechEngine()) startListen();
+          return;
+        }
+      } catch { /* fall through */ }
+      const Utter = window.SpeechSynthesisUtterance;
+      const synth = window.speechSynthesis;
+      if (!Utter || !synth) {
+        if (speechEngine()) startListen();
+        return;
+      }
       const utter = new Utter(spoken);
       utter.lang = 'en-US';
-      utter.rate = 0.95;
-      utter.volume = 1;
-      const voices = synth.getVoices() || [];
-      const voice = voices.find((v) => /en-US/i.test(v.lang)) || voices.find((v) => /^en/i.test(v.lang)) || voices[0];
-      if (voice) utter.voice = voice;
       utter.onend = () => { if (speechEngine()) startListen(); };
       utter.onerror = () => { if (speechEngine()) startListen(); };
       synth.speak(utter);
-    };
-    speak();
-    if (!synth.getVoices().length) synth.addEventListener('voiceschanged', speak, { once: true });
-    setTimeout(() => { if (!synth.speaking && !synth.pending) speak(); }, 200);
+    })();
+    void start;
     return true;
   }
 
@@ -145,9 +178,8 @@
         <h1>Calling ${escapeHtml(toMasked || 'that number')}…</h1>
         <p class="muted">${escapeHtml(firmName || 'the firm')}</p>
         <div class="intake-calling">
-          <p class="intake-ask-q">The agent is speaking on this call.</p>
-          <p class="hint">Keep this tab open and use speakerphone so the caller can hear the agent.</p>
-          ${telUrl ? `<a class="btn primary" id="intakePlaceCallNow" href="${escapeHtml(telUrl)}">Place call now</a>` : ''}
+          <p class="intake-ask-q">Connected. The agent is speaking on this call.</p>
+          <p class="hint">Turn up this device’s volume to hear the agent.</p>
         </div>
         <div class="intake-ask" id="intakeCallAsk" hidden>
           <p class="sidebar-label">On the call</p>
@@ -342,47 +374,25 @@
         <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
-        <p>Enter the number. Call this number rings that phone from this device.</p>
+        <p>Enter the number, then Call this number. The agent speaks on the call.</p>
         <form id="intakeDialForm" class="stack intake-dial">
           <label>Phone number <input id="intakeDialPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" /></label>
           <div class="row-actions">
-            <a class="btn primary" id="intakeDialBtn" href="#">Call this number</a>
+            <button type="submit" class="btn primary" id="intakeDialBtn">Call this number</button>
           </div>
         </form>
         <p id="intakeCallError" class="error" hidden></p>
       </div>`;
     const phoneInput = document.getElementById('intakeDialPhone');
-    const callLink = document.getElementById('intakeDialBtn');
-    const syncCallHref = () => {
-      const href = toTelHref(phoneInput?.value);
-      if (callLink) callLink.href = href || '#';
-    };
-    phoneInput?.addEventListener('input', syncCallHref);
-    syncCallHref();
-    const startPortalCall = (phone, href) => {
-      try { window.open(href, 'chronoIntakeDial'); } catch { /* stay on page */ }
-      speakTextNow(form.greeting ? `${form.greeting} May I have your full name?` : INTAKE_OPENING);
-      void postDial(form, data.firmName, phone);
-    };
-    callLink.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      const phone = String(phoneInput?.value || '').trim();
-      const href = toTelHref(phone);
-      if (!href) {
-        setError('Enter the phone number to call.');
-        return;
-      }
-      startPortalCall(phone, href);
-    });
     document.getElementById('intakeDialForm').onsubmit = (ev) => {
       ev.preventDefault();
       const phone = String(phoneInput?.value || '').trim();
-      const href = toTelHref(phone);
-      if (!href) {
+      if (!toTelHref(phone)) {
         setError('Enter the phone number to call.');
         return;
       }
-      startPortalCall(phone, href);
+      speakTextNow(form.greeting ? `${form.greeting} May I have your full name?` : INTAKE_OPENING, { ring: true });
+      void postDial(form, data.firmName, phone);
     };
   }
 

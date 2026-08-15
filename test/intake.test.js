@@ -350,7 +350,13 @@ describe('intake agent', () => {
     assert.match(pickup.raw, /<Say voice="alice"/);
     assert.match(pickup.raw, /Chrono calling about a new matter/);
     assert.match(pickup.raw, /May I have your full name/);
+    assert.match(pickup.raw, /I am listening/);
+    assert.ok(pickup.raw.indexOf('<Say') < pickup.raw.indexOf('<Gather'));
     assert.doesNotMatch(pickup.raw, /Polly/);
+
+    const opening = await request(port, 'GET', '/audio/intake-opening.wav');
+    assert.equal(opening.status, 200);
+    assert.match(opening.raw, /^RIFF/);
 
     const payload = new URLSearchParams({ SpeechResult: 'My name is Riley Dial. Email is riley.dial@example.com. Matter is Dial v. Acme. Case stage is Trial.' }).toString();
     const turn = await new Promise((resolve, reject) => {

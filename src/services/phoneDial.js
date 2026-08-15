@@ -140,8 +140,9 @@ function sayText(value) {
 function gatherTwiml(say, actionUrl) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  <Say voice="alice">${sayText(say)}</Say>
   <Gather input="speech" timeout="8" speechTimeout="auto" action="${escapeXml(actionUrl)}" method="POST">
-    <Say voice="alice">${sayText(say)}</Say>
+    <Say voice="alice">I am listening.</Say>
   </Gather>
   <Redirect method="POST">${escapeXml(actionUrl)}</Redirect>
 </Response>`;

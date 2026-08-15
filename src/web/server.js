@@ -180,6 +180,8 @@ function serveStatic(req, res) {
     '.css': 'text/css; charset=utf-8',
     '.js': 'application/javascript; charset=utf-8',
     '.svg': 'image/svg+xml',
+    '.wav': 'audio/wav',
+    '.mp3': 'audio/mpeg',
   };
   const body = fs.readFileSync(file);
   const headers = withSecHeaders(req, {

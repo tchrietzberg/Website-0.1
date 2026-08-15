@@ -404,7 +404,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=()',
+    'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=(), autoplay=(self)',
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Content-Security-Policy': [
@@ -416,6 +416,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       'font-src https://fonts.gstatic.com',
       "img-src 'self' data:",
+      "media-src 'self' blob:",
       "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com",
       'frame-src https://*.sharepoint.com https://onedrive.live.com https://*.onedrive.com',
       "object-src 'none'",
