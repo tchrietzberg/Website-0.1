@@ -9,6 +9,7 @@
   let listening = false;
   let recognition = null;
   let sending = false;
+  let spokenKey = '';
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -23,6 +24,12 @@
   }
 
   function renderMessages() {
+    const ask = document.getElementById('intakeCallAsk');
+    if (ask && session?.nextQuestion) {
+      ask.hidden = false;
+      const q = document.getElementById('intakeCallAskQ');
+      if (q) q.textContent = session.nextQuestion;
+    }
     const box = document.getElementById('intakeCallTranscript');
     if (!box || !session) return;
     const messages = session.messages || [];
@@ -32,6 +39,39 @@
         <p>${escapeHtml(m.content)}</p>
       </div>`).join('');
     box.scrollTop = box.scrollHeight;
+  }
+
+  function interviewPrompt() {
+    if (!session) return '';
+    const hasName = !!(session.extracted && session.extracted.contactName);
+    if (hasName) return session.nextQuestion || '';
+    const agentMsgs = (session.messages || []).filter((m) => m.role === 'agent').map((m) => m.content);
+    return agentMsgs.join(' ') || session.nextQuestion || '';
+  }
+
+  function speakThenListen() {
+    const text = interviewPrompt();
+    const key = `${session?.id || ''}:${session?.nextKey || session?.nextQuestion || ''}`;
+    if (!text || spokenKey === key) {
+      if (speechEngine() && !listening) startListen();
+      return;
+    }
+    spokenKey = key;
+    stopListen();
+    const Utter = window.SpeechSynthesisUtterance;
+    const synth = window.speechSynthesis;
+    const after = () => { if (speechEngine()) startListen(); };
+    if (!Utter || !synth) {
+      after();
+      return;
+    }
+    try { synth.cancel(); } catch { /* ignore */ }
+    const utter = new Utter(text);
+    utter.lang = 'en-US';
+    utter.rate = 1;
+    utter.onend = after;
+    utter.onerror = after;
+    synth.speak(utter);
   }
 
   function setError(text) {
@@ -81,6 +121,10 @@
         <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(firmName || 'the firm')}${isTest ? ' · This is the same page the external website button opens.' : ''}</p>
+        <div class="intake-ask" id="intakeCallAsk" hidden>
+          <p class="sidebar-label">Agent is asking</p>
+          <p class="intake-ask-q" id="intakeCallAskQ"></p>
+        </div>
         <div class="intake-transcript" id="intakeCallTranscript"></div>
         <p id="intakeDialStatus" class="hint" hidden></p>
         <p id="intakeCallError" class="error" hidden></p>
@@ -109,6 +153,8 @@
     };
     document.getElementById('intakeCallDone').onclick = () => void completeCall();
     updateDone();
+    renderMessages();
+    speakThenListen();
   }
 
   function updateDone() {
@@ -125,6 +171,7 @@
       session = out.session;
       renderMessages();
       updateDone();
+      speakThenListen();
     } catch (e) {
       setError(e.message || 'Could not send that answer.');
     } finally {
@@ -206,7 +253,6 @@
       guestToken = out.guestToken || '';
       session = out.session;
       paintCall(form, firmName);
-      if (speechEngine()) startListen();
     } catch (e) {
       setError(e.message || 'Could not start the intake call.');
     }
@@ -227,9 +273,7 @@
       const hint = document.getElementById('intakeDialStatus');
       if (hint) {
         hint.hidden = false;
-        hint.textContent = out.stub
-          ? `Intake started for ${out.toMasked || 'that number'}. Continue here — the agent will ask the questions.`
-          : `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.`;
+        hint.textContent = `Call started for ${out.toMasked || 'that number'}. The agent is asking for your name.`;
       }
       stopPoll();
       pollTimer = setInterval(() => void refreshSession(), 2500);
@@ -256,7 +300,7 @@
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
         <p>${escapeHtml(form.greeting || 'Start a short call to share the information we need for a new matter.')}</p>
-        <p>Enter a phone number and start the intake call. No Twilio token is required.</p>
+        <p>Enter a phone number. The intake agent will ask for your name and the other details we need.</p>
         <form id="intakeDialForm" class="stack intake-dial">
           <label>Phone number <input id="intakeDialPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" /></label>
           <div class="row-actions">

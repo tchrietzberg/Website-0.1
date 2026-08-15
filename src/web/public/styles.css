@@ -4501,6 +4501,15 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 @media (max-width: 900px) {
   .intake-grid { grid-template-columns: 1fr; }
 }
+.intake-ask {
+  margin: 0 0 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: #1e3a5f;
+  color: #fff;
+}
+.intake-ask .sidebar-label { color: #c5d4e8; margin-bottom: 0.2rem; }
+.intake-ask-q { margin: 0.35rem 0 0; font-size: 1.15rem; font-weight: 600; line-height: 1.35; }
 .intake-transcript {
   max-height: 22rem;
   overflow: auto;

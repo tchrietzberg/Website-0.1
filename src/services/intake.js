@@ -815,6 +815,7 @@ function serializePublicSession(db, row) {
     channel: full.channel,
     messages: full.messages || [],
     nextQuestion: full.nextQuestion,
+    nextKey: full.nextKey,
     readyToSubmit: !full.nextKey,
     test: !!full.test,
     extracted: {

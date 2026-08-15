@@ -57,6 +57,8 @@
     intakeSession: null,
     intakeFlash: null,
     intakeEmbed: null,
+    intakeConduct: false,
+    intakeSpokenKey: null,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5015,6 +5017,83 @@
     };
   }
 
+  function cancelIntakeSpeech() {
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+  }
+
+  function intakeAskText(session) {
+    if (!session?.nextQuestion) return '';
+    const hasName = !!(session.extracted && session.extracted.contactName);
+    if (hasName) return session.nextQuestion;
+    return [session.greeting, session.nextQuestion].filter(Boolean).join(' ');
+  }
+
+  function startIntakeListen() {
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Speech || !state.intakeSession?.id) return false;
+    if (state.intakeRec) {
+      try { state.intakeRec.stop(); } catch { /* ignore */ }
+      state.intakeRec = null;
+    }
+    const rec = new Speech();
+    state.intakeRec = rec;
+    rec.lang = 'en-US';
+    rec.interimResults = false;
+    rec.onresult = (ev) => {
+      const text = String(ev.results?.[0]?.[0]?.transcript || '').trim();
+      if (text) void submitIntakeAnswer(text, 'speech');
+    };
+    rec.onerror = () => { state.intakeRec = null; };
+    rec.onend = () => { state.intakeRec = null; };
+    try {
+      rec.start();
+      return true;
+    } catch {
+      state.intakeRec = null;
+      return false;
+    }
+  }
+
+  function speakIntakeQuestion(session) {
+    if (!state.intakeConduct || !session?.id || session.status === 'filed' || session.status === 'completed') return;
+    const text = intakeAskText(session);
+    if (!text) return;
+    const key = `${session.id}:${session.nextKey || 'done'}`;
+    if (state.intakeSpokenKey === key) return;
+    state.intakeSpokenKey = key;
+    const Utter = window.SpeechSynthesisUtterance;
+    const synth = window.speechSynthesis;
+    const after = () => { startIntakeListen(); };
+    if (!Utter || !synth) {
+      after();
+      return;
+    }
+    cancelIntakeSpeech();
+    const utter = new Utter(text);
+    utter.lang = 'en-US';
+    utter.rate = 1;
+    utter.onend = after;
+    utter.onerror = after;
+    synth.speak(utter);
+  }
+
+  async function submitIntakeAnswer(text, source) {
+    if (!state.intakeSession?.id) return;
+    const spoken = String(text || '').trim();
+    if (!spoken) return;
+    const out = await api(`/api/intake/sessions/${state.intakeSession.id}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ text: spoken, source }),
+    });
+    state.intakeSession = out.session;
+    void renderIntake();
+  }
+
+  function beginIntakeConduct() {
+    state.intakeConduct = true;
+    state.intakeSpokenKey = null;
+  }
+
   async function renderIntake() {
     if (!state.user) {
       renderLogin();
@@ -5065,10 +5144,7 @@
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
       <div class="card intake-dial-card">
         <p class="sidebar-label">Dial a test call</p>
-        <p class="muted">Enter a number and call. No Twilio token is required. Chrono starts the intake agent here; your device places the call.</p>
-        ${dial.carrier
-          ? `<p class="hint">A Twilio number is saved${dial.fromMasked ? ` (${escapeHtml(dial.fromMasked)})` : ''}. Chrono will also try to ring the phone from that number.</p>`
-          : '<p class="hint">Call this number opens your phone. Use Listen or type the answers in the agent panel.</p>'}
+        <p class="muted">Enter a number and start the call. The agent asks for name, email, matter, and the custom fields you selected.</p>
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
           <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
           <button type="submit" class="btn primary">Call this number</button>
@@ -5097,6 +5173,11 @@
         </div>` : ''}
       <div class="intake-grid">
         <div class="card intake-agent">
+          ${session?.nextQuestion ? `
+            <div class="intake-ask">
+              <p class="sidebar-label">Agent is asking</p>
+              <p class="intake-ask-q">${escapeHtml(session.nextQuestion)}</p>
+            </div>` : ''}
           <div class="intake-transcript" id="intakeTranscript">
             ${(messages.length ? messages : [{ role: 'agent', content: form?.greeting || 'Start a call to begin.' }]).map((m) => `
               <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
@@ -5154,6 +5235,7 @@
       startBtn.onclick = async () => {
         const created = await api('/api/intake/sessions', { method: 'POST', body: JSON.stringify({ channel: 'phone', formId: form?.id }) });
         state.intakeSession = created.session;
+        beginIntakeConduct();
         void renderIntake();
       };
     }
@@ -5166,33 +5248,25 @@
         const box = $('#intakeTalk');
         const text = String(box?.value || '').trim();
         if (!text) return;
-        const out = await api(`/api/intake/sessions/${state.intakeSession.id}/message`, {
-          method: 'POST',
-          body: JSON.stringify({ text, source: 'typed' }),
-        });
-        state.intakeSession = out.session;
-        void renderIntake();
+        state.intakeConduct = true;
+        await submitIntakeAnswer(text, 'typed');
+        if (box) box.value = '';
       };
     }
 
     const listenBtn = $('#intakeListen');
     if (listenBtn) {
       listenBtn.onclick = () => {
-        const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!Speech) {
-          state.intakeFlash = { ok: false, text: 'This browser cannot take live speech. Type the caller’s answers, or POST a transcript to the phone webhook.' };
+        state.intakeConduct = true;
+        if (!state.intakeSession?.id) {
+          state.intakeFlash = { ok: false, text: 'Start or dial a call first. The agent will ask for the caller’s name.' };
           void renderIntake();
           return;
         }
-        const rec = new Speech();
-        rec.lang = 'en-US';
-        rec.interimResults = false;
-        rec.onresult = (ev) => {
-          const text = ev.results?.[0]?.[0]?.transcript || '';
-          const box = $('#intakeTalk');
-          if (box) box.value = text;
-        };
-        rec.start();
+        if (!startIntakeListen()) {
+          state.intakeFlash = { ok: false, text: 'This browser cannot take live speech. Type the caller’s answers in the box below.' };
+          void renderIntake();
+        }
       };
     }
 
@@ -5252,19 +5326,10 @@
             body: JSON.stringify({ phone, test: true }),
           });
           state.intakeSession = out.session;
-          if (out.stub && out.telUrl) {
-            const link = document.createElement('a');
-            link.href = out.telUrl;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-          }
+          beginIntakeConduct();
           state.intakeFlash = {
             ok: true,
-            text: out.stub
-              ? `Calling ${out.toMasked || 'that number'} from this device. Use Listen or type the answers here.`
-              : `Calling ${out.toMasked || 'that number'}. Answer the phone — the intake agent will ask the questions.`,
+            text: `Call started for ${out.toMasked || 'that number'}. The agent is asking for the caller’s name.`,
           };
           void renderIntake();
         } catch (e) {
@@ -5306,6 +5371,10 @@
         void renderIntake();
       };
     }
+
+    const transcript = $('#intakeTranscript');
+    if (transcript) transcript.scrollTop = transcript.scrollHeight;
+    speakIntakeQuestion(session);
   }
 
   async function renderView() {
@@ -10856,7 +10925,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call to ring a number from this device — no Twilio token is required. Test website call opens the same page the firm-site button uses. The agent collects the selected custom fields. Test calls are not auto-filed. A Twilio number in [[Phone dialing|settings-phone-dialing]] is optional.',
+      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call or Start call — the agent asks for name, email, matter, and selected custom fields out loud. Test website call is the same interview clients get. Test calls are not auto-filed.',
       links: [
         { label: 'Open Intake', target: 'intake' },
         { label: 'Phone dialing', target: 'settings-phone-dialing' },

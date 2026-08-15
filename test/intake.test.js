@@ -212,6 +212,8 @@ describe('intake agent', () => {
     const started = await request(port, 'POST', `/api/portal/intake/${token}/call`, { body: {} });
     assert.equal(started.status, 200, JSON.stringify(started.json));
     assert.equal(started.json.session.channel, 'web_call');
+    assert.match(String(started.json.session.nextQuestion), /name/i);
+    assert.equal(started.json.session.nextKey, 'contactName');
     assert.ok(started.json.guestToken);
     const sessionId = started.json.session.id;
 
@@ -451,6 +453,9 @@ describe('intake agent', () => {
     assert.equal(localDial.json.stub, true);
     assert.equal(localDial.json.telUrl, 'tel:+14155550199');
     assert.match(String(localDial.json.callSid), /^CA_LOCAL_/);
+    assert.match(String(localDial.json.session.nextQuestion), /name/i);
+    assert.equal(localDial.json.session.nextKey, 'contactName');
+    assert.ok((localDial.json.session.messages || []).some((m) => m.role === 'agent' && /name/i.test(m.content)));
 
     const badSid = await request(port, 'PATCH', '/api/settings', {
       ...auth,
