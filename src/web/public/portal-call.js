@@ -53,12 +53,12 @@
 
   const INTAKE_GREETING = 'Hello, this is Chrono. I\'m calling about a new matter.';
   const INTAKE_AUDIO = {
-    ring: '/audio/intake-ringback.wav?v=261',
-    greeting: '/audio/intake-greeting.wav?v=261',
-    contactName: '/audio/intake-name.wav?v=261',
-    contactEmail: '/audio/intake-email.wav?v=261',
-    matterName: '/audio/intake-matter.wav?v=261',
-    thanks: '/audio/intake-thanks.wav?v=261',
+    ring: '/audio/intake-ringback.wav?v=262',
+    greeting: '/audio/intake-greeting.wav?v=262',
+    contactName: '/audio/intake-name.wav?v=262',
+    contactEmail: '/audio/intake-email.wav?v=262',
+    matterName: '/audio/intake-matter.wav?v=262',
+    thanks: '/audio/intake-thanks.wav?v=262',
   };
   let audioCtx = null;
   let audioSource = null;
@@ -106,12 +106,14 @@
   }
 
   function playRing() {
+    const started = Date.now();
+    const minMs = 2400;
     const ctx = unlockAudio();
-    if (!ctx) return Promise.resolve();
-    return Promise.race([
-      playClip(ctx, INTAKE_AUDIO.ring).catch(() => {}),
-      new Promise((resolve) => window.setTimeout(resolve, 4500)),
-    ]);
+    const play = ctx ? playClip(ctx, INTAKE_AUDIO.ring).catch(() => {}) : Promise.resolve();
+    return play.then(() => {
+      const wait = minMs - (Date.now() - started);
+      if (wait > 0) return new Promise((resolve) => window.setTimeout(resolve, wait));
+    });
   }
 
   function speakWithBrowserVoice(text) {

@@ -66,6 +66,7 @@
     intakeOnCall: false,
     intakeConnected: false,
     intakeGreeted: false,
+    intakeDialPhone: '',
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5026,12 +5027,12 @@
 
   const INTAKE_GREETING = 'Hello, this is Chrono. I\'m calling about a new matter.';
   const INTAKE_AUDIO = {
-    ring: '/audio/intake-ringback.wav?v=261',
-    greeting: '/audio/intake-greeting.wav?v=261',
-    contactName: '/audio/intake-name.wav?v=261',
-    contactEmail: '/audio/intake-email.wav?v=261',
-    matterName: '/audio/intake-matter.wav?v=261',
-    thanks: '/audio/intake-thanks.wav?v=261',
+    ring: '/audio/intake-ringback.wav?v=262',
+    greeting: '/audio/intake-greeting.wav?v=262',
+    contactName: '/audio/intake-name.wav?v=262',
+    contactEmail: '/audio/intake-email.wav?v=262',
+    matterName: '/audio/intake-matter.wav?v=262',
+    thanks: '/audio/intake-thanks.wav?v=262',
   };
 
   function cancelIntakeSpeech() {
@@ -5152,12 +5153,39 @@
   }
 
   function playIntakeRing() {
+    const started = Date.now();
+    const minMs = 2400;
     const ctx = unlockAgentAudio();
-    if (!ctx) return Promise.resolve();
-    return Promise.race([
-      decodeIntakeClip(ctx, INTAKE_AUDIO.ring).then((buf) => playIntakeBuffer(ctx, buf)).catch(() => {}),
-      new Promise((resolve) => window.setTimeout(resolve, 4500)),
-    ]);
+    const play = ctx
+      ? decodeIntakeClip(ctx, INTAKE_AUDIO.ring).then((buf) => playIntakeBuffer(ctx, buf)).catch(() => {})
+      : Promise.resolve();
+    return play.then(() => {
+      const wait = minMs - (Date.now() - started);
+      if (wait > 0) return new Promise((resolve) => window.setTimeout(resolve, wait));
+    });
+  }
+
+  function paintIntakeCallProgress(phoneHint) {
+    const form = document.getElementById('intakeStaffDialForm');
+    if (!form) return;
+    let box = document.querySelector('.intake-calling');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'intake-calling';
+      form.insertAdjacentElement('afterend', box);
+    }
+    const masked = state.intakeToMasked || phoneHint || 'that number';
+    if (state.intakeConnected) {
+      box.innerHTML = `<p class="intake-ask-q">Connected ${escapeHtml(masked)}</p>
+            <p class="hint">The agent is speaking on this call. Turn up this device’s volume.</p>`;
+    } else {
+      box.innerHTML = `<p class="intake-ask-q">Calling ${escapeHtml(masked)}…</p>
+            <p class="hint">Please wait while the call connects. The agent will speak after the line is answered.</p>`;
+    }
+    const transcript = document.getElementById('intakeTranscript');
+    if (transcript && !state.intakeConnected) {
+      transcript.innerHTML = `<div class="intake-msg is-system"><strong>System</strong><p>Calling… The agent will begin after the line connects.</p></div>`;
+    }
   }
 
   function speakAgentNow(text) {
@@ -5331,7 +5359,7 @@
         <p class="sidebar-label">Call a number</p>
         <p class="muted">Enter the number, then Call this number. The agent speaks on the call.</p>
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
-          <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
+          <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" value="${escapeHtml(state.intakeDialPhone || '')}" />
           <button type="submit" class="btn primary" id="intakeCallThisNumber">Call this number</button>
         </form>
         ${state.intakeOnCall ? `
@@ -5436,6 +5464,7 @@
         state.intakeOnCall = false;
         state.intakeConnected = false;
         state.intakeGreeted = false;
+        state.intakeDialPhone = '';
         state.intakeConduct = false;
         cancelIntakeSpeech();
         state.intakeSpokenKey = null;
@@ -5549,16 +5578,17 @@
         state.intakeConnected = false;
         state.intakeGreeted = false;
         state.intakeToMasked = null;
+        state.intakeDialPhone = phone;
         state.intakeConduct = false;
         state.intakeSpokenKey = null;
-        await renderIntake();
+        paintIntakeCallProgress(phone);
         const ringing = playIntakeRing();
         try {
           await postStaffDial(phone);
           await ringing;
           state.intakeConnected = true;
           state.intakeConduct = true;
-          state.intakeFlash = { ok: true, text: `Connected to ${state.intakeToMasked || 'that number'}.` };
+          paintIntakeCallProgress(state.intakeToMasked || phone);
           void renderIntake();
         } catch (e) {
           cancelIntakeSpeech();
