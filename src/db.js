@@ -33,6 +33,7 @@ function migrate(db) {
   migrateAuditHardening(db);
   migrateMfa(db);
   migrateInvoiceTemplates(db);
+  migrateIntake(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -635,6 +636,10 @@ function resetDb(dbFile = DEFAULT_DB) {
   const db = openDb(dbFile);
   migrate(db);
   return db;
+}
+
+function migrateIntake(db) {
+  require('./services/intake').ensureIntakeTables(db);
 }
 
 function getSetting(db, key, fallback = null) {

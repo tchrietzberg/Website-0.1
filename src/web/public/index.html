@@ -8,21 +8,35 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <meta http-equiv="Cache-Control" content="no-cache" />
-  <link rel="stylesheet" href="/styles.css?v=232" />
+  <link rel="stylesheet" href="/styles.css?v=262" />
 </head>
 <body>
   <div id="app">
     <aside id="sidebar" class="sidebar" hidden>
-      <div class="sidebar-brand">Chrono</div>
-      <div class="sidebar-actions" id="sidebarActions"></div>
-      <nav id="nav" class="sidebar-nav"></nav>
-      <div id="userbar" class="sidebar-user"></div>
+      <button type="button" class="sidebar-brand" id="sidebarToggle"
+        aria-expanded="true" aria-controls="sidebarPanel"
+        title="Collapse Chrono">
+        <span class="sidebar-brand-lead">
+          <span class="brand-clock" id="sidebarClock" aria-hidden="true"></span>
+          <span class="sidebar-brand-text">Chrono</span>
+        </span>
+        <span class="sidebar-brand-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 3.5 5.5 8 10 12.5" />
+          </svg>
+        </span>
+      </button>
+      <div id="sidebarPanel" class="sidebar-panel">
+        <div class="sidebar-actions" id="sidebarActions"></div>
+        <nav id="nav" class="sidebar-nav"></nav>
+        <div id="userbar" class="sidebar-user"></div>
+      </div>
     </aside>
     <div class="workspace">
       <div id="lookupBar" class="lookup-bar" hidden></div>
       <main id="main"></main>
     </div>
   </div>
-  <script src="/app.js?v=232"></script>
+  <script src="/app.js?v=262"></script>
 </body>
 </html>

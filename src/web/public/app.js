@@ -48,11 +48,25 @@
     contactCreateFlash: null,
     contactListFlash: null,
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
+    sidebarCollapsed: false,
     settingsBillingFlash: null,
+    settingsTwilioFlash: null,
     settingsTabOpen: {},
     matterDetailsOpen: true,
     matterListColumns: null,
-    sidebarSectionOpen: { quickActions: true, navigate: true },
+    intakeSession: null,
+    intakeFlash: null,
+    intakeEmbed: null,
+    intakeConduct: false,
+    intakeSpokenKey: null,
+    intakeLiveCall: null,
+    intakePollTimer: null,
+    intakeTelUrl: null,
+    intakeToMasked: null,
+    intakeOnCall: false,
+    intakeConnected: false,
+    intakeGreeted: false,
+    intakeDialPhone: '',
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -186,6 +200,11 @@
       void api('/api/dashboard');
     } else if (view === 'users') {
       if (canManageUsers()) void api('/api/timekeepers');
+    } else if (view === 'intake') {
+      if (canUseIntake()) {
+        void api('/api/intake/forms');
+        void api('/api/intake/sessions');
+      }
     } else if (view === 'settings') {
       void api('/api/settings');
       void api('/api/record-types');
@@ -197,6 +216,10 @@
 
   function canCreateMatter(user) {
     return !!user && ['admin', 'billing_clerk', 'attorney', 'paralegal'].includes(user.role);
+  }
+
+  function canUseIntake(user = state.user) {
+    return !!user?.id;
   }
 
   function isAdminUser(user = state.user) {
@@ -340,6 +363,91 @@
 
   try { localStorage.removeItem('billing_token'); } catch { /* ignore */ }
   try { state.token = sessionStorage.getItem(TOKEN_KEY) || null; } catch { state.token = null; }
+
+  const SIDEBAR_COLLAPSED_KEY = 'chrono_sidebar_collapsed';
+  try { state.sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { /* ignore */ }
+
+  function persistSidebarCollapsed() {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, state.sidebarCollapsed ? '1' : '0');
+    } catch { /* ignore quota / private mode */ }
+  }
+
+  function applySidebarCollapsed() {
+    if (!sidebar) return;
+    const collapsed = !!state.sidebarCollapsed;
+    sidebar.classList.toggle('is-collapsed', collapsed);
+    if (appEl) appEl.classList.toggle('sidebar-collapsed', collapsed);
+    const toggle = $('#sidebarToggle');
+    if (!toggle) return;
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute(
+      'aria-label',
+      collapsed ? 'Expand Chrono sidebar' : 'Collapse Chrono sidebar',
+    );
+    toggle.title = collapsed ? 'Expand Chrono' : 'Collapse Chrono';
+  }
+
+  function analogClockSvgHtml() {
+    const ticks = [];
+    for (let i = 0; i < 60; i += 1) {
+      const hour = i % 5 === 0;
+      ticks.push(`
+        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
+          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
+          transform="rotate(${i * 6} 100 100)" />`);
+    }
+    const numerals = [
+      { n: '12', x: 100, y: 36 },
+      { n: '3', x: 168, y: 104 },
+      { n: '6', x: 100, y: 174 },
+      { n: '9', x: 32, y: 104 },
+    ].map(({ n, x, y }) => `
+      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
+        dominant-baseline="middle">${n}</text>`).join('');
+    return `
+      <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+        <circle class="login-clock-halo" cx="100" cy="100" r="99" />
+        <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
+        <circle class="login-clock-dial" cx="100" cy="100" r="88" />
+        <circle class="login-clock-ring" cx="100" cy="100" r="80" />
+        <circle class="login-clock-well" cx="100" cy="100" r="54" />
+        ${ticks.join('')}
+        ${numerals}
+        <g class="login-clock-hand-hour">
+          <line x1="100" y1="110" x2="100" y2="48" />
+        </g>
+        <g class="login-clock-hand-minute">
+          <line x1="100" y1="114" x2="100" y2="30" />
+        </g>
+        <g class="login-clock-hand-second">
+          <line x1="100" y1="122" x2="100" y2="22" />
+          <circle cx="100" cy="100" r="2.2" />
+        </g>
+        <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
+      </svg>`;
+  }
+
+  function ensureBrandClock() {
+    const host = $('#sidebarClock');
+    if (!host) return;
+    if (!host.querySelector('.login-clock-svg')) {
+      host.innerHTML = analogClockSvgHtml();
+    }
+    startAnalogClocks();
+  }
+
+  function wireSidebarToggle() {
+    const toggle = $('#sidebarToggle');
+    if (!toggle || toggle.dataset.wired === '1') return;
+    toggle.dataset.wired = '1';
+    toggle.addEventListener('click', () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      persistSidebarCollapsed();
+      applySidebarCollapsed();
+    });
+    ensureBrandClock();
+  }
 
   function persistSession(token, csrf) {
     if (csrf) state.csrf = csrf;
@@ -4288,55 +4396,55 @@
     return `${window.location.origin}/auth?token=${encodeURIComponent(rawToken)}`;
   }
 
-  let loginClockRaf = null;
+  let analogClockRaf = null;
 
   function stopLoginClock() {
-    if (loginClockRaf != null) {
-      cancelAnimationFrame(loginClockRaf);
-      loginClockRaf = null;
+    if (analogClockRaf != null) {
+      cancelAnimationFrame(analogClockRaf);
+      analogClockRaf = null;
     }
   }
 
+  function tickAnalogClocks() {
+    const hourEls = document.querySelectorAll('.login-clock-hand-hour');
+    if (!hourEls.length) return false;
+    const now = new Date();
+    const ms = now.getMilliseconds();
+    const s = now.getSeconds() + ms / 1000;
+    const m = now.getMinutes() + s / 60;
+    const h = (now.getHours() % 12) + m / 60;
+    const hourRot = `rotate(${h * 30} 100 100)`;
+    const minuteRot = `rotate(${m * 6} 100 100)`;
+    const secondRot = `rotate(${s * 6} 100 100)`;
+    hourEls.forEach((el) => el.setAttribute('transform', hourRot));
+    document.querySelectorAll('.login-clock-hand-minute')
+      .forEach((el) => el.setAttribute('transform', minuteRot));
+    document.querySelectorAll('.login-clock-hand-second')
+      .forEach((el) => el.setAttribute('transform', secondRot));
+    return true;
+  }
+
+  function startAnalogClocks() {
+    tickAnalogClocks();
+    const reduceMotion = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;
+    if (analogClockRaf != null) return;
+    const loop = () => {
+      if (!tickAnalogClocks()) {
+        analogClockRaf = null;
+        return;
+      }
+      analogClockRaf = requestAnimationFrame(loop);
+    };
+    analogClockRaf = requestAnimationFrame(loop);
+  }
+
   function loginClockHtml() {
-    const ticks = [];
-    for (let i = 0; i < 60; i += 1) {
-      const hour = i % 5 === 0;
-      ticks.push(`
-        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
-          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
-          transform="rotate(${i * 6} 100 100)" />`);
-    }
-    const numerals = [
-      { n: '12', x: 100, y: 36 },
-      { n: '3', x: 168, y: 104 },
-      { n: '6', x: 100, y: 174 },
-      { n: '9', x: 32, y: 104 },
-    ].map(({ n, x, y }) => `
-      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
-        dominant-baseline="middle">${n}</text>`).join('');
     return `
       <div class="login-clock" aria-hidden="true">
         <div class="login-clock-glow"></div>
-        <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
-          <circle class="login-clock-halo" cx="100" cy="100" r="99" />
-          <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
-          <circle class="login-clock-dial" cx="100" cy="100" r="88" />
-          <circle class="login-clock-ring" cx="100" cy="100" r="80" />
-          <circle class="login-clock-well" cx="100" cy="100" r="54" />
-          ${ticks.join('')}
-          ${numerals}
-          <g class="login-clock-hand-hour">
-            <line x1="100" y1="110" x2="100" y2="48" />
-          </g>
-          <g class="login-clock-hand-minute">
-            <line x1="100" y1="114" x2="100" y2="30" />
-          </g>
-          <g class="login-clock-hand-second">
-            <line x1="100" y1="122" x2="100" y2="22" />
-            <circle cx="100" cy="100" r="2.2" />
-          </g>
-          <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
-        </svg>
+        ${analogClockSvgHtml()}
       </div>`;
   }
 
@@ -4345,40 +4453,7 @@
   }
 
   function wireLoginClock() {
-    const root = document.querySelector('.login-clock');
-    const hourEl = root?.querySelector('.login-clock-hand-hour');
-    const minuteEl = root?.querySelector('.login-clock-hand-minute');
-    const secondEl = root?.querySelector('.login-clock-hand-second');
-    if (!root || !hourEl || !minuteEl || !secondEl) return;
-
-    const tick = () => {
-      const now = new Date();
-      const ms = now.getMilliseconds();
-      const s = now.getSeconds() + ms / 1000;
-      const m = now.getMinutes() + s / 60;
-      const h = (now.getHours() % 12) + m / 60;
-      hourEl.setAttribute('transform', `rotate(${h * 30} 100 100)`);
-      minuteEl.setAttribute('transform', `rotate(${m * 6} 100 100)`);
-      secondEl.setAttribute('transform', `rotate(${s * 6} 100 100)`);
-    };
-
-    stopLoginClock();
-    tick();
-    const reduceMotion = window.matchMedia
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) return;
-
-    const loop = () => {
-      // Keep sweeping while the login clock remains in the DOM.
-      if (!document.body.classList.contains('login-mode')
-        || !document.contains(root)) {
-        loginClockRaf = null;
-        return;
-      }
-      tick();
-      loginClockRaf = requestAnimationFrame(loop);
-    };
-    loginClockRaf = requestAnimationFrame(loop);
+    startAnalogClocks();
   }
 
   async function finishAuthSession(data) {
@@ -4460,6 +4535,7 @@
     if (sidebar) sidebar.hidden = true;
     if (appEl) {
       appEl.classList.remove('app-shell');
+      appEl.classList.remove('sidebar-collapsed');
       appEl.classList.add('login-mode');
     }
     document.body.classList.add('login-mode');
@@ -4680,6 +4756,17 @@
     renderView();
   }
 
+  function goIntake() {
+    if (!canUseIntake()) return;
+    state.view = 'intake';
+    state.matterId = null;
+    state.contactId = null;
+    state.showCreateMatter = false;
+    state.showCreateContact = false;
+    renderShell();
+    void renderView();
+  }
+
   function goAddTimeEntry() {
     state.focusTimeEntry = true;
     state.view = 'time';
@@ -4722,30 +4809,16 @@
       users: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><path d="M17 8v6M14 11h6"/></svg>`,
       plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
       briefcase: `<svg ${common}><rect x="3.5" y="7.5" width="17" height="12.5" rx="2"/><path d="M9 7.5V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7.5"/><path d="M3.5 12.25h17"/><path d="M12 11.25v2.25"/></svg>`,
+      intake: `<svg ${common}><path d="M8 4.5h8.5A2.5 2.5 0 0 1 19 7v6.5A2.5 2.5 0 0 1 16.5 16H11l-4 3v-3H7A2.5 2.5 0 0 1 4.5 13.5v-3"/><path d="M8 8.5H4.5A1.5 1.5 0 0 1 3 7V5.5A1.5 1.5 0 0 1 4.5 4H8"/><path d="M5.2 6.2v1.1"/></svg>`,
     };
     return icons[name] || icons.matters;
   }
 
-  function wireSidebarSection(root) {
-    if (!root) return;
-    root.querySelectorAll('details[data-sidebar-section]').forEach((el) => {
-      const body = el.querySelector('.sidebar-section-body');
-      const syncBody = () => {
-        if (!body) return;
-        // Keep the whole section body out of layout when collapsed.
-        body.hidden = !el.open;
-      };
-      syncBody();
-      el.addEventListener('toggle', () => {
-        const key = el.getAttribute('data-sidebar-section');
-        if (key) state.sidebarSectionOpen[key] = el.open;
-        syncBody();
-      });
-    });
-  }
-
   function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
+    wireSidebarToggle();
+    ensureBrandClock();
+    applySidebarCollapsed();
     document.body.classList.remove('login-mode');
     if (appEl) {
       appEl.classList.remove('login-mode');
@@ -4754,6 +4827,7 @@
     // Matters + Contacts stay under Quick actions (create opens create + search/list).
     // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
+      canUseIntake() ? ['intake', 'Intake', 'intake', 'Call & portal'] : null,
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
@@ -4779,6 +4853,9 @@
     if (state.view === 'users' && !canManageUsers()) {
       state.view = items[0]?.[0] || 'settings';
     }
+    if (state.view === 'intake' && !canUseIntake()) {
+      state.view = items[0]?.[0] || 'settings';
+    }
     const activeView = navActiveId(state.view);
     const sig = shellSignature();
     // Fast path: permissions unchanged — only flip the active nav highlight.
@@ -4788,12 +4865,6 @@
       return;
     }
     state._shellSig = sig;
-
-    if (!state.sidebarSectionOpen || typeof state.sidebarSectionOpen !== 'object') {
-      state.sidebarSectionOpen = { quickActions: true, navigate: true };
-    }
-    const quickOpen = state.sidebarSectionOpen.quickActions !== false;
-    const navOpen = state.sidebarSectionOpen.navigate !== false;
 
     if (sidebarActions) {
       const quickButtons = [
@@ -4826,30 +4897,23 @@
           : '',
       ].filter(Boolean).join('');
       sidebarActions.innerHTML = `
-        <details class="sidebar-section" data-sidebar-section="quickActions" ${quickOpen ? 'open' : ''}>
-          <summary class="sidebar-section-summary">
-            <span class="sidebar-label">Quick actions</span>
-            <span class="sidebar-section-chevron" aria-hidden="true">▸</span>
-          </summary>
+        <section class="sidebar-section">
+          <p class="sidebar-label">Quick actions</p>
           <div class="sidebar-section-body">
             ${quickButtons || '<p class="sidebar-section-empty muted">No quick actions for your role</p>'}
           </div>
-        </details>`;
+        </section>`;
       const sideAddMatter = $('#sideAddMatter');
       if (sideAddMatter) sideAddMatter.onclick = () => goAddMatter();
       const sideAddContact = $('#sideAddContact');
       if (sideAddContact) sideAddContact.onclick = () => goAddContact();
       const sideAddTime = $('#sideAddTime');
       if (sideAddTime) sideAddTime.onclick = () => goAddTimeEntry();
-      wireSidebarSection(sidebarActions);
     }
 
     nav.innerHTML = `
-      <details class="sidebar-section" data-sidebar-section="navigate" ${navOpen ? 'open' : ''}>
-        <summary class="sidebar-section-summary">
-          <span class="sidebar-label">Navigate</span>
-          <span class="sidebar-section-chevron" aria-hidden="true">▸</span>
-        </summary>
+      <section class="sidebar-section">
+        <p class="sidebar-label">Navigate</p>
         <div class="sidebar-section-body">
           ${items.map(([id, label, icon, hint]) =>
             `<button type="button" data-view="${id}"
@@ -4862,8 +4926,7 @@
             </button>`
           ).join('')}
         </div>
-      </details>`;
-    wireSidebarSection(nav);
+      </section>`;
     nav.querySelectorAll('[data-view]').forEach((b) => {
       b.addEventListener('pointerenter', () => prefetchView(b.dataset.view));
       b.addEventListener('focus', () => prefetchView(b.dataset.view));
@@ -4899,6 +4962,693 @@
     ensureLookupBar();
   }
 
+  function intakeFieldInputs(fields, extracted) {
+    return (fields || []).map((field) => {
+      const val = extracted?.[String(field.id)] ?? extracted?.[field.id] ?? '';
+      const opts = Array.isArray(field.options) ? field.options : [];
+      if (opts.length) {
+        return `<label>${escapeHtml(field.label)}
+          <select data-intake-field="${field.id}">
+            <option value="">Select…</option>
+            ${opts.map((opt) => `<option value="${escapeHtml(opt)}"${String(val) === String(opt) ? ' selected' : ''}>${escapeHtml(opt)}</option>`).join('')}
+          </select>
+        </label>`;
+      }
+      return `<label>${escapeHtml(field.label)}
+        <input data-intake-field="${field.id}" value="${escapeHtml(val)}" />
+      </label>`;
+    }).join('');
+  }
+
+  function intakeEmbedFromLink(link) {
+    const origin = location.origin;
+    const token = link?.token || '';
+    return {
+      url: link.url || `${origin}${link.path || ''}`,
+      callUrl: link.callUrl || `${origin}${link.callPath || `/portal/intake/call/${token}`}`,
+      testCallUrl: link.testCallUrl || `${origin}${link.callPath || `/portal/intake/call/${token}`}?test=1`,
+      embedHtml: link.embedHtml || `<a href="${origin}/portal/intake/call/${token}" target="_blank" rel="noopener noreferrer">Start an intake call</a>`,
+      widgetHtml: link.widgetHtml || `<script src="${origin}/intake-widget.js" data-intake-token="${token}" data-intake-origin="${origin}" async></script>`,
+    };
+  }
+
+  function openExternalIntakeCall(url) {
+    const width = 440;
+    const height = 740;
+    const left = Math.max(0, Math.round(((window.screen?.width || 1200) - width) / 2));
+    const top = Math.max(0, Math.round(((window.screen?.height || 800) - height) / 2));
+    window.open(url, 'chronoIntakeCall', `popup=yes,width=${width},height=${height},left=${left},top=${top}`);
+  }
+
+  async function ensureIntakeWebsiteEmbed(form) {
+    if (state.intakeEmbed?.testCallUrl || state.intakeEmbed?.callUrl) return state.intakeEmbed;
+    const link = await api(`/api/intake/forms/${form.id}/portal-link`, {
+      method: 'POST',
+      body: JSON.stringify({ days: 365, reuse: true }),
+    });
+    state.intakeEmbed = intakeEmbedFromLink(link);
+    return state.intakeEmbed;
+  }
+
+  function collectIntakePatch(root) {
+    const values = {};
+    root.querySelectorAll('[data-intake-field]').forEach((el) => {
+      const v = String(el.value || '').trim();
+      if (v) values[el.getAttribute('data-intake-field')] = v;
+    });
+    return {
+      contactName: root.querySelector('[name="intakeContactName"]')?.value || '',
+      contactEmail: root.querySelector('[name="intakeContactEmail"]')?.value || '',
+      contactPhone: root.querySelector('[name="intakeContactPhone"]')?.value || '',
+      matterName: root.querySelector('[name="intakeMatterName"]')?.value || '',
+      values,
+    };
+  }
+
+  const INTAKE_GREETING = 'Hello, this is Chrono. I\'m calling about a new matter.';
+  const INTAKE_AUDIO = {
+    ring: '/audio/intake-ringback.wav?v=262',
+    greeting: '/audio/intake-greeting.wav?v=262',
+    contactName: '/audio/intake-name.wav?v=262',
+    contactEmail: '/audio/intake-email.wav?v=262',
+    matterName: '/audio/intake-matter.wav?v=262',
+    thanks: '/audio/intake-thanks.wav?v=262',
+  };
+
+  function cancelIntakeSpeech() {
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+    try { state.intakeSource?.stop(); } catch { /* ignore */ }
+    state.intakeSource = null;
+  }
+
+  function unlockAgentAudio() {
+    try { window.speechSynthesis?.resume(); } catch { /* ignore */ }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!state.intakeAudioCtx) state.intakeAudioCtx = new AC();
+      void state.intakeAudioCtx.resume();
+      const ctx = state.intakeAudioCtx;
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const tick = ctx.createBufferSource();
+      tick.buffer = buf;
+      tick.connect(ctx.destination);
+      tick.start();
+      return ctx;
+    } catch {
+      return null;
+    }
+  }
+
+  function intakeAskText(session) {
+    if (!session) return '';
+    if (!state.intakeGreeted) return session.greeting || INTAKE_GREETING;
+    return session.nextQuestion || '';
+  }
+
+  function startIntakeListen() {
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Speech || !state.intakeSession?.id) return false;
+    if (state.intakeRec) {
+      try { state.intakeRec.stop(); } catch { /* ignore */ }
+      state.intakeRec = null;
+    }
+    const rec = new Speech();
+    state.intakeRec = rec;
+    rec.lang = 'en-US';
+    rec.interimResults = false;
+    rec.onresult = (ev) => {
+      const text = String(ev.results?.[0]?.[0]?.transcript || '').trim();
+      if (text) void submitIntakeAnswer(text, 'speech');
+    };
+    rec.onerror = () => { state.intakeRec = null; };
+    rec.onend = () => { state.intakeRec = null; };
+    try {
+      rec.start();
+      return true;
+    } catch {
+      state.intakeRec = null;
+      return false;
+    }
+  }
+
+  function intakeClipFor(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!spoken) return INTAKE_AUDIO.greeting;
+    if (spoken.includes('everything i need') || spoken.includes('goodbye')) return INTAKE_AUDIO.thanks;
+    if (spoken.includes('email')) return INTAKE_AUDIO.contactEmail;
+    if (spoken.includes('call this matter') || spoken.includes('name this matter') || spoken.includes('matter or case')) {
+      return INTAKE_AUDIO.matterName;
+    }
+    if ((spoken.includes('full name') || spoken.includes('your name')) && !spoken.includes('chrono')) {
+      return INTAKE_AUDIO.contactName;
+    }
+    if (spoken.includes('chrono') || spoken.includes('new matter')) return INTAKE_AUDIO.greeting;
+    return null;
+  }
+
+  function playIntakeBuffer(ctx, buffer, when = 0) {
+    return new Promise((resolve) => {
+      const src = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      gain.gain.value = 1;
+      src.buffer = buffer;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      state.intakeSource = src;
+      src.onended = () => resolve();
+      src.start(Math.max(ctx.currentTime, when));
+    });
+  }
+
+  async function decodeIntakeClip(ctx, url) {
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) throw new Error('agent audio missing');
+    return ctx.decodeAudioData(await res.arrayBuffer());
+  }
+
+  function speakWithBrowserVoice(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    const Utter = window.SpeechSynthesisUtterance;
+    const synth = window.speechSynthesis;
+    if (!Utter || !synth || !spoken) return Promise.resolve(false);
+    try { synth.cancel(); } catch { /* ignore */ }
+    try { synth.resume(); } catch { /* ignore */ }
+    return new Promise((resolve) => {
+      const utter = new Utter(spoken);
+      utter.lang = 'en-US';
+      utter.rate = 0.88;
+      utter.pitch = 1.02;
+      utter.volume = 1;
+      const voices = synth.getVoices() || [];
+      const voice = voices.find((v) => /en-US/i.test(v.lang) && /neural|premium|natural|samantha|jenny|aria|google/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang) && /female|samantha|allison/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang))
+        || voices[0];
+      if (voice) utter.voice = voice;
+      utter.onend = () => resolve(true);
+      utter.onerror = () => resolve(false);
+      synth.speak(utter);
+    });
+  }
+
+  function playIntakeRing() {
+    const started = Date.now();
+    const minMs = 2400;
+    const ctx = unlockAgentAudio();
+    const play = ctx
+      ? decodeIntakeClip(ctx, INTAKE_AUDIO.ring).then((buf) => playIntakeBuffer(ctx, buf)).catch(() => {})
+      : Promise.resolve();
+    return play.then(() => {
+      const wait = minMs - (Date.now() - started);
+      if (wait > 0) return new Promise((resolve) => window.setTimeout(resolve, wait));
+    });
+  }
+
+  function paintIntakeCallProgress(phoneHint) {
+    const form = document.getElementById('intakeStaffDialForm');
+    if (!form) return;
+    let box = document.querySelector('.intake-calling');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'intake-calling';
+      form.insertAdjacentElement('afterend', box);
+    }
+    const masked = state.intakeToMasked || phoneHint || 'that number';
+    if (state.intakeConnected) {
+      box.innerHTML = `<p class="intake-ask-q">Connected ${escapeHtml(masked)}</p>
+            <p class="hint">The agent is speaking on this call. Turn up this device’s volume.</p>`;
+    } else {
+      box.innerHTML = `<p class="intake-ask-q">Calling ${escapeHtml(masked)}…</p>
+            <p class="hint">Please wait while the call connects. The agent will speak after the line is answered.</p>`;
+    }
+    const transcript = document.getElementById('intakeTranscript');
+    if (transcript && !state.intakeConnected) {
+      transcript.innerHTML = `<div class="intake-msg is-system"><strong>System</strong><p>Calling… The agent will begin after the line connects.</p></div>`;
+    }
+  }
+
+  function speakAgentNow(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!spoken) return Promise.resolve(false);
+    const ctx = unlockAgentAudio();
+    const clip = intakeClipFor(spoken);
+    const play = async () => {
+      try {
+        if (ctx && clip) {
+          const agentBuf = await decodeIntakeClip(ctx, clip);
+          await playIntakeBuffer(ctx, agentBuf);
+          return true;
+        }
+      } catch { /* fall through */ }
+      return speakWithBrowserVoice(spoken);
+    };
+    return play();
+  }
+
+  function speakIntakeQuestion(session) {
+    if (!state.intakeConduct || !state.intakeConnected || !session?.id) return;
+    if (session.status === 'filed' || session.status === 'completed') return;
+    const text = intakeAskText(session);
+    if (!text) return;
+    const key = `${session.id}:${state.intakeGreeted ? (session.nextKey || 'done') : 'greeting'}`;
+    if (state.intakeSpokenKey === key) return;
+    state.intakeSpokenKey = key;
+    void speakAgentNow(text).then(() => {
+      if (!state.intakeGreeted) {
+        state.intakeGreeted = true;
+        speakIntakeQuestion(state.intakeSession);
+        return;
+      }
+      startIntakeListen();
+    });
+  }
+
+  async function submitIntakeAnswer(text, source) {
+    if (!state.intakeSession?.id) return;
+    const spoken = String(text || '').trim();
+    if (!spoken) return;
+    const out = await api(`/api/intake/sessions/${state.intakeSession.id}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ text: spoken, source }),
+    });
+    state.intakeSession = out.session;
+    void renderIntake();
+  }
+
+  function beginIntakeConduct() {
+    state.intakeConduct = true;
+    state.intakeSpokenKey = null;
+  }
+
+  function toTelHref(input) {
+    const raw = String(input || '').trim();
+    const digits = raw.replace(/\D/g, '');
+    if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return `tel:+${digits}`;
+    if (digits.length === 10) return `tel:+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `tel:+${digits}`;
+    return null;
+  }
+
+  function placePhoneCall(telUrl) {
+    const href = String(telUrl || '').trim();
+    if (!/^tel:\+?[0-9]{10,15}$/.test(href)) return false;
+    try {
+      const opened = window.open(href, 'chronoIntakeDial');
+      if (opened) return true;
+    } catch { /* fall through */ }
+    const frame = document.createElement('iframe');
+    frame.src = href;
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(frame);
+    setTimeout(() => frame.remove(), 4000);
+    return true;
+  }
+
+  function stopIntakeCallPoll() {
+    if (state.intakePollTimer) {
+      clearInterval(state.intakePollTimer);
+      state.intakePollTimer = null;
+    }
+  }
+
+  function startIntakeCallPoll(sessionId) {
+    stopIntakeCallPoll();
+    state.intakeLiveCall = sessionId;
+    state.intakePollTimer = setInterval(async () => {
+      if (state.view !== 'intake' || state.intakeSession?.id !== sessionId) {
+        stopIntakeCallPoll();
+        return;
+      }
+      try {
+        const fresh = await api(`/api/intake/sessions/${sessionId}`);
+        const next = fresh.session;
+        const prev = state.intakeSession;
+        const changed = !prev
+          || prev.status !== next.status
+          || (prev.messages || []).length !== (next.messages || []).length
+          || (prev.extracted?.contactName || '') !== (next.extracted?.contactName || '');
+        state.intakeSession = next;
+        if (next.status === 'filed' || next.status === 'completed') {
+          stopIntakeCallPoll();
+          state.intakeLiveCall = null;
+          state.intakeFlash = {
+            ok: true,
+            text: next.status === 'filed'
+              ? 'Call finished. The contact and matter were created from the phone answers.'
+              : 'Call finished. Review the answers and file if needed.',
+          };
+          void renderIntake();
+          return;
+        }
+        if (changed) void renderIntake();
+      } catch { /* keep last transcript */ }
+    }, 2500);
+  }
+
+  async function renderIntake() {
+    if (!state.user) {
+      renderLogin();
+      return;
+    }
+    if (!canUseIntake()) {
+      setMainHtml('<div class="card"><p class="error">You do not have access to intake.</p></div>');
+      return;
+    }
+    const [formsRes, sessionsRes] = await Promise.all([
+      api('/api/intake/forms'),
+      api('/api/intake/sessions'),
+    ]);
+    if (!stillOnView('intake')) return;
+    const forms = formsRes.forms || [];
+    const form = forms[0] || null;
+    const sessions = sessionsRes.sessions || [];
+    let session = state.intakeSession;
+    if (session?.id) {
+      try {
+        const fresh = await api(`/api/intake/sessions/${session.id}`);
+        if (!stillOnView('intake')) return;
+        session = fresh.session || session;
+        state.intakeSession = session;
+      } catch {
+        session = state.intakeSession;
+      }
+    }
+    const extracted = session?.extracted || {};
+    const messages = session?.messages || [];
+    const flash = state.intakeFlash;
+    state.intakeFlash = null;
+    const fieldChoices = form?.availableFields || [];
+    const dial = formsRes.dial || {};
+
+    setMainHtml(`
+      <div class="page-head intake-head">
+        <div>
+          <h1>Intake</h1>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="intakeStartCall">New call</button>
+          <button type="button" class="btn" id="intakeListen">Listen</button>
+          <button type="button" class="btn" id="intakeWebsiteBtn">Website call button</button>
+          <button type="button" class="btn primary" id="intakeTestWebsiteCall">Test website call</button>
+        </div>
+      </div>
+      ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
+      <div class="card intake-dial-card">
+        <p class="sidebar-label">Call a number</p>
+        <p class="muted">Enter the number, then Call this number. The agent speaks on the call.</p>
+        <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
+          <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" value="${escapeHtml(state.intakeDialPhone || '')}" />
+          <button type="submit" class="btn primary" id="intakeCallThisNumber">Call this number</button>
+        </form>
+        ${state.intakeOnCall ? `
+          <div class="intake-calling">
+            <p class="intake-ask-q">${state.intakeConnected ? 'Connected' : 'Calling'} ${escapeHtml(state.intakeToMasked || 'that number')}${state.intakeConnected ? '' : '…'}</p>
+            <p class="hint">${state.intakeConnected
+              ? 'The agent is speaking on this call. Turn up this device’s volume.'
+              : 'Please wait while the call connects. The agent will speak after the line is answered.'}</p>
+          </div>` : ''}
+      </div>
+      ${state.intakeEmbed ? `
+        <div class="card intake-embed">
+          <p class="sidebar-label">Website call button</p>
+          <p class="muted">This is the same button clients will click on the firm site. Use Test website call to walk through it now.</p>
+          <div class="intake-embed-preview">
+            <button type="button" class="btn primary" id="intakeEmbedTestBtn">Start an intake call</button>
+            <span class="hint">Preview — opens the external client page</span>
+          </div>
+          <label>Call page
+            <input readonly value="${escapeHtml(state.intakeEmbed.callUrl)}" />
+          </label>
+          <label>Button HTML
+            <textarea readonly rows="2">${escapeHtml(state.intakeEmbed.embedHtml)}</textarea>
+          </label>
+          <label>Optional floating widget
+            <textarea readonly rows="3">${escapeHtml(state.intakeEmbed.widgetHtml)}</textarea>
+          </label>
+          <label>Form link
+            <input readonly value="${escapeHtml(state.intakeEmbed.url)}" />
+          </label>
+        </div>` : ''}
+      <div class="intake-grid">
+        <div class="card intake-agent">
+          ${session?.nextQuestion && state.intakeOnCall && state.intakeConnected ? `
+            <div class="intake-ask">
+              <p class="sidebar-label">On the call</p>
+              <p class="intake-ask-q">${escapeHtml(state.intakeGreeted ? session.nextQuestion : (session.greeting || INTAKE_GREETING))}</p>
+            </div>` : ''}
+          <div class="intake-transcript" id="intakeTranscript">
+            ${(state.intakeOnCall && !state.intakeConnected
+              ? [{ role: 'system', content: 'Calling… The agent will begin after the line connects.' }]
+              : (messages.length ? messages : [{ role: 'agent', content: 'Enter a number and click Call this number.' }])
+            ).map((m) => `
+              <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
+            `).join('')}
+          </div>
+          <form id="intakeTalkForm" class="intake-talk">
+            <textarea id="intakeTalk" rows="2" placeholder="Notes from the live call"></textarea>
+            <div class="row-actions">
+              <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>Send</button>
+            </div>
+          </form>
+        </div>
+        <div class="card">
+          <form id="intakeFileForm" class="stack">
+            <label>Contact name <input name="intakeContactName" value="${escapeHtml(extracted.contactName || '')}" /></label>
+            <label>Email <input name="intakeContactEmail" value="${escapeHtml(extracted.contactEmail || '')}" /></label>
+            <label>Phone <input name="intakeContactPhone" value="${escapeHtml(extracted.contactPhone || '')}" /></label>
+            <label>Matter name <input name="intakeMatterName" value="${escapeHtml(extracted.matterName || '')}" /></label>
+            ${intakeFieldInputs(session?.fields || form?.fields || [], extracted)}
+            <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>File contact &amp; matter</button>
+          </form>
+          ${form ? `
+            <form id="intakeFormSettings" class="stack intake-field-settings">
+              <p class="sidebar-label">Fields asked on the call</p>
+              <div class="intake-field-picks">
+                ${fieldChoices.map((field) => `
+                  <label class="check-inline">
+                    <input type="checkbox" name="fieldIds" value="${field.id}" ${form.fieldIds.includes(field.id) ? 'checked' : ''} />
+                    ${escapeHtml(field.label)}
+                  </label>`).join('') || '<p class="muted">Add custom fields in Settings, then select them here.</p>'}
+              </div>
+              <label class="check-inline"><input type="checkbox" name="autoFile" ${form.autoFile ? 'checked' : ''} /> Auto-file portal, website, and phone submissions</label>
+              <input type="hidden" name="name" value="${escapeHtml(form.name)}" />
+              <input type="hidden" name="greeting" value="${escapeHtml(form.greeting || '')}" />
+              <button type="submit" class="btn">Save fields</button>
+            </form>` : ''}
+        </div>
+      </div>
+      ${sessions.length ? `
+        <div class="card">
+          <table class="data"><thead><tr><th>When</th><th>Channel</th><th>Contact</th><th>Status</th><th></th></tr></thead><tbody>
+            ${sessions.slice(0, 8).map((s) => `<tr>
+              <td>${escapeHtml((s.createdAt || '').replace('T', ' ').slice(0, 16))}</td>
+              <td>${escapeHtml(s.test && s.channel === 'phone' ? 'Phone (test)' : s.test && s.channel === 'web_call' ? 'Website call (test)' : ({ phone: 'Phone', portal: 'Portal', agent: 'Agent', web_call: 'Website call' }[s.channel] || s.channel))}</td>
+              <td>${escapeHtml(s.extracted?.contactName || '—')}</td>
+              <td>${escapeHtml(s.status)}</td>
+              <td><button type="button" class="btn" data-open-session="${s.id}">Open</button></td>
+            </tr>`).join('')}
+          </tbody></table>
+        </div>` : ''}
+    `);
+
+    const startBtn = $('#intakeStartCall');
+    if (startBtn) {
+      startBtn.onclick = () => {
+        stopIntakeCallPoll();
+        cancelIntakeSpeech();
+        state.intakeSession = null;
+        state.intakeTelUrl = null;
+        state.intakeToMasked = null;
+        state.intakeOnCall = false;
+        state.intakeConnected = false;
+        state.intakeGreeted = false;
+        state.intakeDialPhone = '';
+        state.intakeConduct = false;
+        cancelIntakeSpeech();
+        state.intakeSpokenKey = null;
+        state.intakeLiveCall = null;
+        void renderIntake().then(() => {
+          const phoneInput = document.querySelector('#intakeStaffDialForm [name="phone"]');
+          phoneInput?.focus();
+        });
+      };
+    }
+
+    const talkForm = $('#intakeTalkForm');
+    if (talkForm) {
+      talkForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (!state.intakeSession?.id) return;
+        const box = $('#intakeTalk');
+        const text = String(box?.value || '').trim();
+        if (!text) return;
+        state.intakeConduct = true;
+        await submitIntakeAnswer(text, 'typed');
+        if (box) box.value = '';
+      };
+    }
+
+    const listenBtn = $('#intakeListen');
+    if (listenBtn) {
+      listenBtn.onclick = () => {
+        state.intakeConduct = true;
+        if (!state.intakeSession?.id) {
+          state.intakeFlash = { ok: false, text: 'Call a number first. Then Listen can capture answers from the live call.' };
+          void renderIntake();
+          return;
+        }
+        if (!startIntakeListen()) {
+          state.intakeFlash = { ok: false, text: 'This browser cannot take live speech. Type the caller’s answers in the box below.' };
+          void renderIntake();
+        }
+      };
+    }
+
+    const fileForm = $('#intakeFileForm');
+    if (fileForm) {
+      fileForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (!state.intakeSession?.id) return;
+        try {
+          const out = await api(`/api/intake/sessions/${state.intakeSession.id}/file`, {
+            method: 'POST',
+            body: JSON.stringify(collectIntakePatch(fileForm)),
+          });
+          state.intakeSession = out.session;
+          state.intakeFlash = { ok: true, text: 'Intake filed. Contact and matter were created.' };
+          void renderIntake();
+        } catch (e) {
+          state.intakeFlash = { ok: false, text: e.message || 'Could not file intake.' };
+          void renderIntake();
+        }
+      };
+    }
+
+    const websiteBtn = $('#intakeWebsiteBtn');
+    if (websiteBtn && form) {
+      websiteBtn.onclick = async () => {
+        await ensureIntakeWebsiteEmbed(form);
+        void renderIntake();
+      };
+    }
+
+    const openTestCall = async () => {
+      if (!form) return;
+      const embed = await ensureIntakeWebsiteEmbed(form);
+      openExternalIntakeCall(embed.testCallUrl || `${embed.callUrl}?test=1`);
+      state.intakeFlash = { ok: true, text: 'Opened the external website call. This is the same page clients get from the button.' };
+      void renderIntake();
+    };
+    const testBtn = $('#intakeTestWebsiteCall');
+    if (testBtn) testBtn.onclick = () => void openTestCall();
+    const previewBtn = $('#intakeEmbedTestBtn');
+    if (previewBtn) previewBtn.onclick = () => void openTestCall();
+
+    const openPhoneSettings = $('#intakeOpenPhoneSettings');
+    if (openPhoneSettings) {
+      openPhoneSettings.onclick = () => {
+        if (!state.settingsTabOpen) state.settingsTabOpen = {};
+        state.settingsTabOpen['phone-dialing'] = true;
+        void goHelpTarget('settings-phone-dialing');
+      };
+    }
+
+    const staffDial = $('#intakeStaffDialForm');
+    if (staffDial && form) {
+      const phoneInput = staffDial.querySelector('[name="phone"]');
+      const postStaffDial = async (phone) => {
+        const out = await api(`/api/intake/forms/${form.id}/dial`, {
+          method: 'POST',
+          keepalive: true,
+          body: JSON.stringify({ phone, test: false }),
+        });
+        state.intakeSession = out.session;
+        state.intakeTelUrl = out.telUrl || toTelHref(phone);
+        state.intakeToMasked = out.toMasked || null;
+        state.intakeOnCall = true;
+        if (!out.stub) startIntakeCallPoll(out.session.id);
+        return out;
+      };
+      const startStaffCall = async (phone) => {
+        cancelIntakeSpeech();
+        unlockAgentAudio();
+        state.intakeOnCall = true;
+        state.intakeConnected = false;
+        state.intakeGreeted = false;
+        state.intakeToMasked = null;
+        state.intakeDialPhone = phone;
+        state.intakeConduct = false;
+        state.intakeSpokenKey = null;
+        paintIntakeCallProgress(phone);
+        const ringing = playIntakeRing();
+        try {
+          await postStaffDial(phone);
+          await ringing;
+          state.intakeConnected = true;
+          state.intakeConduct = true;
+          paintIntakeCallProgress(state.intakeToMasked || phone);
+          void renderIntake();
+        } catch (e) {
+          cancelIntakeSpeech();
+          state.intakeOnCall = false;
+          state.intakeConnected = false;
+          state.intakeConduct = false;
+          if (!state.user || e.code === 'sign in required') {
+            renderLogin();
+            return;
+          }
+          state.intakeFlash = { ok: false, text: e.message || 'Could not place the call.' };
+          void renderIntake();
+        }
+      };
+      staffDial.onsubmit = (ev) => {
+        ev.preventDefault();
+        const phone = String(phoneInput?.value || '').trim();
+        if (!toTelHref(phone)) {
+          state.intakeFlash = { ok: false, text: 'Enter the phone number to call.' };
+          void renderIntake();
+          return;
+        }
+        startStaffCall(phone);
+      };
+    }
+
+    main.querySelectorAll('[data-open-session]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.getAttribute('data-open-session'));
+        const out = await api(`/api/intake/sessions/${id}`);
+        state.intakeSession = out.session;
+        void renderIntake();
+      };
+    });
+
+    const settingsForm = $('#intakeFormSettings');
+    if (settingsForm && form) {
+      settingsForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(settingsForm);
+        const fieldIds = [...settingsForm.querySelectorAll('input[name="fieldIds"]:checked')].map((el) => Number(el.value));
+        await api(`/api/intake/forms/${form.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: String(fd.get('name') || ''),
+            greeting: String(fd.get('greeting') || ''),
+            fieldIds,
+            autoFile: settingsForm.querySelector('[name="autoFile"]')?.checked === true,
+          }),
+        });
+        state.intakeFlash = { ok: true, text: 'Intake fields saved.' };
+        void renderIntake();
+      };
+    }
+
+    const transcript = $('#intakeTranscript');
+    if (transcript) transcript.scrollTop = transcript.scrollHeight;
+    speakIntakeQuestion(session);
+  }
+
   async function renderView() {
     const token = ++state._renderToken;
     const view = state.view;
@@ -4919,6 +5669,7 @@
       else if (view === 'reports') await renderReports();
       else if (view === 'dashboard') await renderDashboard();
       else if (view === 'users') await renderUsers();
+      else if (view === 'intake') await renderIntake();
       else if (view === 'settings') await renderSettings();
       else if (view === 'audit') await renderAudit();
       else await renderMatters();
@@ -9672,6 +10423,8 @@
       if (existing) existing.zones.unshift({ id: selectedTz, label });
       else tzGroups = [{ region, zones: [{ id: selectedTz, label }] }, ...tzGroups];
     }
+    const twilioFlash = state.settingsTwilioFlash;
+    state.settingsTwilioFlash = null;
     const tzCount = tzGroups.reduce((n, g) => n + (g.zones?.length || 0), 0);
     const mfaMeta = mfaStatus.enabled
       ? `On · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes`
@@ -9713,6 +10466,40 @@
           <div id="mfaSetupPanel" class="stack" hidden></div>
           <div id="mfaMsg"></div>`,
       })}
+
+      ${isAdmin ? settingsCollapseTab({
+        id: 'phoneDialingCard',
+        tabKey: 'phone-dialing',
+        title: 'Phone dialing',
+        meta: settings.dial?.carrier ? 'Ready to ring' : 'Not connected',
+        open: settingsTabOpen('phone-dialing'),
+        bodyHtml: `
+          <p class="hint">Optional. Call this number already rings from this device. Save Twilio only if Chrono should originate the call on the carrier.</p>
+          ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables.</p>' : ''}
+          ${settings.dial?.carrier
+            ? `<p class="muted">Ready to ring${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
+            : '<p class="muted">Not connected. Calls will not ring until these three values are saved.</p>'}
+          <form id="twilioDialForm" class="stack">
+            <label>Twilio account SID
+              <input name="accountSid" autocomplete="off" spellcheck="false"
+                placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+            </label>
+            <p class="hint">${settings.dial?.accountSidMasked ? `Current SID: ${escapeHtml(settings.dial.accountSidMasked)}. Leave blank to keep it.` : 'From the Twilio console, Account → Account SID.'}</p>
+            <label>Auth token
+              <input name="authToken" type="password" autocomplete="new-password"
+                placeholder="${settings.dial?.hasAuthToken ? 'Leave blank to keep the current token' : 'Twilio auth token'}" />
+            </label>
+            <label>From number
+              <input name="fromNumber" type="tel" inputmode="tel" autocomplete="off"
+                placeholder="+15555550100"
+                value="${escapeHtml(settings.dial?.fromNumber || '')}" />
+            </label>
+            <div class="row-actions">
+              <button class="primary" type="submit">Save phone dialing</button>
+            </div>
+          </form>
+          <div id="twilioDialMsg">${twilioFlash ? `<div class="ok-banner">${escapeHtml(twilioFlash)}</div>` : ''}</div>`,
+      }) : ''}
 
       ${(canConfigureMatterDefaults || canConfigureFields) ? settingsCollapseTab({
         id: 'recordPagesSection',
@@ -9984,6 +10771,31 @@
       </div>`);
 
     wireSettingsCollapseTabs(main);
+    const twilioForm = $('#twilioDialForm');
+    if (twilioForm && isAdmin) {
+      twilioForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(twilioForm);
+        const msgEl = $('#twilioDialMsg');
+        const accountSid = String(fd.get('accountSid') || '').trim();
+        const authToken = String(fd.get('authToken') || '').trim();
+        const fromNumber = String(fd.get('fromNumber') || '').trim();
+        try {
+          state.settings = await api('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ twilioConfig: { accountSid, authToken, fromNumber } }),
+          });
+          if (!state.settingsTabOpen) state.settingsTabOpen = {};
+          state.settingsTabOpen['phone-dialing'] = true;
+          state.settingsTwilioFlash = state.settings.dial?.carrier
+            ? 'Phone dialing saved. Chrono can originate the call through Twilio.'
+            : 'Saved. Add the account SID, auth token, and from number to finish setup.';
+          await renderSettings();
+        } catch (e) {
+          if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      });
+    }
     $('#settingsExpandAll')?.addEventListener('click', () => {
       main.querySelectorAll('details.settings-tab, details.settings-subtab').forEach((el) => {
         el.open = true;
@@ -10389,6 +11201,16 @@
       ],
     },
     {
+      id: 'intake',
+      label: 'Client intake',
+      keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
+      answer: 'Open [[Intake|intake]] under Navigate. Enter a number and click Call this number — that places the call. The agent interviews the person on the call, then files a contact and matter.',
+      links: [
+        { label: 'Open Intake', target: 'intake' },
+        { label: 'Phone dialing', target: 'settings-phone-dialing' },
+      ],
+    },
+    {
       id: 'contact',
       label: 'Add a contact',
       keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
@@ -10580,6 +11402,8 @@
       } else if (key === 'contacts') {
         state.showCreateContact = false;
         await goAppView('contacts');
+      } else if (key === 'intake') {
+        goIntake();
       } else if (key === 'billing') {
         await goAppView('billing');
       } else if (key === 'reports') {
@@ -10605,6 +11429,8 @@
         await focusSettings('#timeFieldsCard');
       } else if (key === 'settings-time-billing') {
         await focusSettings('#timeBillingCard');
+      } else if (key === 'settings-phone-dialing') {
+        await focusSettings('#phoneDialingCard');
       } else if (key === 'settings-name-formula') {
         // Matter name formula UI is temporarily hidden; land on Matter page instead.
         await focusSettings('#defaultFieldsCard');

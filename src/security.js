@@ -404,7 +404,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+    'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=(), autoplay=(self)',
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Content-Security-Policy': [
@@ -416,6 +416,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       'font-src https://fonts.gstatic.com',
       "img-src 'self' data:",
+      "media-src 'self' blob:",
       "connect-src 'self' https://login.microsoftonline.com https://graph.microsoft.com",
       'frame-src https://*.sharepoint.com https://onedrive.live.com https://*.onedrive.com',
       "object-src 'none'",
@@ -433,7 +434,7 @@ function securityHeaders(req, { isHtml = false } = {}) {
   return headers;
 }
 
-function parseBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
+function readBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -446,13 +447,23 @@ function parseBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
       }
       chunks.push(c);
     });
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (!raw) return resolve({});
-      try { resolve(JSON.parse(raw)); }
-      catch { reject(new Error('invalid JSON body')); }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
+  });
+}
+
+function parseBodyLimited(req, { limit = MAX_BODY_BYTES } = {}) {
+  return readBodyLimited(req, { limit }).then((raw) => {
+    if (!raw) return {};
+    try { return JSON.parse(raw); }
+    catch { throw new Error('invalid JSON body'); }
+  });
+}
+
+function parseFormLimited(req, { limit = MAX_BODY_BYTES } = {}) {
+  return readBodyLimited(req, { limit }).then((raw) => {
+    if (!raw) return {};
+    return Object.fromEntries(new URLSearchParams(raw));
   });
 }
 
@@ -527,6 +538,7 @@ module.exports = {
   assertCsrf,
   securityHeaders,
   parseBodyLimited,
+  parseFormLimited,
   cookieHeader,
   clearCookie,
   sessionSetCookie,
