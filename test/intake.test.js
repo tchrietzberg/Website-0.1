@@ -229,7 +229,7 @@ describe('intake agent', () => {
       body: {},
     });
     assert.equal(done.status, 200, JSON.stringify(done.json));
-    assert.equal(done.json.session.status, 'completed');
+    assert.ok(['completed', 'filed'].includes(done.json.session.status), JSON.stringify(done.json));
 
     const widget = await new Promise((resolve, reject) => {
       http.get({ hostname: '127.0.0.1', port, path: '/intake-widget.js' }, (res) => {
@@ -427,7 +427,6 @@ describe('intake agent', () => {
   });
 
   it('lets any signed-in firm user list intake forms and dial', async () => {
-    process.env.TWILIO_STUB = '1';
     db.prepare(
       "INSERT INTO users(email,name,role,password_hash) VALUES ('pat@firm.example','Pat','paralegal',?)"
     ).run(hashPassword('demo-change-me'));
@@ -453,7 +452,6 @@ describe('intake agent', () => {
     assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
     assert.equal(dialed.json.session.channel, 'phone');
     assert.equal(dialed.json.stub, true);
-    delete process.env.TWILIO_STUB;
   });
 
   it('saves Twilio in Settings so dialing works without env vars', async () => {
@@ -477,18 +475,35 @@ describe('intake agent', () => {
 
     const before = await request(port, 'GET', '/api/settings', auth);
     assert.equal(before.status, 200);
-    assert.equal(before.json.dial.configured, false);
+    assert.equal(before.json.dial.configured, true);
+    assert.equal(before.json.dial.canDial, true);
     assert.equal(before.json.dial.carrier, false);
     assert.equal(before.json.dial.fromEnv, false);
 
     const forms = await request(port, 'GET', '/api/intake/forms', auth);
     const formId = forms.json.forms[0].id;
-    const blocked = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+    const localDial = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
       ...auth,
       body: { phone: '415-555-0199' },
     });
-    assert.equal(blocked.status, 503);
-    assert.match(String(blocked.json.message || blocked.json.error), /Twilio|Settings/i);
+    assert.equal(localDial.status, 200, JSON.stringify(localDial.json));
+    assert.equal(localDial.json.stub, true);
+    assert.match(String(localDial.json.callSid), /^CA_LOCAL_/);
+    assert.equal(localDial.json.session.nextKey, 'contactName');
+    const localId = localDial.json.session.id;
+    const collected = await request(port, 'POST', `/api/intake/sessions/${localId}/message`, {
+      ...auth,
+      body: { text: 'My name is Casey Filed. Email is casey.filed@example.com. Matter is Filed v. Acme. Case stage is Trial.', source: 'speech' },
+    });
+    assert.equal(collected.status, 200, JSON.stringify(collected.json));
+    assert.equal(collected.json.session.status, 'filed');
+    assert.equal(collected.json.session.extracted.contactName, 'Casey Filed');
+    assert.ok(collected.json.session.clientId);
+    assert.ok(collected.json.session.matterId);
+    const stageVal = db.prepare(
+      'SELECT value_text FROM custom_field_values WHERE matter_id = ? AND field_id = ?'
+    ).get(collected.json.session.matterId, stageField.id);
+    assert.equal(stageVal?.value_text, 'Trial');
 
     const badSid = await request(port, 'PATCH', '/api/settings', {
       ...auth,

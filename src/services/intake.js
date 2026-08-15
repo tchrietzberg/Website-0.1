@@ -533,7 +533,8 @@ function addTurn(db, actor, sessionId, input = {}) {
   if (session.status === 'filed') throw Object.assign(new Error('intake already filed'), { status: 400 });
   const text = String(input.text || input.transcript || '').trim();
   if (!text) throw Object.assign(new Error('message required'), { status: 400 });
-  return ingestText(db, session, text, { actor, source: input.source || 'typed' });
+  ingestText(db, session, text, { actor, source: input.source || 'typed' });
+  return finishPhoneIfReady(db, getSession(db, session.id), actor);
 }
 
 function splitCustomValues(extracted, fields) {
@@ -895,6 +896,10 @@ function addWebCallTurn(db, portalToken, sessionId, guestToken, input = {}) {
   const text = String(input.text || input.transcript || '').trim();
   if (!text) throw Object.assign(new Error('message required'), { status: 400 });
   ingestText(db, session, text, { source: input.source || 'speech' });
+  const actor = session.created_by
+    ? db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(session.created_by)
+    : null;
+  finishPhoneIfReady(db, getSession(db, session.id), actor);
   return serializePublicSession(db, getSession(db, session.id));
 }
 
@@ -944,7 +949,12 @@ function finishPhoneIfReady(db, session, actor) {
     SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
     WHERE id = ? AND status NOT IN ('filed', 'completed')
   `).run(session.id);
-  if (!session.test && actor && extracted.contactName) {
+  if (
+    !session.test
+    && actor
+    && extracted.contactName
+    && (session.channel === 'phone' || session.channel === 'web_call')
+  ) {
     try { fileSession(db, actor, session.id); } catch { /* leave completed for staff review */ }
   }
   return serializeSession(db, getSession(db, session.id), { includeMessages: true });
@@ -954,9 +964,6 @@ async function startDial(db, input = {}, req = null) {
   ensureIntakeTables(db);
   const phone = phoneDial.normalizePhone(input.phone || input.to);
   if (!phone) throw Object.assign(new Error('enter a valid phone number'), { status: 400 });
-  if (!phoneDial.configured(db)) {
-    throw Object.assign(new Error('Chrono cannot place the call yet. Open Settings → Phone dialing and save the Twilio account SID, auth token, and from number. Chrono will ring the phone and the agent will collect answers on that call.'), { status: 503 });
-  }
   let form;
   let actor;
   let portalToken = null;

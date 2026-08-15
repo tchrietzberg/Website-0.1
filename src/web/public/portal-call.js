@@ -270,23 +270,7 @@
       const out = await api(`/api/portal/intake/${token}/call/dial`, { phone, test: isTest });
       guestToken = out.guestToken || '';
       session = out.session;
-      if (out.stub) {
-        paintCall(form, firmName);
-      } else {
-        root.innerHTML = `
-          <div class="card portal-card">
-            <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
-            <h1>${escapeHtml(form.name || 'Intake')}</h1>
-            <p>Calling ${escapeHtml(out.toMasked || 'your phone')}. Answer the phone — the intake agent will ask for your name and the other details, then save them for the firm.</p>
-            <p id="intakeDialStatus" class="hint">Waiting for you to pick up…</p>
-            <div class="intake-ask" id="intakeCallAsk" hidden>
-              <p class="sidebar-label">On the call</p>
-              <p class="intake-ask-q" id="intakeCallAskQ"></p>
-            </div>
-            <div class="intake-transcript" id="intakeCallTranscript"></div>
-            <p id="intakeCallError" class="error" hidden></p>
-          </div>`;
-      }
+      paintCall(form, firmName);
       const hint = document.getElementById('intakeDialStatus');
       if (hint) {
         hint.hidden = false;
@@ -319,7 +303,7 @@
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
         <p>${escapeHtml(form.greeting || 'Start a short call to share the information we need for a new matter.')}</p>
-        <p>Enter the phone number to call. We will ring it. Answer, and the intake agent will collect your name and the other details on that call.</p>
+        <p>Enter a phone number and start the call. The agent will ask for your name and the other details, including custom fields, then save them for the firm.</p>
         <form id="intakeDialForm" class="stack intake-dial">
           <label>Phone number <input id="intakeDialPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" /></label>
           <div class="row-actions">

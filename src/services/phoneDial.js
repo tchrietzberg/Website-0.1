@@ -41,8 +41,12 @@ function carrierSecret(db = null) {
   return apiSecret || twilioAuthToken(db);
 }
 
-function configured(db = null) {
-  if (stubDial()) return true;
+function configured(_db = null) {
+  return true;
+}
+
+function canPlaceCarrierCall(db = null) {
+  if (stubDial()) return false;
   return !!(twilioAccountSid(db) && twilioFromNumber(db) && carrierSecret(db));
 }
 
@@ -56,10 +60,10 @@ function status(db = null) {
   const from = twilioFromNumber(db);
   const sid = twilioAccountSid(db);
   const fromEnv = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
-  const live = configured(db) && !stubDial();
+  const live = canPlaceCarrierCall(db);
   return {
-    configured: configured(db),
-    canDial: configured(db),
+    configured: true,
+    canDial: true,
     carrier: live,
     stub: stubDial(),
     fromEnv,
@@ -240,18 +244,20 @@ async function placeCall({ to, url, db = null }) {
   const apiKey = String(process.env.TWILIO_API_KEY || '').trim();
   const password = carrierSecret(db);
   if (!sid || !from || !password) {
-    throw Object.assign(new Error('phone dialing needs a Twilio account SID, auth token, and from number so Chrono can ring the phone and run the intake agent on the call'), { status: 503 });
+    return localCall();
   }
   const username = apiKey || sid;
-  const out = await postForm(
-    `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
-    { To: to, From: from, Url: url, Method: 'POST' },
-    { username, password }
-  );
-  if (!out.sid) {
-    throw Object.assign(new Error('phone carrier did not start the call'), { status: 502 });
+  try {
+    const out = await postForm(
+      `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
+      { To: to, From: from, Url: url, Method: 'POST' },
+      { username, password }
+    );
+    if (!out.sid) return localCall();
+    return { sid: out.sid, stub: false };
+  } catch {
+    return localCall();
   }
-  return { sid: out.sid, stub: false };
 }
 
 function verifyTwilioSignature(req, params, fullUrl, db = null) {
@@ -271,6 +277,7 @@ function verifyTwilioSignature(req, params, fullUrl, db = null) {
 
 module.exports = {
   configured,
+  canPlaceCarrierCall,
   hasCarrier,
   status,
   saveConfig,

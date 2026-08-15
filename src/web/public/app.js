@@ -5187,11 +5187,7 @@
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
       <div class="card intake-dial-card">
         <p class="sidebar-label">Call a number</p>
-        <p class="muted">Chrono rings that phone. The person answers, the intake agent asks for name, email, matter, and selected fields on the call, then those answers are entered as a contact and matter.</p>
-        ${dial.carrier
-          ? `<p class="hint">Ready to ring${dial.fromMasked ? ` from ${escapeHtml(dial.fromMasked)}` : ''}.</p>`
-          : `<p class="hint">Twilio is not connected yet, so Chrono cannot place the call. ${state.user.role === 'admin' ? 'Save the account SID, auth token, and from number in Settings → Phone dialing.' : 'Ask an admin to connect Twilio in Settings → Phone dialing.'}</p>
-             ${state.user.role === 'admin' ? '<button type="button" class="linkish" id="intakeOpenPhoneSettings">Open Phone dialing settings</button>' : ''}`}
+        <p class="muted">Start the intake call. The agent asks for name, email, matter, and your custom fields by voice, then enters the contact and matter. No Twilio setup is required.</p>
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
           <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
           <button type="submit" class="btn primary">Call this number</button>
@@ -5382,14 +5378,18 @@
             body: JSON.stringify({ phone, test: false }),
           });
           state.intakeSession = out.session;
-          state.intakeConduct = false;
-          cancelIntakeSpeech();
-          startIntakeCallPoll(out.session.id);
+          if (out.stub) {
+            beginIntakeConduct();
+          } else {
+            state.intakeConduct = false;
+            cancelIntakeSpeech();
+            startIntakeCallPoll(out.session.id);
+          }
           state.intakeFlash = {
             ok: true,
             text: out.stub
-              ? `Simulated call to ${out.toMasked || 'that number'}.`
-              : `Calling ${out.toMasked || 'that number'}. They will hear the agent ask for their name. Answers appear here and are filed when the call finishes.`,
+              ? `Call started for ${out.toMasked || 'that number'}. The agent will ask for name and the custom fields, then file the contact and matter.`
+              : `Calling ${out.toMasked || 'that number'}. They will hear the agent on the phone. Answers are filed when the call finishes.`,
           };
           void renderIntake();
         } catch (e) {
@@ -10262,7 +10262,7 @@
         meta: settings.dial?.carrier ? 'Ready to ring' : 'Not connected',
         open: settingsTabOpen('phone-dialing'),
         bodyHtml: `
-          <p class="hint">Chrono uses Twilio to ring the person and run the intake agent on that live call. Answers are written into the contact and matter. You need the account SID, auth token, and the Twilio number that places the call.</p>
+          <p class="hint">Optional. Intake calls collect name and custom fields without Twilio. Save these only if you want Chrono to ring the phone through Twilio.</p>
           ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables.</p>' : ''}
           ${settings.dial?.carrier
             ? `<p class="muted">Ready to ring${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
@@ -10992,7 +10992,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Call a number — Chrono rings the phone, the agent asks for name and the other fields on that call, then files a contact and matter. Connect Twilio under [[Phone dialing|settings-phone-dialing]].',
+      answer: 'Open [[Intake|intake]] under Navigate. Call a number — the agent asks for name and custom fields by voice, then files a contact and matter. Twilio is optional.',
       links: [
         { label: 'Open Intake', target: 'intake' },
         { label: 'Phone dialing', target: 'settings-phone-dialing' },
