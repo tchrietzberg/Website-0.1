@@ -568,4 +568,43 @@ describe('intake agent', () => {
     assert.match(String(dialed.json.callSid), /^CA_TEST_/);
     delete process.env.TWILIO_STUB;
   });
+
+  it('places a call with a phone greeting instead of a collect-info script', async () => {
+    intakeSvc.ensureDefaultForm(db, admin);
+    db.prepare(`
+      UPDATE intake_forms
+      SET greeting = 'Hello, this is the Chrono intake agent. I will collect the information we need for a new matter. You can speak or type.'
+    `).run();
+    const forms = intakeSvc.listForms(db, admin);
+    assert.equal(forms[0].greeting, 'This is Chrono calling about a new matter.');
+    assert.doesNotMatch(forms[0].greeting, /collect/i);
+    assert.doesNotMatch(forms[0].greeting, /speak or type/i);
+
+    const stored = db.prepare('SELECT greeting FROM intake_forms WHERE id = ?').get(forms[0].id);
+    assert.equal(stored.greeting, 'This is Chrono calling about a new matter.');
+
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    const cookie = sessionCookie(login.setCookie);
+    const auth = {
+      cookies: cookie,
+      headers: {
+        'X-CSRF-Token': login.json.csrf,
+        Authorization: `Bearer ${login.json.token}`,
+      },
+    };
+    const dialed = await request(port, 'POST', `/api/intake/forms/${forms[0].id}/dial`, {
+      ...auth,
+      body: { phone: '312-555-0144' },
+    });
+    assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
+    assert.equal(dialed.json.telUrl, 'tel:+13125550144');
+    const spoken = (dialed.json.session.messages || []).map((m) => m.content).join('\n');
+    assert.match(spoken, /Chrono calling about a new matter/);
+    assert.match(spoken, /May I have your full name/);
+    assert.doesNotMatch(spoken, /I will collect/i);
+    assert.doesNotMatch(spoken, /speak or type/i);
+    assert.doesNotMatch(spoken, /share the information we need/i);
+  });
 });

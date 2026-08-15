@@ -126,6 +126,7 @@ function ensureIntakeTables(db) {
   `);
   migrateWebCallChannel(db);
   migrateSessionTestFlag(db);
+  migrateCollectGreetings(db);
 }
 
 function migrateSessionTestFlag(db) {
@@ -208,7 +209,7 @@ function serializeForm(db, form, { includeAvailable = false } = {}) {
   const out = {
     id: form.id,
     name: form.name,
-    greeting: form.greeting || defaultGreeting(form),
+    greeting: defaultGreeting(form),
     matterRecordTypeKey: form.matter_record_type_key,
     contactRecordTypeKey: form.contact_record_type_key,
     fieldIds: normalizeFieldIds(parseJson(form.field_ids_json, [])),
@@ -222,9 +223,29 @@ function serializeForm(db, form, { includeAvailable = false } = {}) {
   return out;
 }
 
+const CALL_GREETING = 'This is Chrono calling about a new matter.';
+
+function isCollectInfoGreeting(value) {
+  const text = String(value || '').toLowerCase();
+  return text.includes('i will collect')
+    || text.includes('you can speak or type')
+    || text.includes('share the information we need');
+}
+
 function defaultGreeting(form) {
-  return form?.greeting
-    || 'Hello, this is the Chrono intake agent. I will collect the information we need for a new matter. You can speak or type.';
+  const stored = String(form?.greeting || '').trim();
+  if (stored && !isCollectInfoGreeting(stored)) return stored;
+  return CALL_GREETING;
+}
+
+function migrateCollectGreetings(db) {
+  db.prepare(`
+    UPDATE intake_forms
+    SET greeting = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    WHERE greeting LIKE '%I will collect%'
+       OR greeting LIKE '%You can speak or type%'
+       OR greeting LIKE '%share the information we need%'
+  `).run(CALL_GREETING);
 }
 
 function defaultFieldIds(db) {
@@ -269,7 +290,7 @@ function saveForm(db, actor, input = {}, formId = null) {
   assertStaff(actor, db);
   ensureDefaultForm(db, actor);
   const name = String(input.name || 'New matter intake').trim() || 'New matter intake';
-  const greeting = String(input.greeting || defaultGreeting()).trim();
+  const greeting = defaultGreeting({ greeting: input.greeting });
   const matterKey = customFields.normalizeRecordTypeKey(db, input.matterRecordTypeKey || 'billable');
   const contactKey = customFields.normalizeRecordTypeKey(
     db,
@@ -366,7 +387,7 @@ function extractFromTranscript(fields, transcript, prior = {}) {
 }
 
 function unansweredPrompt(form, extracted, fields) {
-  if (!extracted.contactName) return { key: 'contactName', question: 'What is the client or caller’s full name?' };
+  if (!extracted.contactName) return { key: 'contactName', question: 'May I have your full name?' };
   if (!extracted.contactEmail) return { key: 'contactEmail', question: 'What is the best email address?' };
   if (!extracted.contactPhone) return { key: 'contactPhone', question: 'What is the best phone number?' };
   if (!extracted.matterName) return { key: 'matterName', question: 'What should we name this matter or case?' };

@@ -4510,6 +4510,19 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 }
 .intake-ask .sidebar-label { color: #c5d4e8; margin-bottom: 0.2rem; }
 .intake-ask-q { margin: 0.35rem 0 0; font-size: 1.15rem; font-weight: 600; line-height: 1.35; }
+.intake-calling {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: #123524;
+  color: #fff;
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+}
+.intake-calling .intake-ask-q { margin: 0; }
+.intake-calling .hint { color: #d7eadc; margin: 0; }
+.intake-dial-card .btn[aria-disabled="true"] { opacity: 0.65; }
 .intake-transcript {
   max-height: 22rem;
   overflow: auto;

@@ -114,6 +114,35 @@
     return data;
   }
 
+  function toTelHref(input) {
+    const raw = String(input || '').trim();
+    const digits = raw.replace(/\D/g, '');
+    if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return `tel:+${digits}`;
+    if (digits.length === 10) return `tel:+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `tel:+${digits}`;
+    return '';
+  }
+
+  function paintCalling(form, firmName, { telUrl, toMasked }) {
+    root.innerHTML = `
+      <div class="card portal-card portal-call-card">
+        <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
+        <h1>Calling ${escapeHtml(toMasked || 'that number')}…</h1>
+        <p class="muted">${escapeHtml(firmName || 'the firm')}</p>
+        <div class="intake-calling">
+          <p class="intake-ask-q">The agent is on this call.</p>
+          ${telUrl ? `<a class="btn primary" id="intakePlaceCallNow" href="${escapeHtml(telUrl)}">Place call now</a>` : ''}
+        </div>
+        <div class="intake-ask" id="intakeCallAsk" hidden>
+          <p class="sidebar-label">On the call</p>
+          <p class="intake-ask-q" id="intakeCallAskQ"></p>
+        </div>
+        <div class="intake-transcript" id="intakeCallTranscript"></div>
+        <p id="intakeCallError" class="error" hidden></p>
+      </div>`;
+    renderMessages();
+  }
+
   function paintCall(form, firmName) {
     const canSpeak = !!speechEngine();
     root.innerHTML = `
@@ -122,21 +151,20 @@
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(firmName || 'the firm')}${isTest ? ' · This is the same page the external website button opens.' : ''}</p>
         <div class="intake-ask" id="intakeCallAsk" hidden>
-          <p class="sidebar-label">Agent is asking</p>
+          <p class="sidebar-label">On the call</p>
           <p class="intake-ask-q" id="intakeCallAskQ"></p>
         </div>
         <div class="intake-transcript" id="intakeCallTranscript"></div>
         <p id="intakeDialStatus" class="hint" hidden></p>
         <p id="intakeCallError" class="error" hidden></p>
         <form id="intakeCallTalk" class="intake-talk">
-          <textarea id="intakeCallText" rows="2" placeholder="Type an answer if you prefer not to speak"></textarea>
+          <textarea id="intakeCallText" rows="2" placeholder="Notes from the live call"></textarea>
           <div class="row-actions">
             <button type="button" class="btn" id="intakeCallListen" ${canSpeak ? '' : 'hidden'}>Speak</button>
             <button type="submit" class="btn">Send</button>
             <button type="button" class="btn primary" id="intakeCallDone" hidden>Submit intake</button>
           </div>
         </form>
-        ${canSpeak ? '' : '<p class="hint">This browser cannot use the microphone. Type your answers instead.</p>'}
       </div>`;
     renderMessages();
     document.getElementById('intakeCallTalk').onsubmit = async (ev) => {
@@ -154,7 +182,6 @@
     document.getElementById('intakeCallDone').onclick = () => void completeCall();
     updateDone();
     renderMessages();
-    speakThenListen();
   }
 
   function updateDone() {
@@ -259,25 +286,16 @@
     }
   }
 
-  async function dialNumber(form, firmName) {
-    const phone = String(document.getElementById('intakeDialPhone')?.value || '').trim();
+  async function postDial(form, firmName, phone) {
     setError('');
-    if (!phone) {
-      setError('Enter the phone number to call.');
-      return;
-    }
     try {
       const out = await api(`/api/portal/intake/${token}/call/dial`, { phone, test: isTest });
       guestToken = out.guestToken || '';
       session = out.session;
-      paintCall(form, firmName);
-      const hint = document.getElementById('intakeDialStatus');
-      if (hint) {
-        hint.hidden = false;
-        hint.textContent = out.stub
-          ? `Simulated call to ${out.toMasked || 'that number'}.`
-          : `Calling ${out.toMasked || 'your phone'}. Answer — the agent will ask the questions on the call.`;
-      }
+      paintCalling(form, firmName, {
+        telUrl: out.telUrl || toTelHref(phone),
+        toMasked: out.toMasked,
+      });
       stopPoll();
       pollTimer = setInterval(() => void refreshSession(), 2500);
     } catch (e) {
@@ -302,25 +320,44 @@
         <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
         <h1>${escapeHtml(form.name || 'Intake')}</h1>
         <p class="muted">${escapeHtml(data.firmName || 'the firm')}</p>
-        <p>${escapeHtml(form.greeting || 'Start a short call to share the information we need for a new matter.')}</p>
-        <p>Enter a phone number and start the call. The agent will ask for your name and the other details, including custom fields, then save them for the firm.</p>
+        <p>Enter the number. Call this number rings that phone from this device.</p>
         <form id="intakeDialForm" class="stack intake-dial">
           <label>Phone number <input id="intakeDialPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" /></label>
           <div class="row-actions">
-            <button type="submit" class="btn primary" id="intakeDialBtn">Call this number</button>
+            <a class="btn primary" id="intakeDialBtn" href="#">Call this number</a>
           </div>
         </form>
         <p id="intakeCallError" class="error" hidden></p>
-        <p class="muted">Or continue in this browser:</p>
-        <div class="row-actions">
-          <button type="button" class="btn" id="intakeCallStart">${isTest ? 'Type a test call' : 'Type instead'}</button>
-        </div>
       </div>`;
+    const phoneInput = document.getElementById('intakeDialPhone');
+    const callLink = document.getElementById('intakeDialBtn');
+    const syncCallHref = () => {
+      const href = toTelHref(phoneInput?.value);
+      if (callLink) callLink.href = href || '#';
+    };
+    phoneInput?.addEventListener('input', syncCallHref);
+    syncCallHref();
+    callLink.addEventListener('click', (ev) => {
+      const phone = String(phoneInput?.value || '').trim();
+      const href = toTelHref(phone);
+      if (!href) {
+        ev.preventDefault();
+        setError('Enter the phone number to call.');
+        return;
+      }
+      void postDial(form, data.firmName, phone);
+    });
     document.getElementById('intakeDialForm').onsubmit = (ev) => {
       ev.preventDefault();
-      void dialNumber(form, data.firmName);
+      const phone = String(phoneInput?.value || '').trim();
+      const href = toTelHref(phone);
+      if (!href) {
+        setError('Enter the phone number to call.');
+        return;
+      }
+      try { window.location.assign(href); } catch { /* stay on page */ }
+      void postDial(form, data.firmName, phone);
     };
-    document.getElementById('intakeCallStart').onclick = () => void startCall(form, data.firmName);
   }
 
   void load();

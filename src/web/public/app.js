@@ -61,6 +61,8 @@
     intakeSpokenKey: null,
     intakeLiveCall: null,
     intakePollTimer: null,
+    intakeTelUrl: null,
+    intakeToMasked: null,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5096,6 +5098,28 @@
     state.intakeSpokenKey = null;
   }
 
+  function toTelHref(input) {
+    const raw = String(input || '').trim();
+    const digits = raw.replace(/\D/g, '');
+    if (raw.startsWith('+') && digits.length >= 10 && digits.length <= 15) return `tel:+${digits}`;
+    if (digits.length === 10) return `tel:+1${digits}`;
+    if (digits.length === 11 && digits.startsWith('1')) return `tel:+${digits}`;
+    return null;
+  }
+
+  function placePhoneCall(telUrl) {
+    const href = String(telUrl || '').trim();
+    if (!/^tel:\+?[0-9]{10,15}$/.test(href)) return false;
+    const link = document.createElement('a');
+    link.href = href;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    try { window.location.assign(href); } catch { /* stay on intake */ }
+    return true;
+  }
+
   function stopIntakeCallPoll() {
     if (state.intakePollTimer) {
       clearInterval(state.intakePollTimer);
@@ -5178,7 +5202,7 @@
           <h1>Intake</h1>
         </div>
         <div class="row-actions">
-          <button type="button" class="btn" id="intakeStartCall">${session ? 'New call' : 'Start call'}</button>
+          <button type="button" class="btn" id="intakeStartCall">New call</button>
           <button type="button" class="btn" id="intakeListen">Listen</button>
           <button type="button" class="btn" id="intakeWebsiteBtn">Website call button</button>
           <button type="button" class="btn primary" id="intakeTestWebsiteCall">Test website call</button>
@@ -5187,11 +5211,17 @@
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
       <div class="card intake-dial-card">
         <p class="sidebar-label">Call a number</p>
-        <p class="muted">Start the intake call. The agent asks for name, email, matter, and your custom fields by voice, then enters the contact and matter. No Twilio setup is required.</p>
+        <p class="muted">Enter the number, then Call this number. That rings the phone from this device.</p>
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
           <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
-          <button type="submit" class="btn primary">Call this number</button>
+          <a class="btn primary" id="intakeCallThisNumber" href="#">Call this number</a>
         </form>
+        ${state.intakeTelUrl ? `
+          <div class="intake-calling">
+            <p class="intake-ask-q">Calling ${escapeHtml(state.intakeToMasked || 'that number')}…</p>
+            <p class="hint">The agent is on this call.</p>
+            <a class="btn primary" id="intakePlaceCallNow" href="${escapeHtml(state.intakeTelUrl)}">Place call now</a>
+          </div>` : ''}
       </div>
       ${state.intakeEmbed ? `
         <div class="card intake-embed">
@@ -5216,18 +5246,18 @@
         </div>` : ''}
       <div class="intake-grid">
         <div class="card intake-agent">
-          ${session?.nextQuestion ? `
+          ${session?.nextQuestion && state.intakeTelUrl ? `
             <div class="intake-ask">
-              <p class="sidebar-label">Agent is asking</p>
+              <p class="sidebar-label">On the call</p>
               <p class="intake-ask-q">${escapeHtml(session.nextQuestion)}</p>
             </div>` : ''}
           <div class="intake-transcript" id="intakeTranscript">
-            ${(messages.length ? messages : [{ role: 'agent', content: form?.greeting || 'Start a call to begin.' }]).map((m) => `
+            ${(messages.length ? messages : [{ role: 'agent', content: 'Enter a number and click Call this number.' }]).map((m) => `
               <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
             `).join('')}
           </div>
           <form id="intakeTalkForm" class="intake-talk">
-            <textarea id="intakeTalk" rows="2" placeholder="Caller answer or call transcript"></textarea>
+            <textarea id="intakeTalk" rows="2" placeholder="Notes from the live call"></textarea>
             <div class="row-actions">
               <button type="submit" class="btn primary" ${session ? '' : 'disabled'}>Send</button>
             </div>
@@ -5244,7 +5274,7 @@
           </form>
           ${form ? `
             <form id="intakeFormSettings" class="stack intake-field-settings">
-              <p class="sidebar-label">Custom fields to collect</p>
+              <p class="sidebar-label">Fields asked on the call</p>
               <div class="intake-field-picks">
                 ${fieldChoices.map((field) => `
                   <label class="check-inline">
@@ -5275,11 +5305,19 @@
 
     const startBtn = $('#intakeStartCall');
     if (startBtn) {
-      startBtn.onclick = async () => {
-        const created = await api('/api/intake/sessions', { method: 'POST', body: JSON.stringify({ channel: 'phone', formId: form?.id }) });
-        state.intakeSession = created.session;
-        beginIntakeConduct();
-        void renderIntake();
+      startBtn.onclick = () => {
+        stopIntakeCallPoll();
+        cancelIntakeSpeech();
+        state.intakeSession = null;
+        state.intakeTelUrl = null;
+        state.intakeToMasked = null;
+        state.intakeConduct = false;
+        state.intakeSpokenKey = null;
+        state.intakeLiveCall = null;
+        void renderIntake().then(() => {
+          const phoneInput = document.querySelector('#intakeStaffDialForm [name="phone"]');
+          phoneInput?.focus();
+        });
       };
     }
 
@@ -5302,7 +5340,7 @@
       listenBtn.onclick = () => {
         state.intakeConduct = true;
         if (!state.intakeSession?.id) {
-          state.intakeFlash = { ok: false, text: 'Start or dial a call first. The agent will ask for the caller’s name.' };
+          state.intakeFlash = { ok: false, text: 'Call a number first. Then Listen can capture answers from the live call.' };
           void renderIntake();
           return;
         }
@@ -5364,33 +5402,28 @@
 
     const staffDial = $('#intakeStaffDialForm');
     if (staffDial && form) {
-      staffDial.onsubmit = async (ev) => {
-        ev.preventDefault();
-        const phone = String(staffDial.querySelector('[name="phone"]')?.value || '').trim();
-        if (!phone) {
-          state.intakeFlash = { ok: false, text: 'Enter the phone number to call.' };
-          void renderIntake();
-          return;
-        }
+      const phoneInput = staffDial.querySelector('[name="phone"]');
+      const callLink = $('#intakeCallThisNumber');
+      const syncCallHref = () => {
+        const href = toTelHref(phoneInput?.value);
+        if (!callLink) return;
+        callLink.href = href || '#';
+        callLink.setAttribute('aria-disabled', href ? 'false' : 'true');
+      };
+      const postStaffDial = async (phone) => {
         try {
           const out = await api(`/api/intake/forms/${form.id}/dial`, {
             method: 'POST',
+            keepalive: true,
             body: JSON.stringify({ phone, test: false }),
           });
           state.intakeSession = out.session;
-          if (out.stub) {
-            beginIntakeConduct();
-          } else {
-            state.intakeConduct = false;
-            cancelIntakeSpeech();
-            startIntakeCallPoll(out.session.id);
-          }
-          state.intakeFlash = {
-            ok: true,
-            text: out.stub
-              ? `Call started for ${out.toMasked || 'that number'}. The agent will ask for name and the custom fields, then file the contact and matter.`
-              : `Calling ${out.toMasked || 'that number'}. They will hear the agent on the phone. Answers are filed when the call finishes.`,
-          };
+          state.intakeTelUrl = out.telUrl || toTelHref(phone);
+          state.intakeToMasked = out.toMasked || null;
+          state.intakeConduct = false;
+          cancelIntakeSpeech();
+          if (!out.stub) startIntakeCallPoll(out.session.id);
+          state.intakeFlash = { ok: true, text: `Calling ${out.toMasked || 'that number'}…` };
           void renderIntake();
         } catch (e) {
           if (!state.user || e.code === 'sign in required') {
@@ -5400,6 +5433,35 @@
           state.intakeFlash = { ok: false, text: e.message || 'Could not place the call.' };
           void renderIntake();
         }
+      };
+      phoneInput?.addEventListener('input', syncCallHref);
+      syncCallHref();
+      if (callLink) {
+        callLink.addEventListener('click', (ev) => {
+          const phone = String(phoneInput?.value || '').trim();
+          const href = toTelHref(phone);
+          if (!href) {
+            ev.preventDefault();
+            state.intakeFlash = { ok: false, text: 'Enter the phone number to call.' };
+            void renderIntake();
+            return;
+          }
+          state.intakeTelUrl = href;
+          void postStaffDial(phone);
+        });
+      }
+      staffDial.onsubmit = (ev) => {
+        ev.preventDefault();
+        const phone = String(phoneInput?.value || '').trim();
+        const href = toTelHref(phone);
+        if (!href) {
+          state.intakeFlash = { ok: false, text: 'Enter the phone number to call.' };
+          void renderIntake();
+          return;
+        }
+        state.intakeTelUrl = href;
+        placePhoneCall(href);
+        void postStaffDial(phone);
       };
     }
 
@@ -5435,6 +5497,13 @@
     const transcript = $('#intakeTranscript');
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
     if (!state.intakeLiveCall) speakIntakeQuestion(session);
+    const placeNow = $('#intakePlaceCallNow');
+    if (placeNow && state.intakeTelUrl) {
+      placeNow.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        placePhoneCall(state.intakeTelUrl);
+      });
+    }
   }
 
   async function renderView() {
@@ -10262,7 +10331,7 @@
         meta: settings.dial?.carrier ? 'Ready to ring' : 'Not connected',
         open: settingsTabOpen('phone-dialing'),
         bodyHtml: `
-          <p class="hint">Optional. Intake calls collect name and custom fields without Twilio. Save these only if you want Chrono to ring the phone through Twilio.</p>
+          <p class="hint">Optional. Call this number already rings from this device. Save Twilio only if Chrono should originate the call on the carrier.</p>
           ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables.</p>' : ''}
           ${settings.dial?.carrier
             ? `<p class="muted">Ready to ring${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
@@ -10576,7 +10645,7 @@
           if (!state.settingsTabOpen) state.settingsTabOpen = {};
           state.settingsTabOpen['phone-dialing'] = true;
           state.settingsTwilioFlash = state.settings.dial?.carrier
-            ? 'Phone dialing saved. Chrono can ring a number and collect answers on the call.'
+            ? 'Phone dialing saved. Chrono can originate the call through Twilio.'
             : 'Saved. Add the account SID, auth token, and from number to finish setup.';
           await renderSettings();
         } catch (e) {
@@ -10992,7 +11061,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Call a number — the agent asks for name and custom fields by voice, then files a contact and matter. Twilio is optional.',
+      answer: 'Open [[Intake|intake]] under Navigate. Enter a number and click Call this number — that places the call. The agent interviews the person on the call, then files a contact and matter.',
       links: [
         { label: 'Open Intake', target: 'intake' },
         { label: 'Phone dialing', target: 'settings-phone-dialing' },
