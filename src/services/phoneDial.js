@@ -4,16 +4,27 @@ const crypto = require('node:crypto');
 const https = require('node:https');
 const { URL } = require('node:url');
 
-function twilioAccountSid() {
-  return String(process.env.TWILIO_ACCOUNT_SID || '').trim();
+function readSetting(db, key) {
+  if (!db) return '';
+  try {
+    const { getSetting } = require('../db');
+    return String(getSetting(db, key, '') || '').trim();
+  } catch {
+    return '';
+  }
 }
 
-function twilioAuthToken() {
-  return String(process.env.TWILIO_AUTH_TOKEN || '').trim();
+function twilioAccountSid(db = null) {
+  return String(process.env.TWILIO_ACCOUNT_SID || '').trim() || readSetting(db, 'twilio_account_sid');
 }
 
-function twilioFromNumber() {
-  return String(process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '').trim();
+function twilioAuthToken(db = null) {
+  return String(process.env.TWILIO_AUTH_TOKEN || '').trim() || readSetting(db, 'twilio_auth_token');
+}
+
+function twilioFromNumber(db = null) {
+  return String(process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER || '').trim()
+    || readSetting(db, 'twilio_from_number');
 }
 
 function stubDial() {
@@ -21,18 +32,69 @@ function stubDial() {
   return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
-function configured() {
+function configured(db = null) {
   if (stubDial()) return true;
-  return !!(twilioAccountSid() && twilioAuthToken() && twilioFromNumber());
+  return !!(twilioAccountSid(db) && twilioAuthToken(db) && twilioFromNumber(db));
 }
 
-function status() {
-  const from = twilioFromNumber();
+function maskSecret(value) {
+  const s = String(value || '');
+  if (s.length < 8) return s ? '••••' : '';
+  return `${s.slice(0, 4)}…${s.slice(-4)}`;
+}
+
+function status(db = null) {
+  const from = twilioFromNumber(db);
+  const sid = twilioAccountSid(db);
+  const fromEnv = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
   return {
-    configured: configured(),
+    configured: configured(db),
     stub: stubDial(),
+    fromEnv,
+    accountSidMasked: sid ? maskSecret(sid) : null,
+    fromNumber: from || '',
     fromMasked: from ? `***${from.replace(/\D/g, '').slice(-4)}` : null,
+    hasAuthToken: !!twilioAuthToken(db),
   };
+}
+
+function saveConfig(db, actor, input = {}) {
+  const { setSetting, audit } = require('../db');
+  if (input.accountSid) {
+    const sid = String(input.accountSid).trim();
+    if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) {
+      throw Object.assign(new Error('Twilio account SID should look like ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), { status: 400 });
+    }
+    setSetting(db, 'twilio_account_sid', sid);
+  }
+  if (input.authToken) {
+    setSetting(db, 'twilio_auth_token', String(input.authToken).trim());
+  }
+  if (input.fromNumber !== undefined) {
+    const raw = String(input.fromNumber || '').trim();
+    if (!raw) {
+      setSetting(db, 'twilio_from_number', '');
+    } else {
+      const normalized = normalizePhone(raw);
+      if (!normalized) {
+        throw Object.assign(new Error('Twilio from number must be a valid phone number'), { status: 400 });
+      }
+      setSetting(db, 'twilio_from_number', normalized);
+    }
+  }
+  const next = status(db);
+  audit(db, {
+    actorId: actor?.id,
+    action: 'settings.twilio',
+    entityType: 'firm_settings',
+    entityId: null,
+    detail: {
+      configured: next.configured,
+      accountSidMasked: next.accountSidMasked,
+      fromMasked: next.fromMasked,
+    },
+  });
+  return next;
 }
 
 function normalizePhone(input) {
@@ -85,27 +147,27 @@ function publicBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
-function voiceSecret() {
-  return twilioAuthToken()
+function voiceSecret(db = null) {
+  return twilioAuthToken(db)
     || String(process.env.INTAKE_PHONE_WEBHOOK_SECRET || '').trim()
     || String(process.env.SESSION_SECRET || '').trim()
     || 'intake-voice-dev-secret';
 }
 
-function voiceSig(sessionId) {
-  return crypto.createHmac('sha256', voiceSecret()).update(`intake-voice:${sessionId}`).digest('hex').slice(0, 32);
+function voiceSig(sessionId, db = null) {
+  return crypto.createHmac('sha256', voiceSecret(db)).update(`intake-voice:${sessionId}`).digest('hex').slice(0, 32);
 }
 
-function verifyVoiceSig(sessionId, provided) {
-  const expected = voiceSig(sessionId);
+function verifyVoiceSig(sessionId, provided, db = null) {
+  const expected = voiceSig(sessionId, db);
   const a = Buffer.from(String(provided || ''));
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
 
-function voiceActionUrl(req, sessionId) {
-  return `${publicBaseUrl(req)}/api/intake/phone/voice?sid=${encodeURIComponent(sessionId)}&sig=${encodeURIComponent(voiceSig(sessionId))}`;
+function voiceActionUrl(req, sessionId, db = null) {
+  return `${publicBaseUrl(req)}/api/intake/phone/voice?sid=${encodeURIComponent(sessionId)}&sig=${encodeURIComponent(voiceSig(sessionId, db))}`;
 }
 
 function postForm(urlString, fields, { username, password } = {}) {
@@ -148,19 +210,19 @@ function postForm(urlString, fields, { username, password } = {}) {
   });
 }
 
-async function placeCall({ to, url }) {
+async function placeCall({ to, url, db = null }) {
   if (stubDial()) {
     return { sid: `CA_TEST_${crypto.randomBytes(8).toString('hex')}`, stub: true };
   }
-  if (!configured()) {
+  if (!configured(db)) {
     throw Object.assign(new Error('phone dialing is not configured'), { status: 503 });
   }
-  const sid = twilioAccountSid();
-  const from = twilioFromNumber();
+  const sid = twilioAccountSid(db);
+  const from = twilioFromNumber(db);
   const out = await postForm(
     `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
     { To: to, From: from, Url: url, Method: 'POST' },
-    { username: sid, password: twilioAuthToken() }
+    { username: sid, password: twilioAuthToken(db) }
   );
   if (!out.sid) {
     throw Object.assign(new Error('phone carrier did not start the call'), { status: 502 });
@@ -168,8 +230,8 @@ async function placeCall({ to, url }) {
   return { sid: out.sid, stub: false };
 }
 
-function verifyTwilioSignature(req, params, fullUrl) {
-  const token = twilioAuthToken();
+function verifyTwilioSignature(req, params, fullUrl, db = null) {
+  const token = twilioAuthToken(db);
   if (!token) return stubDial();
   const header = String(req?.headers?.['x-twilio-signature'] || '');
   if (!header) return stubDial();
@@ -186,6 +248,7 @@ function verifyTwilioSignature(req, params, fullUrl) {
 module.exports = {
   configured,
   status,
+  saveConfig,
   stubDial,
   normalizePhone,
   gatherTwiml,

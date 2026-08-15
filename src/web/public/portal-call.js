@@ -262,7 +262,7 @@
             <button type="submit" class="btn primary" id="intakeDialBtn">Call this number</button>
           </div>
         </form>
-        ${dial.configured ? '' : '<p class="hint">Phone dialing needs a Twilio number (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER).</p>'}
+        ${dial.configured ? '' : '<p class="hint">Phone dialing is not configured yet. The firm admin can save Twilio in Settings → Phone dialing.</p>'}
         <p id="intakeCallError" class="error" hidden></p>
         <p class="muted">Or continue in this browser:</p>
         <div class="row-actions">

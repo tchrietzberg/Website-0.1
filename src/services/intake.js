@@ -695,7 +695,7 @@ function portalForm(db, token) {
     firmName,
     form: serializeForm(db, hit.form),
     expiresAt: hit.token.expires_at,
-    dial: phoneDial.status(),
+    dial: phoneDial.status(db),
   };
 }
 
@@ -953,8 +953,8 @@ async function startDial(db, input = {}, req = null) {
   ensureIntakeTables(db);
   const phone = phoneDial.normalizePhone(input.phone || input.to);
   if (!phone) throw Object.assign(new Error('enter a valid phone number'), { status: 400 });
-  if (!phoneDial.configured()) {
-    throw Object.assign(new Error('phone dialing is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER.'), { status: 503 });
+  if (!phoneDial.configured(db)) {
+    throw Object.assign(new Error('phone dialing is not configured. Open Settings → Phone dialing and save your Twilio account SID, auth token, and from number.'), { status: 503 });
   }
   let form;
   let actor;
@@ -995,8 +995,8 @@ async function startDial(db, input = {}, req = null) {
       VALUES (?, ?, ?, ?)
     `).run(hashGuestToken(guestToken), id, portalToken, Date.now() + GUEST_TTL_MS);
   }
-  const actionUrl = phoneDial.voiceActionUrl(req, id);
-  const placed = await phoneDial.placeCall({ to: phone, url: actionUrl });
+  const actionUrl = phoneDial.voiceActionUrl(req, id, db);
+  const placed = await phoneDial.placeCall({ to: phone, url: actionUrl, db });
   db.prepare('INSERT INTO intake_phone_calls(call_sid, session_id) VALUES (?, ?)').run(placed.sid, id);
   audit(db, {
     actorId: actor.id,
@@ -1017,7 +1017,7 @@ async function startDial(db, input = {}, req = null) {
 
 function assertVoiceSession(db, sessionId, sig) {
   const id = Number(sessionId);
-  if (!Number.isInteger(id) || id <= 0 || !phoneDial.verifyVoiceSig(id, sig)) {
+  if (!Number.isInteger(id) || id <= 0 || !phoneDial.verifyVoiceSig(id, sig, db)) {
     throw Object.assign(new Error('call session is not valid'), { status: 401 });
   }
   const session = getSession(db, id);
@@ -1028,7 +1028,7 @@ function assertVoiceSession(db, sessionId, sig) {
 function voicePrompt(db, sessionId, sig, req = null) {
   const session = assertVoiceSession(db, sessionId, sig);
   const serialized = serializeSession(db, session, { includeMessages: true });
-  const actionUrl = phoneDial.voiceActionUrl(req, session.id);
+  const actionUrl = phoneDial.voiceActionUrl(req, session.id, db);
   if (session.status === 'filed' || session.status === 'completed') {
     return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.');
   }
@@ -1041,7 +1041,7 @@ function voicePrompt(db, sessionId, sig, req = null) {
 
 function voiceTurn(db, sessionId, sig, input = {}, req = null) {
   const session = assertVoiceSession(db, sessionId, sig);
-  const actionUrl = phoneDial.voiceActionUrl(req, session.id);
+  const actionUrl = phoneDial.voiceActionUrl(req, session.id, db);
   if (session.status === 'filed' || session.status === 'completed') {
     return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.');
   }

@@ -50,6 +50,7 @@
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
     sidebarCollapsed: false,
     settingsBillingFlash: null,
+    settingsTwilioFlash: null,
     settingsTabOpen: {},
     matterDetailsOpen: true,
     matterListColumns: null,
@@ -5047,6 +5048,8 @@
     const flash = state.intakeFlash;
     state.intakeFlash = null;
     const fieldChoices = form?.availableFields || [];
+    const dial = formsRes.dial || {};
+    const isAdmin = state.user.role === 'admin';
 
     setMainHtml(`
       <div class="page-head intake-head">
@@ -5064,6 +5067,10 @@
       <div class="card intake-dial-card">
         <p class="sidebar-label">Dial a test call</p>
         <p class="muted">Calls a real phone. The person answers and the intake agent asks the same questions the website button uses.</p>
+        ${dial.configured
+          ? `<p class="hint">Ready to dial${dial.fromMasked ? ` from ${escapeHtml(dial.fromMasked)}` : ''}.</p>`
+          : `<p class="hint">Phone dialing is not configured. ${isAdmin ? 'Save Twilio in Settings → Phone dialing.' : 'Ask an admin to save Twilio in Settings → Phone dialing.'}</p>
+             ${isAdmin ? '<button type="button" class="linkish" id="intakeOpenPhoneSettings">Open Phone dialing settings</button>' : ''}`}
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
           <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
           <button type="submit" class="btn primary">Call this number</button>
@@ -5230,6 +5237,15 @@
     if (testBtn) testBtn.onclick = () => void openTestCall();
     const previewBtn = $('#intakeEmbedTestBtn');
     if (previewBtn) previewBtn.onclick = () => void openTestCall();
+
+    const openPhoneSettings = $('#intakeOpenPhoneSettings');
+    if (openPhoneSettings) {
+      openPhoneSettings.onclick = () => {
+        if (!state.settingsTabOpen) state.settingsTabOpen = {};
+        state.settingsTabOpen['phone-dialing'] = true;
+        void goHelpTarget('settings-phone-dialing');
+      };
+    }
 
     const staffDial = $('#intakeStaffDialForm');
     if (staffDial && form) {
@@ -10064,6 +10080,8 @@
       if (existing) existing.zones.unshift({ id: selectedTz, label });
       else tzGroups = [{ region, zones: [{ id: selectedTz, label }] }, ...tzGroups];
     }
+    const twilioFlash = state.settingsTwilioFlash;
+    state.settingsTwilioFlash = null;
     const tzCount = tzGroups.reduce((n, g) => n + (g.zones?.length || 0), 0);
     const mfaMeta = mfaStatus.enabled
       ? `On · ${Number(mfaStatus.backupCodesRemaining) || 0} backup codes`
@@ -10105,6 +10123,40 @@
           <div id="mfaSetupPanel" class="stack" hidden></div>
           <div id="mfaMsg"></div>`,
       })}
+
+      ${isAdmin ? settingsCollapseTab({
+        id: 'phoneDialingCard',
+        tabKey: 'phone-dialing',
+        title: 'Phone dialing',
+        meta: settings.dial?.configured ? 'Ready' : 'Not configured',
+        open: settingsTabOpen('phone-dialing'),
+        bodyHtml: `
+          <p class="hint">Twilio places the outbound intake calls. Save the account SID, auth token, and the Twilio number that rings people. Environment variables override these values when set.</p>
+          ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables. Settings below are stored but not used until those env vars are cleared.</p>' : ''}
+          ${settings.dial?.configured
+            ? `<p class="muted">Configured${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
+            : '<p class="muted">Not configured yet. Calls will not ring until these three values are saved.</p>'}
+          <form id="twilioDialForm" class="stack">
+            <label>Twilio account SID
+              <input name="accountSid" autocomplete="off" spellcheck="false"
+                placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+            </label>
+            <p class="hint">${settings.dial?.accountSidMasked ? `Current SID: ${escapeHtml(settings.dial.accountSidMasked)}. Leave blank to keep it.` : 'From the Twilio console, Account → Account SID.'}</p>
+            <label>Auth token
+              <input name="authToken" type="password" autocomplete="new-password"
+                placeholder="${settings.dial?.hasAuthToken ? 'Leave blank to keep the current token' : 'Twilio auth token'}" />
+            </label>
+            <label>From number
+              <input name="fromNumber" type="tel" inputmode="tel" autocomplete="off"
+                placeholder="+15555550100"
+                value="${escapeHtml(settings.dial?.fromNumber || '')}" />
+            </label>
+            <div class="row-actions">
+              <button class="primary" type="submit">Save phone dialing</button>
+            </div>
+          </form>
+          <div id="twilioDialMsg">${twilioFlash ? `<div class="ok-banner">${escapeHtml(twilioFlash)}</div>` : ''}</div>`,
+      }) : ''}
 
       ${(canConfigureMatterDefaults || canConfigureFields) ? settingsCollapseTab({
         id: 'recordPagesSection',
@@ -10376,6 +10428,31 @@
       </div>`);
 
     wireSettingsCollapseTabs(main);
+    const twilioForm = $('#twilioDialForm');
+    if (twilioForm && isAdmin) {
+      twilioForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(twilioForm);
+        const msgEl = $('#twilioDialMsg');
+        const accountSid = String(fd.get('accountSid') || '').trim();
+        const authToken = String(fd.get('authToken') || '').trim();
+        const fromNumber = String(fd.get('fromNumber') || '').trim();
+        try {
+          state.settings = await api('/api/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({ twilioConfig: { accountSid, authToken, fromNumber } }),
+          });
+          if (!state.settingsTabOpen) state.settingsTabOpen = {};
+          state.settingsTabOpen['phone-dialing'] = true;
+          state.settingsTwilioFlash = state.settings.dial?.configured
+            ? 'Phone dialing saved. Intake can now call real numbers.'
+            : 'Saved. Add the account SID, auth token, and from number to finish setup.';
+          await renderSettings();
+        } catch (e) {
+          if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      });
+    }
     $('#settingsExpandAll')?.addEventListener('click', () => {
       main.querySelectorAll('details.settings-tab, details.settings-subtab').forEach((el) => {
         el.open = true;
@@ -10784,9 +10861,10 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call to ring a real phone, or use Test website call for the same page the firm-site button opens. The person answers and the agent collects the selected custom fields. Test calls are not auto-filed. Phone dialing needs Twilio credentials.',
+      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call to ring a real phone, or use Test website call for the same page the firm-site button opens. The person answers and the agent collects the selected custom fields. Test calls are not auto-filed. Admins save Twilio in [[Phone dialing|settings-phone-dialing]].',
       links: [
         { label: 'Open Intake', target: 'intake' },
+        { label: 'Phone dialing', target: 'settings-phone-dialing' },
       ],
     },
     {
@@ -11008,6 +11086,8 @@
         await focusSettings('#timeFieldsCard');
       } else if (key === 'settings-time-billing') {
         await focusSettings('#timeBillingCard');
+      } else if (key === 'settings-phone-dialing') {
+        await focusSettings('#phoneDialingCard');
       } else if (key === 'settings-name-formula') {
         // Matter name formula UI is temporarily hidden; land on Matter page instead.
         await focusSettings('#defaultFieldsCard');

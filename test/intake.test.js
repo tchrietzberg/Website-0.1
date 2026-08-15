@@ -414,4 +414,100 @@ describe('intake agent', () => {
     assert.equal(dialed.json.session.channel, 'phone');
     delete process.env.TWILIO_STUB;
   });
+
+  it('saves Twilio in Settings so dialing works without env vars', async () => {
+    delete process.env.TWILIO_STUB;
+    delete process.env.TWILIO_ACCOUNT_SID;
+    delete process.env.TWILIO_AUTH_TOKEN;
+    delete process.env.TWILIO_FROM_NUMBER;
+    delete process.env.TWILIO_PHONE_NUMBER;
+
+    const login = await request(port, 'POST', '/api/login', {
+      body: { email: 'avery@firm.example', password: 'demo-change-me' },
+    });
+    const cookie = sessionCookie(login.setCookie);
+    const auth = {
+      cookies: cookie,
+      headers: {
+        'X-CSRF-Token': login.json.csrf,
+        Authorization: `Bearer ${login.json.token}`,
+      },
+    };
+
+    const before = await request(port, 'GET', '/api/settings', auth);
+    assert.equal(before.status, 200);
+    assert.equal(before.json.dial.configured, false);
+    assert.equal(before.json.dial.fromEnv, false);
+
+    const forms = await request(port, 'GET', '/api/intake/forms', auth);
+    const formId = forms.json.forms[0].id;
+    const blocked = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+      ...auth,
+      body: { phone: '415-555-0199', test: true },
+    });
+    assert.equal(blocked.status, 503);
+    assert.match(String(blocked.json.message || blocked.json.error), /Settings/);
+
+    const badSid = await request(port, 'PATCH', '/api/settings', {
+      ...auth,
+      body: { twilioConfig: { accountSid: 'not-a-sid', authToken: 'token-value', fromNumber: '415-555-0100' } },
+    });
+    assert.equal(badSid.status, 400);
+
+    const sid = `AC${'ab'.repeat(16)}`;
+    const saved = await request(port, 'PATCH', '/api/settings', {
+      ...auth,
+      body: {
+        twilioConfig: {
+          accountSid: sid,
+          authToken: 'twilio-test-auth-token-value',
+          fromNumber: '415-555-0100',
+        },
+      },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.json));
+    assert.equal(saved.json.dial.configured, true);
+    assert.equal(saved.json.dial.hasAuthToken, true);
+    assert.equal(saved.json.dial.fromNumber, '+14155550100');
+    assert.match(String(saved.json.dial.accountSidMasked), /ACab/);
+    assert.equal(saved.json.dial.fromEnv, false);
+    assert.ok(!JSON.stringify(saved.json).includes('twilio-test-auth-token-value'));
+
+    const keepToken = await request(port, 'PATCH', '/api/settings', {
+      ...auth,
+      body: { twilioConfig: { authToken: '', fromNumber: '212-555-0188' } },
+    });
+    assert.equal(keepToken.status, 200);
+    assert.equal(keepToken.json.dial.hasAuthToken, true);
+    assert.equal(keepToken.json.dial.fromNumber, '+12125550188');
+    assert.equal(phoneDial.configured(db), true);
+
+    db.prepare(
+      "INSERT INTO users(email,name,role,password_hash) VALUES ('billie@firm.example','Billie','billing_clerk',?)"
+    ).run(hashPassword('demo-change-me'));
+    const clerkLogin = await request(port, 'POST', '/api/login', {
+      body: { email: 'billie@firm.example', password: 'demo-change-me' },
+    });
+    const clerkAuth = {
+      cookies: sessionCookie(clerkLogin.setCookie),
+      headers: {
+        'X-CSRF-Token': clerkLogin.json.csrf,
+        Authorization: `Bearer ${clerkLogin.json.token}`,
+      },
+    };
+    const clerkDenied = await request(port, 'PATCH', '/api/settings', {
+      ...clerkAuth,
+      body: { twilioConfig: { fromNumber: '202-555-0147' } },
+    });
+    assert.equal(clerkDenied.status, 403);
+
+    process.env.TWILIO_STUB = '1';
+    const dialed = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+      ...auth,
+      body: { phone: '617-555-0133', test: true },
+    });
+    assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
+    assert.match(String(dialed.json.callSid), /^CA_TEST_/);
+    delete process.env.TWILIO_STUB;
+  });
 });

@@ -222,6 +222,7 @@ function readSettings(db) {
     billFieldConfig: invoiceSvc.getBillFieldConfig(db),
     permissions: permissions.getPermissionsSettings(db),
     matterNameFormula: matterSvc.getMatterNameFormulaConfig(db),
+    dial: phoneDial.status(db),
   };
 }
 
@@ -1371,6 +1372,14 @@ function createServer(db = openDb()) {
             clientSecret: body.msClientSecret,
           });
         }
+        if (body.twilioConfig) {
+          if (!roleGate(user, res, ['admin'])) return;
+          try {
+            phoneDial.saveConfig(db, user, body.twilioConfig);
+          } catch (e) {
+            return json(res, e.status || 400, { error: e.message, message: e.message }, req);
+          }
+        }
         if (body.emailConfig) {
           if (!roleGate(user, res, ['admin'])) return;
           if (!mail.outboundEmailEnabled()) {
@@ -2033,7 +2042,7 @@ function createServer(db = openDb()) {
 
       if (req.method === 'GET' && pathname === '/api/intake/forms') {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
-        return json(res, 200, { forms: intakeSvc.listForms(db, user), dial: phoneDial.status() }, req);
+        return json(res, 200, { forms: intakeSvc.listForms(db, user), dial: phoneDial.status(db) }, req);
       }
       if (req.method === 'POST' && pathname === '/api/intake/forms') {
         if (!roleGate(user, res, intakeSvc.STAFF_ROLES, req)) return;
