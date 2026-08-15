@@ -944,7 +944,7 @@ function finishPhoneIfReady(db, session, actor) {
     SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
     WHERE id = ? AND status NOT IN ('filed', 'completed')
   `).run(session.id);
-  if (form.auto_file && !session.test && actor) {
+  if (!session.test && actor && extracted.contactName) {
     try { fileSession(db, actor, session.id); } catch { /* leave completed for staff review */ }
   }
   return serializeSession(db, getSession(db, session.id), { includeMessages: true });
@@ -954,6 +954,9 @@ async function startDial(db, input = {}, req = null) {
   ensureIntakeTables(db);
   const phone = phoneDial.normalizePhone(input.phone || input.to);
   if (!phone) throw Object.assign(new Error('enter a valid phone number'), { status: 400 });
+  if (!phoneDial.configured(db)) {
+    throw Object.assign(new Error('Chrono cannot place the call yet. Open Settings → Phone dialing and save the Twilio account SID, auth token, and from number. Chrono will ring the phone and the agent will collect answers on that call.'), { status: 503 });
+  }
   let form;
   let actor;
   let portalToken = null;

@@ -384,11 +384,50 @@ describe('intake agent', () => {
     assert.equal(siteDial.json.session.test, true);
     assert.ok(siteDial.json.guestToken);
 
+    const liveDial = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+      ...auth,
+      body: { phone: '617-555-0133' },
+    });
+    assert.equal(liveDial.status, 200, JSON.stringify(liveDial.json));
+    assert.equal(liveDial.json.session.test, false);
+    const liveId = liveDial.json.session.id;
+    const liveSig = phoneDial.voiceSig(liveId);
+    const livePayload = new URLSearchParams({
+      SpeechResult: 'My name is Casey Filed. Email is casey.filed@example.com. Matter is Filed v. Acme. Case stage is Trial.',
+    }).toString();
+    await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        path: `/api/intake/phone/voice?sid=${liveId}&sig=${liveSig}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(livePayload),
+          Origin: `http://127.0.0.1:${port}`,
+        },
+      }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode, raw: Buffer.concat(chunks).toString('utf8') }));
+      });
+      req.on('error', reject);
+      req.write(livePayload);
+      req.end();
+    });
+    const filed = await request(port, 'GET', `/api/intake/sessions/${liveId}`, auth);
+    assert.equal(filed.status, 200, JSON.stringify(filed.json));
+    assert.equal(filed.json.session.status, 'filed');
+    assert.equal(filed.json.session.extracted.contactName, 'Casey Filed');
+    assert.ok(filed.json.session.clientId);
+    assert.ok(filed.json.session.matterId);
+
     delete process.env.TWILIO_STUB;
     delete process.env.INTAKE_PHONE_WEBHOOK_SECRET;
   });
 
   it('lets any signed-in firm user list intake forms and dial', async () => {
+    process.env.TWILIO_STUB = '1';
     db.prepare(
       "INSERT INTO users(email,name,role,password_hash) VALUES ('pat@firm.example','Pat','paralegal',?)"
     ).run(hashPassword('demo-change-me'));
@@ -414,7 +453,7 @@ describe('intake agent', () => {
     assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
     assert.equal(dialed.json.session.channel, 'phone');
     assert.equal(dialed.json.stub, true);
-    assert.equal(dialed.json.telUrl, 'tel:+12025550147');
+    delete process.env.TWILIO_STUB;
   });
 
   it('saves Twilio in Settings so dialing works without env vars', async () => {
@@ -438,24 +477,18 @@ describe('intake agent', () => {
 
     const before = await request(port, 'GET', '/api/settings', auth);
     assert.equal(before.status, 200);
-    assert.equal(before.json.dial.configured, true);
-    assert.equal(before.json.dial.canDial, true);
+    assert.equal(before.json.dial.configured, false);
     assert.equal(before.json.dial.carrier, false);
     assert.equal(before.json.dial.fromEnv, false);
 
     const forms = await request(port, 'GET', '/api/intake/forms', auth);
     const formId = forms.json.forms[0].id;
-    const localDial = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
+    const blocked = await request(port, 'POST', `/api/intake/forms/${formId}/dial`, {
       ...auth,
-      body: { phone: '415-555-0199', test: true },
+      body: { phone: '415-555-0199' },
     });
-    assert.equal(localDial.status, 200, JSON.stringify(localDial.json));
-    assert.equal(localDial.json.stub, true);
-    assert.equal(localDial.json.telUrl, 'tel:+14155550199');
-    assert.match(String(localDial.json.callSid), /^CA_LOCAL_/);
-    assert.match(String(localDial.json.session.nextQuestion), /name/i);
-    assert.equal(localDial.json.session.nextKey, 'contactName');
-    assert.ok((localDial.json.session.messages || []).some((m) => m.role === 'agent' && /name/i.test(m.content)));
+    assert.equal(blocked.status, 503);
+    assert.match(String(blocked.json.message || blocked.json.error), /Twilio|Settings/i);
 
     const badSid = await request(port, 'PATCH', '/api/settings', {
       ...auth,
@@ -469,6 +502,7 @@ describe('intake agent', () => {
       body: {
         twilioConfig: {
           accountSid: sid,
+          authToken: 'twilio-test-auth-token-value',
           fromNumber: '415-555-0100',
         },
       },
@@ -476,10 +510,11 @@ describe('intake agent', () => {
     assert.equal(saved.status, 200, JSON.stringify(saved.json));
     assert.equal(saved.json.dial.configured, true);
     assert.equal(saved.json.dial.carrier, true);
+    assert.equal(saved.json.dial.hasAuthToken, true);
     assert.equal(saved.json.dial.fromNumber, '+14155550100');
     assert.match(String(saved.json.dial.accountSidMasked), /ACab/);
     assert.equal(saved.json.dial.fromEnv, false);
-    assert.equal(saved.json.dial.hasAuthToken, undefined);
+    assert.ok(!JSON.stringify(saved.json).includes('twilio-test-auth-token-value'));
 
     const updateFrom = await request(port, 'PATCH', '/api/settings', {
       ...auth,

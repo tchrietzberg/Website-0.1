@@ -2063,7 +2063,7 @@ function createServer(db = openDb()) {
           actor: user,
           formId: id,
           phone: body.phone,
-          test: body.test !== false,
+          test: body.test === true,
         }, req), req);
       }
       if (req.method === 'POST' && pathname.match(/^\/api\/intake\/forms\/\d+\/portal-link$/)) {

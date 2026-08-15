@@ -59,6 +59,8 @@
     intakeEmbed: null,
     intakeConduct: false,
     intakeSpokenKey: null,
+    intakeLiveCall: null,
+    intakePollTimer: null,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5094,6 +5096,47 @@
     state.intakeSpokenKey = null;
   }
 
+  function stopIntakeCallPoll() {
+    if (state.intakePollTimer) {
+      clearInterval(state.intakePollTimer);
+      state.intakePollTimer = null;
+    }
+  }
+
+  function startIntakeCallPoll(sessionId) {
+    stopIntakeCallPoll();
+    state.intakeLiveCall = sessionId;
+    state.intakePollTimer = setInterval(async () => {
+      if (state.view !== 'intake' || state.intakeSession?.id !== sessionId) {
+        stopIntakeCallPoll();
+        return;
+      }
+      try {
+        const fresh = await api(`/api/intake/sessions/${sessionId}`);
+        const next = fresh.session;
+        const prev = state.intakeSession;
+        const changed = !prev
+          || prev.status !== next.status
+          || (prev.messages || []).length !== (next.messages || []).length
+          || (prev.extracted?.contactName || '') !== (next.extracted?.contactName || '');
+        state.intakeSession = next;
+        if (next.status === 'filed' || next.status === 'completed') {
+          stopIntakeCallPoll();
+          state.intakeLiveCall = null;
+          state.intakeFlash = {
+            ok: true,
+            text: next.status === 'filed'
+              ? 'Call finished. The contact and matter were created from the phone answers.'
+              : 'Call finished. Review the answers and file if needed.',
+          };
+          void renderIntake();
+          return;
+        }
+        if (changed) void renderIntake();
+      } catch { /* keep last transcript */ }
+    }, 2500);
+  }
+
   async function renderIntake() {
     if (!state.user) {
       renderLogin();
@@ -5143,8 +5186,12 @@
       </div>
       ${flash ? `<div class="notice ${flash.ok ? 'ok' : 'error'}">${escapeHtml(flash.text)}</div>` : ''}
       <div class="card intake-dial-card">
-        <p class="sidebar-label">Dial a test call</p>
-        <p class="muted">Enter a number and start the call. The agent asks for name, email, matter, and the custom fields you selected.</p>
+        <p class="sidebar-label">Call a number</p>
+        <p class="muted">Chrono rings that phone. The person answers, the intake agent asks for name, email, matter, and selected fields on the call, then those answers are entered as a contact and matter.</p>
+        ${dial.carrier
+          ? `<p class="hint">Ready to ring${dial.fromMasked ? ` from ${escapeHtml(dial.fromMasked)}` : ''}.</p>`
+          : `<p class="hint">Twilio is not connected yet, so Chrono cannot place the call. ${state.user.role === 'admin' ? 'Save the account SID, auth token, and from number in Settings → Phone dialing.' : 'Ask an admin to connect Twilio in Settings → Phone dialing.'}</p>
+             ${state.user.role === 'admin' ? '<button type="button" class="linkish" id="intakeOpenPhoneSettings">Open Phone dialing settings</button>' : ''}`}
         <form id="intakeStaffDialForm" class="row-actions intake-dial-form">
           <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 555-0100" />
           <button type="submit" class="btn primary">Call this number</button>
@@ -5310,6 +5357,15 @@
     const previewBtn = $('#intakeEmbedTestBtn');
     if (previewBtn) previewBtn.onclick = () => void openTestCall();
 
+    const openPhoneSettings = $('#intakeOpenPhoneSettings');
+    if (openPhoneSettings) {
+      openPhoneSettings.onclick = () => {
+        if (!state.settingsTabOpen) state.settingsTabOpen = {};
+        state.settingsTabOpen['phone-dialing'] = true;
+        void goHelpTarget('settings-phone-dialing');
+      };
+    }
+
     const staffDial = $('#intakeStaffDialForm');
     if (staffDial && form) {
       staffDial.onsubmit = async (ev) => {
@@ -5323,13 +5379,17 @@
         try {
           const out = await api(`/api/intake/forms/${form.id}/dial`, {
             method: 'POST',
-            body: JSON.stringify({ phone, test: true }),
+            body: JSON.stringify({ phone, test: false }),
           });
           state.intakeSession = out.session;
-          beginIntakeConduct();
+          state.intakeConduct = false;
+          cancelIntakeSpeech();
+          startIntakeCallPoll(out.session.id);
           state.intakeFlash = {
             ok: true,
-            text: `Call started for ${out.toMasked || 'that number'}. The agent is asking for the caller’s name.`,
+            text: out.stub
+              ? `Simulated call to ${out.toMasked || 'that number'}.`
+              : `Calling ${out.toMasked || 'that number'}. They will hear the agent ask for their name. Answers appear here and are filed when the call finishes.`,
           };
           void renderIntake();
         } catch (e) {
@@ -5374,7 +5434,7 @@
 
     const transcript = $('#intakeTranscript');
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
-    speakIntakeQuestion(session);
+    if (!state.intakeLiveCall) speakIntakeQuestion(session);
   }
 
   async function renderView() {
@@ -10199,20 +10259,24 @@
         id: 'phoneDialingCard',
         tabKey: 'phone-dialing',
         title: 'Phone dialing',
-        meta: settings.dial?.carrier ? 'Twilio number saved' : 'Device calling',
+        meta: settings.dial?.carrier ? 'Ready to ring' : 'Not connected',
         open: settingsTabOpen('phone-dialing'),
         bodyHtml: `
-          <p class="hint">Intake can call without Twilio. Saving a Twilio number is optional — Chrono will try to ring from that number when a carrier secret is available. You can always call from this device.</p>
-          ${settings.dial?.fromEnv ? '<p class="ok-banner">A TWILIO_* environment number is set. Settings below are stored but env vars win for the carrier number.</p>' : ''}
+          <p class="hint">Chrono uses Twilio to ring the person and run the intake agent on that live call. Answers are written into the contact and matter. You need the account SID, auth token, and the Twilio number that places the call.</p>
+          ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables.</p>' : ''}
           ${settings.dial?.carrier
-            ? `<p class="muted">Twilio number saved${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
-            : '<p class="muted">No Twilio number saved. Dial a test call still works from this device.</p>'}
+            ? `<p class="muted">Ready to ring${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
+            : '<p class="muted">Not connected. Calls will not ring until these three values are saved.</p>'}
           <form id="twilioDialForm" class="stack">
             <label>Twilio account SID
               <input name="accountSid" autocomplete="off" spellcheck="false"
                 placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
             </label>
             <p class="hint">${settings.dial?.accountSidMasked ? `Current SID: ${escapeHtml(settings.dial.accountSidMasked)}. Leave blank to keep it.` : 'From the Twilio console, Account → Account SID.'}</p>
+            <label>Auth token
+              <input name="authToken" type="password" autocomplete="new-password"
+                placeholder="${settings.dial?.hasAuthToken ? 'Leave blank to keep the current token' : 'Twilio auth token'}" />
+            </label>
             <label>From number
               <input name="fromNumber" type="tel" inputmode="tel" autocomplete="off"
                 placeholder="+15555550100"
@@ -10502,15 +10566,18 @@
         const fd = new FormData(twilioForm);
         const msgEl = $('#twilioDialMsg');
         const accountSid = String(fd.get('accountSid') || '').trim();
+        const authToken = String(fd.get('authToken') || '').trim();
         const fromNumber = String(fd.get('fromNumber') || '').trim();
         try {
           state.settings = await api('/api/settings', {
             method: 'PATCH',
-            body: JSON.stringify({ twilioConfig: { accountSid, fromNumber } }),
+            body: JSON.stringify({ twilioConfig: { accountSid, authToken, fromNumber } }),
           });
           if (!state.settingsTabOpen) state.settingsTabOpen = {};
           state.settingsTabOpen['phone-dialing'] = true;
-          state.settingsTwilioFlash = 'Phone dialing settings saved. Intake can call with or without Twilio.';
+          state.settingsTwilioFlash = state.settings.dial?.carrier
+            ? 'Phone dialing saved. Chrono can ring a number and collect answers on the call.'
+            : 'Saved. Add the account SID, auth token, and from number to finish setup.';
           await renderSettings();
         } catch (e) {
           if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -10925,7 +10992,7 @@
       id: 'intake',
       label: 'Client intake',
       keywords: ['intake', 'phone call', 'portal', 'new client call', 'intake agent'],
-      answer: 'Open [[Intake|intake]] under Navigate. Dial a test call or Start call — the agent asks for name, email, matter, and selected custom fields out loud. Test website call is the same interview clients get. Test calls are not auto-filed.',
+      answer: 'Open [[Intake|intake]] under Navigate. Call a number — Chrono rings the phone, the agent asks for name and the other fields on that call, then files a contact and matter. Connect Twilio under [[Phone dialing|settings-phone-dialing]].',
       links: [
         { label: 'Open Intake', target: 'intake' },
         { label: 'Phone dialing', target: 'settings-phone-dialing' },

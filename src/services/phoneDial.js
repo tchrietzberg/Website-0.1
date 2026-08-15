@@ -41,8 +41,9 @@ function carrierSecret(db = null) {
   return apiSecret || twilioAuthToken(db);
 }
 
-function configured(_db = null) {
-  return true;
+function configured(db = null) {
+  if (stubDial()) return true;
+  return !!(twilioAccountSid(db) && twilioFromNumber(db) && carrierSecret(db));
 }
 
 function maskSecret(value) {
@@ -54,14 +55,15 @@ function maskSecret(value) {
 function status(db = null) {
   const from = twilioFromNumber(db);
   const sid = twilioAccountSid(db);
-  const fromEnv = !!(process.env.TWILIO_ACCOUNT_SID && (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
-  const carrier = hasCarrier(db);
+  const fromEnv = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
+  const live = configured(db) && !stubDial();
   return {
-    configured: true,
-    canDial: true,
-    carrier,
-    stub: stubDial() || !carrier || !carrierSecret(db),
+    configured: configured(db),
+    canDial: configured(db),
+    carrier: live,
+    stub: stubDial(),
     fromEnv,
+    hasAuthToken: !!carrierSecret(db),
     accountSidMasked: sid ? maskSecret(sid) : null,
     fromNumber: from || '',
     fromMasked: from ? `***${from.replace(/\D/g, '').slice(-4)}` : null,
@@ -76,6 +78,9 @@ function saveConfig(db, actor, input = {}) {
       throw Object.assign(new Error('Twilio account SID should look like ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), { status: 400 });
     }
     setSetting(db, 'twilio_account_sid', sid);
+  }
+  if (input.authToken) {
+    setSetting(db, 'twilio_auth_token', String(input.authToken).trim());
   }
   if (input.fromNumber !== undefined) {
     const raw = String(input.fromNumber || '').trim();
@@ -131,7 +136,7 @@ function sayText(value) {
 function gatherTwiml(say, actionUrl) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech" timeout="7" speechTimeout="auto" action="${escapeXml(actionUrl)}" method="POST">
+  <Gather input="speech" timeout="8" speechTimeout="auto" action="${escapeXml(actionUrl)}" method="POST">
     <Say voice="Polly.Joanna">${sayText(say)}</Say>
   </Gather>
   <Redirect method="POST">${escapeXml(actionUrl)}</Redirect>
@@ -235,20 +240,18 @@ async function placeCall({ to, url, db = null }) {
   const apiKey = String(process.env.TWILIO_API_KEY || '').trim();
   const password = carrierSecret(db);
   if (!sid || !from || !password) {
-    return localCall();
+    throw Object.assign(new Error('phone dialing needs a Twilio account SID, auth token, and from number so Chrono can ring the phone and run the intake agent on the call'), { status: 503 });
   }
   const username = apiKey || sid;
-  try {
-    const out = await postForm(
-      `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
-      { To: to, From: from, Url: url, Method: 'POST' },
-      { username, password }
-    );
-    if (!out.sid) return localCall();
-    return { sid: out.sid, stub: false };
-  } catch {
-    return localCall();
+  const out = await postForm(
+    `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
+    { To: to, From: from, Url: url, Method: 'POST' },
+    { username, password }
+  );
+  if (!out.sid) {
+    throw Object.assign(new Error('phone carrier did not start the call'), { status: 502 });
   }
+  return { sid: out.sid, stub: false };
 }
 
 function verifyTwilioSignature(req, params, fullUrl, db = null) {
