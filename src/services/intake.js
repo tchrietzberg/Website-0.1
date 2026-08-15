@@ -1025,7 +1025,9 @@ async function startDial(db, input = {}, req = null) {
     `).run(hashGuestToken(guestToken), id, portalToken, Date.now() + GUEST_TTL_MS);
   }
   const actionUrl = phoneDial.voiceActionUrl(req, id, db);
-  const placed = await phoneDial.placeCall({ to: phone, url: actionUrl, db });
+  const speakText = [greeting, first.question].filter(Boolean).join(' ');
+  const twiml = phoneDial.gatherTwiml(speakText, actionUrl);
+  const placed = await phoneDial.placeCall({ to: phone, url: actionUrl, twiml, db });
   db.prepare('INSERT INTO intake_phone_calls(call_sid, session_id) VALUES (?, ?)').run(placed.sid, id);
   audit(db, {
     actorId: actor.id,
@@ -1041,6 +1043,7 @@ async function startDial(db, input = {}, req = null) {
     telUrl: phoneDial.telUrl(phone),
     toMasked: maskPhone(phone),
     guestToken,
+    speakText,
     session: serializePublicSession(db, getSession(db, id)),
   };
 }

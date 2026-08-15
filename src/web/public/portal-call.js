@@ -49,6 +49,34 @@
     return agentMsgs.join(' ') || session.nextQuestion || '';
   }
 
+  const INTAKE_OPENING = 'This is Chrono calling about a new matter. May I have your full name?';
+
+  function speakTextNow(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!spoken) return false;
+    const Utter = window.SpeechSynthesisUtterance;
+    const synth = window.speechSynthesis;
+    if (!Utter || !synth) return false;
+    const speak = () => {
+      try { synth.cancel(); } catch { /* ignore */ }
+      try { synth.resume(); } catch { /* ignore */ }
+      const utter = new Utter(spoken);
+      utter.lang = 'en-US';
+      utter.rate = 0.95;
+      utter.volume = 1;
+      const voices = synth.getVoices() || [];
+      const voice = voices.find((v) => /en-US/i.test(v.lang)) || voices.find((v) => /^en/i.test(v.lang)) || voices[0];
+      if (voice) utter.voice = voice;
+      utter.onend = () => { if (speechEngine()) startListen(); };
+      utter.onerror = () => { if (speechEngine()) startListen(); };
+      synth.speak(utter);
+    };
+    speak();
+    if (!synth.getVoices().length) synth.addEventListener('voiceschanged', speak, { once: true });
+    setTimeout(() => { if (!synth.speaking && !synth.pending) speak(); }, 200);
+    return true;
+  }
+
   function speakThenListen() {
     const text = interviewPrompt();
     const key = `${session?.id || ''}:${session?.nextKey || session?.nextQuestion || ''}`;
@@ -58,20 +86,7 @@
     }
     spokenKey = key;
     stopListen();
-    const Utter = window.SpeechSynthesisUtterance;
-    const synth = window.speechSynthesis;
-    const after = () => { if (speechEngine()) startListen(); };
-    if (!Utter || !synth) {
-      after();
-      return;
-    }
-    try { synth.cancel(); } catch { /* ignore */ }
-    const utter = new Utter(text);
-    utter.lang = 'en-US';
-    utter.rate = 1;
-    utter.onend = after;
-    utter.onerror = after;
-    synth.speak(utter);
+    speakTextNow(text);
   }
 
   function setError(text) {
@@ -130,7 +145,8 @@
         <h1>Calling ${escapeHtml(toMasked || 'that number')}…</h1>
         <p class="muted">${escapeHtml(firmName || 'the firm')}</p>
         <div class="intake-calling">
-          <p class="intake-ask-q">The agent is on this call.</p>
+          <p class="intake-ask-q">The agent is speaking on this call.</p>
+          <p class="hint">Keep this tab open and use speakerphone so the caller can hear the agent.</p>
           ${telUrl ? `<a class="btn primary" id="intakePlaceCallNow" href="${escapeHtml(telUrl)}">Place call now</a>` : ''}
         </div>
         <div class="intake-ask" id="intakeCallAsk" hidden>
@@ -296,6 +312,12 @@
         telUrl: out.telUrl || toTelHref(phone),
         toMasked: out.toMasked,
       });
+      if (out.speakText) {
+        spokenKey = `${session.id}:${session.nextKey || session.nextQuestion || ''}`;
+        speakTextNow(out.speakText);
+      } else {
+        speakThenListen();
+      }
       stopPoll();
       pollTimer = setInterval(() => void refreshSession(), 2500);
     } catch (e) {
@@ -337,15 +359,20 @@
     };
     phoneInput?.addEventListener('input', syncCallHref);
     syncCallHref();
+    const startPortalCall = (phone, href) => {
+      try { window.open(href, 'chronoIntakeDial'); } catch { /* stay on page */ }
+      speakTextNow(form.greeting ? `${form.greeting} May I have your full name?` : INTAKE_OPENING);
+      void postDial(form, data.firmName, phone);
+    };
     callLink.addEventListener('click', (ev) => {
+      ev.preventDefault();
       const phone = String(phoneInput?.value || '').trim();
       const href = toTelHref(phone);
       if (!href) {
-        ev.preventDefault();
         setError('Enter the phone number to call.');
         return;
       }
-      void postDial(form, data.firmName, phone);
+      startPortalCall(phone, href);
     });
     document.getElementById('intakeDialForm').onsubmit = (ev) => {
       ev.preventDefault();
@@ -355,8 +382,7 @@
         setError('Enter the phone number to call.');
         return;
       }
-      try { window.location.assign(href); } catch { /* stay on page */ }
-      void postDial(form, data.firmName, phone);
+      startPortalCall(phone, href);
     };
   }
 

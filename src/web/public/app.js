@@ -5021,8 +5021,20 @@
     };
   }
 
+  const INTAKE_OPENING = 'This is Chrono calling about a new matter. May I have your full name?';
+
   function cancelIntakeSpeech() {
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+  }
+
+  function unlockAgentAudio() {
+    try { window.speechSynthesis?.resume(); } catch { /* ignore */ }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!state.intakeAudioCtx) state.intakeAudioCtx = new AC();
+      void state.intakeAudioCtx.resume();
+    } catch { /* keep speechSynthesis */ }
   }
 
   function intakeAskText(session) {
@@ -5058,6 +5070,42 @@
     }
   }
 
+  function speakAgentNow(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!spoken) return false;
+    unlockAgentAudio();
+    state.intakeConduct = true;
+    const Utter = window.SpeechSynthesisUtterance;
+    const synth = window.speechSynthesis;
+    if (!Utter || !synth) return false;
+    const speak = () => {
+      try { synth.cancel(); } catch { /* ignore */ }
+      try { synth.resume(); } catch { /* ignore */ }
+      const utter = new Utter(spoken);
+      utter.lang = 'en-US';
+      utter.rate = 0.95;
+      utter.pitch = 1;
+      utter.volume = 1;
+      const voices = synth.getVoices() || [];
+      const voice = voices.find((v) => /en-US/i.test(v.lang) && /female|samantha|google us|allison|susan/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang))
+        || voices.find((v) => /^en/i.test(v.lang))
+        || voices[0];
+      if (voice) utter.voice = voice;
+      utter.onend = () => { startIntakeListen(); };
+      utter.onerror = () => { startIntakeListen(); };
+      synth.speak(utter);
+    };
+    speak();
+    if (!synth.getVoices().length) {
+      synth.addEventListener('voiceschanged', speak, { once: true });
+    }
+    setTimeout(() => {
+      if (!synth.speaking && !synth.pending) speak();
+    }, 200);
+    return true;
+  }
+
   function speakIntakeQuestion(session) {
     if (!state.intakeConduct || !session?.id || session.status === 'filed' || session.status === 'completed') return;
     const text = intakeAskText(session);
@@ -5065,20 +5113,7 @@
     const key = `${session.id}:${session.nextKey || 'done'}`;
     if (state.intakeSpokenKey === key) return;
     state.intakeSpokenKey = key;
-    const Utter = window.SpeechSynthesisUtterance;
-    const synth = window.speechSynthesis;
-    const after = () => { startIntakeListen(); };
-    if (!Utter || !synth) {
-      after();
-      return;
-    }
-    cancelIntakeSpeech();
-    const utter = new Utter(text);
-    utter.lang = 'en-US';
-    utter.rate = 1;
-    utter.onend = after;
-    utter.onerror = after;
-    synth.speak(utter);
+    speakAgentNow(text);
   }
 
   async function submitIntakeAnswer(text, source) {
@@ -5110,13 +5145,16 @@
   function placePhoneCall(telUrl) {
     const href = String(telUrl || '').trim();
     if (!/^tel:\+?[0-9]{10,15}$/.test(href)) return false;
-    const link = document.createElement('a');
-    link.href = href;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    try { window.location.assign(href); } catch { /* stay on intake */ }
+    try {
+      const opened = window.open(href, 'chronoIntakeDial');
+      if (opened) return true;
+    } catch { /* fall through */ }
+    const frame = document.createElement('iframe');
+    frame.src = href;
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(frame);
+    setTimeout(() => frame.remove(), 4000);
     return true;
   }
 
@@ -5219,7 +5257,7 @@
         ${state.intakeTelUrl ? `
           <div class="intake-calling">
             <p class="intake-ask-q">Calling ${escapeHtml(state.intakeToMasked || 'that number')}…</p>
-            <p class="hint">The agent is on this call.</p>
+            <p class="hint">The agent is speaking on this call. Keep this tab open and use speakerphone so the caller can hear it.</p>
             <a class="btn primary" id="intakePlaceCallNow" href="${escapeHtml(state.intakeTelUrl)}">Place call now</a>
           </div>` : ''}
       </div>
@@ -5420,10 +5458,13 @@
           state.intakeSession = out.session;
           state.intakeTelUrl = out.telUrl || toTelHref(phone);
           state.intakeToMasked = out.toMasked || null;
-          state.intakeConduct = false;
-          cancelIntakeSpeech();
+          state.intakeConduct = true;
+          if (out.speakText) {
+            state.intakeSpokenKey = `${out.session.id}:${out.session.nextKey || 'done'}`;
+            speakAgentNow(out.speakText);
+          }
           if (!out.stub) startIntakeCallPoll(out.session.id);
-          state.intakeFlash = { ok: true, text: `Calling ${out.toMasked || 'that number'}…` };
+          state.intakeFlash = { ok: true, text: `Calling ${out.toMasked || 'that number'}… The agent is speaking now.` };
           void renderIntake();
         } catch (e) {
           if (!state.user || e.code === 'sign in required') {
@@ -5434,20 +5475,27 @@
           void renderIntake();
         }
       };
+      const startStaffCall = (phone, href) => {
+        state.intakeTelUrl = href;
+        state.intakeConduct = true;
+        state.intakeSpokenKey = null;
+        placePhoneCall(href);
+        speakAgentNow(form.greeting ? `${form.greeting} May I have your full name?` : INTAKE_OPENING);
+        void postStaffDial(phone);
+      };
       phoneInput?.addEventListener('input', syncCallHref);
       syncCallHref();
       if (callLink) {
         callLink.addEventListener('click', (ev) => {
+          ev.preventDefault();
           const phone = String(phoneInput?.value || '').trim();
           const href = toTelHref(phone);
           if (!href) {
-            ev.preventDefault();
             state.intakeFlash = { ok: false, text: 'Enter the phone number to call.' };
             void renderIntake();
             return;
           }
-          state.intakeTelUrl = href;
-          void postStaffDial(phone);
+          startStaffCall(phone, href);
         });
       }
       staffDial.onsubmit = (ev) => {
@@ -5459,9 +5507,7 @@
           void renderIntake();
           return;
         }
-        state.intakeTelUrl = href;
-        placePhoneCall(href);
-        void postStaffDial(phone);
+        startStaffCall(phone, href);
       };
     }
 
@@ -5496,7 +5542,7 @@
 
     const transcript = $('#intakeTranscript');
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
-    if (!state.intakeLiveCall) speakIntakeQuestion(session);
+    speakIntakeQuestion(session);
     const placeNow = $('#intakePlaceCallNow');
     if (placeNow && state.intakeTelUrl) {
       placeNow.addEventListener('click', (ev) => {

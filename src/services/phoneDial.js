@@ -141,7 +141,7 @@ function gatherTwiml(say, actionUrl) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather input="speech" timeout="8" speechTimeout="auto" action="${escapeXml(actionUrl)}" method="POST">
-    <Say voice="Polly.Joanna">${sayText(say)}</Say>
+    <Say voice="alice">${sayText(say)}</Say>
   </Gather>
   <Redirect method="POST">${escapeXml(actionUrl)}</Redirect>
 </Response>`;
@@ -150,7 +150,7 @@ function gatherTwiml(say, actionUrl) {
 function hangupTwiml(say) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="Polly.Joanna">${sayText(say)}</Say>
+  <Say voice="alice">${sayText(say)}</Say>
   <Hangup/>
 </Response>`;
 }
@@ -235,7 +235,7 @@ function localCall(prefix = 'CA_LOCAL_') {
   return { sid: `${prefix}${crypto.randomBytes(8).toString('hex')}`, stub: true };
 }
 
-async function placeCall({ to, url, db = null }) {
+async function placeCall({ to, url, twiml, db = null }) {
   if (stubDial()) {
     return localCall('CA_TEST_');
   }
@@ -248,9 +248,12 @@ async function placeCall({ to, url, db = null }) {
   }
   const username = apiKey || sid;
   try {
+    const fields = { To: to, From: from, Method: 'POST' };
+    if (twiml) fields.Twiml = String(twiml);
+    else if (url) fields.Url = url;
     const out = await postForm(
       `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
-      { To: to, From: from, Url: url, Method: 'POST' },
+      fields,
       { username, password }
     );
     if (!out.sid) return localCall();

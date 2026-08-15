@@ -347,7 +347,10 @@ describe('intake agent', () => {
     });
     assert.equal(pickup.status, 200);
     assert.match(pickup.raw, /<Gather/);
-    assert.match(pickup.raw, /Say/);
+    assert.match(pickup.raw, /<Say voice="alice"/);
+    assert.match(pickup.raw, /Chrono calling about a new matter/);
+    assert.match(pickup.raw, /May I have your full name/);
+    assert.doesNotMatch(pickup.raw, /Polly/);
 
     const payload = new URLSearchParams({ SpeechResult: 'My name is Riley Dial. Email is riley.dial@example.com. Matter is Dial v. Acme. Case stage is Trial.' }).toString();
     const turn = await new Promise((resolve, reject) => {
@@ -600,6 +603,8 @@ describe('intake agent', () => {
     });
     assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
     assert.equal(dialed.json.telUrl, 'tel:+13125550144');
+    assert.match(String(dialed.json.speakText), /Chrono calling about a new matter/);
+    assert.match(String(dialed.json.speakText), /May I have your full name/);
     const spoken = (dialed.json.session.messages || []).map((m) => m.content).join('\n');
     assert.match(spoken, /Chrono calling about a new matter/);
     assert.match(spoken, /May I have your full name/);
