@@ -954,7 +954,7 @@ async function startDial(db, input = {}, req = null) {
   const phone = phoneDial.normalizePhone(input.phone || input.to);
   if (!phone) throw Object.assign(new Error('enter a valid phone number'), { status: 400 });
   if (!phoneDial.configured(db)) {
-    throw Object.assign(new Error('phone dialing is not configured. Open Settings → Phone dialing and save your Twilio account SID, auth token, and from number.'), { status: 503 });
+    throw Object.assign(new Error('phone dialing is not configured. Open Settings → Phone dialing and save your Twilio account SID and from number.'), { status: 503 });
   }
   let form;
   let actor;

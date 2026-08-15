@@ -450,7 +450,7 @@ describe('intake agent', () => {
 
     const badSid = await request(port, 'PATCH', '/api/settings', {
       ...auth,
-      body: { twilioConfig: { accountSid: 'not-a-sid', authToken: 'token-value', fromNumber: '415-555-0100' } },
+      body: { twilioConfig: { accountSid: 'not-a-sid', fromNumber: '415-555-0100' } },
     });
     assert.equal(badSid.status, 400);
 
@@ -460,26 +460,24 @@ describe('intake agent', () => {
       body: {
         twilioConfig: {
           accountSid: sid,
-          authToken: 'twilio-test-auth-token-value',
           fromNumber: '415-555-0100',
         },
       },
     });
     assert.equal(saved.status, 200, JSON.stringify(saved.json));
     assert.equal(saved.json.dial.configured, true);
-    assert.equal(saved.json.dial.hasAuthToken, true);
     assert.equal(saved.json.dial.fromNumber, '+14155550100');
     assert.match(String(saved.json.dial.accountSidMasked), /ACab/);
     assert.equal(saved.json.dial.fromEnv, false);
-    assert.ok(!JSON.stringify(saved.json).includes('twilio-test-auth-token-value'));
+    assert.equal(saved.json.dial.hasAuthToken, undefined);
 
-    const keepToken = await request(port, 'PATCH', '/api/settings', {
+    const updateFrom = await request(port, 'PATCH', '/api/settings', {
       ...auth,
-      body: { twilioConfig: { authToken: '', fromNumber: '212-555-0188' } },
+      body: { twilioConfig: { fromNumber: '212-555-0188' } },
     });
-    assert.equal(keepToken.status, 200);
-    assert.equal(keepToken.json.dial.hasAuthToken, true);
-    assert.equal(keepToken.json.dial.fromNumber, '+12125550188');
+    assert.equal(updateFrom.status, 200);
+    assert.equal(updateFrom.json.dial.configured, true);
+    assert.equal(updateFrom.json.dial.fromNumber, '+12125550188');
     assert.equal(phoneDial.configured(db), true);
 
     db.prepare(

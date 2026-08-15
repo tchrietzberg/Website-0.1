@@ -34,7 +34,7 @@ function stubDial() {
 
 function configured(db = null) {
   if (stubDial()) return true;
-  return !!(twilioAccountSid(db) && twilioAuthToken(db) && twilioFromNumber(db));
+  return !!(twilioAccountSid(db) && twilioFromNumber(db));
 }
 
 function maskSecret(value) {
@@ -46,7 +46,7 @@ function maskSecret(value) {
 function status(db = null) {
   const from = twilioFromNumber(db);
   const sid = twilioAccountSid(db);
-  const fromEnv = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
+  const fromEnv = !!(process.env.TWILIO_ACCOUNT_SID && (process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_PHONE_NUMBER));
   return {
     configured: configured(db),
     stub: stubDial(),
@@ -54,7 +54,6 @@ function status(db = null) {
     accountSidMasked: sid ? maskSecret(sid) : null,
     fromNumber: from || '',
     fromMasked: from ? `***${from.replace(/\D/g, '').slice(-4)}` : null,
-    hasAuthToken: !!twilioAuthToken(db),
   };
 }
 
@@ -66,9 +65,6 @@ function saveConfig(db, actor, input = {}) {
       throw Object.assign(new Error('Twilio account SID should look like ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'), { status: 400 });
     }
     setSetting(db, 'twilio_account_sid', sid);
-  }
-  if (input.authToken) {
-    setSetting(db, 'twilio_auth_token', String(input.authToken).trim());
   }
   if (input.fromNumber !== undefined) {
     const raw = String(input.fromNumber || '').trim();
@@ -219,10 +215,14 @@ async function placeCall({ to, url, db = null }) {
   }
   const sid = twilioAccountSid(db);
   const from = twilioFromNumber(db);
+  const apiKey = String(process.env.TWILIO_API_KEY || '').trim();
+  const apiSecret = String(process.env.TWILIO_API_SECRET || '').trim();
+  const username = apiKey || sid;
+  const password = apiSecret || twilioAuthToken(db) || '';
   const out = await postForm(
     `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Calls.json`,
     { To: to, From: from, Url: url, Method: 'POST' },
-    { username: sid, password: twilioAuthToken(db) }
+    { username, password }
   );
   if (!out.sid) {
     throw Object.assign(new Error('phone carrier did not start the call'), { status: 502 });

@@ -10131,21 +10131,17 @@
         meta: settings.dial?.configured ? 'Ready' : 'Not configured',
         open: settingsTabOpen('phone-dialing'),
         bodyHtml: `
-          <p class="hint">Twilio places the outbound intake calls. Save the account SID, auth token, and the Twilio number that rings people. Environment variables override these values when set.</p>
+          <p class="hint">Twilio places the outbound intake calls. Save the account SID and the Twilio number that rings people. Environment variables override these values when set.</p>
           ${settings.dial?.fromEnv ? '<p class="ok-banner">Dialing is using TWILIO_* environment variables. Settings below are stored but not used until those env vars are cleared.</p>' : ''}
           ${settings.dial?.configured
             ? `<p class="muted">Configured${settings.dial.accountSidMasked ? ` · ${escapeHtml(settings.dial.accountSidMasked)}` : ''}${settings.dial.fromMasked ? ` · from ${escapeHtml(settings.dial.fromMasked)}` : ''}.</p>`
-            : '<p class="muted">Not configured yet. Calls will not ring until these three values are saved.</p>'}
+            : '<p class="muted">Not configured yet. Calls will not ring until the account SID and from number are saved.</p>'}
           <form id="twilioDialForm" class="stack">
             <label>Twilio account SID
               <input name="accountSid" autocomplete="off" spellcheck="false"
                 placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
             </label>
             <p class="hint">${settings.dial?.accountSidMasked ? `Current SID: ${escapeHtml(settings.dial.accountSidMasked)}. Leave blank to keep it.` : 'From the Twilio console, Account → Account SID.'}</p>
-            <label>Auth token
-              <input name="authToken" type="password" autocomplete="new-password"
-                placeholder="${settings.dial?.hasAuthToken ? 'Leave blank to keep the current token' : 'Twilio auth token'}" />
-            </label>
             <label>From number
               <input name="fromNumber" type="tel" inputmode="tel" autocomplete="off"
                 placeholder="+15555550100"
@@ -10435,18 +10431,17 @@
         const fd = new FormData(twilioForm);
         const msgEl = $('#twilioDialMsg');
         const accountSid = String(fd.get('accountSid') || '').trim();
-        const authToken = String(fd.get('authToken') || '').trim();
         const fromNumber = String(fd.get('fromNumber') || '').trim();
         try {
           state.settings = await api('/api/settings', {
             method: 'PATCH',
-            body: JSON.stringify({ twilioConfig: { accountSid, authToken, fromNumber } }),
+            body: JSON.stringify({ twilioConfig: { accountSid, fromNumber } }),
           });
           if (!state.settingsTabOpen) state.settingsTabOpen = {};
           state.settingsTabOpen['phone-dialing'] = true;
           state.settingsTwilioFlash = state.settings.dial?.configured
             ? 'Phone dialing saved. Intake can now call real numbers.'
-            : 'Saved. Add the account SID, auth token, and from number to finish setup.';
+            : 'Saved. Add the account SID and from number to finish setup.';
           await renderSettings();
         } catch (e) {
           if (msgEl) msgEl.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
