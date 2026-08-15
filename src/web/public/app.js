@@ -65,6 +65,7 @@
     intakeToMasked: null,
     intakeOnCall: false,
     intakeConnected: false,
+    intakeGreeted: false,
     _apiCache: null,
     _shellSig: null,
     _renderToken: 0,
@@ -5023,13 +5024,14 @@
     };
   }
 
-  const INTAKE_OPENING = 'This is Chrono calling about a new matter. May I have your full name?';
+  const INTAKE_GREETING = 'Hello, this is Chrono. I\'m calling about a new matter.';
   const INTAKE_AUDIO = {
-    ring: '/audio/intake-ringback.wav?v=259',
-    opening: '/audio/intake-opening.wav?v=259',
-    contactEmail: '/audio/intake-email.wav?v=259',
-    matterName: '/audio/intake-matter.wav?v=259',
-    thanks: '/audio/intake-thanks.wav?v=259',
+    ring: '/audio/intake-ringback.wav?v=261',
+    greeting: '/audio/intake-greeting.wav?v=261',
+    contactName: '/audio/intake-name.wav?v=261',
+    contactEmail: '/audio/intake-email.wav?v=261',
+    matterName: '/audio/intake-matter.wav?v=261',
+    thanks: '/audio/intake-thanks.wav?v=261',
   };
 
   function cancelIntakeSpeech() {
@@ -5058,10 +5060,9 @@
   }
 
   function intakeAskText(session) {
-    if (!session?.nextQuestion) return '';
-    const hasName = !!(session.extracted && session.extracted.contactName);
-    if (hasName) return session.nextQuestion;
-    return [session.greeting, session.nextQuestion].filter(Boolean).join(' ');
+    if (!session) return '';
+    if (!state.intakeGreeted) return session.greeting || INTAKE_GREETING;
+    return session.nextQuestion || '';
   }
 
   function startIntakeListen() {
@@ -5092,11 +5093,16 @@
 
   function intakeClipFor(text) {
     const spoken = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
-    if (!spoken) return INTAKE_AUDIO.opening;
-    if (spoken.includes('chrono calling') || spoken.includes('full name')) return INTAKE_AUDIO.opening;
-    if (spoken.includes('email')) return INTAKE_AUDIO.contactEmail;
-    if (spoken.includes('name this matter') || spoken.includes('matter or case')) return INTAKE_AUDIO.matterName;
+    if (!spoken) return INTAKE_AUDIO.greeting;
     if (spoken.includes('everything i need') || spoken.includes('goodbye')) return INTAKE_AUDIO.thanks;
+    if (spoken.includes('email')) return INTAKE_AUDIO.contactEmail;
+    if (spoken.includes('call this matter') || spoken.includes('name this matter') || spoken.includes('matter or case')) {
+      return INTAKE_AUDIO.matterName;
+    }
+    if ((spoken.includes('full name') || spoken.includes('your name')) && !spoken.includes('chrono')) {
+      return INTAKE_AUDIO.contactName;
+    }
+    if (spoken.includes('chrono') || spoken.includes('new matter')) return INTAKE_AUDIO.greeting;
     return null;
   }
 
@@ -5124,62 +5130,70 @@
     const spoken = String(text || '').replace(/\s+/g, ' ').trim();
     const Utter = window.SpeechSynthesisUtterance;
     const synth = window.speechSynthesis;
-    if (!Utter || !synth || !spoken) {
-      startIntakeListen();
-      return false;
-    }
+    if (!Utter || !synth || !spoken) return Promise.resolve(false);
     try { synth.cancel(); } catch { /* ignore */ }
     try { synth.resume(); } catch { /* ignore */ }
-    const utter = new Utter(spoken);
-    utter.lang = 'en-US';
-    utter.rate = 0.95;
-    utter.volume = 1;
-    utter.onend = () => { startIntakeListen(); };
-    utter.onerror = () => { startIntakeListen(); };
-    synth.speak(utter);
-    return true;
+    return new Promise((resolve) => {
+      const utter = new Utter(spoken);
+      utter.lang = 'en-US';
+      utter.rate = 0.88;
+      utter.pitch = 1.02;
+      utter.volume = 1;
+      const voices = synth.getVoices() || [];
+      const voice = voices.find((v) => /en-US/i.test(v.lang) && /neural|premium|natural|samantha|jenny|aria|google/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang) && /female|samantha|allison/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang))
+        || voices[0];
+      if (voice) utter.voice = voice;
+      utter.onend = () => resolve(true);
+      utter.onerror = () => resolve(false);
+      synth.speak(utter);
+    });
   }
 
-  function speakAgentNow(text, { ring = false } = {}) {
-    const spoken = String(text || INTAKE_OPENING).replace(/\s+/g, ' ').trim();
-    if (!spoken) return false;
-    state.intakeConduct = true;
+  function playIntakeRing() {
+    const ctx = unlockAgentAudio();
+    if (!ctx) return Promise.resolve();
+    return Promise.race([
+      decodeIntakeClip(ctx, INTAKE_AUDIO.ring).then((buf) => playIntakeBuffer(ctx, buf)).catch(() => {}),
+      new Promise((resolve) => window.setTimeout(resolve, 4500)),
+    ]);
+  }
+
+  function speakAgentNow(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!spoken) return Promise.resolve(false);
     const ctx = unlockAgentAudio();
     const clip = intakeClipFor(spoken);
-    if (!ctx) {
-      speakWithBrowserVoice(spoken);
-      return true;
-    }
-    const start = (async () => {
+    const play = async () => {
       try {
-        if (ring) {
-          const ringBuf = await decodeIntakeClip(ctx, INTAKE_AUDIO.ring);
-          await playIntakeBuffer(ctx, ringBuf);
-        }
-        if (clip) {
+        if (ctx && clip) {
           const agentBuf = await decodeIntakeClip(ctx, clip);
           await playIntakeBuffer(ctx, agentBuf);
-        } else {
-          speakWithBrowserVoice(spoken);
-          return;
+          return true;
         }
-        startIntakeListen();
-      } catch {
-        speakWithBrowserVoice(spoken);
-      }
-    })();
-    void start;
-    return true;
+      } catch { /* fall through */ }
+      return speakWithBrowserVoice(spoken);
+    };
+    return play();
   }
 
   function speakIntakeQuestion(session) {
-    if (!state.intakeConduct || !session?.id || session.status === 'filed' || session.status === 'completed') return;
+    if (!state.intakeConduct || !state.intakeConnected || !session?.id) return;
+    if (session.status === 'filed' || session.status === 'completed') return;
     const text = intakeAskText(session);
     if (!text) return;
-    const key = `${session.id}:${session.nextKey || 'done'}`;
+    const key = `${session.id}:${state.intakeGreeted ? (session.nextKey || 'done') : 'greeting'}`;
     if (state.intakeSpokenKey === key) return;
     state.intakeSpokenKey = key;
-    speakAgentNow(text);
+    void speakAgentNow(text).then(() => {
+      if (!state.intakeGreeted) {
+        state.intakeGreeted = true;
+        speakIntakeQuestion(state.intakeSession);
+        return;
+      }
+      startIntakeListen();
+    });
   }
 
   async function submitIntakeAnswer(text, source) {
@@ -5322,8 +5336,10 @@
         </form>
         ${state.intakeOnCall ? `
           <div class="intake-calling">
-            <p class="intake-ask-q">${state.intakeConnected ? 'Connected' : 'Calling'} ${escapeHtml(state.intakeToMasked || 'that number')}…</p>
-            <p class="hint">The agent is speaking on this call. Turn up this device’s volume.</p>
+            <p class="intake-ask-q">${state.intakeConnected ? 'Connected' : 'Calling'} ${escapeHtml(state.intakeToMasked || 'that number')}${state.intakeConnected ? '' : '…'}</p>
+            <p class="hint">${state.intakeConnected
+              ? 'The agent is speaking on this call. Turn up this device’s volume.'
+              : 'Please wait while the call connects. The agent will speak after the line is answered.'}</p>
           </div>` : ''}
       </div>
       ${state.intakeEmbed ? `
@@ -5349,13 +5365,16 @@
         </div>` : ''}
       <div class="intake-grid">
         <div class="card intake-agent">
-          ${session?.nextQuestion && state.intakeOnCall ? `
+          ${session?.nextQuestion && state.intakeOnCall && state.intakeConnected ? `
             <div class="intake-ask">
               <p class="sidebar-label">On the call</p>
-              <p class="intake-ask-q">${escapeHtml(session.nextQuestion)}</p>
+              <p class="intake-ask-q">${escapeHtml(state.intakeGreeted ? session.nextQuestion : (session.greeting || INTAKE_GREETING))}</p>
             </div>` : ''}
           <div class="intake-transcript" id="intakeTranscript">
-            ${(messages.length ? messages : [{ role: 'agent', content: 'Enter a number and click Call this number.' }]).map((m) => `
+            ${(state.intakeOnCall && !state.intakeConnected
+              ? [{ role: 'system', content: 'Calling… The agent will begin after the line connects.' }]
+              : (messages.length ? messages : [{ role: 'agent', content: 'Enter a number and click Call this number.' }])
+            ).map((m) => `
               <div class="intake-msg is-${escapeHtml(m.role)}"><strong>${m.role === 'agent' ? 'Agent' : m.role === 'user' ? 'Caller' : 'System'}</strong><p>${escapeHtml(m.content)}</p></div>
             `).join('')}
           </div>
@@ -5416,6 +5435,7 @@
         state.intakeToMasked = null;
         state.intakeOnCall = false;
         state.intakeConnected = false;
+        state.intakeGreeted = false;
         state.intakeConduct = false;
         cancelIntakeSpeech();
         state.intakeSpokenKey = null;
@@ -5510,25 +5530,41 @@
     if (staffDial && form) {
       const phoneInput = staffDial.querySelector('[name="phone"]');
       const postStaffDial = async (phone) => {
+        const out = await api(`/api/intake/forms/${form.id}/dial`, {
+          method: 'POST',
+          keepalive: true,
+          body: JSON.stringify({ phone, test: false }),
+        });
+        state.intakeSession = out.session;
+        state.intakeTelUrl = out.telUrl || toTelHref(phone);
+        state.intakeToMasked = out.toMasked || null;
+        state.intakeOnCall = true;
+        if (!out.stub) startIntakeCallPoll(out.session.id);
+        return out;
+      };
+      const startStaffCall = async (phone) => {
+        cancelIntakeSpeech();
+        unlockAgentAudio();
+        state.intakeOnCall = true;
+        state.intakeConnected = false;
+        state.intakeGreeted = false;
+        state.intakeToMasked = null;
+        state.intakeConduct = false;
+        state.intakeSpokenKey = null;
+        await renderIntake();
+        const ringing = playIntakeRing();
         try {
-          const out = await api(`/api/intake/forms/${form.id}/dial`, {
-            method: 'POST',
-            keepalive: true,
-            body: JSON.stringify({ phone, test: false }),
-          });
-          state.intakeSession = out.session;
-          state.intakeTelUrl = out.telUrl || toTelHref(phone);
-          state.intakeToMasked = out.toMasked || null;
-          state.intakeOnCall = true;
+          await postStaffDial(phone);
+          await ringing;
           state.intakeConnected = true;
           state.intakeConduct = true;
-          if (out.speakText) {
-            state.intakeSpokenKey = `${out.session.id}:${out.session.nextKey || 'done'}`;
-          }
-          if (!out.stub) startIntakeCallPoll(out.session.id);
-          state.intakeFlash = { ok: true, text: `Connected to ${out.toMasked || 'that number'}. The agent is speaking.` };
+          state.intakeFlash = { ok: true, text: `Connected to ${state.intakeToMasked || 'that number'}.` };
           void renderIntake();
         } catch (e) {
+          cancelIntakeSpeech();
+          state.intakeOnCall = false;
+          state.intakeConnected = false;
+          state.intakeConduct = false;
           if (!state.user || e.code === 'sign in required') {
             renderLogin();
             return;
@@ -5536,16 +5572,6 @@
           state.intakeFlash = { ok: false, text: e.message || 'Could not place the call.' };
           void renderIntake();
         }
-      };
-      const startStaffCall = (phone) => {
-        state.intakeOnCall = true;
-        state.intakeConnected = false;
-        state.intakeToMasked = null;
-        state.intakeConduct = true;
-        state.intakeSpokenKey = 'opening';
-        speakAgentNow(form.greeting ? `${form.greeting} May I have your full name?` : INTAKE_OPENING, { ring: true });
-        void postStaffDial(phone);
-        void renderIntake();
       };
       staffDial.onsubmit = (ev) => {
         ev.preventDefault();

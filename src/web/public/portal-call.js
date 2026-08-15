@@ -23,15 +23,25 @@
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
 
+  let connected = false;
+  let greeted = false;
+
   function renderMessages() {
     const ask = document.getElementById('intakeCallAsk');
-    if (ask && session?.nextQuestion) {
+    if (ask && session?.nextQuestion && connected) {
       ask.hidden = false;
       const q = document.getElementById('intakeCallAskQ');
-      if (q) q.textContent = session.nextQuestion;
+      if (q) q.textContent = greeted ? session.nextQuestion : (session.greeting || INTAKE_GREETING);
+    } else if (ask) {
+      ask.hidden = true;
     }
     const box = document.getElementById('intakeCallTranscript');
-    if (!box || !session) return;
+    if (!box) return;
+    if (!connected) {
+      box.innerHTML = `<div class="intake-msg is-system"><strong>System</strong><p>Calling… The agent will begin after the line connects.</p></div>`;
+      return;
+    }
+    if (!session) return;
     const messages = session.messages || [];
     box.innerHTML = messages.map((m) => `
       <div class="intake-msg is-${escapeHtml(m.role)}">
@@ -41,20 +51,17 @@
     box.scrollTop = box.scrollHeight;
   }
 
-  function interviewPrompt() {
-    if (!session) return '';
-    const hasName = !!(session.extracted && session.extracted.contactName);
-    if (hasName) return session.nextQuestion || '';
-    const agentMsgs = (session.messages || []).filter((m) => m.role === 'agent').map((m) => m.content);
-    return agentMsgs.join(' ') || session.nextQuestion || '';
-  }
-
-  const INTAKE_OPENING = 'This is Chrono calling about a new matter. May I have your full name?';
+  const INTAKE_GREETING = 'Hello, this is Chrono. I\'m calling about a new matter.';
   const INTAKE_AUDIO = {
-    ring: '/audio/intake-ringback.wav?v=259',
-    opening: '/audio/intake-opening.wav?v=259',
+    ring: '/audio/intake-ringback.wav?v=261',
+    greeting: '/audio/intake-greeting.wav?v=261',
+    contactName: '/audio/intake-name.wav?v=261',
+    contactEmail: '/audio/intake-email.wav?v=261',
+    matterName: '/audio/intake-matter.wav?v=261',
+    thanks: '/audio/intake-thanks.wav?v=261',
   };
   let audioCtx = null;
+  let audioSource = null;
 
   function unlockAudio() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -69,6 +76,21 @@
     return audioCtx;
   }
 
+  function clipFor(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!spoken) return INTAKE_AUDIO.greeting;
+    if (spoken.includes('everything i need') || spoken.includes('goodbye')) return INTAKE_AUDIO.thanks;
+    if (spoken.includes('email')) return INTAKE_AUDIO.contactEmail;
+    if (spoken.includes('call this matter') || spoken.includes('name this matter') || spoken.includes('matter or case')) {
+      return INTAKE_AUDIO.matterName;
+    }
+    if ((spoken.includes('full name') || spoken.includes('your name')) && !spoken.includes('chrono')) {
+      return INTAKE_AUDIO.contactName;
+    }
+    if (spoken.includes('chrono') || spoken.includes('new matter')) return INTAKE_AUDIO.greeting;
+    return null;
+  }
+
   async function playClip(ctx, url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error('audio missing');
@@ -77,49 +99,84 @@
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.connect(ctx.destination);
+      audioSource = src;
       src.onended = () => resolve();
       src.start();
     });
   }
 
-  function speakTextNow(text, { ring = false } = {}) {
+  function playRing() {
     const ctx = unlockAudio();
-    const spoken = String(text || INTAKE_OPENING);
-    const start = (async () => {
-      try {
-        if (ctx) {
-          if (ring) await playClip(ctx, INTAKE_AUDIO.ring);
-          await playClip(ctx, INTAKE_AUDIO.opening);
-          if (speechEngine()) startListen();
-          return;
-        }
-      } catch { /* fall through */ }
-      const Utter = window.SpeechSynthesisUtterance;
-      const synth = window.speechSynthesis;
-      if (!Utter || !synth) {
-        if (speechEngine()) startListen();
-        return;
-      }
+    if (!ctx) return Promise.resolve();
+    return Promise.race([
+      playClip(ctx, INTAKE_AUDIO.ring).catch(() => {}),
+      new Promise((resolve) => window.setTimeout(resolve, 4500)),
+    ]);
+  }
+
+  function speakWithBrowserVoice(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    const Utter = window.SpeechSynthesisUtterance;
+    const synth = window.speechSynthesis;
+    if (!Utter || !synth || !spoken) return Promise.resolve(false);
+    try { synth.cancel(); } catch { /* ignore */ }
+    try { synth.resume(); } catch { /* ignore */ }
+    return new Promise((resolve) => {
       const utter = new Utter(spoken);
       utter.lang = 'en-US';
-      utter.onend = () => { if (speechEngine()) startListen(); };
-      utter.onerror = () => { if (speechEngine()) startListen(); };
+      utter.rate = 0.88;
+      utter.pitch = 1.02;
+      const voices = synth.getVoices() || [];
+      const voice = voices.find((v) => /en-US/i.test(v.lang) && /neural|premium|natural|samantha|jenny|aria|google/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang) && /female|samantha|allison/i.test(v.name))
+        || voices.find((v) => /en-US/i.test(v.lang))
+        || voices[0];
+      if (voice) utter.voice = voice;
+      utter.onend = () => resolve(true);
+      utter.onerror = () => resolve(false);
       synth.speak(utter);
-    })();
-    void start;
-    return true;
+    });
+  }
+
+  async function speakTextNow(text) {
+    const spoken = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!spoken) return false;
+    const ctx = unlockAudio();
+    const clip = clipFor(spoken);
+    try {
+      if (ctx && clip) {
+        await playClip(ctx, clip);
+        return true;
+      }
+    } catch { /* fall through */ }
+    return speakWithBrowserVoice(spoken);
   }
 
   function speakThenListen() {
-    const text = interviewPrompt();
+    const text = session?.nextQuestion || '';
     const key = `${session?.id || ''}:${session?.nextKey || session?.nextQuestion || ''}`;
-    if (!text || spokenKey === key) {
-      if (speechEngine() && !listening) startListen();
+    if (!connected || !text || spokenKey === key) {
+      if (connected && speechEngine() && !listening) startListen();
       return;
     }
     spokenKey = key;
     stopListen();
-    speakTextNow(text);
+    void speakTextNow(text).then(() => {
+      if (speechEngine()) startListen();
+    });
+  }
+
+  async function speakAfterConnect() {
+    const greeting = session?.greeting || INTAKE_GREETING;
+    const question = session?.nextQuestion || 'May I have your full name, please?';
+    if (!greeted) {
+      await speakTextNow(greeting);
+      greeted = true;
+      renderMessages();
+    }
+    spokenKey = `${session?.id || ''}:${session?.nextKey || question}`;
+    await speakTextNow(question);
+    if (speechEngine()) startListen();
   }
 
   function setError(text) {
@@ -171,15 +228,15 @@
     return '';
   }
 
-  function paintCalling(form, firmName, { telUrl, toMasked }) {
+  function paintCalling(form, firmName, { toMasked }) {
     root.innerHTML = `
       <div class="card portal-card portal-call-card">
         <p class="eyebrow">${isTest ? 'Test website call' : 'Intake call'}</p>
-        <h1>Calling ${escapeHtml(toMasked || 'that number')}…</h1>
+        <h1>${connected ? 'Connected' : 'Calling'} ${escapeHtml(toMasked || 'that number')}${connected ? '' : '…'}</h1>
         <p class="muted">${escapeHtml(firmName || 'the firm')}</p>
         <div class="intake-calling">
-          <p class="intake-ask-q">Connected. The agent is speaking on this call.</p>
-          <p class="hint">Turn up this device’s volume to hear the agent.</p>
+          <p class="intake-ask-q">${connected ? 'The agent is speaking on this call.' : 'Please wait while the call connects.'}</p>
+          <p class="hint">${connected ? 'Turn up this device’s volume to hear the agent.' : 'The agent will speak after the line is answered.'}</p>
         </div>
         <div class="intake-ask" id="intakeCallAsk" hidden>
           <p class="sidebar-label">On the call</p>
@@ -336,20 +393,20 @@
 
   async function postDial(form, firmName, phone) {
     setError('');
+    connected = false;
+    greeted = false;
+    spokenKey = '';
+    unlockAudio();
+    paintCalling(form, firmName, { toMasked: phone });
+    const ringing = playRing();
     try {
       const out = await api(`/api/portal/intake/${token}/call/dial`, { phone, test: isTest });
       guestToken = out.guestToken || '';
       session = out.session;
-      paintCalling(form, firmName, {
-        telUrl: out.telUrl || toTelHref(phone),
-        toMasked: out.toMasked,
-      });
-      if (out.speakText) {
-        spokenKey = `${session.id}:${session.nextKey || session.nextQuestion || ''}`;
-        speakTextNow(out.speakText);
-      } else {
-        speakThenListen();
-      }
+      await ringing;
+      connected = true;
+      paintCalling(form, firmName, { toMasked: out.toMasked || phone });
+      await speakAfterConnect();
       stopPoll();
       pollTimer = setInterval(() => void refreshSession(), 2500);
     } catch (e) {
@@ -391,7 +448,6 @@
         setError('Enter the phone number to call.');
         return;
       }
-      speakTextNow(form.greeting ? `${form.greeting} May I have your full name?` : INTAKE_OPENING, { ring: true });
       void postDial(form, data.firmName, phone);
     };
   }

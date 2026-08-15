@@ -223,13 +223,14 @@ function serializeForm(db, form, { includeAvailable = false } = {}) {
   return out;
 }
 
-const CALL_GREETING = 'This is Chrono calling about a new matter.';
+const CALL_GREETING = 'Hello, this is Chrono. I\'m calling about a new matter.';
 
 function isCollectInfoGreeting(value) {
   const text = String(value || '').toLowerCase();
   return text.includes('i will collect')
     || text.includes('you can speak or type')
-    || text.includes('share the information we need');
+    || text.includes('share the information we need')
+    || text === 'this is chrono calling about a new matter.';
 }
 
 function defaultGreeting(form) {
@@ -245,6 +246,7 @@ function migrateCollectGreetings(db) {
     WHERE greeting LIKE '%I will collect%'
        OR greeting LIKE '%You can speak or type%'
        OR greeting LIKE '%share the information we need%'
+       OR greeting = 'This is Chrono calling about a new matter.'
   `).run(CALL_GREETING);
 }
 
@@ -387,7 +389,7 @@ function extractFromTranscript(fields, transcript, prior = {}) {
 }
 
 function unansweredPrompt(form, extracted, fields) {
-  if (!extracted.contactName) return { key: 'contactName', question: 'May I have your full name?' };
+  if (!extracted.contactName) return { key: 'contactName', question: 'May I have your full name, please?' };
   if (!extracted.contactEmail) return { key: 'contactEmail', question: 'What is the best email address?' };
   if (!extracted.contactPhone) return { key: 'contactPhone', question: 'What is the best phone number?' };
   if (!extracted.matterName) return { key: 'matterName', question: 'What should we name this matter or case?' };
@@ -838,6 +840,7 @@ function serializePublicSession(db, row) {
     messages: full.messages || [],
     nextQuestion: full.nextQuestion,
     nextKey: full.nextKey,
+    greeting: full.greeting,
     readyToSubmit: !full.nextKey,
     test: !!full.test,
     extracted: {
@@ -1025,8 +1028,9 @@ async function startDial(db, input = {}, req = null) {
     `).run(hashGuestToken(guestToken), id, portalToken, Date.now() + GUEST_TTL_MS);
   }
   const actionUrl = phoneDial.voiceActionUrl(req, id, db);
-  const speakText = [greeting, first.question].filter(Boolean).join(' ');
-  const twiml = phoneDial.gatherTwiml(speakText, actionUrl);
+  const baseUrl = phoneDial.publicBaseUrl(req);
+  const speakText = greeting;
+  const twiml = phoneDial.gatherTwiml(first.question, actionUrl, { preface: greeting, baseUrl });
   const placed = await phoneDial.placeCall({ to: phone, url: actionUrl, twiml, db });
   db.prepare('INSERT INTO intake_phone_calls(call_sid, session_id) VALUES (?, ?)').run(placed.sid, id);
   audit(db, {
@@ -1062,21 +1066,21 @@ function voicePrompt(db, sessionId, sig, req = null) {
   const session = assertVoiceSession(db, sessionId, sig);
   const serialized = serializeSession(db, session, { includeMessages: true });
   const actionUrl = phoneDial.voiceActionUrl(req, session.id, db);
+  const baseUrl = phoneDial.publicBaseUrl(req);
   if (session.status === 'filed' || session.status === 'completed') {
-    return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.');
+    return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.', { baseUrl });
   }
   const hasUser = (serialized.messages || []).some((m) => m.role === 'user');
-  const say = hasUser
-    ? serialized.nextQuestion
-    : [serialized.greeting, serialized.nextQuestion].filter(Boolean).join(' ');
-  return phoneDial.gatherTwiml(say, actionUrl);
+  if (hasUser) return phoneDial.gatherTwiml(serialized.nextQuestion, actionUrl, { baseUrl });
+  return phoneDial.gatherTwiml(serialized.nextQuestion, actionUrl, { preface: serialized.greeting, baseUrl });
 }
 
 function voiceTurn(db, sessionId, sig, input = {}, req = null) {
   const session = assertVoiceSession(db, sessionId, sig);
   const actionUrl = phoneDial.voiceActionUrl(req, session.id, db);
+  const baseUrl = phoneDial.publicBaseUrl(req);
   if (session.status === 'filed' || session.status === 'completed') {
-    return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.');
+    return phoneDial.hangupTwiml('Thank you. Your information was received. Goodbye.', { baseUrl });
   }
   const text = String(input.SpeechResult || input.speechResult || input.text || '').trim();
   if (text) {
@@ -1087,9 +1091,9 @@ function voiceTurn(db, sessionId, sig, input = {}, req = null) {
     : db.prepare("SELECT * FROM users WHERE role = 'admin' AND active = 1 ORDER BY id LIMIT 1").get();
   const latest = finishPhoneIfReady(db, getSession(db, session.id), actor);
   if (latest.status === 'completed' || latest.status === 'filed') {
-    return phoneDial.hangupTwiml('Thank you. I have everything I need. Goodbye.');
+    return phoneDial.hangupTwiml('Thank you. I have everything I need. Goodbye.', { baseUrl });
   }
-  return phoneDial.gatherTwiml(latest.nextQuestion || 'Please repeat that.', actionUrl);
+  return phoneDial.gatherTwiml(latest.nextQuestion || 'Please repeat that.', actionUrl, { baseUrl });
 }
 
 function publicSession(db, portalToken, sessionId, guestToken) {

@@ -137,21 +137,56 @@ function sayText(value) {
   return escapeXml(String(value || '').replace(/\s+/g, ' ').trim().slice(0, 500));
 }
 
-function gatherTwiml(say, actionUrl) {
+function promptClipPath(text) {
+  const spoken = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!spoken) return null;
+  if (spoken.includes('everything i need') || spoken.includes('goodbye') || spoken.includes('information was received')) {
+    return '/audio/intake-thanks.wav';
+  }
+  if (spoken.includes('email')) return '/audio/intake-email.wav';
+  if (spoken.includes('call this matter') || spoken.includes('name this matter') || spoken.includes('matter or case')) {
+    return '/audio/intake-matter.wav';
+  }
+  if ((spoken.includes('full name') || spoken.includes('your name')) && !spoken.includes('chrono')) {
+    return '/audio/intake-name.wav';
+  }
+  if (spoken.includes('chrono') || spoken.includes('new matter')) return '/audio/intake-greeting.wav';
+  return null;
+}
+
+function promptClipUrl(text, baseUrl) {
+  const clip = promptClipPath(text);
+  const origin = String(baseUrl || '').trim().replace(/\/$/, '');
+  if (!clip || !origin) return null;
+  return `${origin}${clip}`;
+}
+
+function voiceXml(text, baseUrl, indent = '    ') {
+  const url = promptClipUrl(text, baseUrl);
+  if (url) return `${indent}<Play>${escapeXml(url)}</Play>`;
+  return `${indent}<Say voice="alice">${sayText(text)}</Say>`;
+}
+
+function gatherTwiml(say, actionUrl, { preface, baseUrl } = {}) {
+  const intro = preface
+    ? `  <Pause length="1"/>
+${voiceXml(preface, baseUrl, '  ')}
+  <Pause length="1"/>
+`
+    : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">${sayText(say)}</Say>
-  <Gather input="speech" timeout="8" speechTimeout="auto" action="${escapeXml(actionUrl)}" method="POST">
-    <Say voice="alice">I am listening.</Say>
+${intro}  <Gather input="speech" timeout="8" speechTimeout="auto" action="${escapeXml(actionUrl)}" method="POST">
+${voiceXml(say, baseUrl, '    ')}
   </Gather>
   <Redirect method="POST">${escapeXml(actionUrl)}</Redirect>
 </Response>`;
 }
 
-function hangupTwiml(say) {
+function hangupTwiml(say, { baseUrl } = {}) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">${sayText(say)}</Say>
+${voiceXml(say, baseUrl, '  ')}
   <Hangup/>
 </Response>`;
 }

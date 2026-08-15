@@ -347,16 +347,20 @@ describe('intake agent', () => {
     });
     assert.equal(pickup.status, 200);
     assert.match(pickup.raw, /<Gather/);
-    assert.match(pickup.raw, /<Say voice="alice"/);
-    assert.match(pickup.raw, /Chrono calling about a new matter/);
-    assert.match(pickup.raw, /May I have your full name/);
-    assert.match(pickup.raw, /I am listening/);
-    assert.ok(pickup.raw.indexOf('<Say') < pickup.raw.indexOf('<Gather'));
+    assert.match(pickup.raw, /<Play/);
+    assert.match(pickup.raw, /intake-greeting\.wav/);
+    assert.match(pickup.raw, /intake-name\.wav/);
+    assert.ok(pickup.raw.indexOf('intake-greeting') < pickup.raw.indexOf('<Gather'));
+    assert.ok(pickup.raw.indexOf('intake-greeting') < pickup.raw.indexOf('intake-name'));
+    assert.doesNotMatch(pickup.raw, /I am listening/);
     assert.doesNotMatch(pickup.raw, /Polly/);
 
-    const opening = await request(port, 'GET', '/audio/intake-opening.wav');
-    assert.equal(opening.status, 200);
-    assert.match(opening.raw, /^RIFF/);
+    const greetingWav = await request(port, 'GET', '/audio/intake-greeting.wav');
+    assert.equal(greetingWav.status, 200);
+    assert.match(greetingWav.raw, /^RIFF/);
+    const nameWav = await request(port, 'GET', '/audio/intake-name.wav');
+    assert.equal(nameWav.status, 200);
+    assert.match(nameWav.raw, /^RIFF/);
 
     const payload = new URLSearchParams({ SpeechResult: 'My name is Riley Dial. Email is riley.dial@example.com. Matter is Dial v. Acme. Case stage is Trial.' }).toString();
     const turn = await new Promise((resolve, reject) => {
@@ -585,12 +589,12 @@ describe('intake agent', () => {
       SET greeting = 'Hello, this is the Chrono intake agent. I will collect the information we need for a new matter. You can speak or type.'
     `).run();
     const forms = intakeSvc.listForms(db, admin);
-    assert.equal(forms[0].greeting, 'This is Chrono calling about a new matter.');
+    assert.equal(forms[0].greeting, 'Hello, this is Chrono. I\'m calling about a new matter.');
     assert.doesNotMatch(forms[0].greeting, /collect/i);
     assert.doesNotMatch(forms[0].greeting, /speak or type/i);
 
     const stored = db.prepare('SELECT greeting FROM intake_forms WHERE id = ?').get(forms[0].id);
-    assert.equal(stored.greeting, 'This is Chrono calling about a new matter.');
+    assert.equal(stored.greeting, 'Hello, this is Chrono. I\'m calling about a new matter.');
 
     const login = await request(port, 'POST', '/api/login', {
       body: { email: 'avery@firm.example', password: 'demo-change-me' },
@@ -609,11 +613,12 @@ describe('intake agent', () => {
     });
     assert.equal(dialed.status, 200, JSON.stringify(dialed.json));
     assert.equal(dialed.json.telUrl, 'tel:+13125550144');
-    assert.match(String(dialed.json.speakText), /Chrono calling about a new matter/);
-    assert.match(String(dialed.json.speakText), /May I have your full name/);
+    assert.match(String(dialed.json.speakText), /Hello, this is Chrono/);
+    assert.match(String(dialed.json.speakText), /calling about a new matter/);
+    assert.doesNotMatch(String(dialed.json.speakText), /May I have your full name/);
     const spoken = (dialed.json.session.messages || []).map((m) => m.content).join('\n');
-    assert.match(spoken, /Chrono calling about a new matter/);
-    assert.match(spoken, /May I have your full name/);
+    assert.match(spoken, /Hello, this is Chrono/);
+    assert.match(spoken, /May I have your full name, please/);
     assert.doesNotMatch(spoken, /I will collect/i);
     assert.doesNotMatch(spoken, /speak or type/i);
     assert.doesNotMatch(spoken, /share the information we need/i);
