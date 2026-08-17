@@ -48,6 +48,7 @@
     contactCreateFlash: null,
     contactListFlash: null,
     billingForm: { matterId: '', dateFrom: '', dateTo: null, defaultsForMatterId: '' },
+    sidebarCollapsed: false,
     settingsBillingFlash: null,
     settingsTabOpen: {},
     matterDetailsOpen: true,
@@ -340,6 +341,91 @@
 
   try { localStorage.removeItem('billing_token'); } catch { /* ignore */ }
   try { state.token = sessionStorage.getItem(TOKEN_KEY) || null; } catch { state.token = null; }
+
+  const SIDEBAR_COLLAPSED_KEY = 'chrono_sidebar_collapsed';
+  try { state.sidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'; } catch { /* ignore */ }
+
+  function persistSidebarCollapsed() {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, state.sidebarCollapsed ? '1' : '0');
+    } catch { /* ignore quota / private mode */ }
+  }
+
+  function applySidebarCollapsed() {
+    if (!sidebar) return;
+    const collapsed = !!state.sidebarCollapsed;
+    sidebar.classList.toggle('is-collapsed', collapsed);
+    if (appEl) appEl.classList.toggle('sidebar-collapsed', collapsed);
+    const toggle = $('#sidebarToggle');
+    if (!toggle) return;
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute(
+      'aria-label',
+      collapsed ? 'Expand Chrono sidebar' : 'Collapse Chrono sidebar',
+    );
+    toggle.title = collapsed ? 'Expand Chrono' : 'Collapse Chrono';
+  }
+
+  function analogClockSvgHtml() {
+    const ticks = [];
+    for (let i = 0; i < 60; i += 1) {
+      const hour = i % 5 === 0;
+      ticks.push(`
+        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
+          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
+          transform="rotate(${i * 6} 100 100)" />`);
+    }
+    const numerals = [
+      { n: '12', x: 100, y: 36 },
+      { n: '3', x: 168, y: 104 },
+      { n: '6', x: 100, y: 174 },
+      { n: '9', x: 32, y: 104 },
+    ].map(({ n, x, y }) => `
+      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
+        dominant-baseline="middle">${n}</text>`).join('');
+    return `
+      <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+        <circle class="login-clock-halo" cx="100" cy="100" r="99" />
+        <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
+        <circle class="login-clock-dial" cx="100" cy="100" r="88" />
+        <circle class="login-clock-ring" cx="100" cy="100" r="80" />
+        <circle class="login-clock-well" cx="100" cy="100" r="54" />
+        ${ticks.join('')}
+        ${numerals}
+        <g class="login-clock-hand-hour">
+          <line x1="100" y1="110" x2="100" y2="48" />
+        </g>
+        <g class="login-clock-hand-minute">
+          <line x1="100" y1="114" x2="100" y2="30" />
+        </g>
+        <g class="login-clock-hand-second">
+          <line x1="100" y1="122" x2="100" y2="22" />
+          <circle cx="100" cy="100" r="2.2" />
+        </g>
+        <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
+      </svg>`;
+  }
+
+  function ensureBrandClock() {
+    const host = $('#sidebarClock');
+    if (!host) return;
+    if (!host.querySelector('.login-clock-svg')) {
+      host.innerHTML = analogClockSvgHtml();
+    }
+    startAnalogClocks();
+  }
+
+  function wireSidebarToggle() {
+    const toggle = $('#sidebarToggle');
+    if (!toggle || toggle.dataset.wired === '1') return;
+    toggle.dataset.wired = '1';
+    toggle.addEventListener('click', () => {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      persistSidebarCollapsed();
+      applySidebarCollapsed();
+    });
+    ensureBrandClock();
+  }
 
   function persistSession(token, csrf) {
     if (csrf) state.csrf = csrf;
@@ -2197,7 +2283,7 @@
           <form id="addRoleForm" class="role-perms-add">
             <label class="role-perms-add-label" for="newRoleName">Add role
               <input id="newRoleName" name="label" type="text" maxlength="40"
-                placeholder="e.g. Intake Specialist" autocomplete="off" />
+                placeholder="e.g. Paralegal" autocomplete="off" />
             </label>
             <button type="submit" class="primary">Add role</button>
           </form>
@@ -4288,13 +4374,48 @@
     return `${window.location.origin}/auth?token=${encodeURIComponent(rawToken)}`;
   }
 
-  let loginClockRaf = null;
+  let analogClockRaf = null;
 
   function stopLoginClock() {
-    if (loginClockRaf != null) {
-      cancelAnimationFrame(loginClockRaf);
-      loginClockRaf = null;
+    if (analogClockRaf != null) {
+      cancelAnimationFrame(analogClockRaf);
+      analogClockRaf = null;
     }
+  }
+
+  function tickAnalogClocks() {
+    const hourEls = document.querySelectorAll('.login-clock-hand-hour');
+    if (!hourEls.length) return false;
+    const now = new Date();
+    const ms = now.getMilliseconds();
+    const s = now.getSeconds() + ms / 1000;
+    const m = now.getMinutes() + s / 60;
+    const h = (now.getHours() % 12) + m / 60;
+    const hourRot = `rotate(${h * 30} 100 100)`;
+    const minuteRot = `rotate(${m * 6} 100 100)`;
+    const secondRot = `rotate(${s * 6} 100 100)`;
+    hourEls.forEach((el) => el.setAttribute('transform', hourRot));
+    document.querySelectorAll('.login-clock-hand-minute')
+      .forEach((el) => el.setAttribute('transform', minuteRot));
+    document.querySelectorAll('.login-clock-hand-second')
+      .forEach((el) => el.setAttribute('transform', secondRot));
+    return true;
+  }
+
+  function startAnalogClocks() {
+    tickAnalogClocks();
+    const reduceMotion = window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) return;
+    if (analogClockRaf != null) return;
+    const loop = () => {
+      if (!tickAnalogClocks()) {
+        analogClockRaf = null;
+        return;
+      }
+      analogClockRaf = requestAnimationFrame(loop);
+    };
+    analogClockRaf = requestAnimationFrame(loop);
   }
 
   function loginClockHtml() {
@@ -4318,67 +4439,42 @@
       <div class="login-clock" aria-hidden="true">
         <div class="login-clock-glow"></div>
         <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+          <defs>
+            <mask id="loginHandsMask">
+              <rect width="200" height="200" fill="#fff" />
+              <circle cx="100" cy="100" r="63" fill="#000" />
+            </mask>
+          </defs>
           <circle class="login-clock-halo" cx="100" cy="100" r="99" />
           <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
           <circle class="login-clock-dial" cx="100" cy="100" r="88" />
           <circle class="login-clock-ring" cx="100" cy="100" r="80" />
-          <circle class="login-clock-well" cx="100" cy="100" r="54" />
+          <circle class="login-clock-well" cx="100" cy="100" r="62" />
           ${ticks.join('')}
           ${numerals}
-          <g class="login-clock-hand-hour">
-            <line x1="100" y1="110" x2="100" y2="48" />
+          <g mask="url(#loginHandsMask)">
+            <g class="login-clock-hand-hour">
+              <line x1="100" y1="110" x2="100" y2="48" />
+            </g>
+            <g class="login-clock-hand-minute">
+              <line x1="100" y1="114" x2="100" y2="30" />
+            </g>
+            <g class="login-clock-hand-second">
+              <line x1="100" y1="122" x2="100" y2="22" />
+              <circle cx="100" cy="100" r="2.2" />
+            </g>
+            <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
           </g>
-          <g class="login-clock-hand-minute">
-            <line x1="100" y1="114" x2="100" y2="30" />
-          </g>
-          <g class="login-clock-hand-second">
-            <line x1="100" y1="122" x2="100" y2="22" />
-            <circle cx="100" cy="100" r="2.2" />
-          </g>
-          <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
         </svg>
       </div>`;
   }
 
   function loginStageHtml(panelInner) {
-    return `<div class="login-stage">${loginClockHtml()}<div class="login-panel">${panelInner}</div></div>`;
+    return `<div class="login-stage">${loginClockHtml()}<div class="login-face"><div class="login-panel">${panelInner}</div></div></div>`;
   }
 
   function wireLoginClock() {
-    const root = document.querySelector('.login-clock');
-    const hourEl = root?.querySelector('.login-clock-hand-hour');
-    const minuteEl = root?.querySelector('.login-clock-hand-minute');
-    const secondEl = root?.querySelector('.login-clock-hand-second');
-    if (!root || !hourEl || !minuteEl || !secondEl) return;
-
-    const tick = () => {
-      const now = new Date();
-      const ms = now.getMilliseconds();
-      const s = now.getSeconds() + ms / 1000;
-      const m = now.getMinutes() + s / 60;
-      const h = (now.getHours() % 12) + m / 60;
-      hourEl.setAttribute('transform', `rotate(${h * 30} 100 100)`);
-      minuteEl.setAttribute('transform', `rotate(${m * 6} 100 100)`);
-      secondEl.setAttribute('transform', `rotate(${s * 6} 100 100)`);
-    };
-
-    stopLoginClock();
-    tick();
-    const reduceMotion = window.matchMedia
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduceMotion) return;
-
-    const loop = () => {
-      // Keep sweeping while the login clock remains in the DOM.
-      if (!document.body.classList.contains('login-mode')
-        || !document.contains(root)) {
-        loginClockRaf = null;
-        return;
-      }
-      tick();
-      loginClockRaf = requestAnimationFrame(loop);
-    };
-    loginClockRaf = requestAnimationFrame(loop);
+    startAnalogClocks();
   }
 
   async function finishAuthSession(data) {
@@ -4436,7 +4532,6 @@
     }
     renderShell();
     await renderView();
-    ensureHelpAgent();
     // Warm sibling nav targets so the next toggle is usually cache-hit.
     ['matters', 'contacts', 'users', 'time', 'billing', 'reports', 'dashboard', 'settings']
       .filter((v) => v !== state.view)
@@ -4457,9 +4552,13 @@
   }
 
   function enterLoginChrome() {
-    if (sidebar) sidebar.hidden = true;
+    if (sidebar) {
+      sidebar.hidden = true;
+      sidebar.classList.remove('is-collapsed');
+    }
     if (appEl) {
       appEl.classList.remove('app-shell');
+      appEl.classList.remove('sidebar-collapsed');
       appEl.classList.add('login-mode');
     }
     document.body.classList.add('login-mode');
@@ -4470,7 +4569,6 @@
       lookupBar.hidden = true;
       lookupBar.innerHTML = '';
     }
-    setHelpAgentVisible(false);
   }
 
   function renderLogin(_mode = 'password') {
@@ -4746,6 +4844,9 @@
 
   function renderShell(opts = {}) {
     if (sidebar) sidebar.hidden = false;
+    wireSidebarToggle();
+    ensureBrandClock();
+    applySidebarCollapsed();
     document.body.classList.remove('login-mode');
     if (appEl) {
       appEl.classList.remove('login-mode');
@@ -4895,7 +4996,6 @@
       clearSession();
       renderLogin();
     };
-    ensureHelpAgent();
     ensureLookupBar();
   }
 
@@ -10364,269 +10464,6 @@
       </div>`);
   }
 
-  /** Compact in-app help agent: training & how-to for Chrono.
-   *  Answer text may include [[Label|target]] deep links; see goHelpTarget(). */
-  const HELP_TOPICS = [
-    {
-      id: 'matter',
-      label: 'Create a matter',
-      keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case', 'search matters', 'filter matters', 'matter list'],
-      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name, complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it. Roles with Matters → Delete can delete a matter from that list.',
-      links: [
-        { label: 'Go to Create Matter', target: 'create-matter' },
-        { label: 'Browse Matters', target: 'matters' },
-        { label: 'Matter page', target: 'settings-matter-fields' },
-      ],
-    },
-    {
-      id: 'time',
-      label: 'Log time',
-      keywords: ['time', 'hours', 'log time', 'time entry', 'timesheet', 'billable'],
-      answer: 'Open [[Time Entry|time]], or open a matter — each matter includes the same Time Entry form and Recent entries list. Pick date, hours (0.25 steps), and description, then Save. Recent entries can be edited or deleted there. Saved time is ready for [[Billing|billing]]—no approval step.',
-      links: [
-        { label: 'Go to Time Entry', target: 'time' },
-        { label: 'Open Billing', target: 'billing' },
-      ],
-    },
-    {
-      id: 'contact',
-      label: 'Add a contact',
-      keywords: ['contact', 'client', 'company', 'person', 'create contact', 'delete contact'],
-      answer: 'Open [[Create Contact|create-contact]] (or [[Contacts|contacts]] → Create contact). Choose a record type, fill name and type-specific custom fields, then confirm. After create, Contact level fields lets you add fields for that contact only. Roles with Contacts → Delete (Admin always) can use Delete contact at the bottom of the contact page — linked matters become client-less. [[Contact page|settings-contact-fields]] in Settings manages shared type layouts.',
-      links: [
-        { label: 'Go to Create Contact', target: 'create-contact' },
-        { label: 'Contact page', target: 'settings-contact-fields' },
-        { label: 'Role permissions', target: 'settings' },
-      ],
-    },
-    {
-      id: 'fields',
-      label: 'Custom fields',
-      keywords: ['custom field', 'fields', 'required', 'dropdown', 'settings field'],
-      answer: 'Matter and contact fields can be record-type (shared defaults) or record-only. Admins configure shared layouts under [[Record pages|settings-record-pages]] in Settings — [[Matter page|settings-matter-fields]] and [[Contact page|settings-contact-fields]]. Supported types include Auto Number, Checkbox, Currency, Date/Date-Time, Email, Geolocation, Number, Percent, Phone, Picklist, Multi-Select Picklist, Text, Text Area / Long / Rich, URL, and Formula (not roll-up, lookup, or master-detail). On a matter or contact page, Matter level fields / Contact level fields add a field for that record only.',
-      links: [
-        { label: 'Record pages', target: 'settings-record-pages' },
-        { label: 'Matter page', target: 'settings-matter-fields' },
-        { label: 'Contact page', target: 'settings-contact-fields' },
-        { label: 'Time entry settings', target: 'settings-time-billing-fields' },
-        { label: 'Time and Billing', target: 'settings-time-billing' },
-      ],
-    },
-    {
-      id: 'reports',
-      label: 'Reports & dashboard',
-      keywords: ['report', 'dashboard', 'lodestar', 'export', 'chart', 'custom report'],
-      answer: 'Open [[Reports|reports]] to run firm Lodestar reports or create custom reports grouped by a custom field. Open [[Dashboard|dashboard]] to pin firm or custom reports, remove them with Remove, and export everything with Export PDF / CSV / Excel.',
-      links: [
-        { label: 'Go to Reports', target: 'reports' },
-        { label: 'Go to Dashboard', target: 'dashboard' },
-      ],
-    },
-    {
-      id: 'billing',
-      label: 'Create a bill',
-      keywords: ['bill', 'billing', 'invoice', 'prebill'],
-      answer: 'Open [[Billing|billing]], choose the matter and approved time to include, then create the bill. Time & billing preferences live in [[Settings|settings]]. Only roles like admin or billing clerk can manage billing settings.',
-      links: [
-        { label: 'Go to Billing', target: 'billing' },
-        { label: 'Open Settings', target: 'settings' },
-      ],
-    },
-    {
-      id: 'users',
-      label: 'Add a user',
-      keywords: ['user', 'invite', 'timekeeper', 'rate', 'add a user', 'hire'],
-      answer: '[[Add a user|users]] invites someone by name, email, role, and default rate — you get a one-time link to share so they can set a password. Admin has this by default; turn on <strong>Add users</strong> for other roles under [[Role permissions|settings]]. Billing clerks can still change timekeeper rates under [[Settings|settings]].',
-      links: [
-        { label: 'Go to Add a user', target: 'users' },
-        { label: 'Open Settings', target: 'settings' },
-      ],
-    },
-    {
-      id: 'login',
-      label: 'Sign in',
-      keywords: ['login', 'password', 'sign in', 'demo', 'avery'],
-      answer: 'Use your work email and password. Demo: avery@firm.example / demo-change-me. Email sign-in and reset links stay off until a live domain; ask an admin for a reset link if needed. You’re signed in now — open [[Settings|settings]] for firm preferences, or [[Matters|matters]] to get started.',
-      links: [
-        { label: 'Go to Matters', target: 'matters' },
-        { label: 'Open Settings', target: 'settings' },
-      ],
-    },
-  ];
-
-  function matchHelpAnswer(question) {
-    const q = String(question || '').trim().toLowerCase();
-    if (!q) return null;
-    let best = null;
-    let bestScore = 0;
-    for (const topic of HELP_TOPICS) {
-      let score = 0;
-      for (const key of topic.keywords) {
-        if (q.includes(key)) score += key.length;
-      }
-      if (topic.label.toLowerCase().split(/\s+/).some((w) => w.length > 3 && q.includes(w))) {
-        score += 2;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        best = topic;
-      }
-    }
-    return bestScore > 0 ? best : null;
-  }
-
-  /** Turn [[Label|target]] markers into help deep-link anchors. */
-  function formatHelpAnswerHtml(text) {
-    const raw = String(text || '');
-    let html = '';
-    let i = 0;
-    while (i < raw.length) {
-      const start = raw.indexOf('[[', i);
-      if (start < 0) {
-        html += escapeHtml(raw.slice(i));
-        break;
-      }
-      html += escapeHtml(raw.slice(i, start));
-      const end = raw.indexOf(']]', start + 2);
-      if (end < 0) {
-        html += escapeHtml(raw.slice(start));
-        break;
-      }
-      const inner = raw.slice(start + 2, end);
-      const bar = inner.indexOf('|');
-      if (bar < 0) {
-        html += escapeHtml(raw.slice(start, end + 2));
-      } else {
-        const label = inner.slice(0, bar).trim();
-        const target = inner.slice(bar + 1).trim();
-        if (label && target) {
-          html += `<a href="#${escapeHtml(target)}" class="help-go" data-help-go="${escapeHtml(target)}">${escapeHtml(label)}</a>`;
-        } else {
-          html += escapeHtml(raw.slice(start, end + 2));
-        }
-      }
-      i = end + 2;
-    }
-    return html;
-  }
-
-  function closeHelpAgentPanel() {
-    const root = document.getElementById('helpAgent');
-    if (!root) return;
-    root.classList.remove('is-open');
-    const panel = $('#helpAgentPanel', root);
-    if (panel) panel.setAttribute('hidden', '');
-    const bubble = $('#helpAgentBubble', root);
-    if (bubble) {
-      bubble.setAttribute('aria-expanded', 'false');
-      bubble.setAttribute('aria-label', 'Open help agent');
-    }
-  }
-
-  async function goAppView(view, { clearDetail = true } = {}) {
-    state.view = view;
-    if (clearDetail) {
-      state.matterId = null;
-      state.contactId = null;
-      if (view !== 'matters') state.showCreateMatter = false;
-      if (view !== 'contacts') state.showCreateContact = false;
-    }
-    renderShell();
-    await renderView();
-  }
-
-  /** Navigate from a Help Agent deep link, then close the panel. */
-  async function goHelpTarget(target) {
-    const key = String(target || '').trim();
-    if (!key || !state.user) return;
-
-    const focusSettings = async (selector, { openDetails = false } = {}) => {
-      await goAppView('settings');
-      const el = typeof selector === 'string' ? $(selector) : selector;
-      if (!el) return;
-      if ('open' in el) {
-        el.open = true;
-        const key = el.getAttribute?.('data-settings-tab');
-        if (key) {
-          if (!state.settingsTabOpen) state.settingsTabOpen = {};
-          state.settingsTabOpen[key] = true;
-        }
-      } else if (openDetails) {
-        const details = el.closest?.('details');
-        if (details) details.open = true;
-      }
-      const parentTab = el.closest?.('details.settings-tab');
-      if (parentTab && parentTab !== el) {
-        parentTab.open = true;
-        const parentKey = parentTab.getAttribute('data-settings-tab');
-        if (parentKey) {
-          if (!state.settingsTabOpen) state.settingsTabOpen = {};
-          state.settingsTabOpen[parentKey] = true;
-        }
-      }
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-
-    try {
-      if (key === 'create-matter') {
-        goAddMatter();
-      } else if (key === 'create-contact') {
-        goAddContact();
-      } else if (key === 'time') {
-        goAddTimeEntry();
-      } else if (key === 'matters') {
-        state.showCreateMatter = false;
-        await goAppView('matters');
-      } else if (key === 'contacts') {
-        state.showCreateContact = false;
-        await goAppView('contacts');
-      } else if (key === 'billing') {
-        await goAppView('billing');
-      } else if (key === 'reports') {
-        await goAppView('reports');
-      } else if (key === 'dashboard') {
-        await goAppView('dashboard');
-      } else if (key === 'settings') {
-        await goAppView('settings');
-      } else if (key === 'users' || key === 'add-user') {
-        if (!canManageUsers()) {
-          setMainHtml(`<div class="card"><div class="error">Only admins can add users.</div></div>`);
-        } else {
-          state.focusAddUser = true;
-          await goAppView('users');
-        }
-      } else if (key === 'settings-record-pages') {
-        await focusSettings('#recordPagesSection');
-      } else if (key === 'settings-matter-fields') {
-        await focusSettings('#defaultFieldsCard');
-      } else if (key === 'settings-contact-fields') {
-        await focusSettings('#contactFieldsCard');
-      } else if (key === 'settings-time-fields' || key === 'settings-time-billing-fields') {
-        await focusSettings('#timeFieldsCard');
-      } else if (key === 'settings-time-billing') {
-        await focusSettings('#timeBillingCard');
-      } else if (key === 'settings-name-formula') {
-        // Matter name formula UI is temporarily hidden; land on Matter page instead.
-        await focusSettings('#defaultFieldsCard');
-      } else {
-        return;
-      }
-    } finally {
-      closeHelpAgentPanel();
-    }
-  }
-
-  function wireHelpGoLinks(rootEl) {
-    if (!rootEl) return;
-    rootEl.querySelectorAll('[data-help-go]').forEach((el) => {
-      el.onclick = (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        void goHelpTarget(el.getAttribute('data-help-go'));
-      };
-    });
-  }
-
   async function goLookupResult(item) {
     const target = item?.target || {};
     const view = target.view;
@@ -10837,152 +10674,6 @@
     }
   }
 
-  function setHelpAgentVisible(visible) {
-    const root = document.getElementById('helpAgent');
-    if (root) root.hidden = !visible;
-  }
-
-  function ensureHelpAgent() {
-    let root = document.getElementById('helpAgent');
-    if (!root) {
-      root = document.createElement('div');
-      root.id = 'helpAgent';
-      root.className = 'help-agent';
-      root.innerHTML = `
-        <div class="help-agent-panel" id="helpAgentPanel" hidden>
-          <div class="help-agent-head">
-            <div>
-              <strong>Help Agent</strong>
-              <span class="muted">Training & how-to</span>
-            </div>
-            <button type="button" class="help-agent-close" id="helpAgentClose" aria-label="Close help">×</button>
-          </div>
-          <div class="help-agent-body" id="helpAgentBody"></div>
-          <form class="help-agent-form" id="helpAgentForm">
-            <input id="helpAgentInput" name="q" autocomplete="off"
-              placeholder="Ask how to do something…" aria-label="Ask the help agent" />
-            <button class="primary" type="submit">Ask</button>
-          </form>
-        </div>
-        <button type="button" class="help-agent-bubble" id="helpAgentBubble"
-          aria-label="Open help agent" title="Help & training">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-            stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 3.8a6.4 6.4 0 0 0-5.5 9.7L5 20l6.7-1.7A6.4 6.4 0 1 0 12 3.8z"/>
-            <path d="M9.2 11.2h.01M12 11.2h.01M14.8 11.2h.01"/>
-          </svg>
-        </button>`;
-      document.body.appendChild(root);
-
-      const panel = $('#helpAgentPanel', root);
-      const body = $('#helpAgentBody', root);
-      const bubble = $('#helpAgentBubble', root);
-      const form = $('#helpAgentForm', root);
-      const input = $('#helpAgentInput', root);
-
-      const renderHome = () => {
-        body.innerHTML = `
-          <p class="help-agent-intro">Need a hand? Pick a topic or ask how to do something in Chrono. Answers include links that take you there.</p>
-          <div class="help-agent-topics">
-            ${HELP_TOPICS.map((t) => `
-              <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
-            `).join('')}
-          </div>`;
-        body.querySelectorAll('[data-help-topic]').forEach((btn) => {
-          btn.onclick = () => {
-            const topic = HELP_TOPICS.find((t) => t.id === btn.dataset.helpTopic);
-            if (topic) showAnswer(topic);
-          };
-        });
-      };
-
-      const showAnswer = (topicOrTitle, maybeAnswer) => {
-        const topic = typeof topicOrTitle === 'object' && topicOrTitle
-          ? topicOrTitle
-          : { label: topicOrTitle, answer: maybeAnswer, links: [] };
-        const links = Array.isArray(topic.links) ? topic.links : [];
-        body.innerHTML = `
-          <div class="help-agent-answer">
-            <strong>${escapeHtml(topic.label || 'Help')}</strong>
-            <p>${formatHelpAnswerHtml(topic.answer || '')}</p>
-            ${links.length ? `
-              <div class="help-agent-links">
-                ${links.map((l) => `
-                  <a href="#${escapeHtml(l.target)}" class="help-go-btn" data-help-go="${escapeHtml(l.target)}">
-                    ${escapeHtml(l.label)} →
-                  </a>`).join('')}
-              </div>` : ''}
-            <button type="button" class="linkish" id="helpAgentBack">← All topics</button>
-          </div>`;
-        wireHelpGoLinks(body);
-        $('#helpAgentBack', body).onclick = renderHome;
-        body.scrollTop = 0;
-      };
-
-      const setOpen = (open) => {
-        root.classList.toggle('is-open', !!open);
-        if (open) panel.removeAttribute('hidden');
-        else panel.setAttribute('hidden', '');
-        bubble.setAttribute('aria-expanded', open ? 'true' : 'false');
-        bubble.setAttribute('aria-label', open ? 'Close help agent' : 'Open help agent');
-        if (open) {
-          renderHome();
-          setTimeout(() => input?.focus(), 0);
-        }
-      };
-
-      bubble.onclick = (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        setOpen(!root.classList.contains('is-open'));
-      };
-      $('#helpAgentClose', root).onclick = (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        setOpen(false);
-      };
-      document.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Escape' && root.classList.contains('is-open')) setOpen(false);
-      });
-      form.onsubmit = (ev) => {
-        ev.preventDefault();
-        const q = String(input.value || '').trim();
-        if (!q) return;
-        const match = matchHelpAnswer(q);
-        if (match) {
-          showAnswer(match);
-        } else {
-          showAnswer({
-            label: 'I can help with that',
-            answer: 'Try a topic below, or ask about creating matters, logging time, contacts, custom fields, reports, dashboard, or billing. Each answer includes links that take you there.',
-            links: [
-              { label: 'Create a matter', target: 'create-matter' },
-              { label: 'Log time', target: 'time' },
-              { label: 'Billing', target: 'billing' },
-            ],
-          });
-          const wrap = body.querySelector('.help-agent-answer');
-          if (wrap) {
-            const topics = document.createElement('div');
-            topics.className = 'help-agent-topics';
-            topics.innerHTML = HELP_TOPICS.slice(0, 4).map((t) => `
-              <button type="button" class="help-topic" data-help-topic="${t.id}">${escapeHtml(t.label)}</button>
-            `).join('');
-            const back = wrap.querySelector('#helpAgentBack');
-            wrap.insertBefore(topics, back);
-            topics.querySelectorAll('[data-help-topic]').forEach((btn) => {
-              btn.onclick = () => {
-                const topic = HELP_TOPICS.find((t) => t.id === btn.dataset.helpTopic);
-                if (topic) showAnswer(topic);
-              };
-            });
-          }
-        }
-        input.value = '';
-      };
-    }
-    setHelpAgentVisible(!!state.user);
-  }
-
   boot();
+
 })();
