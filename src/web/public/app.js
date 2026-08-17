@@ -218,6 +218,23 @@
     });
   }
 
+  function matterSelectLabel(select, matterId, fallback = '') {
+    const opt = select?.querySelector(`option[value="${Number(matterId)}"]`);
+    const label = String(opt?.textContent || '').trim();
+    return label || fallback;
+  }
+
+  function confirmMoveTimeToMatter({ fromName = '', toName = '' } = {}) {
+    const dest = toName || 'another matter';
+    const src = fromName || 'the current matter';
+    return confirmAction({
+      title: 'Move this time entry?',
+      message: `Are you sure you want to move this time to “${dest}”? It is currently on “${src}”.`,
+      confirmLabel: 'Yes, move time',
+      cancelLabel: 'Cancel',
+    });
+  }
+
   function roleObjectPerms(objectKey, settings = state.settings) {
     const role = state.user?.role;
     const empty = {
@@ -7482,7 +7499,7 @@
                   });
                 }
                 return `
-              <tr data-time-row="${entryId}">
+              <tr data-time-row="${entryId}" data-original-matter-id="${Number(e.matter_id)}">
                 <td class="col-date">
                   <input class="inline-input" type="date" data-field="serviceDate"
                     value="${escapeHtml(String(e.service_date || '').slice(0, 10))}" />
@@ -7580,6 +7597,19 @@
         if (!Number.isFinite(hours) || hours <= 0) {
           listMsg('<div class="error">Enter hours in 0.25 increments.</div>');
           return;
+        }
+        const originalMatterId = Number(row.getAttribute('data-original-matter-id'));
+        if (
+          Number.isFinite(originalMatterId)
+          && originalMatterId > 0
+          && originalMatterId !== matterId
+        ) {
+          const select = row.querySelector('[data-field="matterId"]');
+          const sure = await confirmMoveTimeToMatter({
+            fromName: matterSelectLabel(select, originalMatterId, 'the current matter'),
+            toName: matterSelectLabel(select, matterId, 'another matter'),
+          });
+          if (!sure) return;
         }
         btn.disabled = true;
         try {
