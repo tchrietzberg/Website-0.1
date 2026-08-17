@@ -4318,24 +4318,32 @@
       <div class="login-clock" aria-hidden="true">
         <div class="login-clock-glow"></div>
         <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+          <defs>
+            <mask id="loginHandsMask">
+              <rect width="200" height="200" fill="#fff" />
+              <circle cx="100" cy="100" r="63" fill="#000" />
+            </mask>
+          </defs>
           <circle class="login-clock-halo" cx="100" cy="100" r="99" />
           <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
           <circle class="login-clock-dial" cx="100" cy="100" r="88" />
           <circle class="login-clock-ring" cx="100" cy="100" r="80" />
-          <circle class="login-clock-well" cx="100" cy="100" r="58" />
+          <circle class="login-clock-well" cx="100" cy="100" r="62" />
           ${ticks.join('')}
           ${numerals}
-          <g class="login-clock-hand-hour">
-            <line x1="100" y1="110" x2="100" y2="48" />
+          <g mask="url(#loginHandsMask)">
+            <g class="login-clock-hand-hour">
+              <line x1="100" y1="110" x2="100" y2="48" />
+            </g>
+            <g class="login-clock-hand-minute">
+              <line x1="100" y1="114" x2="100" y2="30" />
+            </g>
+            <g class="login-clock-hand-second">
+              <line x1="100" y1="122" x2="100" y2="22" />
+              <circle cx="100" cy="100" r="2.2" />
+            </g>
+            <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
           </g>
-          <g class="login-clock-hand-minute">
-            <line x1="100" y1="114" x2="100" y2="30" />
-          </g>
-          <g class="login-clock-hand-second">
-            <line x1="100" y1="122" x2="100" y2="22" />
-            <circle cx="100" cy="100" r="2.2" />
-          </g>
-          <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
         </svg>
       </div>`;
   }

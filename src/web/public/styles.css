@@ -2820,8 +2820,8 @@ body.login-mode::after {
   position: absolute;
   left: 50%;
   top: 48%;
-  width: min(118vmin, 54rem);
-  height: min(118vmin, 54rem);
+  width: min(132vmin, 62rem);
+  height: min(132vmin, 62rem);
   -webkit-transform: translate(-50%, -50%);
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -2957,7 +2957,7 @@ body.login-mode::after {
 .login-face {
   position: relative;
   z-index: 1;
-  width: min(24.75rem, 100%);
+  width: min(22.75rem, 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3175,8 +3175,8 @@ button.primary.login-submit:hover {
 
 @media (max-width: 640px) {
   .login-clock {
-    width: min(140vw, 40rem);
-    height: min(140vw, 40rem);
+    width: min(150vw, 44rem);
+    height: min(150vw, 44rem);
   }
   .login-clock-numeral {
     font-size: 10px;
