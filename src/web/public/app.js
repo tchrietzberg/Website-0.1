@@ -4419,15 +4419,58 @@
   }
 
   function loginClockHtml() {
+    const ticks = [];
+    for (let i = 0; i < 60; i += 1) {
+      const hour = i % 5 === 0;
+      ticks.push(`
+        <line class="login-clock-tick${hour ? ' is-hour' : ''}"
+          x1="100" y1="${hour ? 12 : 14}" x2="100" y2="${hour ? 24 : 18}"
+          transform="rotate(${i * 6} 100 100)" />`);
+    }
+    const numerals = [
+      { n: '12', x: 100, y: 36 },
+      { n: '3', x: 168, y: 104 },
+      { n: '6', x: 100, y: 174 },
+      { n: '9', x: 32, y: 104 },
+    ].map(({ n, x, y }) => `
+      <text class="login-clock-numeral" x="${x}" y="${y}" text-anchor="middle"
+        dominant-baseline="middle">${n}</text>`).join('');
     return `
       <div class="login-clock" aria-hidden="true">
         <div class="login-clock-glow"></div>
-        ${analogClockSvgHtml()}
+        <svg class="login-clock-svg" viewBox="0 0 200 200" focusable="false">
+          <defs>
+            <mask id="loginHandsMask">
+              <rect width="200" height="200" fill="#fff" />
+              <circle cx="100" cy="100" r="63" fill="#000" />
+            </mask>
+          </defs>
+          <circle class="login-clock-halo" cx="100" cy="100" r="99" />
+          <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
+          <circle class="login-clock-dial" cx="100" cy="100" r="88" />
+          <circle class="login-clock-ring" cx="100" cy="100" r="80" />
+          <circle class="login-clock-well" cx="100" cy="100" r="62" />
+          ${ticks.join('')}
+          ${numerals}
+          <g mask="url(#loginHandsMask)">
+            <g class="login-clock-hand-hour">
+              <line x1="100" y1="110" x2="100" y2="48" />
+            </g>
+            <g class="login-clock-hand-minute">
+              <line x1="100" y1="114" x2="100" y2="30" />
+            </g>
+            <g class="login-clock-hand-second">
+              <line x1="100" y1="122" x2="100" y2="22" />
+              <circle cx="100" cy="100" r="2.2" />
+            </g>
+            <circle class="login-clock-pivot" cx="100" cy="100" r="3.4" />
+          </g>
+        </svg>
       </div>`;
   }
 
   function loginStageHtml(panelInner) {
-    return `<div class="login-stage">${loginClockHtml()}<div class="login-panel">${panelInner}</div></div>`;
+    return `<div class="login-stage">${loginClockHtml()}<div class="login-face"><div class="login-panel">${panelInner}</div></div></div>`;
   }
 
   function wireLoginClock() {

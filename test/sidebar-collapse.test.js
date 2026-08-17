@@ -32,3 +32,16 @@ describe('Chrono sidebar clock collapse', () => {
     assert.match(css, /#app\.app-shell\.sidebar-collapsed \.workspace/);
   });
 });
+
+describe('Chrono login clock face', () => {
+  it('molds the sign-in form into the clock dial', () => {
+    const js = fs.readFileSync(path.join(publicDir, 'app.js'), 'utf8');
+    assert.match(js, /class="login-face"/);
+    assert.match(js, /id="loginHandsMask"/);
+    assert.match(js, /mask="url\(#loginHandsMask\)"/);
+    const css = fs.readFileSync(path.join(publicDir, 'styles.css'), 'utf8');
+    assert.match(css, /\.login-face \{/);
+    assert.match(css, /\.login-clock-well \{[\s\S]*?fill: #08162a/);
+    assert.doesNotMatch(css, /\.login-panel \{[\s\S]{0,400}background:\s*linear-gradient\(165deg, rgba\(255, 255, 255/);
+  });
+});
