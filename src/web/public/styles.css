@@ -2875,9 +2875,9 @@ body.login-mode::after {
 }
 
 .login-clock-well {
-  fill: rgba(8, 22, 42, 0.97);
-  stroke: rgba(232, 214, 176, 0.38);
-  stroke-width: 0.9;
+  fill: #08162a;
+  stroke: rgba(232, 214, 176, 0.42);
+  stroke-width: 1.05;
 }
 
 .login-clock-tick {
@@ -2961,15 +2961,15 @@ body.login-mode::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.15rem;
-  border-radius: 28px;
-  background:
-    linear-gradient(165deg, rgba(18, 42, 74, 0.55) 0%, rgba(8, 22, 42, 0.2) 100%);
-  border: 1px solid rgba(232, 214, 176, 0.28);
+  padding: 0.2rem;
+  border-radius: 36px;
+  background: #08162a;
+  border: 1px solid rgba(232, 214, 176, 0.38);
   box-shadow:
-    0 0 0 1px rgba(8, 22, 42, 0.45) inset,
-    0 0 0 12px rgba(8, 22, 42, 0.42),
-    0 0 48px 18px rgba(8, 22, 42, 0.55);
+    0 0 0 1px rgba(8, 22, 42, 0.85) inset,
+    0 0 0 14px #08162a,
+    0 0 0 15px rgba(232, 214, 176, 0.16),
+    0 0 52px 20px rgba(8, 22, 42, 0.72);
 }
 
 .login-panel {
@@ -3182,11 +3182,12 @@ button.primary.login-submit:hover {
     font-size: 10px;
   }
   .login-face {
-    border-radius: 22px;
+    border-radius: 28px;
     box-shadow:
-      0 0 0 1px rgba(8, 22, 42, 0.45) inset,
-      0 0 0 8px rgba(8, 22, 42, 0.4),
-      0 0 36px 14px rgba(8, 22, 42, 0.5);
+      0 0 0 1px rgba(8, 22, 42, 0.85) inset,
+      0 0 0 10px #08162a,
+      0 0 0 11px rgba(232, 214, 176, 0.16),
+      0 0 36px 14px rgba(8, 22, 42, 0.7);
   }
   .login-panel {
     border-radius: 18px;
