@@ -4322,7 +4322,7 @@
           <circle class="login-clock-bezel" cx="100" cy="100" r="94" />
           <circle class="login-clock-dial" cx="100" cy="100" r="88" />
           <circle class="login-clock-ring" cx="100" cy="100" r="80" />
-          <circle class="login-clock-well" cx="100" cy="100" r="54" />
+          <circle class="login-clock-well" cx="100" cy="100" r="58" />
           ${ticks.join('')}
           ${numerals}
           <g class="login-clock-hand-hour">
@@ -4341,7 +4341,7 @@
   }
 
   function loginStageHtml(panelInner) {
-    return `<div class="login-stage">${loginClockHtml()}<div class="login-panel">${panelInner}</div></div>`;
+    return `<div class="login-stage">${loginClockHtml()}<div class="login-face"><div class="login-panel">${panelInner}</div></div></div>`;
   }
 
   function wireLoginClock() {
