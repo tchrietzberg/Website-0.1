@@ -10369,6 +10369,216 @@
       </div>`);
   }
 
+  async function goLookupResult(item) {
+    const target = item?.target || {};
+    const view = target.view;
+    if (!view) return;
+    state.showCreateMatter = false;
+    state.showCreateContact = false;
+    if (view === 'matter' && target.matterId) {
+      await openMatter(target.matterId);
+      return;
+    }
+    if (view === 'contact' && target.contactId) {
+      await openContact(target.contactId);
+      return;
+    }
+    if (view === 'time') {
+      state.view = 'time';
+      state.matterId = target.matterId || null;
+      state.focusTimeEntryId = target.timeEntryId || null;
+      renderShell();
+      await renderView();
+      return;
+    }
+    if (view === 'reports') {
+      state.view = 'reports';
+      if (target.reportKind === 'custom' && target.reportId) {
+        state.editingCustomReportId = target.reportId;
+      }
+      if (target.reportKind === 'firm' && target.reportKey) {
+        state.focusFirmReportKey = target.reportKey;
+      }
+      state.matterId = null;
+      state.contactId = null;
+      renderShell();
+      await renderView();
+      return;
+    }
+    if (view === 'billing') {
+      state.view = 'billing';
+      state.focusInvoiceId = target.invoiceId || null;
+      state.matterId = null;
+      state.contactId = null;
+      renderShell();
+      await renderView();
+    }
+  }
+
+  function ensureLookupBar() {
+    if (!lookupBar) return;
+    if (!state.user) {
+      lookupBar.hidden = true;
+      lookupBar.innerHTML = '';
+      delete lookupBar.dataset.ready;
+      return;
+    }
+    lookupBar.hidden = false;
+    // Drop legacy scope line / ⌘K chip if an older lookup chrome is still mounted.
+    if (lookupBar.dataset.ready
+      && (lookupBar.querySelector('.lookup-hotkey') || lookupBar.querySelector('#globalLookupScopes'))) {
+      delete lookupBar.dataset.ready;
+      lookupBar.innerHTML = '';
+    }
+    if (!lookupBar.dataset.ready) {
+      lookupBar.innerHTML = `
+        <form class="lookup-form" id="globalLookupForm" autocomplete="off" role="search">
+          <label class="lookup-label" for="globalLookupInput">Lookup</label>
+          <div class="lookup-input-wrap">
+            <svg class="lookup-icon" viewBox="0 0 24 24" width="18" height="18" fill="none"
+              stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5"/>
+              <path d="M16.2 16.2 20 20"/>
+            </svg>
+            <input id="globalLookupInput" name="q" type="search"
+              placeholder="Search matters, contacts, time, reports…"
+              aria-label="Global lookup" aria-autocomplete="list" aria-controls="globalLookupResults"
+              aria-expanded="false" />
+          </div>
+          <div class="lookup-results" id="globalLookupResults" hidden role="listbox" aria-label="Lookup results"></div>
+        </form>`;
+      lookupBar.dataset.ready = '1';
+
+      const form = $('#globalLookupForm', lookupBar);
+      const input = $('#globalLookupInput', lookupBar);
+      const resultsEl = $('#globalLookupResults', lookupBar);
+      let timer = null;
+      let activeIndex = -1;
+      let lastResults = [];
+      let reqSeq = 0;
+
+      const closeResults = () => {
+        resultsEl.hidden = true;
+        resultsEl.innerHTML = '';
+        input.setAttribute('aria-expanded', 'false');
+        activeIndex = -1;
+        lastResults = [];
+      };
+
+      const renderResults = (payload) => {
+        lastResults = payload?.results || [];
+        if (!String(input.value || '').trim()) {
+          closeResults();
+          return;
+        }
+        if (!lastResults.length) {
+          resultsEl.hidden = false;
+          input.setAttribute('aria-expanded', 'true');
+          resultsEl.innerHTML = '<div class="lookup-empty muted">No matches</div>';
+          return;
+        }
+        resultsEl.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+        activeIndex = 0;
+        resultsEl.innerHTML = lastResults.map((item, i) => `
+          <button type="button" class="lookup-result ${i === 0 ? 'is-active' : ''}"
+            role="option" data-lookup-idx="${i}" aria-selected="${i === 0 ? 'true' : 'false'}">
+            <span class="lookup-result-type">${escapeHtml(item.typeLabel || item.type)}</span>
+            <span class="lookup-result-main">
+              <strong>${escapeHtml(item.title || '')}</strong>
+              <small class="muted">${escapeHtml(item.subtitle || '')}</small>
+            </span>
+          </button>`).join('');
+        resultsEl.querySelectorAll('[data-lookup-idx]').forEach((btn) => {
+          btn.onmouseenter = () => {
+            activeIndex = Number(btn.dataset.lookupIdx);
+            resultsEl.querySelectorAll('.lookup-result').forEach((el, i) => {
+              el.classList.toggle('is-active', i === activeIndex);
+              el.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false');
+            });
+          };
+          btn.onclick = async () => {
+            const item = lastResults[Number(btn.dataset.lookupIdx)];
+            closeResults();
+            input.blur();
+            if (item) await goLookupResult(item);
+          };
+        });
+      };
+
+      const runLookup = async () => {
+        const q = String(input.value || '').trim();
+        if (!q) {
+          closeResults();
+          return;
+        }
+        const seq = ++reqSeq;
+        try {
+          const data = await api(`/api/lookup?q=${encodeURIComponent(q)}&limit=5`, { cache: false });
+          if (seq !== reqSeq) return;
+          renderResults(data);
+        } catch (e) {
+          if (seq !== reqSeq) return;
+          resultsEl.hidden = false;
+          input.setAttribute('aria-expanded', 'true');
+          resultsEl.innerHTML = `<div class="lookup-empty error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+
+      const scheduleLookup = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => { void runLookup(); }, 180);
+      };
+
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (activeIndex >= 0 && lastResults[activeIndex]) {
+          const item = lastResults[activeIndex];
+          closeResults();
+          await goLookupResult(item);
+          return;
+        }
+        await runLookup();
+      };
+      input.addEventListener('input', scheduleLookup);
+      input.addEventListener('focus', () => {
+        if (String(input.value || '').trim()) void runLookup();
+      });
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') {
+          closeResults();
+          input.blur();
+          return;
+        }
+        if (!lastResults.length) return;
+        if (ev.key === 'ArrowDown') {
+          ev.preventDefault();
+          activeIndex = (activeIndex + 1) % lastResults.length;
+        } else if (ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          activeIndex = (activeIndex - 1 + lastResults.length) % lastResults.length;
+        } else {
+          return;
+        }
+        resultsEl.querySelectorAll('.lookup-result').forEach((el, i) => {
+          el.classList.toggle('is-active', i === activeIndex);
+          el.setAttribute('aria-selected', i === activeIndex ? 'true' : 'false');
+        });
+        resultsEl.querySelector('.lookup-result.is-active')?.scrollIntoView({ block: 'nearest' });
+      });
+      document.addEventListener('click', (ev) => {
+        if (!lookupBar.contains(ev.target)) closeResults();
+      });
+      document.addEventListener('keydown', (ev) => {
+        if (!(ev.metaKey || ev.ctrlKey) || String(ev.key).toLowerCase() !== 'k') return;
+        if (!state.user || lookupBar.hidden) return;
+        ev.preventDefault();
+        input.focus();
+        input.select();
+      });
+    }
+  }
+
   boot();
 
 })();
