@@ -1,0 +1,7 @@
+Leaflet 1.9.4 is vendored under public/vendor/leaflet for offline CSP (`script-src 'self'`).
+
+Leaflet is licensed under the BSD 2-Clause License.
+Copyright (c) 2010-2023, Volodymyr Agafonkin
+Copyright (c) 2010-2011, CloudMade
+
+https://unpkg.com/browse/leaflet@1.9.4/

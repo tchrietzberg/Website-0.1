@@ -119,3 +119,7 @@ Still deferred / not full firm compliance:
 - Independent pen-test / bar-counsel review
 
 Not legal or bar-compliance advice — have billing counsel review rules before production use.
+
+## Other projects
+
+[Wander Guide](./wander-guide/README.md) is a **separate** mobile PWA: a GPS tour guide with a spoken narrator. It does not share auth, data, or billing code. Run it with `npm run wander` (`http://127.0.0.1:4173`) and test with `npm run test:wander`.
