@@ -82,6 +82,7 @@ describe('wander-guide server', () => {
     assert.match(home.text, /Wander Guide/);
     assert.match(home.text, /Hear this tour/);
     assert.match(home.text, /Enter a location/);
+    assert.match(home.text, /No sign-in/);
     assert.equal(home.res.headers.get('x-frame-options'), 'DENY');
     assert.equal(home.res.headers.get('x-content-type-options'), 'nosniff');
     assert.match(home.res.headers.get('content-security-policy'), /connect-src 'self'/);
