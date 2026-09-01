@@ -1,0 +1,13 @@
+{
+  "name": "wander-guide",
+  "version": "1.0.0",
+  "description": "Location-based audio tour guide PWA. Uses device GPS and a spoken narrator to describe the area around you.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "license": "UNLICENSED",
+  "private": true
+}

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c1210">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="A location-based audio tour guide. Wander Guide uses your phone’s GPS and a spoken narrator to tell you about the area you are in.">
+  <title>Wander Guide</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/icon.svg" alt="" width="28" height="28">
+        <div>
+          <p class="eyebrow">Location tour guide</p>
+          <h1>Wander Guide</h1>
+        </div>
+      </div>
+      <button type="button" id="privacy-btn" class="ghost-btn" aria-haspopup="dialog">Privacy</button>
+    </header>
+
+    <section class="map-wrap" aria-label="Map of your surroundings">
+      <div id="map" role="application" aria-label="Interactive map"></div>
+      <div class="map-chip" id="place-chip">Finding your area…</div>
+    </section>
+
+    <section class="guide-sheet" aria-labelledby="guide-heading">
+      <div class="handle" aria-hidden="true"></div>
+      <div class="guide-head">
+        <div class="avatar" id="avatar" data-state="idle" aria-hidden="true">
+          <span class="pulse"></span>
+          <span class="mouth"></span>
+        </div>
+        <div>
+          <p class="eyebrow">Narrator</p>
+          <h2 id="guide-heading">Your local guide</h2>
+        </div>
+        <div class="controls">
+          <button type="button" id="listen-btn" class="icon-btn" disabled aria-label="Hear narration">🔊</button>
+          <button type="button" id="pause-btn" class="icon-btn" disabled aria-label="Pause narration">⏸</button>
+          <button type="button" id="stop-btn" class="icon-btn" disabled aria-label="Stop narration">■</button>
+        </div>
+      </div>
+
+      <p id="transcript" class="transcript" aria-live="polite">Allow location to start a live tour, enter a place, or pick a famous area and I will narrate it.</p>
+
+      <button type="button" id="listen-banner" class="primary-btn listen-banner hidden" hidden>Hear this tour</button>
+
+      <div class="cta-row">
+        <button type="button" id="start-btn" class="primary-btn">Start live tour</button>
+        <button type="button" id="demo-btn" class="secondary-btn">Try a demo city</button>
+      </div>
+      <p class="status">No sign-in. Start a tour, or enter a place below.</p>
+
+      <form id="search-form" class="search-form" autocomplete="off">
+        <label class="section-label" for="place-query">Enter a location</label>
+        <div class="search-row">
+          <input id="place-query" name="q" type="search" maxlength="120" placeholder="City, landmark, or address" enterkeyhint="search">
+          <button type="submit" class="secondary-btn">Go</button>
+        </div>
+      </form>
+      <p id="status" class="status" role="status"></p>
+
+      <div class="section-label">Nearby places</div>
+      <div id="places" class="places" aria-live="polite"></div>
+
+      <div id="demo-panel" class="demo-panel hidden" hidden>
+        <div class="section-label">Walk a famous neighborhood</div>
+        <div id="demos" class="demos"></div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="privacy-dialog" class="dialog">
+    <h2>Location &amp; privacy</h2>
+    <p>Wander Guide uses your device location to describe the area around you, like a walking tour guide.</p>
+    <ul>
+      <li>GPS stays on your phone except when looking up the current area.</li>
+      <li>Coordinates are sent only to this app’s server, which queries public OpenStreetMap and Wikipedia data.</li>
+      <li>The server logs only a coarse ~1 km grid, never exact GPS, card data, or identifiers.</li>
+      <li>Nothing is stored as a history of where you walked.</li>
+      <li>You can use demo cities instead of sharing live location.</li>
+    </ul>
+    <form method="dialog">
+      <button type="submit" class="primary-btn">Got it</button>
+    </form>
+  </dialog>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
