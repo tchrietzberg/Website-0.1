@@ -1,7 +1,7 @@
 'use strict';
 
 const { distanceMeters, cacheKey, parsePlaceQuery, DEFAULT_RADIUS_M } = require('./geo');
-const { formatHere, buildAreaScript, buildPlaceScript, rankPlaces, firstSentences } = require('./narrate');
+const { formatHere, buildAreaScript, buildPlaceScript, rankPlaces, humanizeExtract } = require('./narrate');
 
 const USER_AGENT = 'WanderGuide/1.0 (location-based audio tour guide; educational; +https://github.com/tchrietzberg/Website-0.1)';
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
@@ -180,7 +180,7 @@ async function wikipediaNearby(lat, lon, radiusMeters, fetchImpl) {
 
   const places = hits.map((hit) => {
     const page = pages[String(hit.pageid)] || {};
-    const extract = firstSentences(page.extract || '', 6);
+    const extract = humanizeExtract(page.extract || '', 4);
     const thumbnail = page.thumbnail && page.thumbnail.source ? String(page.thumbnail.source) : null;
     const safeThumb =
       thumbnail && thumbnail.startsWith('https://upload.wikimedia.org/') ? thumbnail : null;

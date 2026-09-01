@@ -30,7 +30,7 @@ describe('wander-guide server', () => {
     server = createServer({
       lookup: async ({ lat, lon, radiusMeters }) => ({
         here: { label: 'Test neighborhood', city: 'Testville', neighborhood: 'Midtown', state: null, country: 'Testland' },
-        script: `You are in Test neighborhood. I'm your local guide.`,
+        script: `Okay, we're in Test neighborhood.`,
         places: [
           {
             id: '42',
@@ -57,7 +57,7 @@ describe('wander-guide server', () => {
           lat: 48.8584,
           lon: 2.2945,
           here: { label: 'Eiffel Tower, Paris', city: 'Paris', neighborhood: null, state: null, country: 'France' },
-          script: `You are in Eiffel Tower, Paris. I'm your local guide.`,
+          script: `Okay, we're in Eiffel Tower, Paris.`,
           places: [],
           radiusMeters: 1200,
         };
@@ -103,7 +103,7 @@ describe('wander-guide server', () => {
     const live = await get('/api/here?lat=37.8199&lon=-122.4783');
     assert.equal(live.res.status, 200);
     assert.equal(live.json.here.label, 'Test neighborhood');
-    assert.match(live.json.script, /local guide/);
+    assert.match(live.json.script, /we're in Test neighborhood/i);
     assert.equal(live.json.places[0].title, 'Test Museum');
 
     const demo = await get('/api/here?demo=golden-gate');

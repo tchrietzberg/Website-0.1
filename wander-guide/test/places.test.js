@@ -65,7 +65,7 @@ describe('places', () => {
     assert.match(result.here.label, /San Francisco/);
     assert.equal(result.places.length, 1);
     assert.equal(result.places[0].title, 'Golden Gate Bridge');
-    assert.match(result.script, /local guide/);
+    assert.match(result.script, /we're in/i);
     assert.match(result.places[0].script, /Golden Gate Bridge/);
     assert.equal(result.places[0].thumbnail.startsWith('https://upload.wikimedia.org/'), true);
   });
@@ -107,7 +107,7 @@ describe('places', () => {
     const result = await searchPlace('Eiffel Tower', { fetchImpl });
     assert.equal(result.lat, 48.8584);
     assert.match(result.here.label, /Paris/);
-    assert.match(result.script, /local guide/);
+    assert.match(result.script, /we're in/i);
   });
 
   it('rejects a one-character query', async () => {

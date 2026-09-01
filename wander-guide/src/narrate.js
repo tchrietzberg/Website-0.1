@@ -31,6 +31,55 @@ function formatHere(address, displayName) {
   };
 }
 
+function spokenWhere(here) {
+  const h = here && typeof here === 'object' ? here : {};
+  const neighborhood = h.neighborhood;
+  const city = h.city;
+  if (neighborhood && city && neighborhood.toLowerCase() !== city.toLowerCase()) {
+    return `${neighborhood}, in ${city}`;
+  }
+  return h.label || 'an interesting place';
+}
+
+function spokenTitle(title) {
+  const t = String(title || '').trim();
+  if (!t) return 'this place';
+  if (/^(the|a|an)\s/i.test(t)) return t;
+  if (/^\d/.test(t)) return t;
+  if (/'s\b/i.test(t)) return t;
+  if (/\b(bridge|tower|museum|cathedral|palace|castle|memorial|monument|abbey|temple|library|colosseum|forum|basilica)\b/i.test(t)) {
+    return `the ${t}`;
+  }
+  return t;
+}
+
+function looksLikePronunciation(body) {
+  return /pronounced|listen|IPA|ˈ|ˌ|[əɪæɑɔɛʌθðʃʒŋʁ]|[A-Z]{2,}[-·]|UK:|US:|French:|German:|Spanish:|Italian:|\//i.test(body)
+    && String(body).length < 200;
+}
+
+function looksLikeUnitConversion(body) {
+  return String(body).length < 48 && /^\d/.test(String(body).trim()) && /\b(km|mi|ft|m|kg|lb|acres?)\b/i.test(body);
+}
+
+function stripWikiSpeak(text) {
+  let s = String(text || '');
+  s = s.replace(/\[\d+\]/g, '');
+  s = s.replace(/\{\{[^}]+\}\}/g, '');
+  s = s.replace(/\[\[([^|\]]+\|)?([^\]]+)\]\]/g, '$2');
+  s = s.replace(/\s*\[[^\]]*\]/g, ' ');
+  s = s.replace(/\s*\/[^/]{1,40}\//g, ' ');
+  s = s.replace(/\s*\(([^()]*)\)/g, (full, body) => {
+    const inner = String(body || '').trim();
+    if (looksLikePronunciation(inner) || looksLikeUnitConversion(inner)) return '';
+    return full;
+  });
+  s = s.replace(/\s*\(listen\)/gi, '');
+  s = s.replace(/\s{2,}/g, ' ');
+  s = s.replace(/\s+([,.;:!?])/g, '$1');
+  return s.trim();
+}
+
 function firstSentences(text, max = 3) {
   const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return '';
@@ -41,40 +90,57 @@ function firstSentences(text, max = 3) {
   return out;
 }
 
+function humanizeExtract(text, maxSentences = 2) {
+  const cleaned = stripWikiSpeak(text);
+  let out = firstSentences(cleaned, maxSentences);
+  out = out.replace(/\bIt is /g, "It's ");
+  out = out.replace(/\bIt was /g, 'It was ');
+  out = out.replace(/\bcirca\b/gi, 'around');
+  out = out.replace(/\bca\.\s/gi, 'around ');
+  out = out.replace(/\bc\.\s(?=\d)/gi, 'around ');
+  return out.trim();
+}
+
 function formatDistance(meters) {
   const m = Math.max(0, Math.round(Number(meters) || 0));
-  if (m < 80) return 'right beside you';
-  if (m < 250) return `about ${Math.round(m / 10) * 10} meters away`;
-  if (m < 1000) return `about ${Math.round(m / 50) * 50} meters away`;
+  if (m < 40) return 'right here';
+  if (m < 90) return 'just beside you';
+  if (m < 200) return 'a few steps away';
+  if (m < 450) return 'a short stroll away';
+  if (m < 900) return "a couple of minutes' walk from here";
+  if (m < 2000) return 'a short walk from here';
   const tenths = Math.round(m / 100);
   const km = tenths / 10;
-  if (km < 10) return `about ${km.toFixed(1)} kilometers away`;
-  return `about ${Math.round(km)} kilometers away`;
+  if (km < 10) return `a bit farther out, about ${km.toFixed(1)} kilometers`;
+  return `quite a way off, about ${Math.round(km)} kilometers`;
 }
 
 function buildAreaScript(here, places) {
-  const where = (here && here.label) || 'an interesting place';
-  const lead = `You are in ${where}. I'm your local guide.`;
+  const where = spokenWhere(here);
+  const lead = `Okay, we're in ${where}.`;
   if (!places || places.length === 0) {
-    return `${lead} I don't have a notable landmark in this immediate radius yet. Walk a little, or pick a well-known neighborhood from the demo list.`;
+    return `${lead} I don't see a famous landmark right at this spot. Walk a little farther, or try a well-known neighborhood, and I'll try again.`;
   }
   const first = places[0];
-  const also = places.slice(1, 3).map((p) => p.title).filter(Boolean);
-  let script = `${lead} ${capitalize(formatDistance(first.distanceMeters))} is ${first.title}. ${firstSentences(first.extract, 2)}`;
+  const title = spokenTitle(first.title);
+  const extract = humanizeExtract(first.extract, 2);
+  let script = `${lead} ${capitalize(formatDistance(first.distanceMeters))}, you'll find ${title}.`;
+  if (extract) script += ` ${extract}`;
+  const also = places.slice(1, 3).map((p) => spokenTitle(p.title)).filter(Boolean);
   if (also.length === 1) {
-    script += ` Also nearby is ${also[0]}. Tap a place when you want me to tell you more.`;
+    script += ` Nearby, you can also wander over to ${also[0]}.`;
   } else if (also.length > 1) {
-    script += ` Also nearby: ${also.slice(0, -1).join(', ')}, and ${also[also.length - 1]}. Tap a place when you want me to tell you more.`;
+    script += ` If you keep looking around, you'll also see ${also[0]}, and ${also[1]}.`;
   }
   return script.replace(/\s+/g, ' ').trim();
 }
 
 function buildPlaceScript(place) {
-  const title = (place && place.title) || 'This place';
+  const title = spokenTitle(place && place.title);
   const dist = formatDistance(place && place.distanceMeters);
-  const body = firstSentences(place && place.extract, 3);
-  if (!body) return `${title} is ${dist}. I don't have a written summary for it yet.`;
-  return `${title} is ${dist}. ${body}`.replace(/\s+/g, ' ').trim();
+  const body = humanizeExtract(place && place.extract, 2);
+  if (!body) return `This is ${title}. It's ${dist}. I don't have a good story for it yet.`;
+  return `This is ${title}. It's ${dist}. ${body}`.replace(/\s+/g, ' ').trim();
 }
 
 function capitalize(text) {
@@ -95,8 +161,8 @@ function scorePlace(place) {
   return distScore + textScore + photo;
 }
 
-/** Short spoken chunks — long utterances go silent in Chrome. */
-function chunkForSpeech(text, maxChars = 220) {
+/** Short spoken chunks so the voice can breathe between thoughts. */
+function chunkForSpeech(text, maxChars = 160) {
   const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return [];
   const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -122,6 +188,10 @@ function chunkForSpeech(text, maxChars = 220) {
 module.exports = {
   formatHere,
   firstSentences,
+  stripWikiSpeak,
+  humanizeExtract,
+  spokenTitle,
+  spokenWhere,
   formatDistance,
   buildAreaScript,
   buildPlaceScript,

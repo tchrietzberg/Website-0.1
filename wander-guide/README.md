@@ -9,7 +9,7 @@ It is a Progressive Web App (PWA). On a phone you can install it to the home scr
 1. Asks for location, lets you **enter a place**, or pick a demo city.
 2. Reverse-geocodes the area with OpenStreetMap Nominatim.
 3. Finds nearby notable places on Wikipedia.
-4. Speaks a short tour-guide script with the Web Speech API. Speech starts on the tap so phones do not swallow it after the lookup; if a browser still blocks autoplay, tap **Hear this tour**.
+4. Speaks a short, conversational tour — not a Wikipedia readout. It prefers a natural voice, talks at a walking pace with pauses, and strips pronunciation marks so it doesn’t sound robotic. If a browser still blocks autoplay, tap **Hear this tour**.
 5. Follows you as you walk. When you move about 90 meters, it narrates the next landmark it has not already covered.
 6. Lets you tap any nearby card or map pin to hear that place.
 

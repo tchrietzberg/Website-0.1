@@ -16,6 +16,8 @@ const state = {
   speechQueue: [],
   keepAlive: null,
   startWatchdog: null,
+  chunkTimer: null,
+  chunkIndex: 0,
 };
 
 const els = {
@@ -76,14 +78,27 @@ function setSpeaking(on) {
 
 function preferredVoice() {
   const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-  const localEn = voices.filter((v) => v.localService && /^en(-|_|$)/i.test(v.lang));
-  const anyEn = voices.filter((v) => /^en(-|_|$)/i.test(v.lang));
-  const pool = localEn.length ? localEn : anyEn;
-  const ranked = pool.find((v) => /google|samantha|daniel|microsoft|natural|premium/i.test(v.name));
-  return ranked || pool[0] || null;
+  if (!voices.length) return null;
+  const score = (voice) => {
+    const name = voice.name || '';
+    const lang = voice.lang || '';
+    let n = 0;
+    if (/en-US/i.test(lang)) n += 10;
+    else if (/en-GB/i.test(lang)) n += 8;
+    else if (/^en/i.test(lang)) n += 4;
+    else n -= 20;
+    if (/premium|enhanced|natural|neural|online \(natural\)/i.test(name)) n += 24;
+    if (/google us english|samantha|karen|moira|tessa|serena|fiona|aria|jenny|guy|davis|andrew|emma|ava/i.test(name)) n += 18;
+    if (/google/i.test(name)) n += 12;
+    if (/microsoft/i.test(name) && /natural|online/i.test(name)) n += 14;
+    if (voice.localService === false && /google|microsoft|apple|samantha|natural/i.test(name)) n += 6;
+    if (/compact|eloquence|espeak|pico|robot|whisper|zarvox|bad news|good news|boing|bells|cellos|pipe organ|trinoids|albert|bahh|bubbles|junior|ralph|deranged|novelty|funny/i.test(name)) n -= 60;
+    return n;
+  };
+  return [...voices].sort((a, b) => score(b) - score(a))[0];
 }
 
-function chunkForSpeech(text, maxChars = 220) {
+function chunkForSpeech(text, maxChars = 160) {
   const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
   if (!cleaned) return [];
   const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
@@ -120,9 +135,14 @@ function startKeepAlive() {
 
 function stopSpeech() {
   state.speechQueue = [];
+  state.chunkIndex = 0;
   if (state.startWatchdog) {
     clearTimeout(state.startWatchdog);
     state.startWatchdog = null;
+  }
+  if (state.chunkTimer) {
+    clearTimeout(state.chunkTimer);
+    state.chunkTimer = null;
   }
   stopKeepAlive();
   if (window.speechSynthesis) speechSynthesis.cancel();
@@ -141,11 +161,18 @@ function playNextChunk() {
     return;
   }
   const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = 'en-US';
-  utter.rate = 0.96;
-  utter.pitch = 1;
   const voice = preferredVoice();
-  if (voice) utter.voice = voice;
+  if (voice) {
+    utter.voice = voice;
+    if (voice.lang) utter.lang = voice.lang;
+  } else {
+    utter.lang = 'en-US';
+  }
+  // Walking-tour pace: a little slower, with light pitch movement so it isn't monotone.
+  utter.rate = 0.88;
+  utter.pitch = 0.96 + (state.chunkIndex % 3) * 0.04;
+  utter.volume = 1;
+  state.chunkIndex += 1;
   utter.onstart = () => {
     if (state.startWatchdog) {
       clearTimeout(state.startWatchdog);
@@ -155,8 +182,12 @@ function playNextChunk() {
     startKeepAlive();
   };
   utter.onend = () => {
-    if (state.speechQueue.length) playNextChunk();
-    else {
+    if (state.speechQueue.length) {
+      state.chunkTimer = setTimeout(() => {
+        state.chunkTimer = null;
+        if (!state.paused) playNextChunk();
+      }, 320);
+    } else {
       stopKeepAlive();
       setSpeaking(false);
     }
@@ -374,7 +405,7 @@ async function onPosition(lat, lon) {
   } else if (fresh.length) {
     applyPayload(data, { announce: false });
     const next = fresh[0];
-    const line = `You have moved. ${next.script}`;
+    const line = `We've walked a little farther. ${next.script}`;
     setTranscript(line);
     continueSpokenTour(line);
     state.spoken.add(next.id);
@@ -413,7 +444,7 @@ async function startLiveTour() {
   state.mode = 'live';
   els.start.textContent = 'Following you…';
   setStatus('Asking for location…');
-  beginSpokenTour("I'm your local guide. Finding where you are now. I'll start the tour as soon as I have your location.");
+  beginSpokenTour("Give me a second. I'm finding where we are, then I'll start showing you around.");
   initMap();
   startWatch();
 }
@@ -426,7 +457,7 @@ async function startDemo(id, label) {
     state.watchId = null;
   }
   setStatus('Loading a guided neighborhood…');
-  beginSpokenTour(`I'm your local guide. Opening the tour for ${label || 'this neighborhood'}.`);
+  beginSpokenTour(`Alright. Let's take a walk around ${label || 'this neighborhood'}.`);
   const data = await fetchHereDemo(id);
   applyPayload(data, { announce: true });
   setStatus('Demo tour. On a phone, Start live tour uses your real GPS.');
@@ -440,7 +471,7 @@ async function startSearch(query) {
     state.watchId = null;
   }
   setStatus('Looking up that place…');
-  beginSpokenTour(`I'm your local guide. Looking up ${query}.`);
+  beginSpokenTour(`Okay. Let me look up ${query} for you.`);
   const data = await fetchSearch(query);
   applyPayload(data, { announce: true });
   setStatus('Tour loaded for the place you entered.');
