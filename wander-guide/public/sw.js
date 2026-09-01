@@ -1,4 +1,4 @@
-const CACHE = 'wander-guide-v1';
+const CACHE = 'wander-guide-v2';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/icon.svg', '/manifest.webmanifest', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css'];
 
 self.addEventListener('install', (event) => {

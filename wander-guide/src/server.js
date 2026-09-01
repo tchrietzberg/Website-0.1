@@ -3,7 +3,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseCoords, parseRadiusMeters, coarseCoord, DEFAULT_RADIUS_M } = require('./geo');
+const { parseCoords, parseRadiusMeters, coarseCoord, DEFAULT_RADIUS_M, parsePlaceQuery } = require('./geo');
 const places = require('./places');
 const security = require('./security');
 
@@ -115,6 +115,34 @@ async function handleHere(req, res, url, lookup) {
   }, req);
 }
 
+async function handleSearch(req, res, url, search) {
+  security.rateLimit(req);
+  const q = parsePlaceQuery(url.searchParams.get('q'));
+  if (!q) {
+    const err = new Error('Enter a place name between 2 and 120 characters.');
+    err.status = 400;
+    err.code = 'invalid_query';
+    throw err;
+  }
+  const result = await search(q);
+  const lat = Number(result.lat);
+  const lon = Number(result.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    const err = new Error('Unable to look up this area');
+    err.status = 502;
+    err.code = 'upstream_error';
+    throw err;
+  }
+  json(res, 200, {
+    lat: Math.round(lat * 1e5) / 1e5,
+    lon: Math.round(lon * 1e5) / 1e5,
+    here: result.here,
+    script: result.script,
+    places: result.places,
+    radiusMeters: result.radiusMeters,
+  }, req);
+}
+
 function logSafe(req, url) {
   if (process.env.WANDER_LOG_LOOKUPS !== '1') return;
   const lat = url.searchParams.get('lat');
@@ -135,6 +163,7 @@ function logSafe(req, url) {
 
 function createServer(options = {}) {
   const lookup = options.lookup || places.lookupHere;
+  const search = options.search || ((query) => places.searchPlace(query));
   return http.createServer(async (req, res) => {
     try {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -155,6 +184,10 @@ function createServer(options = {}) {
       if (url.pathname === '/api/here') {
         logSafe(req, url);
         await handleHere(req, res, url, lookup);
+        return;
+      }
+      if (url.pathname === '/api/search') {
+        await handleSearch(req, res, url, search);
         return;
       }
       serveStatic(req, res, url.pathname);

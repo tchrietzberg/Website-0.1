@@ -46,6 +46,22 @@ describe('wander-guide server', () => {
         ],
         radiusMeters,
       }),
+      search: async (query) => {
+        if (query === 'zzzzinvalidplace') {
+          const err = new Error('I could not find that place.');
+          err.status = 404;
+          err.code = 'place_not_found';
+          throw err;
+        }
+        return {
+          lat: 48.8584,
+          lon: 2.2945,
+          here: { label: 'Eiffel Tower, Paris', city: 'Paris', neighborhood: null, state: null, country: 'France' },
+          script: `You are in Eiffel Tower, Paris. I'm your local guide.`,
+          places: [],
+          radiusMeters: 1200,
+        };
+      },
     });
     base = await listen(server);
   });
@@ -64,6 +80,8 @@ describe('wander-guide server', () => {
     const home = await get('/');
     assert.equal(home.res.status, 200);
     assert.match(home.text, /Wander Guide/);
+    assert.match(home.text, /Hear this tour/);
+    assert.match(home.text, /Enter a location/);
     assert.equal(home.res.headers.get('x-frame-options'), 'DENY');
     assert.equal(home.res.headers.get('x-content-type-options'), 'nosniff');
     assert.match(home.res.headers.get('content-security-policy'), /connect-src 'self'/);
@@ -102,6 +120,17 @@ describe('wander-guide server', () => {
     const traversal = await get('/%2e%2e/src/server.js');
     assert.ok([400, 404].includes(traversal.res.status));
     assert.doesNotMatch(traversal.text || '', /createServer/);
+  });
+
+  it('looks up a typed location and rejects empty search', async () => {
+    const found = await get('/api/search?q=Eiffel%20Tower');
+    assert.equal(found.res.status, 200);
+    assert.equal(found.json.lat, 48.8584);
+    assert.match(found.json.script, /Paris/);
+    const missing = await get('/api/search?q=x');
+    assert.equal(missing.res.status, 400);
+    const unknown = await get('/api/search?q=zzzzinvalidplace');
+    assert.equal(unknown.res.status, 404);
   });
 
   it('rate limits bursty location lookups', async () => {

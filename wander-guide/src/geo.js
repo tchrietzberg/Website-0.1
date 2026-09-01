@@ -74,6 +74,15 @@ function cacheKey(lat, lon, radiusMeters) {
   return `${Number(lat).toFixed(3)},${Number(lon).toFixed(3)},${radiusMeters}`;
 }
 
+function parsePlaceQuery(raw) {
+  const q = String(raw || '')
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (q.length < 2 || q.length > 120) return null;
+  return q;
+}
+
 module.exports = {
   MIN_LAT,
   MAX_LAT,
@@ -89,4 +98,5 @@ module.exports = {
   distanceMeters,
   coarseCoord,
   cacheKey,
+  parsePlaceQuery,
 };

@@ -2,7 +2,7 @@
 
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { lookupHere, clearCache, listDemoLocations, getDemoLocation } = require('../src/places');
+const { lookupHere, searchPlace, clearCache, listDemoLocations, getDemoLocation } = require('../src/places');
 
 function jsonResponse(body, status = 200) {
   return {
@@ -85,5 +85,32 @@ describe('places', () => {
     assert.equal(result.here.city, 'Lisbon');
     assert.equal(result.places.length, 0);
     assert.match(result.script, /Lisbon/);
+  });
+
+  it('resolves a typed place name then narrates the area', async () => {
+    const fetchImpl = async (url) => {
+      const href = String(url);
+      if (href.includes('/search')) {
+        return jsonResponse([{ lat: '48.8584', lon: '2.2945', display_name: 'Eiffel Tower' }]);
+      }
+      if (href.includes('nominatim')) {
+        return jsonResponse({
+          display_name: 'Eiffel Tower, Paris',
+          address: { attraction: 'Eiffel Tower', city: 'Paris', country: 'France' },
+        });
+      }
+      if (href.includes('list=geosearch')) {
+        return jsonResponse({ query: { geosearch: [] } });
+      }
+      throw new Error(`unexpected url ${href}`);
+    };
+    const result = await searchPlace('Eiffel Tower', { fetchImpl });
+    assert.equal(result.lat, 48.8584);
+    assert.match(result.here.label, /Paris/);
+    assert.match(result.script, /local guide/);
+  });
+
+  it('rejects a one-character query', async () => {
+    await assert.rejects(() => searchPlace('x'), (err) => err.code === 'invalid_query');
   });
 });

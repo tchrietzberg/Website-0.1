@@ -1,10 +1,11 @@
 'use strict';
 
-const { distanceMeters, cacheKey } = require('./geo');
+const { distanceMeters, cacheKey, parsePlaceQuery, DEFAULT_RADIUS_M } = require('./geo');
 const { formatHere, buildAreaScript, buildPlaceScript, rankPlaces, firstSentences } = require('./narrate');
 
 const USER_AGENT = 'WanderGuide/1.0 (location-based audio tour guide; educational; +https://github.com/tchrietzberg/Website-0.1)';
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
+const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
+const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search';
 const WIKI_API = 'https://en.wikipedia.org/w/api.php';
 const FETCH_TIMEOUT_MS = 8000;
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -134,7 +135,7 @@ function enqueueNominatim(work) {
 }
 
 async function reverseGeocode(lat, lon, fetchImpl) {
-  const url = new URL(NOMINATIM_URL);
+  const url = new URL(NOMINATIM_REVERSE);
   url.searchParams.set('lat', String(lat));
   url.searchParams.set('lon', String(lon));
   url.searchParams.set('format', 'jsonv2');
@@ -236,6 +237,40 @@ async function lookupHere({ lat, lon, radiusMeters }, { fetchImpl } = {}) {
   return value;
 }
 
+async function searchPlace(rawQuery, { fetchImpl } = {}) {
+  const q = parsePlaceQuery(rawQuery);
+  if (!q) {
+    const err = new Error('Enter a place name between 2 and 120 characters.');
+    err.status = 400;
+    err.code = 'invalid_query';
+    throw err;
+  }
+  const url = new URL(NOMINATIM_SEARCH);
+  url.searchParams.set('q', q);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('limit', '1');
+  url.searchParams.set('addressdetails', '1');
+  const rows = await enqueueNominatim(() =>
+    withTimeout((signal) => fetchJson(url, { fetchImpl, signal }))
+  );
+  if (!Array.isArray(rows) || !rows[0]) {
+    const err = new Error('I could not find that place.');
+    err.status = 404;
+    err.code = 'place_not_found';
+    throw err;
+  }
+  const lat = Number(rows[0].lat);
+  const lon = Number(rows[0].lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    const err = new Error('I could not find that place.');
+    err.status = 404;
+    err.code = 'place_not_found';
+    throw err;
+  }
+  const value = await lookupHere({ lat, lon, radiusMeters: DEFAULT_RADIUS_M }, { fetchImpl });
+  return { lat, lon, ...value };
+}
+
 function clearCache() {
   cache.clear();
 }
@@ -247,6 +282,7 @@ module.exports = {
   lookupHere,
   reverseGeocode,
   wikipediaNearby,
+  searchPlace,
   clearCache,
   USER_AGENT,
 };

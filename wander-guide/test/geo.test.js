@@ -37,4 +37,11 @@ describe('geo', () => {
     assert.equal(geo.coarseCoord(37.81994), 37.82);
     assert.notEqual(geo.coarseCoord(40.7580123), 40.7580123);
   });
+
+  it('accepts a trimmed place query and rejects junk', () => {
+    assert.equal(geo.parsePlaceQuery('  Eiffel Tower  '), 'Eiffel Tower');
+    assert.equal(geo.parsePlaceQuery('x'), null);
+    assert.equal(geo.parsePlaceQuery('a'.repeat(121)), null);
+    assert.equal(geo.parsePlaceQuery('\n\t'), null);
+  });
 });

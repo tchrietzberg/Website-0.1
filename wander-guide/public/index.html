@@ -44,17 +44,28 @@
           <h2 id="guide-heading">Your local guide</h2>
         </div>
         <div class="controls">
+          <button type="button" id="listen-btn" class="icon-btn" disabled aria-label="Hear narration">🔊</button>
           <button type="button" id="pause-btn" class="icon-btn" disabled aria-label="Pause narration">⏸</button>
           <button type="button" id="stop-btn" class="icon-btn" disabled aria-label="Stop narration">■</button>
         </div>
       </div>
 
-      <p id="transcript" class="transcript" aria-live="polite">Allow location to start a live tour, or pick a famous area and I will narrate it.</p>
+      <p id="transcript" class="transcript" aria-live="polite">Allow location to start a live tour, enter a place, or pick a famous area and I will narrate it.</p>
+
+      <button type="button" id="listen-banner" class="primary-btn listen-banner hidden" hidden>Hear this tour</button>
 
       <div class="cta-row">
         <button type="button" id="start-btn" class="primary-btn">Start live tour</button>
         <button type="button" id="demo-btn" class="secondary-btn">Try a demo city</button>
       </div>
+
+      <form id="search-form" class="search-form" autocomplete="off">
+        <label class="section-label" for="place-query">Enter a location</label>
+        <div class="search-row">
+          <input id="place-query" name="q" type="search" maxlength="120" placeholder="City, landmark, or address" enterkeyhint="search">
+          <button type="submit" class="secondary-btn">Go</button>
+        </div>
+      </form>
       <p id="status" class="status" role="status"></p>
 
       <div class="section-label">Nearby places</div>

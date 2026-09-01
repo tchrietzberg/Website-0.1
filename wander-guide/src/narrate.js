@@ -95,6 +95,30 @@ function scorePlace(place) {
   return distScore + textScore + photo;
 }
 
+/** Short spoken chunks — long utterances go silent in Chrome. */
+function chunkForSpeech(text, maxChars = 220) {
+  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const chunks = [];
+  let buf = '';
+  for (const sentence of sentences) {
+    if (buf && buf.length + 1 + sentence.length > maxChars) {
+      chunks.push(buf);
+      buf = sentence;
+    } else {
+      buf = buf ? `${buf} ${sentence}` : sentence;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks.flatMap((chunk) => {
+    if (chunk.length <= maxChars * 2) return [chunk];
+    const parts = [];
+    for (let i = 0; i < chunk.length; i += maxChars) parts.push(chunk.slice(i, i + maxChars));
+    return parts;
+  });
+}
+
 module.exports = {
   formatHere,
   firstSentences,
@@ -103,4 +127,5 @@ module.exports = {
   buildPlaceScript,
   rankPlaces,
   scorePlace,
+  chunkForSpeech,
 };

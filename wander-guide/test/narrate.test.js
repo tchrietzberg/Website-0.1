@@ -40,4 +40,12 @@ describe('narrate', () => {
     ]);
     assert.equal(ranked[0].title, 'Near');
   });
+
+  it('chunks long tour scripts for speech', () => {
+    const script = 'First sentence is short. Second sentence is also fine. Third keeps going.';
+    const chunks = narrate.chunkForSpeech(script, 40);
+    assert.ok(chunks.length >= 2);
+    assert.equal(chunks.join(' '), script);
+    assert.deepEqual(narrate.chunkForSpeech(''), []);
+  });
 });

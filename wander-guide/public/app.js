@@ -12,11 +12,17 @@ const state = {
   map: null,
   youMarker: null,
   placeLayer: null,
+  currentScript: '',
+  speechQueue: [],
+  keepAlive: null,
+  startWatchdog: null,
 };
 
 const els = {
   start: document.getElementById('start-btn'),
   demo: document.getElementById('demo-btn'),
+  listen: document.getElementById('listen-btn'),
+  listenBanner: document.getElementById('listen-banner'),
   pause: document.getElementById('pause-btn'),
   stop: document.getElementById('stop-btn'),
   transcript: document.getElementById('transcript'),
@@ -28,6 +34,8 @@ const els = {
   avatar: document.getElementById('avatar'),
   privacyBtn: document.getElementById('privacy-btn'),
   privacyDialog: document.getElementById('privacy-dialog'),
+  searchForm: document.getElementById('search-form'),
+  placeQuery: document.getElementById('place-query'),
 };
 
 function setStatus(message, isError = false) {
@@ -39,51 +47,181 @@ function setTranscript(text) {
   els.transcript.textContent = text;
 }
 
+function setCurrentScript(text) {
+  state.currentScript = String(text || '').trim();
+  const has = Boolean(state.currentScript);
+  els.listen.disabled = !has;
+  if (!has) hideListenBanner();
+}
+
+function showListenBanner() {
+  if (!state.currentScript) return;
+  els.listenBanner.hidden = false;
+  els.listenBanner.classList.remove('hidden');
+  setStatus('Tap Hear this tour — the browser blocked autoplay until you press it.', true);
+}
+
+function hideListenBanner() {
+  els.listenBanner.hidden = true;
+  els.listenBanner.classList.add('hidden');
+}
+
 function setSpeaking(on) {
   state.speaking = on;
   els.avatar.dataset.state = on ? 'speaking' : 'idle';
   els.pause.disabled = !on && !state.paused;
-  els.stop.disabled = !on && !state.paused && !window.speechSynthesis?.speaking;
+  els.stop.disabled = !on && !state.paused && !(window.speechSynthesis && speechSynthesis.speaking);
+  if (on) hideListenBanner();
 }
 
 function preferredVoice() {
   const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
-  const ranked = [
-    (v) => /en-US/i.test(v.lang) && /natural|premium|google|samantha|aria/i.test(v.name),
-    (v) => /en-GB/i.test(v.lang) && /google|daniel|serena/i.test(v.name),
-    (v) => /^en/i.test(v.lang),
-  ];
-  for (const test of ranked) {
-    const hit = voices.find(test);
-    if (hit) return hit;
+  const localEn = voices.filter((v) => v.localService && /^en(-|_|$)/i.test(v.lang));
+  const anyEn = voices.filter((v) => /^en(-|_|$)/i.test(v.lang));
+  const pool = localEn.length ? localEn : anyEn;
+  const ranked = pool.find((v) => /google|samantha|daniel|microsoft|natural|premium/i.test(v.name));
+  return ranked || pool[0] || null;
+}
+
+function chunkForSpeech(text, maxChars = 220) {
+  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const chunks = [];
+  let buf = '';
+  for (const sentence of sentences) {
+    if (buf && buf.length + 1 + sentence.length > maxChars) {
+      chunks.push(buf);
+      buf = sentence;
+    } else {
+      buf = buf ? `${buf} ${sentence}` : sentence;
+    }
   }
-  return voices[0] || null;
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+function stopKeepAlive() {
+  if (state.keepAlive) {
+    clearInterval(state.keepAlive);
+    state.keepAlive = null;
+  }
+}
+
+function startKeepAlive() {
+  stopKeepAlive();
+  if (!window.speechSynthesis) return;
+  state.keepAlive = setInterval(() => {
+    if (!speechSynthesis.speaking) return;
+    speechSynthesis.pause();
+    speechSynthesis.resume();
+  }, 11000);
 }
 
 function stopSpeech() {
-  if (!window.speechSynthesis) return;
-  speechSynthesis.cancel();
+  state.speechQueue = [];
+  if (state.startWatchdog) {
+    clearTimeout(state.startWatchdog);
+    state.startWatchdog = null;
+  }
+  stopKeepAlive();
+  if (window.speechSynthesis) speechSynthesis.cancel();
   state.paused = false;
   setSpeaking(false);
   els.pause.textContent = '⏸';
 }
 
-function speak(text) {
-  if (!text) return;
+function playNextChunk() {
+  if (!window.speechSynthesis) return;
+  if (state.paused) return;
+  const text = state.speechQueue.shift();
+  if (!text) {
+    stopKeepAlive();
+    setSpeaking(false);
+    return;
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = 0.96;
+  utter.pitch = 1;
+  const voice = preferredVoice();
+  if (voice) utter.voice = voice;
+  utter.onstart = () => {
+    if (state.startWatchdog) {
+      clearTimeout(state.startWatchdog);
+      state.startWatchdog = null;
+    }
+    setSpeaking(true);
+    startKeepAlive();
+  };
+  utter.onend = () => {
+    if (state.speechQueue.length) playNextChunk();
+    else {
+      stopKeepAlive();
+      setSpeaking(false);
+    }
+  };
+  utter.onerror = (event) => {
+    const err = event && event.error;
+    if (err === 'interrupted' || err === 'canceled') return;
+    if (state.speechQueue.length) playNextChunk();
+    else {
+      setSpeaking(false);
+      showListenBanner();
+    }
+  };
+  speechSynthesis.speak(utter);
+  if (speechSynthesis.paused) speechSynthesis.resume();
+}
+
+function queueSpeech(text, { replace } = { replace: false }) {
+  const chunks = chunkForSpeech(text);
+  if (!chunks.length) return;
+  if (replace) state.speechQueue = chunks;
+  else state.speechQueue.push(...chunks);
+}
+
+function kickSpeech() {
   if (!window.speechSynthesis) {
     setStatus('This browser has no spoken narrator. The transcript still works.', true);
+    showListenBanner();
+    return;
+  }
+  if (state.paused) return;
+  if (speechSynthesis.speaking || speechSynthesis.pending) return;
+  playNextChunk();
+  if (state.startWatchdog) clearTimeout(state.startWatchdog);
+  state.startWatchdog = setTimeout(() => {
+    state.startWatchdog = null;
+    if (!speechSynthesis.speaking && state.currentScript) showListenBanner();
+  }, 900);
+}
+
+/**
+ * Must run in the same user-gesture turn as a tap. iOS blocks speak() after await fetch / GPS.
+ * A short intro keeps the speech session alive so the tour script can be queued onto it.
+ */
+function beginSpokenTour(intro) {
+  if (!window.speechSynthesis) {
+    setStatus('This browser has no spoken narrator. Read the transcript, then try another browser.', true);
     return;
   }
   stopSpeech();
-  const utter = new SpeechSynthesisUtterance(text);
-  const voice = preferredVoice();
-  if (voice) utter.voice = voice;
-  utter.rate = 0.96;
-  utter.pitch = 1;
-  utter.onstart = () => setSpeaking(true);
-  utter.onend = () => setSpeaking(false);
-  utter.onerror = () => setSpeaking(false);
-  speechSynthesis.speak(utter);
+  queueSpeech(intro, { replace: true });
+  playNextChunk();
+}
+
+function continueSpokenTour(script) {
+  setCurrentScript(script);
+  if (!script) return;
+  queueSpeech(script, { replace: false });
+  kickSpeech();
+}
+
+function hearCurrentTour() {
+  hideListenBanner();
+  if (!state.currentScript) return;
+  beginSpokenTour(state.currentScript);
 }
 
 function haversine(a, b) {
@@ -157,6 +295,10 @@ function fetchHereDemo(id) {
   return readJson(`/api/here?demo=${encodeURIComponent(id)}`);
 }
 
+function fetchSearch(query) {
+  return readJson(`/api/search?q=${encodeURIComponent(query)}`);
+}
+
 function renderPlaces(places) {
   els.places.replaceChildren();
   if (!places || places.length === 0) {
@@ -203,14 +345,16 @@ function applyPayload(data, { announce } = { announce: true }) {
   updateMap(data.lat, data.lon, data.places);
   if (announce) {
     setTranscript(data.script);
-    speak(data.script);
+    continueSpokenTour(data.script);
     for (const place of data.places || []) state.spoken.add(place.id);
   }
 }
 
 function narratePlace(place) {
-  setTranscript(place.script || place.extract || place.title);
-  speak(place.script || place.extract || place.title);
+  const script = place.script || place.extract || place.title;
+  setTranscript(script);
+  setCurrentScript(script);
+  beginSpokenTour(script);
   state.spoken.add(place.id);
 }
 
@@ -232,7 +376,7 @@ async function onPosition(lat, lon) {
     const next = fresh[0];
     const line = `You have moved. ${next.script}`;
     setTranscript(line);
-    speak(line);
+    continueSpokenTour(line);
     state.spoken.add(next.id);
   } else {
     applyPayload(data, { announce: false });
@@ -253,9 +397,9 @@ function startWatch() {
     },
     (err) => {
       if (err.code === 1) {
-        setStatus('Location permission was denied. You can still try a demo city.', true);
+        setStatus('Location permission was denied. Enter a place or try a demo city.', true);
       } else {
-        setStatus('Could not read GPS. Try a demo city, or check location settings.', true);
+        setStatus('Could not read GPS. Enter a place, or check location settings.', true);
       }
       els.demoPanel.hidden = false;
       els.demoPanel.classList.remove('hidden');
@@ -265,17 +409,16 @@ function startWatch() {
 }
 
 async function startLiveTour() {
-  stopSpeech();
   state.spoken.clear();
   state.mode = 'live';
   els.start.textContent = 'Following you…';
   setStatus('Asking for location…');
+  beginSpokenTour("I'm your local guide. Finding where you are now. I'll start the tour as soon as I have your location.");
   initMap();
   startWatch();
 }
 
-async function startDemo(id) {
-  stopSpeech();
+async function startDemo(id, label) {
   state.spoken.clear();
   state.mode = 'demo';
   if (state.watchId !== null) {
@@ -283,9 +426,24 @@ async function startDemo(id) {
     state.watchId = null;
   }
   setStatus('Loading a guided neighborhood…');
+  beginSpokenTour(`I'm your local guide. Opening the tour for ${label || 'this neighborhood'}.`);
   const data = await fetchHereDemo(id);
   applyPayload(data, { announce: true });
   setStatus('Demo tour. On a phone, Start live tour uses your real GPS.');
+}
+
+async function startSearch(query) {
+  state.spoken.clear();
+  state.mode = 'search';
+  if (state.watchId !== null) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
+  }
+  setStatus('Looking up that place…');
+  beginSpokenTour(`I'm your local guide. Looking up ${query}.`);
+  const data = await fetchSearch(query);
+  applyPayload(data, { announce: true });
+  setStatus('Tour loaded for the place you entered.');
 }
 
 async function loadDemos() {
@@ -302,7 +460,7 @@ async function loadDemos() {
     p.textContent = `${loc.city} · ${loc.blurb}`;
     btn.append(h3, p);
     btn.addEventListener('click', () => {
-      startDemo(loc.id).catch((err) => setStatus(err.message, true));
+      startDemo(loc.id, loc.name).catch((err) => setStatus(err.message, true));
     });
     els.demos.append(btn);
   }
@@ -315,6 +473,17 @@ els.demo.addEventListener('click', () => {
   const open = els.demoPanel.hidden;
   els.demoPanel.hidden = !open;
   els.demoPanel.classList.toggle('hidden', !open);
+});
+els.listen.addEventListener('click', () => hearCurrentTour());
+els.listenBanner.addEventListener('click', () => hearCurrentTour());
+els.searchForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const query = String(els.placeQuery.value || '').trim();
+  if (query.length < 2) {
+    setStatus('Type a city, landmark, or address first.', true);
+    return;
+  }
+  startSearch(query).catch((err) => setStatus(err.message, true));
 });
 els.pause.addEventListener('click', () => {
   if (!window.speechSynthesis) return;
@@ -332,7 +501,7 @@ els.pause.addEventListener('click', () => {
 });
 els.stop.addEventListener('click', () => {
   stopSpeech();
-  setTranscript('Narration stopped. Tap a place or start the tour again.');
+  setTranscript('Narration stopped. Tap Hear this tour or a place to start again.');
 });
 els.privacyBtn.addEventListener('click', () => els.privacyDialog.showModal());
 
