@@ -4479,15 +4479,18 @@
     const panel = `
           <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Sign in with your work email and password</p>
+          <form id="loginForm" class="login-form" method="post" action="/api/login">
           <label class="login-field">Work email
-            <input id="email" type="email" autocomplete="username"
+            <input id="email" name="email" type="email" inputmode="email" autocomplete="username"
+              enterkeyhint="next" autocapitalize="none" autocorrect="off" spellcheck="false"
               placeholder="avery@firm.example" value="avery@firm.example" />
           </label>
           <label class="login-field">Password
-            <input id="password" type="password" autocomplete="current-password"
-              placeholder="Password" value="demo-change-me" />
+            <input id="password" name="password" type="password" autocomplete="current-password"
+              enterkeyhint="go" placeholder="Password" value="demo-change-me" />
           </label>
-          <button class="primary login-submit" id="loginBtn" type="button">Sign in</button>
+          <button class="primary login-submit" id="loginBtn" type="submit">Sign in</button>
+          </form>
           <div id="loginErr"></div>
           <p class="login-hint">Demo · avery@firm.example / demo-change-me</p>`;
 
@@ -4516,18 +4519,9 @@
         err(e.message);
       }
     };
-    $('#loginBtn').onclick = submit;
-    $('#password').addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        submit();
-      }
-    });
-    $('#email').addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        $('#password').focus();
-      }
+    $('#loginForm').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      submit();
     });
   }
 
@@ -4536,11 +4530,13 @@
     setMainHtml(loginStageHtml(`
           <p class="login-brand" aria-label="Chrono"><span class="login-brand-glyph">Chrono</span></p>
           <p class="login-lead">Enter the 6-digit code from your authenticator app</p>
+          <form id="mfaForm" class="login-form" method="post" action="/api/login/mfa">
           <label class="login-field">Authenticator code
-            <input id="mfaCode" type="text" inputmode="numeric" autocomplete="one-time-code"
-              maxlength="16" placeholder="123456" />
+            <input id="mfaCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+              enterkeyhint="go" maxlength="16" placeholder="123456" />
           </label>
-          <button class="primary login-submit" id="mfaBtn" type="button">Verify</button>
+          <button class="primary login-submit" id="mfaBtn" type="submit">Verify</button>
+          </form>
           <button class="linkish" id="mfaBack" type="button">Back to sign in</button>
           <div id="loginErr"></div>
           <p class="login-hint">You can also use a one-time backup code.</p>`));
@@ -4563,14 +4559,11 @@
         err(e.message);
       }
     };
-    $('#mfaBtn').onclick = submit;
-    $('#mfaBack').onclick = () => renderLogin('password');
-    $('#mfaCode').addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        submit();
-      }
+    $('#mfaForm').addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      submit();
     });
+    $('#mfaBack').onclick = () => renderLogin('password');
     $('#mfaCode').focus();
   }
 

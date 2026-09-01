@@ -2798,6 +2798,11 @@ body.login-mode::after {
   display: flex;
 }
 
+.login-form {
+  display: grid;
+  gap: 1rem;
+}
+
 .login-stage {
   position: relative;
   -webkit-flex: 1 1 auto;
@@ -2812,7 +2817,8 @@ body.login-mode::after {
   -webkit-justify-content: center;
   justify-content: center;
   padding: clamp(1.25rem, 4vw, 2.5rem);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   isolation: isolate;
 }
 
@@ -3128,19 +3134,36 @@ button.primary.login-submit {
 }
 
 @media (max-width: 640px) {
+  .login-stage {
+    -webkit-align-items: flex-start;
+    align-items: flex-start;
+    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1.5rem, env(safe-area-inset-bottom));
+  }
   .login-clock {
-    width: min(140vw, 40rem);
-    height: min(140vw, 40rem);
+    width: min(88vw, 22rem);
+    height: min(88vw, 22rem);
+    top: 7.5rem;
+    opacity: 0.42;
   }
   .login-clock-numeral {
     font-size: 10px;
   }
   .login-panel {
+    width: 100%;
+    margin-top: 2.75rem;
     border-radius: 18px;
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.35) inset,
       0 14px 32px rgba(8, 20, 40, 0.36),
       0 0 0 8px rgba(10, 28, 52, 0.14);
+  }
+  .login-field input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  .login-submit,
+  button.primary.login-submit {
+    min-height: 48px;
   }
 }
 
