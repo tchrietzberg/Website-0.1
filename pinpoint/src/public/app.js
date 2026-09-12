@@ -162,11 +162,21 @@
       marker.addTo(map);
       markers.push(marker);
     });
-    const fit = () => {
-      if (markers.length) map.fitBounds(window.L.featureGroup(markers).getBounds().pad(0.28));
+    const focus = () => {
+      const pts = usablePins(pins);
+      const active = pts.find((p) => Number(p.placeId) === Number(state.placeId));
+      const target = active || pts[0];
+      if (target) map.setView([target.lat, target.lng], 16);
       else map.setView([37.7749, -122.4194], 13);
     };
-    fit();
+    const fit = () => {
+      if (markers.length) {
+        map.fitBounds(window.L.featureGroup(markers).getBounds().pad(0.28), { maxZoom: 16 });
+      } else {
+        map.setView([37.7749, -122.4194], 13);
+      }
+    };
+    focus();
     map.on('click', (ev) => onMapTap({ lat: ev.latlng.lat, lng: ev.latlng.lng }));
     bindMapTools(
       () => map.getCenter(),
@@ -174,7 +184,10 @@
       () => map.zoomOut(),
       fit
     );
-    requestAnimationFrame(() => map.invalidateSize());
+    requestAnimationFrame(() => {
+      map.invalidateSize();
+      focus();
+    });
   }
 
   function mountGoogleMap(el, pins, { onPin, onMapTap }) {
@@ -198,11 +211,23 @@
       bounds.extend(marker.getPosition());
       markers.push(marker);
     });
+    const focus = () => {
+      const pts = usablePins(pins);
+      const active = pts.find((p) => Number(p.placeId) === Number(state.placeId));
+      const target = active || pts[0];
+      if (target) {
+        map.setCenter({ lat: Number(target.lat), lng: Number(target.lng) });
+        map.setZoom(16);
+      } else {
+        map.setCenter({ lat: 37.7749, lng: -122.4194 });
+        map.setZoom(13);
+      }
+    };
     const fit = () => {
       if (markers.length) map.fitBounds(bounds, 48);
       else map.setCenter({ lat: 37.7749, lng: -122.4194 });
     };
-    fit();
+    focus();
     map.addListener('click', (ev) => {
       onMapTap({ lat: ev.latLng.lat(), lng: ev.latLng.lng() });
     });
