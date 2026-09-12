@@ -1,0 +1,11 @@
+{
+  "name": "Pinpoint",
+  "install": "cd pinpoint && node --check src/server.js && node --check seed/seed.js",
+  "start": "cd pinpoint && npm run seed && PORT=3000 node src/server.js",
+  "ports": [
+    {
+      "name": "app",
+      "port": 3000
+    }
+  ]
+}
