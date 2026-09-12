@@ -2,14 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#0f2a24" />
+  <meta name="color-scheme" content="light" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Pinpoint" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="description" content="Pin where you were. Chat with people who were at the same spot." />
   <title>Pinpoint</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="/styles.css?v=1" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/styles.css?v=phone1" />
 </head>
 <body>
-  <div id="app"></div>
-  <script src="/app.js?v=1"></script>
+  <div class="stage">
+    <div class="phone" id="phone">
+      <div class="phone-bezel">
+        <div class="notch" aria-hidden="true"></div>
+        <div id="app"></div>
+      </div>
+    </div>
+    <p class="stage-hint">Pinpoint phone app. On a real phone: Share → Add to Home Screen.</p>
+  </div>
+  <script src="/app.js?v=phone1"></script>
 </body>
 </html>

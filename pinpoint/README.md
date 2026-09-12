@@ -16,9 +16,17 @@ npm run seed
 npm start
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000 — the UI is a **phone app** (home-screen installable PWA). On a desktop it shows in a phone frame; on a real phone it goes full screen.
 
 Cursor Cloud preview forwards **port 3000 only**. This app listens there by default so the preview Open button works. Chrono billing stays at the repo root; start it on another port if you need both locally (`PORT=3001 node src/web/server.js`).
+
+## Install on your phone
+
+1. Open the Pinpoint URL in Safari (iPhone) or Chrome (Android).
+2. iPhone: Share → **Add to Home Screen** → Add.
+3. Android: browser menu → **Install app** / **Add to Home Screen**.
+
+The installed app opens standalone (no browser chrome). Sessions stay in HttpOnly cookies; the service worker caches the app shell only and never caches `/api/` responses.
 
 ## Demo logins
 

@@ -97,6 +97,62 @@ describe('Pinpoint standalone app', () => {
     assert.match(html, /<title>Pinpoint<\/title>/);
     assert.equal(html.includes('Chrono'), false);
     assert.equal(html.includes('Create Matter'), false);
+    assert.match(html, /apple-mobile-web-app-capable/);
+    assert.match(html, /rel="manifest"/);
+    assert.match(html, /class="phone"/);
+  });
+
+  it('serves an installable phone app manifest and service worker', async () => {
+    const manifestRes = await new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port, path: '/manifest.webmanifest' }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          type: res.headers['content-type'],
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      }).on('error', reject);
+    });
+    assert.equal(manifestRes.status, 200);
+    assert.match(manifestRes.type, /manifest/);
+    const manifest = JSON.parse(manifestRes.body);
+    assert.equal(manifest.name, 'Pinpoint');
+    assert.equal(manifest.display, 'standalone');
+    assert.equal(manifest.start_url, '/');
+
+    const sw = await new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port, path: '/sw.js' }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          type: res.headers['content-type'],
+          allowed: res.headers['service-worker-allowed'],
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      }).on('error', reject);
+    });
+    assert.equal(sw.status, 200);
+    assert.match(sw.type, /javascript/);
+    assert.equal(sw.allowed, '/');
+    assert.match(sw.body, /pinpoint-phone-v1/);
+    assert.match(sw.body, /\/api\//);
+
+    const icon = await new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port, path: '/icons/icon-192.png' }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          type: res.headers['content-type'],
+          bytes: Buffer.concat(chunks).length,
+        }));
+      }).on('error', reject);
+    });
+    assert.equal(icon.status, 200);
+    assert.equal(icon.type, 'image/png');
+    assert.ok(icon.bytes > 100);
   });
 
   it('lets a new person sign up and keeps Chrono logins out', async () => {
