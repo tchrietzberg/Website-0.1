@@ -238,10 +238,12 @@
           <div class="auth-mark" role="img" aria-label="Pinpoint"></div>
           <h1>Pinpoint</h1>
           <p class="lead">${signup ? 'Create an account to drop pins and chat with people who were at the same spot.' : 'Pin where you were. Chat with people who were there too.'}</p>
+          <form id="authForm">
           ${signup ? '<label>Name<input id="name" autocomplete="name" /></label>' : ''}
           <label>Email<input id="email" type="email" autocomplete="username" inputmode="email" /></label>
           <label>Password<input id="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" /></label>
-          <button class="primary" type="button" id="submit">${signup ? 'Create account' : 'Sign in'}</button>
+          <button class="primary" type="submit" id="submit">${signup ? 'Create account' : 'Sign in'}</button>
+          </form>
           <div id="err" class="error" hidden></div>
           <p class="auth-switch">
             ${signup
@@ -256,7 +258,8 @@
       state.mode = signup ? 'login' : 'signup';
       renderAuth();
     };
-    app.querySelector('#submit').onclick = async () => {
+    app.querySelector('#authForm').onsubmit = async (ev) => {
+      ev.preventDefault();
       err.hidden = true;
       try {
         const body = {

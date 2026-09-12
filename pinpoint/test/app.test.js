@@ -136,7 +136,7 @@ describe('Pinpoint standalone app', () => {
     assert.equal(sw.status, 200);
     assert.match(sw.type, /javascript/);
     assert.equal(sw.allowed, '/');
-    assert.match(sw.body, /pinpoint-phone-v1/);
+    assert.match(sw.body, /pinpoint-phone-v2/);
     assert.match(sw.body, /\/api\//);
 
     const icon = await new Promise((resolve, reject) => {

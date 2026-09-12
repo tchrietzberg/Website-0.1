@@ -1,5 +1,5 @@
 /* Pinpoint phone app — cache static shell only, never API or cookies. */
-const CACHE = 'pinpoint-phone-v1';
+const CACHE = 'pinpoint-phone-v2';
 const PRECACHE = [
   '/',
   '/index.html',
