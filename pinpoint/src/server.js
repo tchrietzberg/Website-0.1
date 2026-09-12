@@ -138,6 +138,7 @@ function createServer(db = openDb()) {
           cookieOnlyAuth: security.cookieOnlyAuth(),
           liveDomain: security.liveDomainConfigured(),
           production: security.isProduction(),
+          googleMapsApiKey: security.googleMapsApiKey(),
         }, req);
       }
 

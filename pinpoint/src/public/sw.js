@@ -1,10 +1,12 @@
 /* Pinpoint phone app — cache static shell only, never API or cookies. */
-const CACHE = 'pinpoint-phone-v2';
+const CACHE = 'pinpoint-phone-v3';
 const PRECACHE = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
+  '/vendor/leaflet.js',
+  '/vendor/leaflet.css',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

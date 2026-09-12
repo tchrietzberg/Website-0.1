@@ -9,9 +9,9 @@
     flash: null,
     tab: 'map',
     installEvent: null,
+    googleMapsKey: null,
   };
   let pollTimer = null;
-  const mapView = { cx: -122.4194, cy: 37.7749, scale: 220000, fitted: false };
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -64,47 +64,6 @@
     }
   }
 
-  function mercatorX(lng) { return (Number(lng) + 180) / 360; }
-  function mercatorY(lat) {
-    const clamped = Math.max(-85, Math.min(85, Number(lat)));
-    const s = Math.sin(clamped * Math.PI / 180);
-    return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
-  }
-  function mercatorLat(y) {
-    const n = Math.PI * (1 - 2 * y);
-    return (180 / Math.PI) * Math.atan(Math.sinh(n));
-  }
-  function project(lat, lng, width, height) {
-    return {
-      x: (mercatorX(lng) - mercatorX(mapView.cx)) * mapView.scale + width / 2,
-      y: (mercatorY(lat) - mercatorY(mapView.cy)) * mapView.scale + height / 2,
-    };
-  }
-  function unproject(px, py, width, height) {
-    const mx = mercatorX(mapView.cx) + (px - width / 2) / mapView.scale;
-    const my = mercatorY(mapView.cy) + (py - height / 2) / mapView.scale;
-    return { lat: mercatorLat(my), lng: mx * 360 - 180 };
-  }
-  function fitMap(pins, width, height) {
-    if (!pins.length) {
-      mapView.cx = -122.4194;
-      mapView.cy = 37.7749;
-      mapView.scale = Math.max(width, 320) * 420;
-      return;
-    }
-    const xs = pins.map((p) => mercatorX(p.lng));
-    const ys = pins.map((p) => mercatorY(p.lat));
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    mapView.cx = ((minX + maxX) / 2) * 360 - 180;
-    mapView.cy = mercatorLat((minY + maxY) / 2);
-    const dx = Math.max(maxX - minX, 0.00012);
-    const dy = Math.max(maxY - minY, 0.00012);
-    mapView.scale = Math.min(width / (dx * 1.6), height / (dy * 1.6));
-    mapView.scale = Math.max(18000, Math.min(mapView.scale, 900000));
-  }
   function formatTime(iso) {
     if (!iso) return '';
     try {
@@ -116,33 +75,158 @@
     }
   }
 
-  function mapSvg(pins, width, height) {
-    const w = Math.max(280, width);
-    const h = Math.max(280, height);
-    const grid = [];
-    for (let i = 0; i <= 8; i += 1) {
-      grid.push(`<line class="map-grid" x1="${(w / 8) * i}" y1="0" x2="${(w / 8) * i}" y2="${h}" />`);
-      grid.push(`<line class="map-grid" x1="0" y1="${(h / 8) * i}" x2="${w}" y2="${(h / 8) * i}" />`);
+  function googleMapsSearchUrl(lat, lng, label = '') {
+    const query = label
+      ? `${Number(lat)},${Number(lng)} (${label})`
+      : `${Number(lat)},${Number(lng)}`;
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  }
+
+  function loadExternalScript(src) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[data-map-src="${src}"]`);
+      if (existing) {
+        if (existing.getAttribute('data-loaded') === '1') return resolve();
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Map failed to load')), { once: true });
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.setAttribute('data-map-src', src);
+      s.onload = () => {
+        s.setAttribute('data-loaded', '1');
+        resolve();
+      };
+      s.onerror = () => reject(new Error('Map failed to load'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensureGoogleMaps() {
+    if (window.google && window.google.maps) return true;
+    if (!state.googleMapsKey) return false;
+    try {
+      await loadExternalScript(`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(state.googleMapsKey)}`);
+      return Boolean(window.google && window.google.maps);
+    } catch {
+      return false;
     }
-    const markers = pins.map((pin) => {
-      const { x, y } = project(pin.lat, pin.lng, w, h);
-      if (x < -40 || y < -40 || x > w + 40 || y > h + 40) return '';
-      const active = Number(pin.placeId) === Number(state.placeId) ? ' is-active' : '';
-      return `
-        <g class="pin is-mine${active}" data-place-id="${escapeHtml(String(pin.placeId))}"
-          transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
-          <circle class="pin-dot" cx="0" cy="-10" r="7"/>
-          ${active ? `<text class="pin-label" x="10" y="-6">${escapeHtml(pin.placeLabel || 'Pin')}</text>` : ''}
-        </g>`;
-    }).join('');
-    return `
-      <svg class="map-svg" id="mapSvg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice"
-        role="img" aria-label="Map of places you have pinned">
-        <ellipse class="map-water" cx="${w * 0.18}" cy="${h * 0.42}" rx="${w * 0.22}" ry="${h * 0.38}" />
-        <ellipse class="map-water" cx="${w * 0.86}" cy="${h * 0.7}" rx="${w * 0.2}" ry="${h * 0.28}" />
-        ${grid.join('')}
-        ${markers}
-      </svg>`;
+  }
+
+  function usablePins(pins) {
+    return (pins || []).filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)));
+  }
+
+  function bindMapTools(getCenter, zoomIn, zoomOut, fit) {
+    const zoomInBtn = document.getElementById('zoomIn');
+    const zoomOutBtn = document.getElementById('zoomOut');
+    const fitBtn = document.getElementById('fit');
+    const openBtn = document.getElementById('openGmaps');
+    if (zoomInBtn) zoomInBtn.onclick = zoomIn;
+    if (zoomOutBtn) zoomOutBtn.onclick = zoomOut;
+    if (fitBtn) fitBtn.onclick = fit;
+    if (openBtn) {
+      openBtn.onclick = (ev) => {
+        ev.preventDefault();
+        const center = getCenter();
+        if (!center) return;
+        window.open(googleMapsSearchUrl(center.lat, center.lng), '_blank', 'noopener,noreferrer');
+      };
+    }
+  }
+
+  function mountLeafletMap(el, pins, { onPin, onMapTap }) {
+    const map = window.L.map(el, { zoomControl: false, attributionControl: true });
+    window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap',
+    }).addTo(map);
+    const markers = [];
+    usablePins(pins).forEach((pin) => {
+      const active = Number(pin.placeId) === Number(state.placeId);
+      const marker = window.L.marker([pin.lat, pin.lng], {
+        icon: window.L.divIcon({
+          className: active ? 'gpin is-active' : 'gpin',
+          iconSize: [22, 28],
+          iconAnchor: [11, 28],
+          html: '<span></span>',
+        }),
+        title: pin.placeLabel || 'Pin',
+      });
+      marker.on('click', (ev) => {
+        window.L.DomEvent.stopPropagation(ev);
+        onPin(pin.placeId);
+      });
+      marker.addTo(map);
+      markers.push(marker);
+    });
+    const fit = () => {
+      if (markers.length) map.fitBounds(window.L.featureGroup(markers).getBounds().pad(0.28));
+      else map.setView([37.7749, -122.4194], 13);
+    };
+    fit();
+    map.on('click', (ev) => onMapTap({ lat: ev.latlng.lat, lng: ev.latlng.lng }));
+    bindMapTools(
+      () => map.getCenter(),
+      () => map.zoomIn(),
+      () => map.zoomOut(),
+      fit
+    );
+    requestAnimationFrame(() => map.invalidateSize());
+  }
+
+  function mountGoogleMap(el, pins, { onPin, onMapTap }) {
+    const map = new window.google.maps.Map(el, {
+      center: { lat: 37.7749, lng: -122.4194 },
+      zoom: 13,
+      disableDefaultUI: true,
+      clickableIcons: false,
+      gestureHandling: 'greedy',
+      keyboardShortcuts: false,
+    });
+    const bounds = new window.google.maps.LatLngBounds();
+    const markers = [];
+    usablePins(pins).forEach((pin) => {
+      const marker = new window.google.maps.Marker({
+        position: { lat: Number(pin.lat), lng: Number(pin.lng) },
+        map,
+        title: pin.placeLabel || 'Pin',
+      });
+      marker.addListener('click', () => onPin(pin.placeId));
+      bounds.extend(marker.getPosition());
+      markers.push(marker);
+    });
+    const fit = () => {
+      if (markers.length) map.fitBounds(bounds, 48);
+      else map.setCenter({ lat: 37.7749, lng: -122.4194 });
+    };
+    fit();
+    map.addListener('click', (ev) => {
+      onMapTap({ lat: ev.latLng.lat(), lng: ev.latLng.lng() });
+    });
+    bindMapTools(
+      () => {
+        const c = map.getCenter();
+        return c ? { lat: c.lat(), lng: c.lng() } : null;
+      },
+      () => map.setZoom((map.getZoom() || 13) + 1),
+      () => map.setZoom((map.getZoom() || 13) - 1),
+      fit
+    );
+  }
+
+  async function mountStreetMap(el, pins, handlers) {
+    if (await ensureGoogleMaps()) {
+      mountGoogleMap(el, pins, handlers);
+      return;
+    }
+    if (window.L) {
+      mountLeafletMap(el, pins, handlers);
+      return;
+    }
+    el.innerHTML = '<p class="error">Map failed to load.</p>';
   }
 
   const TAB_ICONS = {
@@ -186,11 +270,13 @@
         <p>${escapeHtml(m.body)}</p>
         <time datetime="${escapeHtml(m.createdAt)}">${escapeHtml(formatTime(m.createdAt))}</time>
       </article>`).join('');
+    const mapsHref = googleMapsSearchUrl(place.approxLat, place.approxLng, place.label);
     return `
       <div class="chat-head">
         <h2>${escapeHtml(place.label)}</h2>
         <p class="muted">${place.visitorCount} ${place.visitorCount === 1 ? 'person was' : 'people were'} here
           · ~${Number(place.approxLat).toFixed(3)}, ${Number(place.approxLng).toFixed(3)}</p>
+        <p><a class="maps-out" href="${escapeHtml(mapsHref)}" target="_blank" rel="noopener noreferrer">Open in Google Maps</a></p>
         <div class="visitors">${visitors}</div>
       </div>
       <div class="thread" id="thread">${msgs || '<p class="muted">No messages yet. Say hello.</p>'}</div>
@@ -458,11 +544,12 @@
         <div class="map-screen">
           ${flash}
           <div class="map-wrap" id="mapWrap">
-            ${mapSvg(pins, 360, 520)}
+            <div class="map-canvas" id="mapCanvas" role="application" aria-label="Street map of places you have pinned"></div>
             <div class="map-tools">
               <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
               <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
               <button type="button" id="fit">Fit</button>
+              <a class="maps-out-btn" id="openGmaps" href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>
             </div>
             <p class="map-hint">Tap the map to pin · gold is the open chat</p>
             <div class="landmark-rail">${landmarkBtns}</div>
@@ -533,35 +620,8 @@
     });
 
     const mapWrap = document.getElementById('mapWrap');
-    if (mapWrap) {
-      const redraw = () => {
-        const w = mapWrap.clientWidth || 360;
-        const h = mapWrap.clientHeight || 520;
-        const svg = mapSvg(pins, w, h);
-        const old = mapWrap.querySelector('#mapSvg');
-        if (old) old.outerHTML = svg;
-        wirePins();
-      };
-      const wirePins = () => {
-        app.querySelectorAll('[data-place-id]').forEach((g) => {
-          g.onclick = (ev) => {
-            ev.stopPropagation();
-            void openChat(Number(g.getAttribute('data-place-id')));
-          };
-        });
-      };
-      document.getElementById('zoomIn').onclick = () => {
-        mapView.scale = Math.min(mapView.scale * 1.28, 1_200_000);
-        redraw();
-      };
-      document.getElementById('zoomOut').onclick = () => {
-        mapView.scale = Math.max(mapView.scale / 1.28, 8000);
-        redraw();
-      };
-      document.getElementById('fit').onclick = () => {
-        fitMap(pins, mapWrap.clientWidth, mapWrap.clientHeight);
-        redraw();
-      };
+    const mapCanvas = document.getElementById('mapCanvas');
+    if (mapWrap && mapCanvas) {
       document.getElementById('gps').onclick = async () => {
         try {
           const geo = await new Promise((resolve, reject) => {
@@ -580,44 +640,15 @@
           await renderApp();
         }
       };
-
-      let dragging = null;
-      mapWrap.addEventListener('pointerdown', (ev) => {
-        if (ev.target.closest('[data-place-id]')) return;
-        dragging = { x: ev.clientX, y: ev.clientY, moved: false };
-        mapWrap.setPointerCapture(ev.pointerId);
-      });
-      mapWrap.addEventListener('pointermove', (ev) => {
-        if (!dragging) return;
-        const dx = ev.clientX - dragging.x;
-        const dy = ev.clientY - dragging.y;
-        if (Math.abs(dx) + Math.abs(dy) > 6) dragging.moved = true;
-        if (!dragging.moved) return;
-        const origin = unproject(mapWrap.clientWidth / 2 - dx, mapWrap.clientHeight / 2 - dy, mapWrap.clientWidth, mapWrap.clientHeight);
-        mapView.cx = origin.lng;
-        mapView.cy = origin.lat;
-        dragging.x = ev.clientX;
-        dragging.y = ev.clientY;
-        redraw();
-      });
-      mapWrap.addEventListener('pointerup', async (ev) => {
-        const wasDrag = dragging?.moved;
-        dragging = null;
-        if (wasDrag) return;
-        if (ev.target.closest('[data-place-id], .map-tools, button, .landmark-rail, .fab')) return;
-        const rect = mapWrap.getBoundingClientRect();
-        const geo = unproject(ev.clientX - rect.left, ev.clientY - rect.top, rect.width, rect.height);
-        if (!Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) return;
-        const label = await promptPin(geo);
-        if (label == null) return;
-        try { await dropPin({ lat: geo.lat, lng: geo.lng, label }); }
-        catch (e) { state.flash = e.message; await renderApp(); }
-      });
-
-      wirePins();
-      requestAnimationFrame(() => {
-        fitMap(pins, mapWrap.clientWidth, mapWrap.clientHeight);
-        redraw();
+      await mountStreetMap(mapCanvas, pins, {
+        onPin: (placeId) => void openChat(placeId),
+        onMapTap: async (geo) => {
+          if (!Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) return;
+          const label = await promptPin(geo);
+          if (label == null) return;
+          try { await dropPin({ lat: geo.lat, lng: geo.lng, label }); }
+          catch (e) { state.flash = e.message; await renderApp(); }
+        },
       });
     }
 
@@ -640,6 +671,7 @@
     try {
       const cfg = await api('/api/security-config');
       state.cookieOnlyAuth = !!cfg.cookieOnlyAuth;
+      state.googleMapsKey = cfg.googleMapsApiKey || null;
     } catch { /* defaults */ }
     try {
       const me = await api('/api/me');

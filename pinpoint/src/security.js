@@ -25,6 +25,11 @@ function cookieOnlyAuth() {
   return isProduction() || liveDomainConfigured();
 }
 
+function googleMapsApiKey() {
+  const key = String(process.env.GOOGLE_MAPS_API_KEY || '').trim();
+  return key || null;
+}
+
 function strictOriginEnforcement() {
   if (process.env.STRICT_ORIGIN_CHECK === '0') return false;
   if (process.env.STRICT_ORIGIN_CHECK === '1') return true;
@@ -262,7 +267,23 @@ function assertCsrf(req, session) {
 }
 
 function securityHeaders(req) {
-  const scriptSrc = IS_PROD ? "script-src 'self'" : "script-src 'self' 'unsafe-eval'";
+  const google = Boolean(googleMapsApiKey());
+  const scriptSrc = [
+    IS_PROD && !google ? "script-src 'self'" : "script-src 'self' 'unsafe-eval'",
+    google ? 'https://maps.googleapis.com https://maps.gstatic.com' : '',
+  ].filter(Boolean).join(' ');
+  const imgSrc = [
+    "img-src 'self' data: blob:",
+    'https://tile.openstreetmap.org',
+    'https://a.tile.openstreetmap.org',
+    'https://b.tile.openstreetmap.org',
+    'https://c.tile.openstreetmap.org',
+    google ? 'https://maps.gstatic.com https://maps.googleapis.com https://*.googleapis.com https://*.ggpht.com https://*.google.com https://*.googleusercontent.com' : '',
+  ].filter(Boolean).join(' ');
+  const connectSrc = [
+    "connect-src 'self'",
+    google ? 'https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com' : '',
+  ].filter(Boolean).join(' ');
   const headers = {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
@@ -276,12 +297,14 @@ function securityHeaders(req) {
       "form-action 'self'",
       "frame-ancestors 'none'",
       scriptSrc,
-      "style-src 'self' 'unsafe-inline'",
-      "font-src 'self'",
-      "img-src 'self' data:",
-      "connect-src 'self'",
+      google
+        ? "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
+        : "style-src 'self' 'unsafe-inline'",
+      google ? "font-src 'self' https://fonts.gstatic.com" : "font-src 'self'",
+      imgSrc,
+      connectSrc,
       "manifest-src 'self'",
-      "worker-src 'self'",
+      google ? "worker-src 'self' blob:" : "worker-src 'self'",
       "object-src 'none'",
     ].join('; '),
   };
@@ -361,6 +384,7 @@ module.exports = {
   isProduction,
   liveDomainConfigured,
   cookieOnlyAuth,
+  googleMapsApiKey,
   strictOriginEnforcement,
   sessionCookieOptions,
   sessionSecret,
