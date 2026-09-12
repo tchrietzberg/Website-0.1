@@ -42,14 +42,27 @@ function serveStatic(req, res) {
     '.html': 'text/html; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.js': 'application/javascript; charset=utf-8',
+    '.webmanifest': 'application/manifest+json; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
   };
   const body = fs.readFileSync(file);
   const headers = {
     ...security.securityHeaders(req),
     'Content-Type': types[ext] || 'application/octet-stream',
   };
+  const base = path.basename(file);
   if (ext === '.html') headers['Cache-Control'] = 'no-store';
-  else if (ext === '.js' || ext === '.css') headers['Cache-Control'] = 'no-cache, must-revalidate';
+  else if (base === 'sw.js') {
+    headers['Cache-Control'] = 'no-cache, must-revalidate';
+    headers['Service-Worker-Allowed'] = '/';
+  } else if (ext === '.js' || ext === '.css' || ext === '.webmanifest') {
+    headers['Cache-Control'] = 'no-cache, must-revalidate';
+  } else if (ext === '.png') {
+    headers['Cache-Control'] = 'public, max-age=86400';
+  }
   res.writeHead(200, headers);
   res.end(body);
   return true;
