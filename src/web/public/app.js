@@ -5099,7 +5099,7 @@
           <path d="M0 0c0-7.5 6.2-12.8 12-12.8S24-7.5 24 0c0 8.8-12 20-12 20S0 8.8 0 0z"
             transform="translate(-12 -22)" fill="none"/>
           <circle class="places-pin-dot" cx="0" cy="-10" r="7"/>
-          <text class="places-pin-label" x="10" y="-6">${escapeHtml(pin.placeLabel || 'Pin')}</text>
+          ${active ? `<text class="places-pin-label" x="10" y="-6">${escapeHtml(pin.placeLabel || 'Pin')}</text>` : ''}
         </g>`;
     }).join('');
     return `
@@ -5124,7 +5124,7 @@
       `<span class="places-chip">${escapeHtml(v.name)}</span>`
     )).join('');
     const msgs = (messages || []).map((m) => `
-      <article class="places-msg${m.mine ? ' is-mine' : ''}">
+      <article class="places-msg${m.mine ? ' is-mine' : ''}" data-msg-id="${Number(m.id)}">
         <strong>${escapeHtml(m.mine ? 'You' : m.authorName)}</strong>
         <p>${escapeHtml(m.body)}</p>
         <time datetime="${escapeHtml(m.createdAt)}">${escapeHtml(formatPlaceTime(m.createdAt))}</time>
@@ -5132,7 +5132,7 @@
     return `
       <div class="places-chat-head">
         <h2>${escapeHtml(place.label)}</h2>
-        <p class="muted">${place.visitorCount} ${place.visitorCount === 1 ? 'person' : 'people'} were here
+        <p class="muted">${place.visitorCount} ${place.visitorCount === 1 ? 'person was' : 'people were'} here
           · ~${Number(place.approxLat).toFixed(3)}, ${Number(place.approxLng).toFixed(3)}</p>
         <div class="places-visitors">${visitors}</div>
       </div>
@@ -5147,7 +5147,7 @@
   async function dropPlacePin(payload) {
     const place = await api('/api/places/pins', { method: 'POST', body: JSON.stringify(payload) });
     state.placesPlaceId = place.id;
-    state.placesFlash = `Pinned ${place.label}. You can chat with ${place.visitorCount} ${place.visitorCount === 1 ? 'person' : 'people'} who were here.`;
+    state.placesFlash = `Pinned ${place.label}. You can chat with ${place.visitorCount} ${place.visitorCount === 1 ? 'person who was' : 'people who were'} here.`;
     await renderPlaces();
   }
 
@@ -5212,7 +5212,7 @@
                 <button type="button" id="placesZoomOut" aria-label="Zoom out">−</button>
                 <button type="button" id="placesFit" aria-label="Fit pins">Fit</button>
               </div>
-              <p class="places-map-hint">Click the map to drop a pin · green markers are yours</p>
+              <p class="places-map-hint">Click the map to drop a pin · gold marker is the open chat</p>
             </div>
             <div class="places-pin-list">
               <h3>Places you were</h3>
@@ -5374,8 +5374,10 @@
     col.innerHTML = placesChatHtml(place, messages);
     const thread = $('#placesThread');
     if (thread) thread.scrollTop = thread.scrollHeight;
-    const form = $('#placesCompose');
-    if (form) {
+    let lastId = messages.reduce((m, row) => Math.max(m, Number(row.id) || 0), 0);
+    const bindCompose = () => {
+      const form = $('#placesCompose');
+      if (!form) return;
       form.onsubmit = async (ev) => {
         ev.preventDefault();
         const input = $('#placesMsg');
@@ -5387,10 +5389,11 @@
             body: JSON.stringify({ body }),
           });
           if (input) input.value = '';
+          lastId = (sent.messages || []).reduce((m, row) => Math.max(m, Number(row.id) || 0), lastId);
           col.innerHTML = placesChatHtml(place, sent.messages);
           const nextThread = $('#placesThread');
           if (nextThread) nextThread.scrollTop = nextThread.scrollHeight;
-          formBind();
+          bindCompose();
         } catch (e) {
           const err = document.createElement('p');
           err.className = 'error';
@@ -5398,13 +5401,8 @@
           form.prepend(err);
         }
       };
-    }
-    function formBind() {
-      const f = $('#placesCompose');
-      if (!f) return;
-      f.onsubmit = form.onsubmit;
-    }
-    let lastId = messages.reduce((m, row) => Math.max(m, Number(row.id) || 0), 0);
+    };
+    bindCompose();
     placesPollTimer = setInterval(async () => {
       if (state.view !== 'places' || Number(state.placesPlaceId) !== Number(placeId)) {
         stopPlacesPoll();
@@ -5421,8 +5419,9 @@
           threadEl.innerHTML = '';
         }
         incoming.forEach((m) => {
+          if (threadEl.querySelector(`[data-msg-id="${Number(m.id)}"]`)) return;
           threadEl.insertAdjacentHTML('beforeend', `
-            <article class="places-msg${m.mine ? ' is-mine' : ''}">
+            <article class="places-msg${m.mine ? ' is-mine' : ''}" data-msg-id="${Number(m.id)}">
               <strong>${escapeHtml(m.mine ? 'You' : m.authorName)}</strong>
               <p>${escapeHtml(m.body)}</p>
               <time datetime="${escapeHtml(m.createdAt)}">${escapeHtml(formatPlaceTime(m.createdAt))}</time>

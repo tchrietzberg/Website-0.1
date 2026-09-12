@@ -4481,7 +4481,7 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
 }
 
 .places-chat-col {
-  padding: 1rem 1.05rem 0.9rem;
+  padding: 1rem 1.05rem 4.5rem;
 }
 
 .places-chat-empty {
