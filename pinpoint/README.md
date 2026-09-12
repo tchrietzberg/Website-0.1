@@ -16,7 +16,9 @@ npm run seed
 npm start
 ```
 
-Open http://localhost:3010
+Open http://localhost:3000
+
+Cursor Cloud preview forwards **port 3000 only**. This app listens there by default so the preview Open button works. Chrono billing stays at the repo root; start it on another port if you need both locally (`PORT=3001 node src/web/server.js`).
 
 ## Demo logins
 

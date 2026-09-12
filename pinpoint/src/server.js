@@ -6,7 +6,7 @@ const { openDb, migrate, DEFAULT_DB, audit } = require('./db');
 const security = require('./security');
 const places = require('./places');
 
-const PORT = Number(process.env.PORT || 3010);
+const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
