@@ -117,6 +117,44 @@ function issueSession(res, req, db, userRow) {
   });
 }
 
+const TILE_RE = /^\/tiles\/(\d{1,2})\/(\d{1,7})\/(\d{1,7})\.png$/;
+
+async function serveOsmTile(req, res) {
+  const match = new URL(req.url, 'http://localhost').pathname.match(TILE_RE);
+  if (!match) {
+    text(res, 404, 'not found', 'text/plain; charset=utf-8', req);
+    return;
+  }
+  const z = Number(match[1]);
+  const x = Number(match[2]);
+  const y = Number(match[3]);
+  if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) || z > 19 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
+    text(res, 400, 'bad tile', 'text/plain; charset=utf-8', req);
+    return;
+  }
+  try {
+    const upstream = await fetch(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`, {
+      headers: {
+        'User-Agent': 'Pinpoint/0.1 (educational demo; https://github.com/tchrietzberg/Website-0.1)',
+        Accept: 'image/png',
+      },
+    });
+    if (!upstream.ok) {
+      text(res, 502, 'tile unavailable', 'text/plain; charset=utf-8', req);
+      return;
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.writeHead(200, {
+      ...security.securityHeaders(req),
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+    });
+    res.end(buf);
+  } catch {
+    text(res, 502, 'tile unavailable', 'text/plain; charset=utf-8', req);
+  }
+}
+
 function createServer(db = openDb()) {
   migrate(db);
   security.sessionSecret(db);
@@ -128,6 +166,11 @@ function createServer(db = openDb()) {
 
       if (req.method === 'OPTIONS') return json(res, 204, {}, req);
 
+      if (req.method === 'GET' && pathname.startsWith('/tiles/')) {
+        await serveOsmTile(req, res);
+        return;
+      }
+
       if (req.method === 'GET' && !pathname.startsWith('/api/')) {
         if (serveStatic(req, res) !== false) return;
         return text(res, 404, 'not found', 'text/plain; charset=utf-8', req);
@@ -138,6 +181,7 @@ function createServer(db = openDb()) {
           cookieOnlyAuth: security.cookieOnlyAuth(),
           liveDomain: security.liveDomainConfigured(),
           production: security.isProduction(),
+          googleMapsApiKey: security.googleMapsApiKey(),
         }, req);
       }
 

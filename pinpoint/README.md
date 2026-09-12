@@ -42,7 +42,8 @@ Create your own account from the Sign in screen.
 
 ## What it does
 
-- Drop a pinpoint from GPS, by clicking the map, or by checking in at a landmark
+- Drop a pinpoint from GPS, by tapping the map, or by checking in at a landmark
+- The Map tab is a real street map (Google Maps JavaScript API when `GOOGLE_MAPS_API_KEY` is set, otherwise OpenStreetMap). **Google Maps** opens the same spot in Google Maps.
 - Pins within ~100 meters share one place and one chat room
 - Only people who visited a place can read or send messages there
 - Other users never receive your exact coordinates (only a coarse centroid)

@@ -136,7 +136,7 @@ describe('Pinpoint standalone app', () => {
     assert.equal(sw.status, 200);
     assert.match(sw.type, /javascript/);
     assert.equal(sw.allowed, '/');
-    assert.match(sw.body, /pinpoint-phone-v2/);
+    assert.match(sw.body, /pinpoint-phone-v4/);
     assert.match(sw.body, /\/api\//);
 
     const icon = await new Promise((resolve, reject) => {
@@ -153,6 +153,42 @@ describe('Pinpoint standalone app', () => {
     assert.equal(icon.status, 200);
     assert.equal(icon.type, 'image/png');
     assert.ok(icon.bytes > 100);
+
+    const leaflet = await new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port, path: '/vendor/leaflet.js' }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          type: res.headers['content-type'],
+          csp: res.headers['content-security-policy'] || '',
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      }).on('error', reject);
+    });
+    assert.equal(leaflet.status, 200);
+    assert.match(leaflet.type, /javascript/);
+    assert.match(leaflet.body, /Leaflet/);
+    assert.match(leaflet.csp, /tile\.openstreetmap\.org/);
+
+    const tile = await new Promise((resolve, reject) => {
+      http.get({ hostname: '127.0.0.1', port, path: '/tiles/0/0/0.png' }, (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => resolve({
+          status: res.statusCode,
+          type: res.headers['content-type'],
+          bytes: Buffer.concat(chunks).length,
+        }));
+      }).on('error', reject);
+    });
+    assert.equal(tile.status, 200, 'osm tile proxy');
+    assert.equal(tile.type, 'image/png');
+    assert.ok(tile.bytes > 100);
+
+    const cfg = await request(port, 'GET', '/api/security-config');
+    assert.equal(cfg.status, 200);
+    assert.equal(cfg.json.googleMapsApiKey, null);
   });
 
   it('lets a new person sign up and keeps Chrono logins out', async () => {
