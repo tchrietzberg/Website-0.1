@@ -27,7 +27,6 @@ const timezones = require('../services/timezones');
 const mail = require('../mail');
 const mfa = require('../mfa');
 const invoiceTemplates = require('../services/invoiceTemplates');
-const placesSvc = require('../services/places');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, 'public');
@@ -453,64 +452,6 @@ function createServer(db = openDb()) {
       if (req.method === 'GET' && pathname === '/api/mfa/status') {
         return json(res, 200, mfa.mfaStatus(db, user.id), req);
       }
-      // Places — location pins + same-place chat (any signed-in user)
-      if (req.method === 'GET' && pathname === '/api/places') {
-        return json(res, 200, placesSvc.listMyPlaces(db, user.id), req);
-      }
-      if (req.method === 'GET' && pathname === '/api/places/landmarks') {
-        return json(res, 200, { landmarks: placesSvc.listLandmarks() }, req);
-      }
-      if (req.method === 'POST' && pathname === '/api/places/pins') {
-        const body = await parseBody(req);
-        try {
-          if (body.landmarkKey) {
-            return json(res, 201, placesSvc.checkInLandmark(db, user, body.landmarkKey, req), req);
-          }
-          return json(res, 201, placesSvc.dropPin(db, user, body, req), req);
-        } catch (e) {
-          const status = e.status || (e.code === 'FORBIDDEN' ? 403 : 400);
-          return json(res, status, security.clientErrorPayload(e, 'Could not drop pin'), req);
-        }
-      }
-      if (req.method === 'DELETE' && pathname.match(/^\/api\/places\/pins\/\d+$/)) {
-        const pinId = Number(pathname.split('/')[4]);
-        try {
-          return json(res, 200, placesSvc.deletePin(db, user, pinId, req), req);
-        } catch (e) {
-          const status = e.status || (e.code === 'FORBIDDEN' ? 403 : 400);
-          return json(res, status, security.clientErrorPayload(e, 'Could not remove pin'), req);
-        }
-      }
-      if (req.method === 'GET' && pathname.match(/^\/api\/places\/\d+$/)) {
-        const placeId = Number(pathname.split('/')[3]);
-        try {
-          return json(res, 200, placesSvc.getPlace(db, user.id, placeId), req);
-        } catch (e) {
-          const status = e.status || (e.code === 'FORBIDDEN' ? 403 : 400);
-          return json(res, status, security.clientErrorPayload(e, 'Place unavailable'), req);
-        }
-      }
-      if (req.method === 'GET' && pathname.match(/^\/api\/places\/\d+\/messages$/)) {
-        const placeId = Number(pathname.split('/')[3]);
-        const afterId = Number(url.searchParams.get('afterId') || 0);
-        try {
-          return json(res, 200, placesSvc.listMessages(db, user.id, placeId, afterId), req);
-        } catch (e) {
-          const status = e.status || (e.code === 'FORBIDDEN' ? 403 : 400);
-          return json(res, status, security.clientErrorPayload(e, 'Chat unavailable'), req);
-        }
-      }
-      if (req.method === 'POST' && pathname.match(/^\/api\/places\/\d+\/messages$/)) {
-        const placeId = Number(pathname.split('/')[3]);
-        const body = await parseBody(req);
-        try {
-          return json(res, 201, placesSvc.postMessage(db, user, placeId, body, req), req);
-        } catch (e) {
-          const status = e.status || (e.code === 'FORBIDDEN' ? 403 : 400);
-          return json(res, status, security.clientErrorPayload(e, 'Could not send message'), req);
-        }
-      }
-
       if (req.method === 'POST' && pathname === '/api/mfa/setup') {
         const setup = mfa.beginSetup(db, user.id, user.email, secret);
         audit(db, {
