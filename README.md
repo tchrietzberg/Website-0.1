@@ -40,10 +40,11 @@ Password for all seeded users (override with `DEMO_PASSWORD` when seeding): **`d
 
 ## Demo flow (Definition of Done walkthrough)
 
-1. Sign in as **avery** / `demo-change-me` → **Matters** → create a matter → Matter Search → open record → add fields.
-2. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked).
-3. Reports → **Matters** (list/export) or Lodestar Summary/Detail → CSV/Excel.
-4. Admin: Navigate → Add a user to invite people. Settings → Time & Billing and Default fields (billing clerks manage rates in Settings).
+1. Sign in as **avery** / `demo-change-me` → **Places** → check in at Ferry Building → chat with colleagues who were there.
+2. Sign in as **avery** / `demo-change-me` → **Matters** → create a matter → Matter Search → open record → add fields.
+3. Sign in as **sam** → Time Entry → log time (watch rounding from Settings; try 0 minutes → blocked).
+4. Reports → **Matters** (list/export) or Lodestar Summary/Detail → CSV/Excel.
+5. Admin: Navigate → Add a user to invite people. Settings → Time & Billing and Default fields (billing clerks manage rates in Settings).
 
 WIP / pre-bill / invoice approval UI is paused for now (APIs remain for later).
 
@@ -74,6 +75,7 @@ On a live domain, set `NODE_ENV=production`, `SESSION_SECRET`, `PUBLIC_ORIGIN`, 
 - `src/services/` — time (rules engine + approvals), matters (field history, custom fields),
   invoices / payments (APIs; WIP–pre-bill UI paused), reports (Matters + lodestar).
 - `src/web/` — dependency-free HTTP server + single-page UI.
+- `src/services/places.js` — location pins (integer microdegrees) + 100m same-place chat rooms.
 - `test/` — 32 tests covering rounding edges, rate precedence and effective dating, billing rules,
   approval gates, invoice immutability, payment application, and report totals.
 
@@ -88,6 +90,7 @@ On a live domain, set `NODE_ENV=production`, `SESSION_SECRET`, `PUBLIC_ORIGIN`, 
   Microsoft always requires an Application (client) ID at the protocol level; put it on the **server once** as `MS_CLIENT_ID` (see `.env.example`) so end users never type it. Optional: `MS_TENANT_ID`, `MS_CLIENT_SECRET`.
 - Lodestar summary and detail reports; all reports export to native Excel (.xlsx) and CSV.
   Dollar amounts export as real numbers with currency formatting, so Excel formulas work on them.
+- **Places:** pin where you were (GPS, map click, or landmark check-in). Pins within ~100 meters share a chat room. Other users never receive your exact coordinates; audit logs store place ids only.
 
 ## Security (before going public)
 

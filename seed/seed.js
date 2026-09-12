@@ -6,6 +6,7 @@
 const { resetDb, setSetting, DEFAULT_DB } = require('../src/db');
 const { hashPassword } = require('../src/security');
 const customFields = require('../src/services/customFields');
+const placesSvc = require('../src/services/places');
 
 const dbFile = process.env.DB_FILE || DEFAULT_DB;
 const db = resetDb(dbFile);
@@ -84,7 +85,10 @@ customFields.createCustomField(db, avery, {
   recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
 });
 
+placesSvc.seedDemo(db);
+
 console.log(`Seeded ${dbFile}`);
 console.log(`Demo logins: *@firm.example  password: ${demoPassword}`);
 console.log('Change DEMO_PASSWORD / user passwords before any public deploy.');
 console.log('No sample matters — create matters under Matters; Matter Search uses the search index.');
+console.log('Places: seeded Ferry Building / Civic Center / Golden Gate Park pins + chat.');

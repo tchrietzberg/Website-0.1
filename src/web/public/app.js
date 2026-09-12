@@ -7,6 +7,8 @@
     cookieOnlyAuth: false,
     securityConfig: null,
     view: 'matters',
+    placesPlaceId: null,
+    placesFlash: null,
     matters: [],
     users: [],
     clients: [],
@@ -186,6 +188,9 @@
       void api('/api/dashboard');
     } else if (view === 'users') {
       if (canManageUsers()) void api('/api/timekeepers');
+    } else if (view === 'places') {
+      void api('/api/places');
+      void api('/api/places/landmarks');
     } else if (view === 'settings') {
       void api('/api/settings');
       void api('/api/record-types');
@@ -530,6 +535,49 @@
         if (ev.target === overlay) finish(false);
       });
       setTimeout(() => overlay.querySelector('[data-confirm-ok]')?.focus(), 0);
+    });
+  }
+
+  /** Lightweight prompt for naming a location pin. Resolves string or null. */
+  function promptPinLabel({ lat, lng, defaultLabel = '' } = {}) {
+    return new Promise((resolve) => {
+      const existing = document.querySelector('.confirm-overlay');
+      if (existing) existing.remove();
+      const overlay = document.createElement('div');
+      overlay.className = 'confirm-overlay';
+      overlay.innerHTML = `
+        <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="pinTitle">
+          <h2 id="pinTitle">Drop a pin here?</h2>
+          <div id="confirmMessage">
+            <p>Approximate location ${escapeHtml(Number(lat).toFixed(5))}, ${escapeHtml(Number(lng).toFixed(5))}. Other people will not see this exact pinpoint.</p>
+          </div>
+          <label class="login-field">Name this place
+            <input id="pinLabelInput" maxlength="80" value="${escapeHtml(defaultLabel)}"
+              placeholder="e.g. Ferry Building" />
+          </label>
+          <div class="confirm-actions">
+            <button type="button" data-confirm-cancel>Cancel</button>
+            <button type="button" class="primary" data-confirm-ok>Pin this spot</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const input = overlay.querySelector('#pinLabelInput');
+      const finish = (value) => {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(value);
+      };
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') finish(null);
+        if (ev.key === 'Enter') finish(String(input.value || '').trim());
+      };
+      document.addEventListener('keydown', onKey);
+      overlay.querySelector('[data-confirm-cancel]').onclick = () => finish(null);
+      overlay.querySelector('[data-confirm-ok]').onclick = () => finish(String(input.value || '').trim());
+      overlay.addEventListener('click', (ev) => {
+        if (ev.target === overlay) finish(null);
+      });
+      setTimeout(() => input?.focus(), 0);
     });
   }
 
@@ -4394,7 +4442,7 @@
     await refreshRefs();
     renderShell();
     await renderView();
-    ['matters', 'contacts', 'users', 'time', 'billing', 'reports', 'dashboard', 'settings']
+    ['matters', 'contacts', 'users', 'time', 'billing', 'places', 'reports', 'dashboard', 'settings']
       .filter((v) => v !== state.view)
       .forEach((v) => prefetchView(v));
   }
@@ -4433,12 +4481,14 @@
     await refreshRefs();
     if (window.location.hash === '#settings' || params.get('onedrive')) {
       state.view = 'settings';
+    } else if (window.location.hash === '#places') {
+      state.view = 'places';
     }
     renderShell();
     await renderView();
     ensureHelpAgent();
     // Warm sibling nav targets so the next toggle is usually cache-hit.
-    ['matters', 'contacts', 'users', 'time', 'billing', 'reports', 'dashboard', 'settings']
+    ['matters', 'contacts', 'users', 'time', 'billing', 'places', 'reports', 'dashboard', 'settings']
       .filter((v) => v !== state.view)
       .forEach((v) => prefetchView(v));
   }
@@ -4720,6 +4770,7 @@
       dashboard: `<svg ${common}><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="4.5" rx="1.4"/><rect x="13" y="10" width="7.5" height="10.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/></svg>`,
       settings: `<svg ${common}><circle cx="12" cy="12" r="3.1"/><path d="M12 3.5v2.2M12 18.3v2.2M4.9 6.5l1.6 1.6M17.5 15.9l1.6 1.6M3.5 12h2.2M18.3 12h2.2M4.9 17.5l1.6-1.6M17.5 8.1l1.6-1.6"/></svg>`,
       users: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><path d="M17 8v6M14 11h6"/></svg>`,
+      places: `<svg ${common}><path d="M12 21s6.5-5.2 6.5-10.4A6.5 6.5 0 0 0 5.5 10.6C5.5 15.8 12 21 12 21z"/><circle cx="12" cy="10.6" r="2.15"/></svg>`,
       plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
       briefcase: `<svg ${common}><rect x="3.5" y="7.5" width="17" height="12.5" rx="2"/><path d="M9 7.5V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7.5"/><path d="M3.5 12.25h17"/><path d="M12 11.25v2.25"/></svg>`,
     };
@@ -4754,6 +4805,7 @@
     // Matters + Contacts stay under Quick actions (create opens create + search/list).
     // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
+      ['places', 'Places', 'places', 'Pins & same-spot chat'],
       ['billing', 'Billing', 'billing', 'Create bills'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
@@ -4902,6 +4954,7 @@
   async function renderView() {
     const token = ++state._renderToken;
     const view = state.view;
+    if (view !== 'places') stopPlacesPoll();
     clearViewLoadingArm();
     // Keep prior content visible while warm cache resolves; only flash loading if slow.
     // Must not fire after setMainHtml() for this token, or Settings (and other views with
@@ -4919,6 +4972,7 @@
       else if (view === 'reports') await renderReports();
       else if (view === 'dashboard') await renderDashboard();
       else if (view === 'users') await renderUsers();
+      else if (view === 'places') await renderPlaces();
       else if (view === 'settings') await renderSettings();
       else if (view === 'audit') await renderAudit();
       else await renderMatters();
@@ -4932,6 +4986,453 @@
     } finally {
       clearViewLoadingArm();
     }
+  }
+
+  let placesPollTimer = null;
+  const placesMap = { cx: -122.4194, cy: 37.7749, scale: 220000, fitted: false };
+
+  function stopPlacesPoll() {
+    if (placesPollTimer) {
+      clearInterval(placesPollTimer);
+      placesPollTimer = null;
+    }
+  }
+
+  function mercatorX(lng) {
+    return (Number(lng) + 180) / 360;
+  }
+
+  function mercatorY(lat) {
+    const clamped = Math.max(-85, Math.min(85, Number(lat)));
+    const s = Math.sin(clamped * Math.PI / 180);
+    return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+  }
+
+  function mercatorLat(y) {
+    const n = Math.PI * (1 - 2 * y);
+    return (180 / Math.PI) * Math.atan(Math.sinh(n));
+  }
+
+  function projectPlace(lat, lng, width, height) {
+    const x = (mercatorX(lng) - mercatorX(placesMap.cx)) * placesMap.scale + width / 2;
+    const y = (mercatorY(lat) - mercatorY(placesMap.cy)) * placesMap.scale + height / 2;
+    return { x, y };
+  }
+
+  function unprojectPlace(px, py, width, height) {
+    const mx = mercatorX(placesMap.cx) + (px - width / 2) / placesMap.scale;
+    const my = mercatorY(placesMap.cy) + (py - height / 2) / placesMap.scale;
+    return { lat: mercatorLat(my), lng: mx * 360 - 180 };
+  }
+
+  function fitPlacesMap(pins, width, height) {
+    if (!pins.length) {
+      placesMap.cx = -122.4194;
+      placesMap.cy = 37.7749;
+      placesMap.scale = Math.max(width, 480) * 420;
+      return;
+    }
+    const xs = pins.map((p) => mercatorX(p.lng));
+    const ys = pins.map((p) => mercatorY(p.lat));
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    placesMap.cx = ((minX + maxX) / 2) * 360 - 180;
+    placesMap.cy = mercatorLat((minY + maxY) / 2);
+    const dx = Math.max(maxX - minX, 0.00012);
+    const dy = Math.max(maxY - minY, 0.00012);
+    placesMap.scale = Math.min(width / (dx * 1.6), height / (dy * 1.6));
+    placesMap.scale = Math.max(18000, Math.min(placesMap.scale, 900000));
+  }
+
+  function formatPlaceTime(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+    } catch {
+      return String(iso);
+    }
+  }
+
+  function requestGps() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('This browser cannot share a location'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) => reject(new Error(err.message || 'Location permission denied')),
+        { enableHighAccuracy: true, timeout: 9000, maximumAge: 20000 }
+      );
+    });
+  }
+
+  async function confirmDropPin({ lat, lng, defaultLabel = '' }) {
+    return promptPinLabel({ lat, lng, defaultLabel });
+  }
+
+  function placesMapSvg(pins, width, height) {
+    const w = Math.max(320, width);
+    const h = Math.max(280, height);
+    const grid = [];
+    for (let i = 0; i <= 8; i += 1) {
+      const x = (w / 8) * i;
+      const y = (h / 8) * i;
+      grid.push(`<line class="places-map-grid" x1="${x}" y1="0" x2="${x}" y2="${h}" />`);
+      grid.push(`<line class="places-map-grid" x1="0" y1="${y}" x2="${w}" y2="${y}" />`);
+    }
+    const water = [
+      `<ellipse class="places-map-water" cx="${w * 0.18}" cy="${h * 0.42}" rx="${w * 0.22}" ry="${h * 0.38}" />`,
+      `<ellipse class="places-map-water" cx="${w * 0.86}" cy="${h * 0.7}" rx="${w * 0.2}" ry="${h * 0.28}" />`,
+    ];
+    const markers = pins.map((pin) => {
+      const { x, y } = projectPlace(pin.lat, pin.lng, w, h);
+      if (x < -40 || y < -40 || x > w + 40 || y > h + 40) return '';
+      const active = Number(pin.placeId) === Number(state.placesPlaceId) ? ' is-active' : '';
+      return `
+        <g class="places-pin is-mine${active}" data-place-id="${escapeHtml(String(pin.placeId))}"
+          transform="translate(${x.toFixed(1)} ${y.toFixed(1)})">
+          <path d="M0 0c0-7.5 6.2-12.8 12-12.8S24-7.5 24 0c0 8.8-12 20-12 20S0 8.8 0 0z"
+            transform="translate(-12 -22)" fill="none"/>
+          <circle class="places-pin-dot" cx="0" cy="-10" r="7"/>
+          <text class="places-pin-label" x="10" y="-6">${escapeHtml(pin.placeLabel || 'Pin')}</text>
+        </g>`;
+    }).join('');
+    return `
+      <svg class="places-map-svg" id="placesMapSvg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice" role="img"
+        aria-label="Map of places you have pinned">
+        ${water.join('')}
+        ${grid.join('')}
+        ${markers}
+      </svg>`;
+  }
+
+  function placesChatHtml(place, messages) {
+    if (!place) {
+      return `
+        <div class="places-chat-empty">
+          <h2>Same-place chat</h2>
+          <p>Pin a location you were at. Anyone else who pinned within about 100 meters joins this room.</p>
+          <p class="muted">Exact GPS stays private — other people only see the shared place, not your pinpoint.</p>
+        </div>`;
+    }
+    const visitors = (place.visitors || []).map((v) => (
+      `<span class="places-chip">${escapeHtml(v.name)}</span>`
+    )).join('');
+    const msgs = (messages || []).map((m) => `
+      <article class="places-msg${m.mine ? ' is-mine' : ''}">
+        <strong>${escapeHtml(m.mine ? 'You' : m.authorName)}</strong>
+        <p>${escapeHtml(m.body)}</p>
+        <time datetime="${escapeHtml(m.createdAt)}">${escapeHtml(formatPlaceTime(m.createdAt))}</time>
+      </article>`).join('');
+    return `
+      <div class="places-chat-head">
+        <h2>${escapeHtml(place.label)}</h2>
+        <p class="muted">${place.visitorCount} ${place.visitorCount === 1 ? 'person' : 'people'} were here
+          · ~${Number(place.approxLat).toFixed(3)}, ${Number(place.approxLng).toFixed(3)}</p>
+        <div class="places-visitors">${visitors}</div>
+      </div>
+      <div class="places-thread" id="placesThread">${msgs || '<p class="muted">No messages yet. Say hello.</p>'}</div>
+      <form class="places-compose" id="placesCompose">
+        <input id="placesMsg" maxlength="2000" autocomplete="off"
+          placeholder="Message people who were here…" aria-label="Chat message" />
+        <button class="primary" type="submit">Send</button>
+      </form>`;
+  }
+
+  async function dropPlacePin(payload) {
+    const place = await api('/api/places/pins', { method: 'POST', body: JSON.stringify(payload) });
+    state.placesPlaceId = place.id;
+    state.placesFlash = `Pinned ${place.label}. You can chat with ${place.visitorCount} ${place.visitorCount === 1 ? 'person' : 'people'} who were here.`;
+    await renderPlaces();
+  }
+
+  async function renderPlaces() {
+    stopPlacesPoll();
+    const [bundle, landmarkPayload] = await Promise.all([
+      api('/api/places', { cache: false }),
+      api('/api/places/landmarks', { cache: false }),
+    ]);
+    if (!stillOnView('places')) return;
+    const pins = bundle.myPins || [];
+    const places = bundle.places || [];
+    const landmarks = landmarkPayload.landmarks || [];
+    const wrap = document.querySelector('.places-map-wrap');
+    const width = wrap?.clientWidth || 640;
+    const height = wrap?.clientHeight || 360;
+    if (!placesMap.fitted || pins.length) {
+      fitPlacesMap(pins, width, height);
+      placesMap.fitted = true;
+    }
+
+    const flash = state.placesFlash
+      ? `<p class="success-notice places-flash" role="status">${escapeHtml(state.placesFlash)}</p>`
+      : '';
+    state.placesFlash = null;
+
+    const pinRows = places.length
+      ? places.map((p) => `
+          <button type="button" class="places-pin-row${Number(p.id) === Number(state.placesPlaceId) ? ' is-active' : ''}"
+            data-open-place="${p.id}">
+            <span>
+              <strong>${escapeHtml(p.label)}</strong>
+              <small>${p.visitorCount} here · last visit ${escapeHtml(formatPlaceTime(p.lastVisitedAt))}</small>
+            </span>
+          </button>`).join('')
+      : '<p class="muted">No pins yet. Use GPS, click the map, or check in at a landmark.</p>';
+
+    const landmarkBtns = landmarks.map((s) => (
+      `<button type="button" data-landmark="${escapeHtml(s.key)}">${escapeHtml(s.label)}</button>`
+    )).join('');
+
+    setMainHtml(`
+      <div class="places-app">
+        <header class="page-head">
+          <div class="page-head-copy">
+            <h1>Places</h1>
+            <p class="lead">Pinpoint where you were. Chat only with people who were at the same spot.</p>
+          </div>
+          <button type="button" class="primary places-gps" id="placesGps">Pin my location</button>
+        </header>
+        ${flash}
+        <div class="places-landmarks">
+          <span class="muted">Check in:</span>
+          ${landmarkBtns}
+        </div>
+        <div class="places-layout">
+          <section class="places-map-col">
+            <div class="places-map-wrap" id="placesMapWrap">
+              ${placesMapSvg(pins, width, height)}
+              <div class="places-map-tools">
+                <button type="button" id="placesZoomIn" aria-label="Zoom in">+</button>
+                <button type="button" id="placesZoomOut" aria-label="Zoom out">−</button>
+                <button type="button" id="placesFit" aria-label="Fit pins">Fit</button>
+              </div>
+              <p class="places-map-hint">Click the map to drop a pin · green markers are yours</p>
+            </div>
+            <div class="places-pin-list">
+              <h3>Places you were</h3>
+              ${pinRows}
+            </div>
+          </section>
+          <section class="places-chat-col" id="placesChatCol">
+            ${placesChatHtml(null, [])}
+          </section>
+        </div>
+      </div>`);
+
+    const mapWrap = $('#placesMapWrap');
+    const redraw = () => {
+      const w = mapWrap?.clientWidth || 640;
+      const h = mapWrap?.clientHeight || 360;
+      const svg = placesMapSvg(pins, w, h);
+      if (mapWrap) {
+        const tools = mapWrap.querySelector('.places-map-tools');
+        const hint = mapWrap.querySelector('.places-map-hint');
+        const old = mapWrap.querySelector('#placesMapSvg');
+        if (old) old.outerHTML = svg;
+        else mapWrap.insertAdjacentHTML('afterbegin', svg);
+        if (tools) mapWrap.appendChild(tools);
+        if (hint) mapWrap.appendChild(hint);
+        wireMapPins();
+      }
+    };
+
+    const wireMapPins = () => {
+      main.querySelectorAll('[data-place-id]').forEach((g) => {
+        g.onclick = (ev) => {
+          ev.stopPropagation();
+          void openPlaceChat(Number(g.getAttribute('data-place-id')));
+        };
+      });
+    };
+
+    $('#placesZoomIn').onclick = () => {
+      placesMap.scale = Math.min(placesMap.scale * 1.28, 1_200_000);
+      redraw();
+    };
+    $('#placesZoomOut').onclick = () => {
+      placesMap.scale = Math.max(placesMap.scale / 1.28, 8000);
+      redraw();
+    };
+    $('#placesFit').onclick = () => {
+      const w = mapWrap?.clientWidth || 640;
+      const h = mapWrap?.clientHeight || 360;
+      fitPlacesMap(pins, w, h);
+      redraw();
+    };
+
+    let dragging = null;
+    mapWrap.addEventListener('pointerdown', (ev) => {
+      if (ev.target.closest('[data-place-id]')) return;
+      dragging = { x: ev.clientX, y: ev.clientY, cx: placesMap.cx, cy: placesMap.cy, moved: false };
+      mapWrap.setPointerCapture(ev.pointerId);
+    });
+    mapWrap.addEventListener('pointermove', (ev) => {
+      if (!dragging) return;
+      const dx = ev.clientX - dragging.x;
+      const dy = ev.clientY - dragging.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) dragging.moved = true;
+      if (!dragging.moved) return;
+      const w = mapWrap.clientWidth;
+      const h = mapWrap.clientHeight;
+      const origin = unprojectPlace(w / 2 - dx, h / 2 - dy, w, h);
+      placesMap.cx = origin.lng;
+      placesMap.cy = origin.lat;
+      dragging.x = ev.clientX;
+      dragging.y = ev.clientY;
+      redraw();
+    });
+    mapWrap.addEventListener('pointerup', async (ev) => {
+      const wasDrag = dragging?.moved;
+      dragging = null;
+      if (wasDrag) return;
+      if (ev.target.closest('[data-place-id], .places-map-tools, button')) return;
+      const rect = mapWrap.getBoundingClientRect();
+      const geo = unprojectPlace(ev.clientX - rect.left, ev.clientY - rect.top, rect.width, rect.height);
+      if (!Number.isFinite(geo.lat) || !Number.isFinite(geo.lng)) return;
+      const label = await confirmDropPin(geo);
+      if (label == null) return;
+      try {
+        await dropPlacePin({ lat: geo.lat, lng: geo.lng, label });
+      } catch (e) {
+        setMainHtml(`<div class="card"><div class="error">${escapeHtml(e.message)}</div></div>`);
+      }
+    });
+    mapWrap.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const factor = ev.deltaY > 0 ? 1 / 1.12 : 1.12;
+      placesMap.scale = Math.max(8000, Math.min(placesMap.scale * factor, 1_200_000));
+      redraw();
+    }, { passive: false });
+
+    wireMapPins();
+    main.querySelectorAll('[data-open-place]').forEach((btn) => {
+      btn.onclick = () => void openPlaceChat(Number(btn.getAttribute('data-open-place')));
+    });
+    main.querySelectorAll('[data-landmark]').forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await dropPlacePin({ landmarkKey: btn.getAttribute('data-landmark') });
+        } catch (e) {
+          state.placesFlash = e.message;
+          await renderPlaces();
+        }
+      };
+    });
+    $('#placesGps').onclick = async () => {
+      try {
+        const geo = await requestGps();
+        const label = await confirmDropPin({ ...geo, defaultLabel: 'My location' });
+        if (label == null) return;
+        await dropPlacePin({ lat: geo.lat, lng: geo.lng, label });
+      } catch (e) {
+        state.placesFlash = `${e.message}. Click the map or check in at a landmark instead.`;
+        await renderPlaces();
+      }
+    };
+
+    if (state.placesPlaceId) {
+      await openPlaceChat(state.placesPlaceId, { skipRender: true });
+    } else if (places[0]) {
+      await openPlaceChat(places[0].id, { skipRender: true });
+    }
+    requestAnimationFrame(() => {
+      if (!stillOnView('places') || !mapWrap) return;
+      fitPlacesMap(pins, mapWrap.clientWidth, mapWrap.clientHeight);
+      redraw();
+    });
+  }
+
+  async function openPlaceChat(placeId, { skipRender = false } = {}) {
+    stopPlacesPoll();
+    state.placesPlaceId = placeId;
+    if (!skipRender) {
+      main.querySelectorAll('[data-open-place]').forEach((btn) => {
+        btn.classList.toggle('is-active', Number(btn.getAttribute('data-open-place')) === Number(placeId));
+      });
+      main.querySelectorAll('[data-place-id]').forEach((g) => {
+        g.classList.toggle('is-active', Number(g.getAttribute('data-place-id')) === Number(placeId));
+      });
+    }
+    let place;
+    let messages;
+    try {
+      place = await api(`/api/places/${placeId}`, { cache: false });
+      messages = (await api(`/api/places/${placeId}/messages`, { cache: false })).messages || [];
+    } catch (e) {
+      const col = $('#placesChatCol');
+      if (col) col.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+      return;
+    }
+    const col = $('#placesChatCol');
+    if (!col) return;
+    col.innerHTML = placesChatHtml(place, messages);
+    const thread = $('#placesThread');
+    if (thread) thread.scrollTop = thread.scrollHeight;
+    const form = $('#placesCompose');
+    if (form) {
+      form.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const input = $('#placesMsg');
+        const body = String(input?.value || '').trim();
+        if (!body) return;
+        try {
+          const sent = await api(`/api/places/${placeId}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ body }),
+          });
+          if (input) input.value = '';
+          col.innerHTML = placesChatHtml(place, sent.messages);
+          const nextThread = $('#placesThread');
+          if (nextThread) nextThread.scrollTop = nextThread.scrollHeight;
+          formBind();
+        } catch (e) {
+          const err = document.createElement('p');
+          err.className = 'error';
+          err.textContent = e.message;
+          form.prepend(err);
+        }
+      };
+    }
+    function formBind() {
+      const f = $('#placesCompose');
+      if (!f) return;
+      f.onsubmit = form.onsubmit;
+    }
+    let lastId = messages.reduce((m, row) => Math.max(m, Number(row.id) || 0), 0);
+    placesPollTimer = setInterval(async () => {
+      if (state.view !== 'places' || Number(state.placesPlaceId) !== Number(placeId)) {
+        stopPlacesPoll();
+        return;
+      }
+      try {
+        const fresh = await api(`/api/places/${placeId}/messages?afterId=${lastId}`, { cache: false });
+        const incoming = fresh.messages || [];
+        if (!incoming.length) return;
+        lastId = incoming.reduce((m, row) => Math.max(m, Number(row.id) || 0), lastId);
+        const threadEl = $('#placesThread');
+        if (!threadEl) return;
+        if (threadEl.querySelector('.muted') && !threadEl.querySelector('.places-msg')) {
+          threadEl.innerHTML = '';
+        }
+        incoming.forEach((m) => {
+          threadEl.insertAdjacentHTML('beforeend', `
+            <article class="places-msg${m.mine ? ' is-mine' : ''}">
+              <strong>${escapeHtml(m.mine ? 'You' : m.authorName)}</strong>
+              <p>${escapeHtml(m.body)}</p>
+              <time datetime="${escapeHtml(m.createdAt)}">${escapeHtml(formatPlaceTime(m.createdAt))}</time>
+            </article>`);
+        });
+        threadEl.scrollTop = threadEl.scrollHeight;
+      } catch {
+        /* keep the open thread; next poll retries */
+      }
+    }, 2500);
   }
 
   async function openMatter(id) {
@@ -10443,6 +10944,15 @@
       ],
     },
     {
+      id: 'places',
+      label: 'Places & same-spot chat',
+      keywords: ['place', 'places', 'pin', 'location', 'gps', 'map', 'chat', 'where i was', 'check in'],
+      answer: 'Open [[Places|places]] to drop a pinpoint (GPS, click the map, or check in at a landmark). Anyone else who was within about 100 meters joins the same chat room. Your exact coordinates stay private.',
+      links: [
+        { label: 'Go to Places', target: 'places' },
+      ],
+    },
+    {
       id: 'login',
       label: 'Sign in',
       keywords: ['login', 'password', 'sign in', 'demo', 'avery'],
@@ -10586,6 +11096,8 @@
         await goAppView('reports');
       } else if (key === 'dashboard') {
         await goAppView('dashboard');
+      } else if (key === 'places') {
+        await goAppView('places');
       } else if (key === 'settings') {
         await goAppView('settings');
       } else if (key === 'users' || key === 'add-user') {
