@@ -1,0 +1,14 @@
+{
+  "name": "pinpoint",
+  "version": "0.1.0",
+  "description": "Pinpoint: drop location pins and chat with people who were at the same spot. Standalone app, not part of Chrono.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "seed": "node seed/seed.js",
+    "test": "node --test test/app.test.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "license": "UNLICENSED",
+  "private": true
+}
