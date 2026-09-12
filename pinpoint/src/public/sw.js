@@ -1,5 +1,5 @@
 /* Pinpoint phone app — cache static shell only, never API or cookies. */
-const CACHE = 'pinpoint-phone-v3';
+const CACHE = 'pinpoint-phone-v4';
 const PRECACHE = [
   '/',
   '/index.html',
@@ -33,6 +33,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname.startsWith('/tiles/')) return;
 
   event.respondWith((async () => {
     try {

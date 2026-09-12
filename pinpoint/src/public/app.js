@@ -139,7 +139,7 @@
 
   function mountLeafletMap(el, pins, { onPin, onMapTap }) {
     const map = window.L.map(el, { zoomControl: false, attributionControl: true });
-    window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    window.L.tileLayer('/tiles/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap',
     }).addTo(map);
