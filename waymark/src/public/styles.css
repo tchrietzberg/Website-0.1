@@ -344,6 +344,11 @@ textarea { min-height: 5.5rem; resize: vertical; }
   box-shadow: 0 8px 20px rgba(232, 163, 23, 0.4);
   z-index: 500;
 }
+.map-screen:has(.overlay) .fab,
+.map-screen:has(.overlay) .map-tools,
+.map-screen:has(.overlay) .map-hint {
+  visibility: hidden;
+}
 
 .list-screen { padding: 0.4rem 0.55rem 1rem; }
 .pin-row {
@@ -447,7 +452,7 @@ textarea { min-height: 5.5rem; resize: vertical; }
   display: grid;
   place-items: end center;
   padding: 0.8rem;
-  z-index: 20;
+  z-index: 800;
 }
 .dialog {
   width: 100%;

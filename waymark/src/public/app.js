@@ -154,11 +154,11 @@
       markers.push(marker);
     });
     const usable = usablePins(pins);
-    if (usable.length === 1) map.setView([usable[0].lat, usable[0].lng], 15);
-    else if (usable.length > 1) {
-      map.fitBounds(usable.map((p) => [p.lat, p.lng]), { padding: [36, 36], maxZoom: 15 });
+    if (usable.length) {
+      const latest = usable[0];
+      map.setView([latest.lat, latest.lng], 16);
     } else {
-      map.setView([37.7749, -122.4194], 12);
+      map.setView([37.7749, -122.4194], 13);
     }
     map.on('click', (ev) => onMapTap({ lat: ev.latlng.lat, lng: ev.latlng.lng }));
     bindMapTools(
@@ -183,7 +183,7 @@
       : { lat: 37.7749, lng: -122.4194 };
     const map = new window.google.maps.Map(el, {
       center,
-      zoom: usable.length ? 14 : 12,
+      zoom: usable.length ? 16 : 13,
       disableDefaultUI: true,
       zoomControl: false,
       mapTypeControl: false,
@@ -198,11 +198,6 @@
       });
       marker.addListener('click', () => onPin(pin));
     });
-    if (usable.length > 1) {
-      const bounds = new window.google.maps.LatLngBounds();
-      usable.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
-      map.fitBounds(bounds, 40);
-    }
     map.addListener('click', (ev) => {
       onMapTap({ lat: ev.latLng.lat(), lng: ev.latLng.lng() });
     });
