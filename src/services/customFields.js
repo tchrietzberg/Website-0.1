@@ -26,7 +26,7 @@ const LEGACY_CONTACT_RECORD_TYPE_KEYS = ['person'];
 const STANDARD_FIELDS = [
   { key: 'std:number', label: 'Matter number', type: 'text', readonly: true, width: 'half' },
   { key: 'std:name', label: 'Matter name', type: 'text', width: 'full' },
-  { key: 'std:client', label: 'Client', type: 'select', width: 'half' },
+  { key: 'std:client', label: 'Company', type: 'select', width: 'half' },
   { key: 'std:matter_type', label: 'Record type', type: 'select',
     options: KNOWN_RECORD_TYPE_KEYS, width: 'half', readonly: true },
   { key: 'std:status', label: 'Status', type: 'select', options: ['open', 'closed', 'possible'], width: 'half' },

@@ -221,8 +221,8 @@ describe('contacts and contact custom fields', () => {
     assert.equal(clientsSvc.listClients(db).length, 0);
     const matter = db.prepare("SELECT client_id, name, opened_on FROM matters WHERE number = 'M-1'").get();
     assert.equal(matter.client_id, null);
-    const year = String(matter.opened_on || '').slice(0, 4) || new Date().getUTCFullYear();
-    assert.equal(matter.name, `Matter One - Securities Class Action - ${year} - Open`);
+    const openedOn = String(matter.opened_on || '').slice(0, 10);
+    assert.equal(matter.name, `Securities Class Action - Open - ${openedOn}`);
   });
 
   it('blocks contact delete without Delete permission', () => {

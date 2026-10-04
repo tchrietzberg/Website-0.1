@@ -35,20 +35,20 @@ describe('matter search and record-based fields', () => {
     assert.equal(matterSvc.searchMatters(db, { q: '' }).length, 0);
     assert.equal(matterSvc.searchMatters(db, {}).length, 0);
 
-    const byName = matterSvc.searchMatters(db, { q: 'widget' });
-    assert.equal(byName.length, 1);
-    assert.match(byName[0].name, /Widget/);
+    const byName = matterSvc.searchMatters(db, { q: 'acme' });
+    assert.equal(byName.length, 2);
+    assert.match(byName[0].name, /Acme/);
 
     const byCourt = matterSvc.searchMatters(db, { q: 'Cal' });
     assert.equal(byCourt.length, 1);
 
-    const byClient = matterSvc.searchMatters(db, { q: 'acme' });
-    assert.equal(byClient.length, 2);
+    const byTicker = matterSvc.searchMatters(db, { q: 'acme' });
+    assert.equal(byTicker.length, 2);
 
     // Matter numbers remain searchable even when UI hides them
-    const byNumber = matterSvc.searchMatters(db, { q: byName[0].number });
+    const byNumber = matterSvc.searchMatters(db, { q: byCourt[0].number });
     assert.equal(byNumber.length, 1);
-    assert.equal(byNumber[0].id, byName[0].id);
+    assert.equal(byNumber[0].id, byCourt[0].id);
 
     // Full list still available for dropdowns
     assert.equal(matterSvc.listMatters(db).length, 2);
@@ -90,7 +90,7 @@ describe('matter search and record-based fields', () => {
     assert.equal(byCustom[0].id, closedPage.matter.id);
 
     const searchFiltered = matterSvc.searchMatters(db, {
-      q: 'docket',
+      q: 'acme',
       fieldId: stage.id,
       fieldValue: 'Active',
     });
@@ -255,11 +255,12 @@ describe('matter search and record-based fields', () => {
     assert.ok(keys.includes('std:number'));
     const extra = fields.filter((f) => f.key !== 'std:name' && f.key !== 'std:number');
     assert.ok(
-      extra.length === 0
-        || extra.every((f) => String(f.label || '').toLowerCase() === 'case type'),
-      'lean matter page should only add Case Type beyond core fields'
+      extra.every((f) => f.key === 'std:client'
+        || String(f.label || '').toLowerCase() === 'case type'),
+      'lean matter page should only add Company and Case Type beyond core fields'
     );
-    assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:client'));
+    assert.ok(fields.some((f) => f.key === 'std:client'));
+    assert.ok(!page0.availableStandardFields.some((f) => f.key === 'std:client'));
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:court'));
     assert.ok(!page0.availableStandardFields.some((f) => f.key === 'std:matter_type'));
 
@@ -270,7 +271,7 @@ describe('matter search and record-based fields', () => {
     assert.ok(!page1.availableStandardFields.some((f) => f.key === 'std:client'));
 
     // Type-layout change applies to other matters of the same record page
-    const page2 = matterSvc.createMatter(db, admin, { name: 'Sibling Matter' });
+    const page2 = matterSvc.createMatter(db, admin, { name: 'Sibling Matter', openedOn: '2026-04-02' });
     const keys2 = Object.values(page2.sections).flat().map((f) => f.key);
     assert.ok(keys2.includes('std:client'));
   });
@@ -303,14 +304,14 @@ describe('matter search and record-based fields', () => {
       name: 'Test Matter No Client Aug 2026',
       openedOn: '2026-08-09',
     });
-    assert.equal(page.matter.name, 'Test Matter - Securities Class Action - 2026 - Open');
+    assert.equal(page.matter.name, 'Securities Class Action - Open - 2026-08-09');
     assert.equal(page.matter.client_id, null);
 
     const again = matterSvc.createMatter(db, admin, {
       name: 'Retainer no-client August 2026',
-      openedOn: '2026-08-09',
+      openedOn: '2026-08-10',
     });
-    assert.equal(again.matter.name, 'Retainer - Securities Class Action - 2026 - Open');
+    assert.equal(again.matter.name, 'Securities Class Action - Open - 2026-08-10');
   });
 
   it('names matters as Name - Status - Year on create and status changes', () => {
@@ -319,13 +320,13 @@ describe('matter search and record-based fields', () => {
       openedOn: '2026-03-15',
     });
     const id = page.matter.id;
-    assert.equal(page.matter.name, 'Alpha Matter - Securities Class Action - 2026 - Open');
+    assert.equal(page.matter.name, 'Securities Class Action - Open - 2026-03-15');
 
     const closed = matterSvc.updateMatter(db, admin, id, { status: 'closed' });
-    assert.equal(closed.matter.name, 'Alpha Matter - Securities Class Action - 2026 - Closed');
+    assert.equal(closed.matter.name, 'Securities Class Action - Closed - 2026-03-15');
 
     const reopened = matterSvc.updateMatter(db, admin, id, { status: 'open' });
-    assert.equal(reopened.matter.name, 'Alpha Matter - Securities Class Action - 2026 - Open');
+    assert.equal(reopened.matter.name, 'Securities Class Action - Open - 2026-03-15');
 
     const stage = customFields.createCustomField(db, admin, {
       label: 'Status',
@@ -337,13 +338,13 @@ describe('matter search and record-based fields', () => {
     const withCustom = matterSvc.updateMatter(db, admin, id, {
       customValues: { [stage.id]: 'Discovery' },
     });
-    assert.equal(withCustom.matter.name, 'Alpha Matter - Securities Class Action - 2026 - Open');
+    assert.equal(withCustom.matter.name, 'Securities Class Action - Open - 2026-03-15');
 
     const next = matterSvc.updateMatter(db, admin, id, {
       customValues: { [stage.id]: 'Trial' },
       openedOn: '2025-01-01',
     });
-    assert.equal(next.matter.name, 'Alpha Matter - Securities Class Action - 2025 - Open');
+    assert.equal(next.matter.name, 'Securities Class Action - Open - 2025-01-01');
   });
 
   it('builds create matter names from a Settings field formula', () => {
@@ -449,7 +450,7 @@ describe('matter search and record-based fields', () => {
     assert.doesNotMatch(renamed.matter.name, / - Class Action - /);
   });
 
-  it('uses Matter Name - Company - Case Type - Year - Status nomenclature', () => {
+  it('uses Ticker - Company - Case Type - Status - Open Date nomenclature', () => {
     matterSvc.ensureStandardMatterNameFormula(db, admin);
     const caseType = matterSvc.ensureCaseTypeField(db, admin);
     const page = matterSvc.createMatter(db, admin, {
@@ -461,13 +462,28 @@ describe('matter search and record-based fields', () => {
     });
     assert.equal(
       page.matter.name,
-      'Harbor Bridge Inquiry - Acme - Securities Class Action - 2026 - Possible'
+      'ACME - Acme - Securities Class Action - Possible - 2026-04-15'
     );
     const closed = matterSvc.updateMatter(db, admin, page.matter.id, { status: 'closed' });
     assert.equal(
       closed.matter.name,
-      'Harbor Bridge Inquiry - Acme - Securities Class Action - 2026 - Closed'
+      'ACME - Acme - Securities Class Action - Closed - 2026-04-15'
     );
+    const clientsSvc = require('../src/services/clients');
+    const other = clientsSvc.createClient(db, admin, {
+      name: 'Northwind Holdings LLC',
+      ticker: 'NWHD',
+      recordTypeKey: 'company',
+    });
+    const relinked = matterSvc.updateMatter(db, admin, page.matter.id, {
+      clientId: other.client.id,
+    });
+    assert.equal(
+      relinked.matter.name,
+      'NWHD - Northwind Holdings LLC - Securities Class Action - Closed - 2026-04-15'
+    );
+    assert.equal(relinked.matter.client_id, other.client.id);
+    assert.equal(relinked.matter.company_ticker, 'NWHD');
   });
 
   it('shows type dropdown fields on matter pages from the record page layout', () => {
@@ -545,7 +561,8 @@ describe('matter search and record-based fields', () => {
       openedOn: '2026-03-01',
       customValues: { [matterReq.id]: 'Jordan Lee' },
     });
-    assert.match(page.matter.name, /Has lead/);
+    assert.match(page.matter.name, /Acme/);
+    assert.match(page.matter.name, /Securities Class Action/);
     const stored = db.prepare(
       'SELECT value_text FROM custom_field_values WHERE matter_id = ? AND field_id = ?'
     ).get(page.matter.id, matterReq.id);
@@ -636,15 +653,7 @@ describe('matter search and record-based fields', () => {
       () => matterSvc.createMatter(db, admin, {
         clientId: 1,
         name: 'unique widget case',
-        openedOn: '2026-02-01',
-      }),
-      /already exists/i
-    );
-    assert.throws(
-      () => matterSvc.createMatter(db, admin, {
-        clientId: 1,
-        name: 'Unique Widget Case - Open - 2026',
-        openedOn: '2026-03-01',
+        openedOn: '2026-01-01',
       }),
       /already exists/i
     );

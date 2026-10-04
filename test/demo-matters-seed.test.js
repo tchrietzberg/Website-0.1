@@ -48,7 +48,7 @@ describe('demo matters seed', () => {
     const sample = matterSvc.listMatters(db, { status: 'open' })[0];
     assert.match(
       sample.name,
-      /^.+ - .+ - .+ - \d{4} - Open$/
+      /^.+ - .+ - .+ - Open - \d{4}-\d{2}-\d{2}$/
     );
 
     const again = seedDemoMatters(db);

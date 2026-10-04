@@ -8,12 +8,21 @@ const NAME_SEP = ' - ';
 const MATTER_NAME_FORMULA_SETTING = 'matter_name_formula';
 const FORMULA_TOKEN_LABELS = {
   matter_name: 'Matter Name',
+  ticker: 'Ticker',
   company: 'Company Name',
   case_type: 'Case Type',
   opened_year: 'Year',
+  opened_on: 'Open Date',
   status: 'Matter Status',
 };
 const STANDARD_MATTER_NAME_PARTS = [
+  { kind: 'token', token: 'ticker' },
+  { kind: 'token', token: 'company' },
+  { kind: 'token', token: 'case_type' },
+  { kind: 'token', token: 'status' },
+  { kind: 'token', token: 'opened_on' },
+];
+const LEGACY_STANDARD_MATTER_NAME_PARTS = [
   { kind: 'token', token: 'matter_name' },
   { kind: 'token', token: 'company' },
   { kind: 'token', token: 'case_type' },
@@ -56,7 +65,7 @@ const MATTER_LIST_COLUMNS_SETTING = 'matter_list_columns';
 const MATTER_LIST_BUILT_IN_FIELDS = [
   { key: 'name', label: 'Name', removable: false },
   { key: 'number', label: 'Number', removable: true },
-  { key: 'client', label: 'Client', removable: true },
+  { key: 'client', label: 'Company', removable: true },
   { key: 'status', label: 'Status', removable: true },
   { key: 'attorney', label: 'Attorney', removable: true },
   { key: 'matter_type', label: 'Record type', removable: true },
@@ -84,6 +93,8 @@ function normalizeFormulaParts(parts) {
       const token = String(raw.token || '').trim().toLowerCase();
       if (token === 'year') {
         out.push({ kind: 'token', token: 'opened_year' });
+      } else if (token === 'open_date' || token === 'opened_date') {
+        out.push({ kind: 'token', token: 'opened_on' });
       } else if (FORMULA_TOKEN_LABELS[token]) {
         out.push({ kind: 'token', token });
       }
@@ -263,8 +274,105 @@ function ensureCaseTypeField(db, actor) {
   });
 }
 
+function findTickerField(db) {
+  return db.prepare(`
+    SELECT id, label, options_json, record_type_key
+    FROM custom_fields
+    WHERE active = 1
+      AND IFNULL(applies_to, 'matter') = 'client'
+      AND lower(label) = 'ticker'
+    ORDER BY CASE WHEN record_type_key = 'company' THEN 0 ELSE 1 END, id
+    LIMIT 1
+  `).get() || null;
+}
+
+function deriveTickerFromName(name) {
+  const words = String(name || '')
+    .replace(/[^A-Za-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((w) => !/^(llc|inc|lp|ltd|the|of|and|corp|co|trust|funds*)$/i.test(w));
+  if (!words.length) {
+    const compact = String(name || '').replace(/[^A-Za-z0-9]/g, '');
+    return compact.slice(0, 5).toUpperCase();
+  }
+  if (words.length === 1) return words[0].slice(0, 5).toUpperCase();
+  return words.map((w) => w[0]).join('').slice(0, 5).toUpperCase();
+}
+
+function tickerValueForClient(db, clientId) {
+  const id = Number(clientId);
+  if (!Number.isFinite(id) || id <= 0) return '';
+  const field = findTickerField(db);
+  if (!field) return '';
+  const row = db.prepare(`
+    SELECT value_text FROM client_custom_field_values
+    WHERE client_id = ? AND field_id = ?
+  `).get(id, field.id);
+  return row?.value_text ? String(row.value_text).trim() : '';
+}
+
+function ensureClientTicker(db, actor, clientId, ticker = '') {
+  const id = Number(clientId);
+  if (!Number.isFinite(id) || id <= 0) return '';
+  const field = ensureTickerField(db, actor);
+  db.prepare("UPDATE clients SET record_type = 'company' WHERE id = ?").run(id);
+  let value = String(ticker || '').trim().toUpperCase();
+  if (!value) value = tickerValueForClient(db, id);
+  if (!value) {
+    const client = db.prepare('SELECT name FROM clients WHERE id = ?').get(id);
+    value = deriveTickerFromName(client?.name);
+  }
+  if (value) {
+    db.prepare(`
+      INSERT INTO client_custom_field_values(client_id, field_id, value_text, updated_by, updated_at)
+      VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      ON CONFLICT(client_id, field_id) DO UPDATE SET
+        value_text = excluded.value_text,
+        updated_by = excluded.updated_by,
+        updated_at = excluded.updated_at
+    `).run(id, field.id, value, actor?.id || null);
+  }
+  return value;
+}
+
+function ensureTickerField(db, actor) {
+  customFields.ensureRecordTypes(db);
+  customFields.ensureTypeLayout(db, 'company');
+  const existing = findTickerField(db);
+  const admin = adminActor(db, actor);
+  if (existing) {
+    const field = customFields.getCustomField(db, existing.id);
+    if (field?.required) {
+      customFields.updateCustomField(db, admin, existing.id, { required: false });
+      return customFields.getCustomField(db, existing.id);
+    }
+    return field;
+  }
+  return customFields.createCustomField(db, admin, {
+    label: 'Ticker',
+    fieldType: 'text',
+    recordTypeKey: 'company',
+    required: false,
+    isDefault: true,
+    appliesTo: 'client',
+  });
+}
+
+function formulaTokenKey(parts) {
+  return (parts || [])
+    .filter((p) => p.kind === 'token')
+    .map((p) => p.token)
+    .join(',');
+}
+
+function isLegacyStandardFormulaParts(parts) {
+  return formulaTokenKey(parts) === formulaTokenKey(LEGACY_STANDARD_MATTER_NAME_PARTS);
+}
+
 function ensureStandardMatterNameFormula(db, actor) {
   ensureCaseTypeField(db, actor);
+  ensureTickerField(db, actor);
   return setMatterNameFormula(db, actor, {
     enabled: true,
     separator: NAME_SEP,
@@ -273,8 +381,23 @@ function ensureStandardMatterNameFormula(db, actor) {
   });
 }
 
+function ensureCompanyOnMatterLayouts(db, actor) {
+  customFields.ensureRecordTypes(db);
+  const types = customFields.listRecordTypes(db, { appliesTo: 'matter' });
+  for (const type of types) {
+    customFields.ensureTypeLayout(db, type.key);
+    try {
+      customFields.addStandardFieldToType(db, actor || adminActor(db, actor), type.key, 'std:client');
+    } catch {
+      // already present or not addable
+    }
+  }
+}
+
 function ensureDefaultCreateFormula(db, actor) {
   ensureCaseTypeField(db, actor);
+  ensureTickerField(db, actor);
+  ensureCompanyOnMatterLayouts(db, actor);
   const raw = getSetting(db, MATTER_NAME_FORMULA_SETTING, null);
   if (raw == null || raw === '') {
     return ensureStandardMatterNameFormula(db, actor);
@@ -282,8 +405,12 @@ function ensureDefaultCreateFormula(db, actor) {
   try {
     const parsed = JSON.parse(raw) || {};
     const parts = normalizeFormulaParts(parsed.parts);
-    if (!parsed.enabled || !parts.length) {
-      return ensureStandardMatterNameFormula(db, actor);
+    if (!parsed.enabled || !parts.length || isLegacyStandardFormulaParts(parts)) {
+      const cfg = ensureStandardMatterNameFormula(db, actor);
+      if (isLegacyStandardFormulaParts(parts)) {
+        applyMatterNomenclature(db, actor);
+      }
+      return cfg;
     }
   } catch {
     return ensureStandardMatterNameFormula(db, actor);
@@ -338,11 +465,15 @@ function getMatterNameFormulaConfig(db) {
     };
   });
   const preview = parts.map((p) => p.label || '?').join(formula.separator || '-');
+  const tickerField = findTickerField(db);
   return {
     ...formula,
     parts,
     availableFields,
-    previewExample: preview || 'Matter Name - Company Name - Case Type - Year - Matter Status',
+    tickerField: tickerField
+      ? { id: tickerField.id, label: tickerField.label || 'Ticker' }
+      : null,
+    previewExample: preview || 'Ticker - Company Name - Case Type - Matter Status - Open Date',
   };
 }
 
@@ -390,10 +521,15 @@ function buildNameFromFormula(db, formula, {
     if (part.kind === 'token') {
       if (part.token === 'opened_year') {
         value = yearFromOpenedOn(openedOn || new Date().toISOString().slice(0, 10));
+      } else if (part.token === 'opened_on') {
+        value = String(openedOn || new Date().toISOString().slice(0, 10)).slice(0, 10);
       } else if (part.token === 'matter_name') {
         value = cleanMatterBaseName(matterName);
       } else if (part.token === 'company') {
         value = clientNameFor(db, clientId, clientName);
+        if (!value) continue;
+      } else if (part.token === 'ticker') {
+        value = tickerValueForClient(db, clientId);
         if (!value) continue;
       } else if (part.token === 'case_type') {
         value = caseTypeValue(db, customValues) || CASE_TYPE_OPTIONS[0];
@@ -558,6 +694,12 @@ function formulaPartValue(db, part, {
     if (part.token === 'opened_year') {
       return yearFromOpenedOn(matter.opened_on);
     }
+    if (part.token === 'opened_on') {
+      return String(matter.opened_on || '').slice(0, 10);
+    }
+    if (part.token === 'ticker') {
+      return tickerValueForClient(db, matter.client_id);
+    }
     if (part.token === 'status') {
       return formatBuiltInStatus(matter.status);
     }
@@ -647,9 +789,19 @@ function composeMatterName(baseName, statusLabel, openedOn) {
 
 /** Case-insensitive match on the undecorated matter name (ignores Status - Year suffix). */
 function findDuplicateMatter(db, name, { excludeId = null } = {}) {
+  const formula = getMatterNameFormula(db);
+  const rows = db.prepare('SELECT id, name, number FROM matters').all();
+  if (formula.enabled && !formulaHasToken(formula, 'matter_name')) {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return null;
+    for (const row of rows) {
+      if (excludeId != null && Number(row.id) === Number(excludeId)) continue;
+      if (String(row.name || '').trim().toLowerCase() === key) return row;
+    }
+    return null;
+  }
   const base = cleanMatterBaseName(name).toLowerCase();
   if (!base) return null;
-  const rows = db.prepare('SELECT id, name, number FROM matters').all();
   for (const row of rows) {
     if (excludeId != null && Number(row.id) === Number(excludeId)) continue;
     if (cleanMatterBaseName(row.name).toLowerCase() === base) return row;
@@ -773,6 +925,10 @@ function createMatter(db, actor, input = {}) {
     values: customValues,
   });
 
+  if (clientId && formulaActive && formulaHasToken(formula, 'ticker')) {
+    ensureClientTicker(db, actor, clientId, input.ticker);
+  }
+
   const shortName = cleanMatterBaseName(name);
   if (formulaActive && formulaHasToken(formula, 'matter_name') && !shortName) {
     throw new Error('name required');
@@ -780,9 +936,10 @@ function createMatter(db, actor, input = {}) {
   if (!formulaActive && !shortName) {
     throw new Error('name required');
   }
-
   const uniquenessKey = shortName || name;
-  if (uniquenessKey) assertUniqueMatterName(db, uniquenessKey);
+  if (uniquenessKey && (!formulaActive || formulaHasToken(formula, 'matter_name'))) {
+    assertUniqueMatterName(db, uniquenessKey);
+  }
 
   const displayName = formulaActive
     ? resolveDisplayName(db, {
@@ -794,6 +951,9 @@ function createMatter(db, actor, input = {}) {
       statusLabel: initialStatus,
     })
     : composeMatterName(shortName, initialStatus, openedOn);
+  if (formulaActive && !formulaHasToken(formula, 'matter_name') && displayName) {
+    assertUniqueMatterName(db, displayName);
+  }
 
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
@@ -1081,7 +1241,11 @@ function searchMatters(db, filters = {}) {
 
 function getMatter(db, id, actor = null) {
   if (actor) permissions.assertCanViewRecords(db, actor, 'matter');
-  return customFields.getMatterPage(db, id, actor);
+  const page = customFields.getMatterPage(db, id, actor);
+  if (page?.matter) {
+    page.matter.company_ticker = tickerValueForClient(db, page.matter.client_id);
+  }
+  return page;
 }
 
 function deleteMatter(db, actor, id) {
@@ -1405,6 +1569,8 @@ function applyMatterNomenclature(db, actor) {
   const formulaCfg = ensureStandardMatterNameFormula(db, actor);
   const formula = getMatterNameFormula(db);
   const caseField = findCaseTypeField(db);
+  const companies = db.prepare('SELECT id FROM clients ORDER BY id').all();
+  for (const company of companies) ensureClientTicker(db, actor, company.id);
   const matters = db.prepare('SELECT * FROM matters ORDER BY id').all();
   let updated = 0;
   for (let i = 0; i < matters.length; i += 1) {
@@ -1450,6 +1616,11 @@ module.exports = {
   formatBuiltInStatus,
   normalizeMatterStatus,
   ensureCaseTypeField,
+  ensureTickerField,
+  findTickerField,
+  tickerValueForClient,
+  ensureClientTicker,
+  deriveTickerFromName,
   ensureStandardMatterNameFormula,
   ensureDefaultCreateFormula,
   applyMatterNomenclature,

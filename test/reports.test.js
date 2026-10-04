@@ -35,20 +35,19 @@ describe('matters report', () => {
     const rows = reports.mattersReport(db);
     assert.equal(rows.length, 2);
     assert.deepEqual(Object.keys(rows[0]), [
-      'Matter Name',
+      'Ticker',
       'Company Name',
       'Case Type',
-      'Year',
       'Matter Status',
+      'Open Date',
     ]);
-    const alpha = rows.find((r) => r['Matter Name'] === 'Alpha Matter');
+    const alpha = rows.find((r) => r['Company Name'] === 'Client A' && r['Open Date'] === '2026-01-15');
     assert.ok(alpha);
-    assert.equal(alpha['Company Name'], 'Client A');
-    assert.equal(alpha.Year, '2026');
     assert.equal(alpha['Matter Status'], 'Open');
+    assert.equal(alpha['Open Date'], '2026-01-15');
     const csv = reports.toCsv(rows);
-    assert.match(csv, /Matter Name,Company Name,Case Type,Year,Matter Status/);
-    assert.match(csv, /Alpha Matter,Client A,,2026,Open/);
+    assert.match(csv, /Ticker,Company Name,Case Type,Matter Status,Open Date/);
+    assert.match(csv, /Client A,,Open,2026-01-15/);
   });
 
   it('swaps inverted date ranges so the full window is kept', () => {
@@ -176,9 +175,9 @@ describe('matters report', () => {
     assert.ok(Buffer.isBuffer(mattersPdf));
     assert.equal(mattersPdf.slice(0, 5).toString(), '%PDF-');
     assert.match(mattersPdf.toString('latin1'), /Matters Report/);
-    assert.match(mattersPdf.toString('latin1'), /Matter Name/);
     assert.match(mattersPdf.toString('latin1'), /Company Name/);
-    assert.match(mattersPdf.toString('latin1'), /Alpha Matter/);
+    assert.match(mattersPdf.toString('latin1'), /Open Date/);
+    assert.match(mattersPdf.toString('latin1'), /Client A/);
 
     const lodestarPdf = reports.toPdf(reports.lodestarSummary(db), {
       title: 'Lodestar Summary (all matters)',

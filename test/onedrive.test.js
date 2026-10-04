@@ -23,7 +23,7 @@ describe('matter OneDrive integration', () => {
     const page = matterSvc.createMatter(db, admin, { name: 'Widget Case' });
     const matterId = page.matter.id;
     assert.equal(page.onedrive.linked, false);
-    assert.match(page.onedriveSuggestedName, /Widget Case/);
+    assert.match(page.onedriveSuggestedName, /Securities Class Action/);
 
     const linked = onedrive.linkMatterOneDrive(db, admin, matterId, {
       folderUrl: 'https://contoso.sharepoint.com/sites/Litigation/Shared%20Documents/Widget',

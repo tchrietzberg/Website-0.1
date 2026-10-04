@@ -55,6 +55,7 @@ describe('global lookup and search permissions', () => {
     });
     clientsSvc.createClient(db, admin, {
       name: 'Widget Holdings',
+      ticker: 'WGT',
       email: 'legal@widget.example',
       recordTypeKey: 'company',
     });
@@ -69,9 +70,10 @@ describe('global lookup and search permissions', () => {
     const all = globalSearch.lookup(db, admin, { q: 'widget', limitPerType: 5 });
     assert.ok(all.scopes.matter);
     assert.ok(all.scopes.contact);
-    assert.ok(all.results.some((r) => r.type === 'matter' && /Widget/i.test(r.title)));
     assert.ok(all.results.some((r) => r.type === 'contact' && /Widget/i.test(r.title)));
     assert.ok(all.results.some((r) => r.type === 'time' && /widget/i.test(r.title)));
+    const byCompany = globalSearch.lookup(db, admin, { q: 'acme', limitPerType: 5 });
+    assert.ok(byCompany.results.some((r) => r.type === 'matter' && r.id === matter.matter.id));
 
     permissions.setRolePermissions(db, admin, {
       paralegal: {
@@ -83,7 +85,7 @@ describe('global lookup and search permissions', () => {
         },
       },
     });
-    const limited = globalSearch.lookup(db, paralegal, { q: 'widget', limitPerType: 5 });
+    const limited = globalSearch.lookup(db, paralegal, { q: 'acme', limitPerType: 5 });
     assert.equal(limited.scopes.matter, true);
     assert.equal(limited.scopes.contact, false);
     assert.equal(limited.scopes.time, false);

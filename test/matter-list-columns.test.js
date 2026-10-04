@@ -73,12 +73,12 @@ describe('matter list columns', () => {
 
     const csv = matterSvc.exportMattersListCsv(ctx.db, {});
     const header = csv.split('\n')[0];
-    assert.match(header, /Matter Name/);
+    assert.match(header, /Ticker/);
     assert.match(header, /Company Name/);
     assert.match(header, /Case Type/);
-    assert.match(header, /Year/);
     assert.match(header, /Matter Status/);
-    assert.match(header, /Client/);
+    assert.match(header, /Open Date/);
+    assert.match(header, /Company/);
     assert.doesNotMatch(header, /(^|,)Name(,|$)/);
   });
 
@@ -94,20 +94,19 @@ describe('matter list columns', () => {
 
     const packed = matterSvc.buildMattersListExport(ctx.db, {});
     assert.deepEqual(packed.header.slice(0, 5), [
-      'Matter Name',
+      'Ticker',
       'Company Name',
       'Case Type',
-      'Year',
       'Matter Status',
+      'Open Date',
     ]);
-    assert.equal(packed.rows[0][0], 'Alpha Matter');
     assert.equal(packed.rows[0][1], 'Client A');
     assert.equal(packed.rows[0][2], 'Securities Class Action');
-    assert.equal(packed.rows[0][3], '2026');
-    assert.equal(packed.rows[0][4], 'Open');
+    assert.equal(packed.rows[0][3], 'Open');
+    assert.equal(packed.rows[0][4], '2026-01-15');
 
     const csv = matterSvc.exportMattersListCsv(ctx.db, {});
-    assert.match(csv, /Alpha Matter,Client A,Securities Class Action,2026,Open/);
+    assert.match(csv, /Client A,Securities Class Action,Open,2026-01-15/);
     assert.ok(!matterSvc.CASE_TYPE_OPTIONS.includes('Securities'));
     assert.ok(!matterSvc.CASE_TYPE_OPTIONS.includes('Class Action'));
     assert.ok(matterSvc.CASE_TYPE_OPTIONS.includes('Securities Class Action'));
