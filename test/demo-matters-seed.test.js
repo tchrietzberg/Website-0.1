@@ -45,6 +45,11 @@ describe('demo matters seed', () => {
     assert.ok(after.closed >= TARGET_PER_STATUS);
     assert.ok(after.possible >= TARGET_PER_STATUS);
     assert.equal(after.mattersWithTime, TARGET_PER_STATUS * 3);
+    const sample = matterSvc.listMatters(db, { status: 'open' })[0];
+    assert.match(
+      sample.name,
+      /^.+ - .+ - .+ - \d{4} - Open$/
+    );
 
     const again = seedDemoMatters(db);
     assert.equal(again.open + again.closed + again.possible, 0);

@@ -6,6 +6,30 @@ const { buildXlsx } = require('../xlsx');
 
 const NAME_SEP = ' - ';
 const MATTER_NAME_FORMULA_SETTING = 'matter_name_formula';
+const FORMULA_TOKEN_LABELS = {
+  matter_name: 'Matter Name',
+  company: 'Company Name',
+  case_type: 'Case Type',
+  opened_year: 'Year',
+  status: 'Matter Status',
+};
+const STANDARD_MATTER_NAME_PARTS = [
+  { kind: 'token', token: 'matter_name' },
+  { kind: 'token', token: 'company' },
+  { kind: 'token', token: 'case_type' },
+  { kind: 'token', token: 'opened_year' },
+  { kind: 'token', token: 'status' },
+];
+const CASE_TYPE_OPTIONS = [
+  'Securities',
+  'Class Action',
+  'Investigation',
+  'Merger',
+  'Fiduciary Duty',
+  'Appraisal',
+  'Antitrust',
+  'Derivative',
+];
 const DEFAULT_MATTER_NAME_FORMULA = {
   enabled: false,
   separator: '-',
@@ -45,8 +69,10 @@ function normalizeFormulaParts(parts) {
     const kind = String(raw.kind || (raw.fieldId != null ? 'custom_field' : '')).trim();
     if (kind === 'token') {
       const token = String(raw.token || '').trim().toLowerCase();
-      if (token === 'opened_year' || token === 'year') {
+      if (token === 'year') {
         out.push({ kind: 'token', token: 'opened_year' });
+      } else if (FORMULA_TOKEN_LABELS[token]) {
+        out.push({ kind: 'token', token });
       }
       continue;
     }
@@ -114,8 +140,48 @@ function setMatterNameFormula(db, actor, input = {}) {
 }
 
 function formulaPartLabel(part, fieldRow) {
-  if (part.kind === 'token' && part.token === 'opened_year') return 'Year';
+  if (part.kind === 'token') {
+    return FORMULA_TOKEN_LABELS[part.token] || part.token;
+  }
   return fieldRow?.label || `Field ${part.fieldId}`;
+}
+
+function findCaseTypeField(db) {
+  return db.prepare(`
+    SELECT id, label, options_json
+    FROM custom_fields
+    WHERE active = 1
+      AND IFNULL(applies_to, 'matter') = 'matter'
+      AND lower(label) = 'case type'
+    ORDER BY id
+    LIMIT 1
+  `).get() || null;
+}
+
+function ensureCaseTypeField(db, actor) {
+  customFields.ensureRecordTypes(db);
+  customFields.ensureTypeLayout(db, customFields.DEFAULT_RECORD_TYPE_KEY);
+  const existing = findCaseTypeField(db);
+  if (existing) return customFields.getCustomField(db, existing.id);
+  return customFields.createCustomField(db, actor, {
+    label: 'Case Type',
+    fieldType: 'select',
+    options: CASE_TYPE_OPTIONS,
+    recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
+    required: true,
+    isDefault: true,
+    appliesTo: 'matter',
+  });
+}
+
+function ensureStandardMatterNameFormula(db, actor) {
+  ensureCaseTypeField(db, actor);
+  return setMatterNameFormula(db, actor, {
+    enabled: true,
+    separator: NAME_SEP,
+    appendStatusYear: false,
+    parts: STANDARD_MATTER_NAME_PARTS,
+  });
 }
 
 function summarizeFormulaField(f) {
@@ -160,7 +226,7 @@ function getMatterNameFormulaConfig(db) {
     ...formula,
     parts,
     availableFields,
-    previewExample: preview || 'Ticker-Year-Company Name-Case Type',
+    previewExample: preview || 'Matter Name - Company Name - Case Type - Year - Matter Status',
   };
 }
 
@@ -171,11 +237,33 @@ function customValueText(customValues, fieldId) {
   return String(raw).trim();
 }
 
+function caseTypeValue(db, customValues = {}) {
+  const field = findCaseTypeField(db);
+  if (!field) return '';
+  return customValueText(customValues, field.id);
+}
+
+function clientNameFor(db, clientId, fallback = '') {
+  if (fallback) return String(fallback).trim();
+  const id = Number(clientId);
+  if (!Number.isFinite(id) || id <= 0) return '';
+  const row = db.prepare('SELECT name FROM clients WHERE id = ?').get(id);
+  return row?.name ? String(row.name).trim() : '';
+}
+
+function formulaHasToken(formula, token) {
+  return !!(formula?.parts || []).some((p) => p.kind === 'token' && p.token === token);
+}
+
 /** Build a matter name from the firm formula and create-time values. */
 function buildNameFromFormula(db, formula, {
   customValues = {},
   openedOn = null,
   requireAll = true,
+  matterName = '',
+  clientId = null,
+  clientName = '',
+  statusLabel = '',
 } = {}) {
   const cfg = formula && typeof formula === 'object' ? formula : getMatterNameFormula(db);
   if (!cfg.enabled || !cfg.parts?.length) return '';
@@ -183,8 +271,22 @@ function buildNameFromFormula(db, formula, {
   const pieces = [];
   for (const part of cfg.parts) {
     let value = '';
-    if (part.kind === 'token' && part.token === 'opened_year') {
-      value = yearFromOpenedOn(openedOn || new Date().toISOString().slice(0, 10));
+    if (part.kind === 'token') {
+      if (part.token === 'opened_year') {
+        value = yearFromOpenedOn(openedOn || new Date().toISOString().slice(0, 10));
+      } else if (part.token === 'matter_name') {
+        value = cleanMatterBaseName(matterName);
+      } else if (part.token === 'company') {
+        value = clientNameFor(db, clientId, clientName);
+        if (!value) continue;
+      } else if (part.token === 'case_type') {
+        value = caseTypeValue(db, customValues);
+      } else if (part.token === 'status') {
+        value = String(statusLabel || '').trim();
+      }
+      if (!value && requireAll) {
+        throw new Error(`${formulaPartLabel(part)} is required for the matter name`);
+      }
     } else if (part.kind === 'custom_field') {
       value = customValueText(customValues, part.fieldId);
       if (!value && requireAll) {
@@ -195,6 +297,33 @@ function buildNameFromFormula(db, formula, {
     if (value) pieces.push(value);
   }
   return pieces.join(sep);
+}
+
+function resolveDisplayName(db, {
+  formula,
+  name,
+  customValues = {},
+  openedOn,
+  clientId,
+  statusLabel,
+}) {
+  const cfg = formula && typeof formula === 'object' ? formula : getMatterNameFormula(db);
+  const formulaActive = !!(cfg.enabled && cfg.parts?.length);
+  if (formulaActive) {
+    let next = buildNameFromFormula(db, cfg, {
+      customValues,
+      openedOn,
+      requireAll: true,
+      matterName: name,
+      clientId,
+      statusLabel,
+    });
+    if (cfg.appendStatusYear) {
+      next = composeMatterName(next, statusLabel, openedOn);
+    }
+    return next;
+  }
+  return composeMatterName(name, statusLabel, openedOn);
 }
 
 const MATTER_STATUSES = ['open', 'closed', 'possible'];
@@ -271,6 +400,20 @@ function cleanMatterBaseName(name) {
     .replace(/\s+/g, ' ')
     .trim();
   return base;
+}
+
+function extractMatterName(db, storedName, formula = null) {
+  const cfg = formula && typeof formula === 'object' ? formula : getMatterNameFormula(db);
+  const sep = cfg.separator == null || cfg.separator === '' ? NAME_SEP : String(cfg.separator);
+  const bits = String(storedName || '').split(sep).map((s) => s.trim()).filter(Boolean);
+  if (formulaHasToken(cfg, 'matter_name') && bits.length >= 5) {
+    const statusBit = bits[bits.length - 1];
+    const yearBit = bits[bits.length - 2];
+    if (/^\d{4}$/.test(yearBit) && /^(open|closed|possible)$/i.test(statusBit)) {
+      return bits[0];
+    }
+  }
+  return cleanMatterBaseName(storedName);
 }
 
 /** Matter Name - Status - Year */
@@ -408,25 +551,27 @@ function createMatter(db, actor, input = {}) {
     values: customValues,
   });
 
-  let baseName = name;
-  if (formulaActive) {
-    baseName = buildNameFromFormula(db, formula, {
-      customValues,
-      openedOn,
-      requireAll: true,
-    });
-  } else if (!baseName) {
+  const shortName = cleanMatterBaseName(name);
+  if (formulaActive && formulaHasToken(formula, 'matter_name') && !shortName) {
     throw new Error('name required');
   }
-  // Matter names never carry "No Client" or billing-month text (e.g. Aug 2026).
-  baseName = cleanMatterBaseName(baseName);
-  if (!baseName) throw new Error('name required');
+  if (!formulaActive && !shortName) {
+    throw new Error('name required');
+  }
 
-  assertUniqueMatterName(db, baseName);
+  const uniquenessKey = shortName || name;
+  if (uniquenessKey) assertUniqueMatterName(db, uniquenessKey);
 
-  const displayName = formulaActive && !formula.appendStatusYear
-    ? baseName
-    : composeMatterName(baseName, initialStatus, openedOn);
+  const displayName = formulaActive
+    ? resolveDisplayName(db, {
+      formula,
+      name: shortName,
+      customValues,
+      openedOn,
+      clientId,
+      statusLabel: initialStatus,
+    })
+    : composeMatterName(shortName, initialStatus, openedOn);
 
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
@@ -450,19 +595,14 @@ function createMatter(db, actor, input = {}) {
   if (Object.keys(customValues).length || formulaActive) {
     const matterRow = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const statusLabel = currentStatusLabel(db, matterRow) || initialStatus;
-    let nextName;
-    if (formulaActive) {
-      nextName = buildNameFromFormula(db, formula, {
-        customValues,
-        openedOn,
-        requireAll: true,
-      });
-      if (formula.appendStatusYear) {
-        nextName = composeMatterName(nextName, statusLabel, openedOn);
-      }
-    } else {
-      nextName = composeMatterName(name, statusLabel, openedOn);
-    }
+    const nextName = resolveDisplayName(db, {
+      formula,
+      name: shortName || name,
+      customValues,
+      openedOn,
+      clientId,
+      statusLabel,
+    });
     writeMatterName(db, actor, id, matterRow.name, nextName);
   }
 
@@ -493,6 +633,8 @@ function updateMatter(db, actor, id, patch) {
     && String(patch.openedOn || '').slice(0, 10) !== String(current.opened_on || '').slice(0, 10);
   const nameChanging = patch.name !== undefined
     && stripNameDecorations(patch.name) !== stripNameDecorations(current.name);
+  const clientChanging = patch.clientId !== undefined
+    && String(patch.clientId ?? '') !== String(current.client_id ?? '');
 
   const map = {
     name: 'name',
@@ -549,16 +691,31 @@ function updateMatter(db, actor, id, patch) {
     customFields.setCustomValues(db, actor, id, patch.customValues);
   }
 
-  // Keep matter name as: Matter Name - Status - Year
-  if (statusForName != null || openedOnChanging || nameChanging) {
+  // Keep matter name in the firm nomenclature (or Name - Status - Year).
+  if (statusForName != null || openedOnChanging || nameChanging || clientChanging || patch.customValues) {
     const after = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
-    const baseName = patch.name !== undefined ? String(patch.name) : after.name;
+    const formula = getMatterNameFormula(db);
+    const existingValues = Object.fromEntries(
+      db.prepare('SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?')
+        .all(id)
+        .map((v) => [v.field_id, v.value_text])
+    );
+    const mergedValues = { ...existingValues, ...(patch.customValues || {}) };
+    const baseName = patch.name !== undefined
+      ? String(patch.name)
+      : extractMatterName(db, after.name, formula);
     if (nameChanging) assertUniqueMatterName(db, baseName, { excludeId: id });
     const statusLabel = statusForName != null
       ? statusForName
       : currentStatusLabel(db, after);
-    const openedOn = after.opened_on;
-    const nextName = composeMatterName(baseName, statusLabel, openedOn);
+    const nextName = resolveDisplayName(db, {
+      formula,
+      name: baseName,
+      customValues: mergedValues,
+      openedOn: after.opened_on,
+      clientId: after.client_id,
+      statusLabel,
+    });
     writeMatterName(db, actor, id, after.name, nextName);
   }
 
@@ -993,10 +1150,50 @@ function exportMattersListXlsx(db, filters = {}) {
   return buildXlsx([header, ...body]);
 }
 
+function applyMatterNomenclature(db, actor) {
+  const formulaCfg = ensureStandardMatterNameFormula(db, actor);
+  const formula = getMatterNameFormula(db);
+  const caseField = findCaseTypeField(db);
+  const matters = db.prepare('SELECT * FROM matters ORDER BY id').all();
+  let updated = 0;
+  for (let i = 0; i < matters.length; i += 1) {
+    const matter = matters[i];
+    const customValues = Object.fromEntries(
+      db.prepare('SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?')
+        .all(matter.id)
+        .map((v) => [v.field_id, v.value_text])
+    );
+    if (caseField && !String(customValues[caseField.id] || '').trim()) {
+      const value = CASE_TYPE_OPTIONS[i % CASE_TYPE_OPTIONS.length];
+      customFields.setCustomValues(db, actor, matter.id, { [caseField.id]: value });
+      customValues[caseField.id] = value;
+    }
+    const nextName = resolveDisplayName(db, {
+      formula,
+      name: extractMatterName(db, matter.name, formula),
+      customValues,
+      openedOn: matter.opened_on,
+      clientId: matter.client_id,
+      statusLabel: currentStatusLabel(db, matter) || formatBuiltInStatus(matter.status),
+    });
+    if (writeMatterName(db, actor, matter.id, matter.name, nextName)) {
+      matterIndex.indexMatter(db, matter.id);
+      updated += 1;
+    }
+  }
+  return { updated, total: matters.length, formula: formulaCfg };
+}
+
 module.exports = {
   MATTER_STATUSES,
+  CASE_TYPE_OPTIONS,
+  NAME_SEP,
+  STANDARD_MATTER_NAME_PARTS,
   formatBuiltInStatus,
   normalizeMatterStatus,
+  ensureCaseTypeField,
+  ensureStandardMatterNameFormula,
+  applyMatterNomenclature,
   createMatter,
   updateMatter,
   deleteMatter,

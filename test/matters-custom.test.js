@@ -411,6 +411,27 @@ describe('matter search and record-based fields', () => {
     assert.equal(page2.matter.name, 'MSFT-2025-Contoso-Antitrust');
   });
 
+  it('uses Matter Name - Company - Case Type - Year - Status nomenclature', () => {
+    matterSvc.ensureStandardMatterNameFormula(db, admin);
+    const caseType = matterSvc.ensureCaseTypeField(db, admin);
+    const page = matterSvc.createMatter(db, admin, {
+      name: 'Harbor Bridge Inquiry',
+      status: 'possible',
+      clientId: 1,
+      openedOn: '2026-04-15',
+      customValues: { [caseType.id]: 'Securities' },
+    });
+    assert.equal(
+      page.matter.name,
+      'Harbor Bridge Inquiry - Acme - Securities - 2026 - Possible'
+    );
+    const closed = matterSvc.updateMatter(db, admin, page.matter.id, { status: 'closed' });
+    assert.equal(
+      closed.matter.name,
+      'Harbor Bridge Inquiry - Acme - Securities - 2026 - Closed'
+    );
+  });
+
   it('shows type dropdown fields on matter pages from the record page layout', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Status Matter' });
     customFields.addStandardFieldToMatter(db, admin, page0.matter.id, 'std:status');

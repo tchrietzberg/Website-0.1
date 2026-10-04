@@ -174,8 +174,11 @@ function seedDemoMatters(db, options = {}) {
   customFields.ensureRecordTypes(db);
   customFields.ensureTypeLayout(db, customFields.DEFAULT_RECORD_TYPE_KEY);
   const actor = ensureActor(db);
+  matterSvc.ensureStandardMatterNameFormula(db, actor);
+  const caseTypeField = matterSvc.ensureCaseTypeField(db, actor);
   const clientIds = ensureClients(db);
   const attorneyIds = attorneys(db);
+  const caseTypes = matterSvc.CASE_TYPE_OPTIONS;
   const namesByStatus = {
     open: OPEN_NAMES,
     closed: CLOSED_NAMES,
@@ -199,6 +202,9 @@ function seedDemoMatters(db, options = {}) {
         openedOn,
         jurisdiction: i % 2 === 0 ? 'S.D. Fla.' : 'N.D. Cal.',
         court: i % 2 === 0 ? 'S.D. Fla.' : 'N.D. Cal.',
+        customValues: {
+          [caseTypeField.id]: caseTypes[(i + (status === 'closed' ? 2 : status === 'possible' ? 4 : 0)) % caseTypes.length],
+        },
       });
       const matterId = page.matter.id;
       for (let e = 0; e < entriesPerMatter; e += 1) {
@@ -216,7 +222,8 @@ function seedDemoMatters(db, options = {}) {
     }
   }
 
-  return created;
+  const renamed = matterSvc.applyMatterNomenclature(db, actor);
+  return { ...created, renamed };
 }
 
 function counts(db) {
