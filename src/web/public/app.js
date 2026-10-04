@@ -5395,40 +5395,13 @@
         const openedOn = String(
           $('#createMatterOpenedOn')?.value || fd.get('openedOn') || todayIsoDate()
         ).slice(0, 10);
-        const sep = nameFormula?.separator == null || nameFormula?.separator === ''
-          ? ' - '
-          : String(nameFormula.separator);
-        const pieces = [];
-        for (const part of (nameFormula?.parts || [
-          { kind: 'token', token: 'ticker' },
-          { kind: 'token', token: 'company' },
-          { kind: 'token', token: 'case_type' },
-          { kind: 'token', token: 'status' },
-          { kind: 'token', token: 'opened_on' },
-        ])) {
-          if (part.kind === 'token') {
-            if (part.token === 'opened_year' || part.token === 'year') {
-              if (openedOn) pieces.push(openedOn.slice(0, 4));
-            } else if (part.token === 'opened_on' && openedOn) {
-              pieces.push(openedOn);
-            } else if (part.token === 'matter_name') {
-              const v = String(nameInput?.value || '').trim();
-              if (v) pieces.push(v);
-            } else if (part.token === 'company' && company.name) {
-              pieces.push(company.name);
-            } else if (part.token === 'ticker' && company.ticker) {
-              pieces.push(company.ticker);
-            } else if (part.token === 'case_type' && caseType) {
-              pieces.push(caseType);
-            } else if (part.token === 'status' && statusLabel) {
-              pieces.push(statusLabel);
-            }
-          } else if (part.kind === 'custom_field') {
-            const v = values[part.fieldId] ?? values[String(part.fieldId)] ?? '';
-            if (v) pieces.push(v);
-          }
-        }
-        const built = pieces.join(sep);
+        const built = [
+          company.ticker,
+          company.name,
+          caseType,
+          statusLabel,
+          openedOn,
+        ].filter(Boolean).join(' - ');
         const preview = $('#createMatterNamePreview');
         if (preview) {
           preview.textContent = built
