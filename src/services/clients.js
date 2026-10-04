@@ -70,25 +70,47 @@ function getContactFieldConfig(db) {
   };
 }
 
+function attachTickers(db, rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return list;
+  const matterSvc = require('./matters');
+  const field = matterSvc.findTickerField(db);
+  if (!field) return list.map((row) => ({ ...row, ticker: row.ticker || '' }));
+  const ids = list.map((row) => row.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const values = db.prepare(`
+    SELECT client_id, value_text
+    FROM client_custom_field_values
+    WHERE field_id = ? AND client_id IN (${placeholders})
+  `).all(field.id, ...ids);
+  const byId = Object.fromEntries(
+    values.map((v) => [v.client_id, v.value_text == null ? '' : String(v.value_text)])
+  );
+  return list.map((row) => ({ ...row, ticker: byId[row.id] || row.ticker || '' }));
+}
+
 function listClients(db, { q = '' } = {}) {
   const query = String(q || '').trim();
+  let rows;
   if (!query) {
-    return db.prepare(`
+    rows = db.prepare(`
       SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
       FROM clients
       ORDER BY name COLLATE NOCASE, id
     `).all();
+  } else {
+    const like = `%${query.replace(/%/g, '')}%`;
+    rows = db.prepare(`
+      SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
+      FROM clients
+      WHERE name LIKE ? COLLATE NOCASE
+         OR IFNULL(email,'') LIKE ? COLLATE NOCASE
+         OR IFNULL(phone,'') LIKE ? COLLATE NOCASE
+         OR IFNULL(company,'') LIKE ? COLLATE NOCASE
+      ORDER BY name COLLATE NOCASE, id
+    `).all(like, like, like, like);
   }
-  const like = `%${query.replace(/%/g, '')}%`;
-  return db.prepare(`
-    SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
-    FROM clients
-    WHERE name LIKE ? COLLATE NOCASE
-       OR IFNULL(email,'') LIKE ? COLLATE NOCASE
-       OR IFNULL(phone,'') LIKE ? COLLATE NOCASE
-       OR IFNULL(company,'') LIKE ? COLLATE NOCASE
-    ORDER BY name COLLATE NOCASE, id
-  `).all(like, like, like, like);
+  return attachTickers(db, rows);
 }
 
 function getClientRow(db, id) {
@@ -152,8 +174,9 @@ function getClient(db, id, actor = null) {
   const recordTypes = customFields.listRecordTypes(db, { appliesTo: 'client' });
   const recordTypeLabel = (recordTypes.find((t) => t.key === recordTypeKey) || {}).label
     || recordTypeKey;
+  const [clientWithTicker] = attachTickers(db, [{ ...client, record_type: recordTypeKey }]);
   return {
-    client: { ...client, record_type: recordTypeKey },
+    client: clientWithTicker,
     recordTypeKey,
     recordTypeLabel,
     fields: fieldDefs,
@@ -218,13 +241,20 @@ function createClient(db, actor, input = {}) {
   const company = input.company != null ? String(input.company).trim() || null : null;
   const notes = input.notes != null ? String(input.notes).trim() || null : null;
   const customValues = input.customValues && typeof input.customValues === 'object'
-    ? input.customValues
+    ? { ...input.customValues }
     : {};
   const recordTypeKey = customFields.normalizeRecordTypeKey(
     db,
     input.recordTypeKey || input.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
     { appliesTo: 'client' }
   );
+  if (input.ticker) {
+    const matterSvc = require('./matters');
+    const tickerField = matterSvc.ensureTickerField(db, actor);
+    if (!customValues[tickerField.id] && !customValues[String(tickerField.id)]) {
+      customValues[tickerField.id] = String(input.ticker).trim().toUpperCase();
+    }
+  }
 
   customFields.assertRequiredCustomValues(db, {
     appliesTo: 'client',
@@ -318,9 +348,17 @@ function updateClient(db, actor, id, patch = {}) {
   `).run(id);
 
   // Keep matter names, search, and global lookup in sync when contact text changes.
-  if (patch.name !== undefined || patch.company !== undefined || patch.email !== undefined) {
+  if (patch.name !== undefined || patch.company !== undefined || patch.email !== undefined
+    || patch.customValues) {
     const matterSvc = require('./matters');
     if (patch.name !== undefined) {
+      const oldTicker = matterSvc.tickerValueForClient(db, id);
+      const oldDerived = matterSvc.deriveTickerFromName(current.name);
+      if (!oldTicker || oldTicker === oldDerived) {
+        matterSvc.ensureClientTicker(db, actor, id, matterSvc.deriveTickerFromName(nextName));
+      }
+    }
+    if (patch.name !== undefined || patch.customValues) {
       matterSvc.rebuildClientMatterNames(db, actor, id);
     }
     const linked = db.prepare('SELECT id FROM matters WHERE client_id = ?').all(id);

@@ -1237,6 +1237,37 @@ button.mlc-remove:hover {
   border: none;
 }
 
+.create-matter-step {
+  margin: 0 0 1rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border, #d5d0c6);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+}
+
+.create-matter-step h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--font);
+  font-size: 1rem;
+}
+
+.create-matter-company-field {
+  display: block;
+  margin: 0.55rem 0 0.35rem;
+}
+
+.create-matter-preview-card {
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  background: var(--wash, #f6f3ec);
+}
+
+.create-matter-preview-card #createMatterNamePreview {
+  margin: 0;
+  font-weight: 600;
+}
+
 .create-matter-form {
   display: grid;
   gap: 0.45rem;

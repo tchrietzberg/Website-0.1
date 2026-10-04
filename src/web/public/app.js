@@ -18,7 +18,8 @@
     createMatterDraftName: '',
     createMatterRecordTypeKey: 'billable',
     createMatterClientId: '',
-    createMatterNewClient: { name: '', recordTypeKey: 'client', email: '' },
+    createMatterStatus: 'open',
+    createMatterNewClient: { name: '', ticker: '', recordTypeKey: 'company', email: '' },
     settingsMatterRecordTypeKey: 'billable',
     settingsContactRecordTypeKey: 'client',
     settingsRoleKey: 'attorney',
@@ -3044,10 +3045,19 @@
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
+  function todayIsoDate() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function companyOptionLabel(company) {
+    if (!company) return '';
+    return [company.ticker, company.name].filter(Boolean).join(' — ') || company.name || '';
+  }
+
   function defaultMatterListColumns() {
     return [
       { key: 'name', label: 'Name', kind: 'built_in', removable: false },
-      { key: 'client', label: 'Client', kind: 'built_in', removable: true },
+      { key: 'client', label: 'Company', kind: 'built_in', removable: true },
       { key: 'status', label: 'Status', kind: 'custom', removable: true },
       { key: 'attorney', label: 'Attorney', kind: 'built_in', removable: true },
     ];
@@ -4771,7 +4781,8 @@
     state.createMatterRecordTypeKey = 'billable';
     state.createMatterDraftName = '';
     state.createMatterClientId = '';
-    state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+    state.createMatterStatus = 'open';
+    state.createMatterNewClient = { name: '', ticker: '', recordTypeKey: 'company', email: '' };
     state.showCreateContact = false;
     state.view = 'matters';
     state.matterId = null;
@@ -5080,9 +5091,6 @@
       (recordTypes || []).map((t) => [t.key, t.label || t.key])
     );
     const canEditListColumns = canCreateMatter(state.user) && roleCanModify('matter');
-    const clientList = [...(clients || [])].sort((a, b) =>
-      String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
-    );
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
     const nameFormula = createSettings?.matterNameFormula || state.settings?.matterNameFormula || null;
     const formulaActive = !!(nameFormula?.enabled && (nameFormula.parts || []).length);
@@ -5166,6 +5174,12 @@
     });
     // Put formula name fields first so they read with the name builder.
     createFieldDefs.sort((a, b) => Number(b.inNameFormula) - Number(a.inNameFormula));
+    const caseTypeCreateField = createFieldDefs.find((f) =>
+      String(f.label || '').toLowerCase() === 'case type'
+    ) || null;
+    const companyChoices = [...(clients || [])].sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
+    );
 
     setMainHtml(`
       <div class="card stack page-card">
@@ -5176,44 +5190,74 @@
         ${showCreate ? `
         <div id="createMatterSection" class="create-matter-panel page-section">
           <form id="newMatterForm" class="create-matter-form">
-            ${formulaActive ? `
-              <p class="hint">Matter name is built from:
-                ${escapeHtml((nameFormula.parts || []).map((p) => p.label || (p.kind === 'token' ? 'Year' : 'Field')).join(nameFormula.separator || '-'))}</p>
-            ` : ''}
-            <div class="create-matter-row">
-              <div class="create-matter-name-typeahead" data-matter-name-typeahead>
-                <input id="createMatterName" name="name" ${formulaActive && !formulaHasMatterName ? 'readonly' : 'required'}
-                  value="${escapeHtml(draftName)}"
-                  placeholder="${formulaHasMatterName
-                    ? 'Matter name'
-                    : (formulaActive ? 'Fills from name fields below' : 'Type a matter name…')}"
-                  aria-label="Matter name" autocomplete="off" aria-autocomplete="list"
-                  aria-expanded="false" />
-                <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
-                  role="listbox" hidden></ul>
-              </div>
-              <button class="primary" type="submit">Create</button>
-              <button type="button" id="clearCreateMatter">Clear</button>
-              <label class="create-matter-type-field">Record type
-                <select name="recordTypeKey" id="createMatterTypeSelect" required>
-                  ${(recordTypes || []).map((t) => `
-                    <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
-                      ${escapeHtml(t.label || t.key)}
-                    </option>`).join('') || `
-                    <option value="billable" selected>Billable</option>
-                    <option value="non_billable">Non-Billable</option>
-                    <option value="do_not_charge">Do not charge</option>`}
+            <p class="hint">Pick a company first (name + ticker). Then choose case type and status.
+              The matter name is built automatically as
+              <strong>Ticker - Company Name - Case Type - Matter Status - Open Date</strong>.</p>
+            <section class="create-matter-step" data-create-step="company">
+              <h3>1. Company</h3>
+              <p class="muted">Company Name and Ticker are a separate record. Reuse an existing company or add a new one.</p>
+              <label class="create-matter-company-field">Existing company
+                <select id="createMatterCompanySelect" name="companyId" aria-label="Company">
+                  <option value="">Select a company…</option>
+                  <option value="__new__" ${state.createMatterClientId === '__new__' ? 'selected' : ''}>+ New company</option>
+                  ${companyChoices.map((c) => `
+                    <option value="${c.id}" ${String(state.createMatterClientId) === String(c.id) ? 'selected' : ''}>
+                      ${escapeHtml([c.ticker, c.name].filter(Boolean).join(' — '))}
+                    </option>`).join('')}
                 </select>
               </label>
+              <div class="grid two" id="createMatterNewCompanyFields" ${state.createMatterClientId === '__new__' ? '' : 'hidden'}>
+                <label>Company name *
+                  <input id="createMatterCompanyName" name="newCompanyName" autocomplete="off"
+                    value="${escapeHtml(state.createMatterNewClient?.name || '')}"
+                    placeholder="Northwind Holdings LLC" />
+                </label>
+                <label>Ticker *
+                  <input id="createMatterCompanyTicker" name="newCompanyTicker" autocomplete="off"
+                    value="${escapeHtml(state.createMatterNewClient?.ticker || '')}"
+                    placeholder="NWHD" maxlength="12" />
+                </label>
+              </div>
+            </section>
+            <section class="create-matter-step" data-create-step="matter">
+              <h3>2. Matter</h3>
+              <div class="grid two">
+                ${caseTypeCreateField ? `
+                  <label class="name-formula-field">Case type *
+                    ${renderFieldInput(caseTypeCreateField, { canEdit: true })}
+                  </label>` : ''}
+                <label>Matter status *
+                  <select name="status" id="createMatterStatusSelect" required>
+                    ${['open', 'closed', 'possible'].map((s) => `
+                      <option value="${s}" ${s === (state.createMatterStatus || 'open') ? 'selected' : ''}>
+                        ${escapeHtml(formatMatterStatusLabel(s))}
+                      </option>`).join('')}
+                  </select>
+                </label>
+                <label>Open date
+                  <input type="date" name="openedOn" id="createMatterOpenedOn" value="${escapeHtml(todayIsoDate())}" readonly />
+                  <span class="hint">Set automatically to today.</span>
+                </label>
+                <label class="create-matter-type-field">Record type
+                  <select name="recordTypeKey" id="createMatterTypeSelect" required>
+                    ${(recordTypes || []).map((t) => `
+                      <option value="${escapeHtml(t.key)}" ${t.key === createRecordTypeKey ? 'selected' : ''}>
+                        ${escapeHtml(t.label || t.key)}
+                      </option>`).join('') || `
+                      <option value="billable" selected>Billable</option>
+                      <option value="non_billable">Non-Billable</option>
+                      <option value="do_not_charge">Do not charge</option>`}
+                  </select>
+                </label>
+              </div>
+            </section>
+            <div class="create-matter-preview-card">
+              <p class="muted" id="createMatterNamePreview">Preview: </p>
+              <input type="hidden" id="createMatterName" name="name" value="${escapeHtml(draftName)}" />
             </div>
-            ${formulaActive ? '<p class="muted" id="createMatterNamePreview"></p>' : ''}
-            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
-            <div class="grid two create-matter-custom">
-              ${createFieldDefs.map((field) => `
-                <label class="${field.width === 'full' ? 'span-all' : ''}${field.inNameFormula ? ' name-formula-field' : ''}">
-                  ${escapeHtml(field.label)}${field.required ? ' *' : ''}${field.inNameFormula ? ' <span class="muted">(name)</span>' : ''}
-                  ${renderFieldInput(field, { canEdit: true })}
-                </label>`).join('')}
+            <div class="create-matter-row">
+              <button class="primary" type="submit">Create matter</button>
+              <button type="button" id="clearCreateMatter">Clear</button>
             </div>
           </form>
           <div id="newMatterMsg"></div>
@@ -5301,18 +5345,37 @@
         state.createMatterDraftName = '';
         state.createMatterRecordTypeKey = 'billable';
         state.createMatterClientId = '';
-        state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+        state.createMatterStatus = 'open';
+        state.createMatterNewClient = { name: '', ticker: '', recordTypeKey: 'company', email: '' };
         const msg = $('#newMatterMsg');
         if (msg) msg.innerHTML = '';
         await renderMatters();
-        $('#createMatterName')?.focus();
+        $('#createMatterCompanySelect')?.focus();
       };
     }
     if (showCreate) {
-      const nameInput = $('#createMatterName') || $('#createMatterSection input[name="name"]');
+      const nameInput = $('#createMatterName');
+      const companySelect = $('#createMatterCompanySelect');
+      const newCompanyFields = $('#createMatterNewCompanyFields');
+      const syncNewCompanyVisibility = () => {
+        const choice = String(companySelect?.value || '').trim();
+        if (newCompanyFields) newCompanyFields.hidden = choice !== '__new__';
+        state.createMatterClientId = choice;
+      };
+      const selectedCompany = () => {
+        const choice = String(companySelect?.value || state.createMatterClientId || '').trim();
+        if (choice === '__new__') {
+          return {
+            name: String($('#createMatterCompanyName')?.value || state.createMatterNewClient?.name || '').trim(),
+            ticker: String($('#createMatterCompanyTicker')?.value || state.createMatterNewClient?.ticker || '').trim().toUpperCase(),
+          };
+        }
+        const found = (clients || []).find((c) => String(c.id) === choice);
+        return found ? { name: found.name || '', ticker: found.ticker || '' } : { name: '', ticker: '' };
+      };
       const syncFormulaName = () => {
         const formEl = $('#newMatterForm');
-        if (!formulaActive || !formEl) return '';
+        if (!formEl) return '';
         const fd = new FormData(formEl);
         const values = {};
         for (const [key, value] of fd.entries()) {
@@ -5324,74 +5387,89 @@
         const caseType = caseTypeField
           ? String(values[caseTypeField.fieldId] ?? values[String(caseTypeField.fieldId)] ?? '').trim()
           : '';
-        const companyId = String(state.createMatterClientId || '').trim();
-        const companyName = (clients || []).find((c) => String(c.id) === companyId)?.name || '';
-        const sep = nameFormula.separator == null || nameFormula.separator === ''
-          ? '-'
+        const company = selectedCompany();
+        const statusLabel = formatMatterStatusLabel(fd.get('status') || state.createMatterStatus || 'open');
+        const openedOn = String(fd.get('openedOn') || todayIsoDate()).slice(0, 10);
+        const sep = nameFormula?.separator == null || nameFormula?.separator === ''
+          ? ' - '
           : String(nameFormula.separator);
-        const year = new Date().toISOString().slice(0, 4);
         const pieces = [];
-        for (const part of (nameFormula.parts || [])) {
+        for (const part of (nameFormula?.parts || [
+          { kind: 'token', token: 'ticker' },
+          { kind: 'token', token: 'company' },
+          { kind: 'token', token: 'case_type' },
+          { kind: 'token', token: 'status' },
+          { kind: 'token', token: 'opened_on' },
+        ])) {
           if (part.kind === 'token') {
             if (part.token === 'opened_year' || part.token === 'year') {
-              if (year) pieces.push(year);
+              if (openedOn) pieces.push(openedOn.slice(0, 4));
+            } else if (part.token === 'opened_on' && openedOn) {
+              pieces.push(openedOn);
             } else if (part.token === 'matter_name') {
               const v = String(nameInput?.value || '').trim();
               if (v) pieces.push(v);
-            } else if (part.token === 'company' && companyName) {
-              pieces.push(companyName);
+            } else if (part.token === 'company' && company.name) {
+              pieces.push(company.name);
+            } else if (part.token === 'ticker' && company.ticker) {
+              pieces.push(company.ticker);
             } else if (part.token === 'case_type' && caseType) {
               pieces.push(caseType);
-            } else if (part.token === 'status') {
-              pieces.push('Open');
+            } else if (part.token === 'status' && statusLabel) {
+              pieces.push(statusLabel);
             }
           } else if (part.kind === 'custom_field') {
             const v = values[part.fieldId] ?? values[String(part.fieldId)] ?? '';
             if (v) pieces.push(v);
           }
         }
-        let built = pieces.join(sep);
-        if (nameFormula.appendStatusYear && built) {
-          built = `${built} - Open - ${year}`;
-        }
+        const built = pieces.join(sep);
         const preview = $('#createMatterNamePreview');
-        if (preview) preview.textContent = built ? `Preview: ${built}` : '';
-        if (nameInput && !formulaHasMatterName) {
+        if (preview) {
+          preview.textContent = built
+            ? `Matter name: ${built}`
+            : 'Matter name: choose a company, case type, and status to preview.';
+        }
+        if (nameInput) {
           nameInput.value = built;
           state.createMatterDraftName = built;
-        } else if (nameInput) {
-          state.createMatterDraftName = String(nameInput.value || '');
         }
         return built;
       };
-      if (nameInput) {
-        if (formulaActive) {
-          const formEl = $('#newMatterForm');
-          if (formEl) {
-            formEl.addEventListener('input', syncFormulaName);
-            formEl.addEventListener('change', syncFormulaName);
-          }
+      if (companySelect) {
+        companySelect.onchange = () => {
+          syncNewCompanyVisibility();
           syncFormulaName();
-        } else {
-          wireCreateMatterNameTypeahead(nameInput, allMatters || state.matters || []);
-        }
-        setTimeout(() => {
-          const focusEl = formulaActive
-            ? ($('#newMatterForm')?.querySelector('.name-formula-field input, .name-formula-field select, .name-formula-field textarea')
-              || nameInput)
-            : nameInput;
-          if (focusEl?.focus) focusEl.focus();
-          const section = $('#createMatterSection');
-          if (section && section.scrollIntoView) {
-            section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }, 0);
+        };
+        syncNewCompanyVisibility();
       }
+      const formEl = $('#newMatterForm');
+      if (formEl) {
+        formEl.addEventListener('input', syncFormulaName);
+        formEl.addEventListener('change', () => {
+          state.createMatterStatus = String($('#createMatterStatusSelect')?.value || 'open');
+          state.createMatterNewClient = {
+            ...(state.createMatterNewClient || {}),
+            name: String($('#createMatterCompanyName')?.value || ''),
+            ticker: String($('#createMatterCompanyTicker')?.value || ''),
+            recordTypeKey: 'company',
+          };
+          syncFormulaName();
+        });
+      }
+      syncFormulaName();
+      setTimeout(() => {
+        const focusEl = companySelect
+          || $('#newMatterForm')?.querySelector('select, input:not([type="hidden"])');
+        if (focusEl?.focus) focusEl.focus();
+        const section = $('#createMatterSection');
+        if (section && section.scrollIntoView) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 0);
       const typeSelect = $('#createMatterTypeSelect');
       if (typeSelect) {
         typeSelect.onchange = async () => {
-          const nameEl = $('#createMatterName');
-          if (nameEl && !formulaActive) state.createMatterDraftName = String(nameEl.value || '');
           state.createMatterRecordTypeKey = typeSelect.value || 'billable';
           await renderMatters();
         };
@@ -5406,39 +5484,36 @@
         ev.preventDefault();
         const fd = new FormData(newMatterForm);
         const customValues = collectCustomFieldValues(newMatterForm, createFieldDefs);
-        if (formulaActive) {
-          for (const part of (nameFormula.parts || [])) {
-            if (part.kind !== 'custom_field') continue;
-            const v = String(customValues[part.fieldId] ?? customValues[String(part.fieldId)] ?? '').trim();
-            if (!v) {
-              $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(part.label || 'Name field')} is required for the matter name.</div>`;
-              return;
-            }
+        const companyChoice = String(fd.get('companyId') || state.createMatterClientId || '').trim();
+        const newCompanyName = String(fd.get('newCompanyName') || '').trim();
+        const newCompanyTicker = String(fd.get('newCompanyTicker') || '').trim().toUpperCase();
+        const caseTypeField = (createFieldDefs || []).find((f) =>
+          String(f.label || '').toLowerCase() === 'case type'
+        );
+        const caseType = caseTypeField
+          ? String(customValues[caseTypeField.fieldId] ?? customValues[String(caseTypeField.fieldId)] ?? '').trim()
+          : '';
+        if (!companyChoice) {
+          $('#newMatterMsg').innerHTML = '<div class="error">Choose a company or add a new one.</div>';
+          return;
+        }
+        if (companyChoice === '__new__') {
+          if (!newCompanyName) {
+            $('#newMatterMsg').innerHTML = '<div class="error">Enter a company name.</div>';
+            return;
+          }
+          if (!newCompanyTicker) {
+            $('#newMatterMsg').innerHTML = '<div class="error">Enter a ticker for the company.</div>';
+            return;
           }
         }
-        let name = String(fd.get('name') || '').trim();
-        if (formulaActive && !formulaHasMatterName) {
-          const sep = nameFormula.separator == null || nameFormula.separator === ''
-            ? '-'
-            : String(nameFormula.separator);
-          const year = new Date().toISOString().slice(0, 4);
-          const pieces = [];
-          for (const part of (nameFormula.parts || [])) {
-            if (part.kind === 'token' && (part.token === 'opened_year' || part.token === 'year')) {
-              if (year) pieces.push(year);
-            } else if (part.kind === 'custom_field') {
-              const v = String(customValues[part.fieldId] ?? customValues[String(part.fieldId)] ?? '').trim();
-              if (v) pieces.push(v);
-            }
-          }
-          name = pieces.join(sep);
+        if (!caseType) {
+          $('#newMatterMsg').innerHTML = '<div class="error">Choose a case type.</div>';
+          return;
         }
+        const name = String(fd.get('name') || '').trim();
         if (!name) {
-          $('#newMatterMsg').innerHTML = `<div class="error">${
-            formulaActive
-              ? 'Fill the name fields to build a matter name.'
-              : 'Enter a matter name to continue.'
-          }</div>`;
+          $('#newMatterMsg').innerHTML = '<div class="error">Fill company, case type, and status to build the matter name.</div>';
           return;
         }
         const existingMatter = findExactMatterMatch(allMatters || state.matters || [], name);
@@ -5454,40 +5529,34 @@
           });
           return;
         }
-        const confirmed = await confirmCreateMatter({
-          matterName: name,
-          clients: clientList,
-          confirmLabel: 'Yes, create matter',
-          cancelLabel: 'Not yet',
-        });
-        if (!confirmed) return;
-        let clientChoice = String(confirmed.clientChoice || '').trim();
-        let clientId = confirmed.clientId != null ? confirmed.clientId : null;
-        const newClientName = String(confirmed.newClientName || '').trim();
-        const newClientRecordTypeKey = String(
-          confirmed.newClientRecordTypeKey
-            || state.createMatterNewClient?.recordTypeKey
-            || 'client',
-        ).trim() || 'client';
 
         const recordTypeKey = String(
           fd.get('recordTypeKey') || state.createMatterRecordTypeKey || 'billable'
         ).trim();
+        const status = String(fd.get('status') || state.createMatterStatus || 'open').trim();
+        const openedOn = String(fd.get('openedOn') || todayIsoDate()).slice(0, 10);
         try {
-          if (clientChoice === '__new__') {
+          let clientId = null;
+          if (companyChoice === '__new__') {
             if (!roleCanModify('contact')) {
-              throw new Error('You do not have permission to create contacts');
+              throw new Error('You do not have permission to create a company');
             }
             const createdClient = await api('/api/clients', {
               method: 'POST',
               body: JSON.stringify({
-                name: newClientName,
-                recordTypeKey: newClientRecordTypeKey,
+                name: newCompanyName,
+                ticker: newCompanyTicker,
+                recordTypeKey: 'company',
               }),
             });
             clientId = Number(createdClient?.client?.id);
             if (!Number.isFinite(clientId) || clientId <= 0) {
-              throw new Error('Could not create the new contact');
+              throw new Error('Could not create the company');
+            }
+          } else {
+            clientId = Number(companyChoice);
+            if (!Number.isFinite(clientId) || clientId <= 0) {
+              throw new Error('Choose a company');
             }
           }
           const page = await api('/api/matters', {
@@ -5495,7 +5564,9 @@
             body: JSON.stringify({
               name,
               recordTypeKey,
-              ...(clientId ? { clientId } : {}),
+              clientId,
+              status,
+              openedOn,
               customValues,
             }),
           });
@@ -5504,7 +5575,7 @@
           state.createMatterDraftName = '';
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterClientId = '';
-          state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+          state.createMatterNewClient = { name: '', ticker: '', recordTypeKey: 'company', email: '' };
           state.matterSearch = emptyMatterSearchState();
           state.matterCreateFlash = {
             title: 'Matter created',
@@ -6175,9 +6246,12 @@
 
     if (field.key === 'std:client') {
       const opts = (ctx.clients || []).map((c) =>
-        `<option value="${c.id}" ${String(val) === String(c.id) ? 'selected' : ''}>${c.name}</option>`
+        `<option value="${c.id}" ${String(val) === String(c.id) ? 'selected' : ''}>${escapeHtml(companyOptionLabel(c) || c.name)}</option>`
       ).join('');
-      return `<select name="${name}" ${disabled} required>${opts}</select>`;
+      return `<select name="${name}" ${disabled} required>
+        <option value="">Select a company…</option>${opts}
+      </select>
+      <span class="hint">Company Name and Ticker live on the company record. Changing this company updates the matter name.</span>`;
     }
     if (field.key === 'std:matter_type') {
       const label = (ctx.recordTypes || []).find((t) => t.key === val)?.label || val || 'Billable';
@@ -9219,7 +9293,7 @@
       const addable = availableFields.filter((f) => !used.has(Number(f.id)));
       bodyEl.innerHTML = `
         <p class="hint">Build Create Matter names from fields and tokens, for example
-          <strong>Matter Name - Company Name - Case Type - Year - Matter Status</strong>.</p>
+          <strong>Ticker - Company Name - Case Type - Matter Status - Open Date</strong>.</p>
         <label class="check-inline">
           <input type="checkbox" id="mnfEnabled" ${draft.enabled ? 'checked' : ''} />
           Use formula when creating matters
@@ -9264,6 +9338,8 @@
           </label>
           <button type="button" id="mnfAddFieldBtn" ${draft.enabled && addable.length ? '' : 'disabled'}>Add field</button>
           <button type="button" id="mnfAddYearBtn" ${draft.enabled ? '' : 'disabled'}>Add Year</button>
+          <button type="button" id="mnfAddOpenDateBtn" ${draft.enabled ? '' : 'disabled'}>Add Open Date</button>
+          <button type="button" id="mnfAddTickerBtn" ${draft.enabled ? '' : 'disabled'}>Add Ticker</button>
           <button type="button" id="mnfAddMatterNameBtn" ${draft.enabled ? '' : 'disabled'}>Add Matter Name</button>
           <button type="button" id="mnfAddCompanyBtn" ${draft.enabled ? '' : 'disabled'}>Add Company</button>
           <button type="button" id="mnfAddCaseTypeBtn" ${draft.enabled ? '' : 'disabled'}>Add Case Type</button>
@@ -9369,6 +9445,10 @@
       if (addYearBtn) {
         addYearBtn.onclick = () => addToken('opened_year', 'Year');
       }
+      const addOpenDateBtn = $('#mnfAddOpenDateBtn');
+      if (addOpenDateBtn) addOpenDateBtn.onclick = () => addToken('opened_on', 'Open Date');
+      const addTickerBtn = $('#mnfAddTickerBtn');
+      if (addTickerBtn) addTickerBtn.onclick = () => addToken('ticker', 'Ticker');
       const addMatterNameBtn = $('#mnfAddMatterNameBtn');
       if (addMatterNameBtn) addMatterNameBtn.onclick = () => addToken('matter_name', 'Matter Name');
       const addCompanyBtn = $('#mnfAddCompanyBtn');

@@ -10,12 +10,12 @@ const customFields = require('../src/services/customFields');
 const TARGET_PER_STATUS = 30;
 const ENTRIES_PER_MATTER = 3;
 
-const CLIENT_NAMES = [
-  'Northwind Holdings LLC',
-  'Acme Pension Fund',
-  'Lakeside Credit Union',
-  'Horizon Benefits Trust',
-  'Cypress Municipal Partners',
+const CLIENTS = [
+  { name: 'Northwind Holdings LLC', ticker: 'NWHD' },
+  { name: 'Acme Pension Fund', ticker: 'ACME' },
+  { name: 'Lakeside Credit Union', ticker: 'LCU' },
+  { name: 'Horizon Benefits Trust', ticker: 'HBT' },
+  { name: 'Cypress Municipal Partners', ticker: 'CYMP' },
 ];
 
 const OPEN_NAMES = [
@@ -143,13 +143,19 @@ function serviceDateFor(index, offset) {
   return `${year}-${padDate(month)}-${padDate(day)}`;
 }
 
-function ensureClients(db) {
-  const insert = db.prepare('INSERT INTO clients(name) VALUES (?)');
-  for (const name of CLIENT_NAMES) {
-    const row = db.prepare('SELECT id FROM clients WHERE name = ?').get(name);
-    if (!row) insert.run(name);
+function ensureClients(db, actor) {
+  const insert = db.prepare("INSERT INTO clients(name, record_type) VALUES (?, 'company')");
+  for (const company of CLIENTS) {
+    const row = db.prepare('SELECT id FROM clients WHERE name = ?').get(company.name);
+    if (!row) insert.run(company.name);
   }
-  return db.prepare('SELECT id FROM clients ORDER BY id').all().map((r) => r.id);
+  const ids = db.prepare('SELECT id, name FROM clients ORDER BY id').all();
+  for (const row of ids) {
+    const match = CLIENTS.find((c) => c.name === row.name);
+    db.prepare("UPDATE clients SET record_type = 'company' WHERE id = ?").run(row.id);
+    matterSvc.ensureClientTicker(db, actor, row.id, match?.ticker || '');
+  }
+  return ids.map((r) => r.id);
 }
 
 function ensureActor(db) {
@@ -176,7 +182,7 @@ function seedDemoMatters(db, options = {}) {
   const actor = ensureActor(db);
   matterSvc.ensureStandardMatterNameFormula(db, actor);
   const caseTypeField = matterSvc.ensureCaseTypeField(db, actor);
-  const clientIds = ensureClients(db);
+  const clientIds = ensureClients(db, actor);
   const attorneyIds = attorneys(db);
   const caseTypes = matterSvc.CASE_TYPE_OPTIONS;
   const namesByStatus = {
