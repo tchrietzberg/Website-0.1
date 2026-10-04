@@ -219,9 +219,10 @@ describe('contacts and contact custom fields', () => {
     assert.equal(result.ok, true);
     assert.equal(result.unlinkedMatters, 1);
     assert.equal(clientsSvc.listClients(db).length, 0);
-    const matter = db.prepare("SELECT client_id, name FROM matters WHERE number = 'M-1'").get();
+    const matter = db.prepare("SELECT client_id, name, opened_on FROM matters WHERE number = 'M-1'").get();
     assert.equal(matter.client_id, null);
-    assert.equal(matter.name, 'Matter One');
+    const year = String(matter.opened_on || '').slice(0, 4) || new Date().getUTCFullYear();
+    assert.equal(matter.name, `Matter One - Securities Class Action - ${year} - Open`);
   });
 
   it('blocks contact delete without Delete permission', () => {

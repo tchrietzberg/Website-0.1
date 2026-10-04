@@ -539,13 +539,17 @@ function wipReport(db) {
   });
 }
 
-/** Firm matters listing — matter names only for now. */
+/** Firm matters listing — name-formula fields as separate columns. */
 function mattersReport(db) {
-  return db.prepare(`
-    SELECT m.name AS "Matter"
+  const matterSvc = require('./matters');
+  const defs = matterSvc.nomenclatureColumnDefs(db);
+  const matters = db.prepare(`
+    SELECT m.*, c.name AS client_name
     FROM matters m
+    LEFT JOIN clients c ON c.id = m.client_id
     ORDER BY m.name COLLATE NOCASE, m.id
   `).all();
+  return matters.map((m) => matterSvc.matterNomenclatureRow(db, m, defs));
 }
 
 function arAging(db, asOf = new Date().toISOString().slice(0, 10)) {

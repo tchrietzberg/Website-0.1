@@ -746,6 +746,17 @@ function createServer(db = openDb()) {
             fieldId: url.searchParams.get('fieldId'),
             fieldValue: url.searchParams.get('fieldValue'),
           };
+          const fmt = String(url.searchParams.get('format') || 'xlsx').toLowerCase();
+          if (fmt === 'csv') {
+            const csv = matterSvc.exportMattersListCsv(db, filters);
+            const body = Buffer.from(csv, 'utf8');
+            res.writeHead(200, {
+              'Content-Type': 'text/csv; charset=utf-8',
+              'Content-Disposition': 'attachment; filename="matters.csv"',
+              'Content-Length': body.length,
+            });
+            return res.end(body);
+          }
           const buf = matterSvc.exportMattersListXlsx(db, filters);
           res.writeHead(200, {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -1218,6 +1229,7 @@ function createServer(db = openDb()) {
         }
       }
       if (req.method === 'GET' && pathname === '/api/settings') {
+        if (user) matterSvc.ensureDefaultCreateFormula(db, user);
         return json(res, 200, readSettings(db));
       }
       if (req.method === 'PATCH' && pathname === '/api/settings') {

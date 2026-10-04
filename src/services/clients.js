@@ -317,8 +317,12 @@ function updateClient(db, actor, id, patch = {}) {
     UPDATE clients SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?
   `).run(id);
 
-  // Keep matter search / global lookup in sync when contact text changes.
+  // Keep matter names, search, and global lookup in sync when contact text changes.
   if (patch.name !== undefined || patch.company !== undefined || patch.email !== undefined) {
+    const matterSvc = require('./matters');
+    if (patch.name !== undefined) {
+      matterSvc.rebuildClientMatterNames(db, actor, id);
+    }
     const linked = db.prepare('SELECT id FROM matters WHERE client_id = ?').all(id);
     for (const row of linked) matterIndex.indexMatter(db, row.id);
   }
@@ -359,6 +363,8 @@ function deleteClient(db, actor, id) {
   // Matters may exist without a client — unlink before removing the contact.
   if (matterCount > 0) {
     db.prepare('UPDATE matters SET client_id = NULL WHERE client_id = ?').run(id);
+    const matterSvc = require('./matters');
+    matterSvc.rebuildMatterDisplayNames(db, actor, linkedMatters.map((row) => row.id));
     const matterIndex = require('./matterIndex');
     for (const row of linkedMatters) {
       matterIndex.indexMatter(db, row.id);
