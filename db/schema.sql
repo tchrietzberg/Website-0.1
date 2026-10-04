@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS matters (
   matter_type TEXT NOT NULL DEFAULT 'billable',
   jurisdiction TEXT,
   court TEXT,
-  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed','possible')),
   responsible_attorney_id INTEGER REFERENCES users(id),
   opened_on TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

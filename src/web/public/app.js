@@ -3040,7 +3040,7 @@
   function formatMatterStatusLabel(status) {
     const s = String(status || '').trim();
     if (!s) return '—';
-    // Display with an initial capital (stored values stay lowercase: open/closed).
+    // Display with an initial capital (stored values stay lowercase: open/closed/possible).
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
@@ -3299,6 +3299,7 @@
       const options = builtIn?.options || [
         { value: 'open', label: 'Open' },
         { value: 'closed', label: 'Closed' },
+        { value: 'possible', label: 'Possible' },
       ];
       return `
         <label class="matter-filter-value">Value
@@ -6138,7 +6139,7 @@
       </select>`;
     }
     if (field.key === 'std:status') {
-      const options = (field.options && field.options.length) ? field.options : ['open', 'closed'];
+      const options = (field.options && field.options.length) ? field.options : ['open', 'closed', 'possible'];
       const opts = options.map((o) => {
         const value = typeof o === 'string' ? o : (o.value ?? o);
         const label = typeof o === 'string'

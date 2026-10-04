@@ -197,11 +197,21 @@ function buildNameFromFormula(db, formula, {
   return pieces.join(sep);
 }
 
+const MATTER_STATUSES = ['open', 'closed', 'possible'];
+
 function formatBuiltInStatus(status) {
   const s = String(status || '').trim();
   if (s === 'open') return 'Open';
   if (s === 'closed') return 'Closed';
+  if (s === 'possible') return 'Possible';
   return s;
+}
+
+function normalizeMatterStatus(status) {
+  const raw = String(status || '').trim().toLowerCase();
+  if (MATTER_STATUSES.includes(raw)) return raw;
+  if (!raw) return 'open';
+  throw new Error('status must be open, closed, or possible');
 }
 
 function yearFromOpenedOn(openedOn) {
@@ -387,7 +397,8 @@ function createMatter(db, actor, input = {}) {
     ? Number(input.responsibleAttorneyId)
     : null;
 
-  const initialStatus = formatBuiltInStatus(input.status || 'open');
+  const status = normalizeMatterStatus(input.status || 'open');
+  const initialStatus = formatBuiltInStatus(status);
   const customValues = input.customValues && typeof input.customValues === 'object'
     ? input.customValues
     : {};
@@ -428,7 +439,7 @@ function createMatter(db, actor, input = {}) {
     matterType,
     input.jurisdiction != null && input.jurisdiction !== '' ? String(input.jurisdiction) : null,
     input.court != null && input.court !== '' ? String(input.court) : null,
-    String(input.status || 'open'),
+    status,
     Number.isFinite(attorneyId) ? attorneyId : null,
     openedOn
   );
@@ -507,6 +518,8 @@ function updateMatter(db, actor, id, patch) {
         const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(newVal);
         if (!client) throw new Error('client not found');
       }
+    } else if (key === 'status') {
+      newVal = normalizeMatterStatus(newVal);
     } else if (newVal != null) {
       newVal = String(newVal);
     } else {
@@ -630,6 +643,7 @@ function listMatterBrowseFilters(db) {
         options: [
           { value: 'open', label: 'Open' },
           { value: 'closed', label: 'Closed' },
+          { value: 'possible', label: 'Possible' },
         ],
       },
     ],
@@ -980,6 +994,9 @@ function exportMattersListXlsx(db, filters = {}) {
 }
 
 module.exports = {
+  MATTER_STATUSES,
+  formatBuiltInStatus,
+  normalizeMatterStatus,
   createMatter,
   updateMatter,
   deleteMatter,

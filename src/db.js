@@ -33,6 +33,7 @@ function migrate(db) {
   migrateAuditHardening(db);
   migrateMfa(db);
   migrateInvoiceTemplates(db);
+  migrateMatterPossibleStatus(db);
   const customFields = require('./services/customFields');
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
@@ -519,7 +520,7 @@ function migrateMatterClientOptional(db) {
       matter_type TEXT NOT NULL DEFAULT 'billable',
       jurisdiction TEXT,
       court TEXT,
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed','possible')),
       responsible_attorney_id INTEGER REFERENCES users(id),
       opened_on TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -555,7 +556,7 @@ function migrateMatterTypeCheck(db) {
       matter_type TEXT NOT NULL DEFAULT 'billable',
       jurisdiction TEXT,
       court TEXT,
-      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed','possible')),
       responsible_attorney_id INTEGER REFERENCES users(id),
       opened_on TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -623,6 +624,42 @@ function migrateTimeEntryRoundingCheck(db) {
     ALTER TABLE time_entries_mig RENAME TO time_entries;
     CREATE INDEX IF NOT EXISTS idx_time_entries_matter_date
       ON time_entries(matter_id, service_date, timekeeper_id);
+  `);
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+
+/** SQLite cannot ALTER CHECK; allow built-in matter status `possible`. */
+function migrateMatterPossibleStatus(db) {
+  const row = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='matters'"
+  ).get();
+  if (!row?.sql || row.sql.includes("'possible'")) return;
+
+  db.exec('PRAGMA foreign_keys = OFF;');
+  db.exec(`
+    CREATE TABLE matters_status_mig (
+      id INTEGER PRIMARY KEY,
+      client_id INTEGER REFERENCES clients(id),
+      number TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      matter_type TEXT NOT NULL DEFAULT 'billable',
+      jurisdiction TEXT,
+      court TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed','possible')),
+      responsible_attorney_id INTEGER REFERENCES users(id),
+      opened_on TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO matters_status_mig(
+      id, client_id, number, name, matter_type, jurisdiction, court, status,
+      responsible_attorney_id, opened_on, created_at
+    )
+    SELECT
+      id, client_id, number, name, matter_type, jurisdiction, court, status,
+      responsible_attorney_id, opened_on, created_at
+    FROM matters;
+    DROP TABLE matters;
+    ALTER TABLE matters_status_mig RENAME TO matters;
   `);
   db.exec('PRAGMA foreign_keys = ON;');
 }
