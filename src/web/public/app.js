@@ -5206,7 +5206,8 @@
                     </option>`).join('')}
                 </select>
               </label>
-              <div class="grid two" id="createMatterNewCompanyFields" ${state.createMatterClientId === '__new__' ? '' : 'hidden'}>
+              <div class="grid two create-matter-new-company" id="createMatterNewCompanyFields"
+                ${state.createMatterClientId === '__new__' ? '' : 'hidden'}>
                 <label>Company name *
                   <input id="createMatterCompanyName" name="newCompanyName" autocomplete="off"
                     value="${escapeHtml(state.createMatterNewClient?.name || '')}"
@@ -5371,7 +5372,7 @@
           };
         }
         const found = (clients || []).find((c) => String(c.id) === choice);
-        return found ? { name: found.name || '', ticker: found.ticker || '' } : { name: '', ticker: '' };
+        return found ? { name: found.name || '', ticker: String(found.ticker || '').toUpperCase() } : { name: '', ticker: '' };
       };
       const syncFormulaName = () => {
         const formEl = $('#newMatterForm');
@@ -5388,8 +5389,12 @@
           ? String(values[caseTypeField.fieldId] ?? values[String(caseTypeField.fieldId)] ?? '').trim()
           : '';
         const company = selectedCompany();
-        const statusLabel = formatMatterStatusLabel(fd.get('status') || state.createMatterStatus || 'open');
-        const openedOn = String(fd.get('openedOn') || todayIsoDate()).slice(0, 10);
+        const statusLabel = formatMatterStatusLabel(
+          fd.get('status') || $('#createMatterStatusSelect')?.value || state.createMatterStatus || 'open'
+        );
+        const openedOn = String(
+          $('#createMatterOpenedOn')?.value || fd.get('openedOn') || todayIsoDate()
+        ).slice(0, 10);
         const sep = nameFormula?.separator == null || nameFormula?.separator === ''
           ? ' - '
           : String(nameFormula.separator);
@@ -5541,12 +5546,14 @@
             if (!roleCanModify('contact')) {
               throw new Error('You do not have permission to create a company');
             }
+            const tickerFieldId = nameFormula?.tickerField?.id;
             const createdClient = await api('/api/clients', {
               method: 'POST',
               body: JSON.stringify({
                 name: newCompanyName,
                 ticker: newCompanyTicker,
                 recordTypeKey: 'company',
+                customValues: tickerFieldId ? { [tickerFieldId]: newCompanyTicker } : {},
               }),
             });
             clientId = Number(createdClient?.client?.id);

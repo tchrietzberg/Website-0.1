@@ -255,11 +255,12 @@ describe('matter search and record-based fields', () => {
     assert.ok(keys.includes('std:number'));
     const extra = fields.filter((f) => f.key !== 'std:name' && f.key !== 'std:number');
     assert.ok(
-      extra.length === 0
-        || extra.every((f) => String(f.label || '').toLowerCase() === 'case type'),
-      'lean matter page should only add Case Type beyond core fields'
+      extra.every((f) => f.key === 'std:client'
+        || String(f.label || '').toLowerCase() === 'case type'),
+      'lean matter page should only add Company and Case Type beyond core fields'
     );
-    assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:client'));
+    assert.ok(fields.some((f) => f.key === 'std:client'));
+    assert.ok(!page0.availableStandardFields.some((f) => f.key === 'std:client'));
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:court'));
     assert.ok(!page0.availableStandardFields.some((f) => f.key === 'std:matter_type'));
 

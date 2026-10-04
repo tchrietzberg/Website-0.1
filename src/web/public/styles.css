@@ -1256,6 +1256,10 @@ button.mlc-remove:hover {
   margin: 0.55rem 0 0.35rem;
 }
 
+.create-matter-new-company[hidden] {
+  display: none !important;
+}
+
 .create-matter-preview-card {
   margin: 0 0 0.75rem;
   padding: 0.7rem 0.9rem;

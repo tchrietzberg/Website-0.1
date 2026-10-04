@@ -248,12 +248,14 @@ function createClient(db, actor, input = {}) {
     input.recordTypeKey || input.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
     { appliesTo: 'client' }
   );
-  if (input.ticker) {
+  if (recordTypeKey === 'company' || input.ticker) {
     const matterSvc = require('./matters');
     const tickerField = matterSvc.ensureTickerField(db, actor);
-    if (!customValues[tickerField.id] && !customValues[String(tickerField.id)]) {
-      customValues[tickerField.id] = String(input.ticker).trim().toUpperCase();
-    }
+    const fromValues = customValues[tickerField.id] || customValues[String(tickerField.id)] || '';
+    const ticker = String(input.ticker || fromValues || matterSvc.deriveTickerFromName(name))
+      .trim()
+      .toUpperCase();
+    if (ticker) customValues[tickerField.id] = ticker;
   }
 
   customFields.assertRequiredCustomValues(db, {

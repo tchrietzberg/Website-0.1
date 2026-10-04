@@ -340,13 +340,20 @@ function ensureTickerField(db, actor) {
   customFields.ensureRecordTypes(db);
   customFields.ensureTypeLayout(db, 'company');
   const existing = findTickerField(db);
-  if (existing) return customFields.getCustomField(db, existing.id);
   const admin = adminActor(db, actor);
+  if (existing) {
+    const field = customFields.getCustomField(db, existing.id);
+    if (field?.required) {
+      customFields.updateCustomField(db, admin, existing.id, { required: false });
+      return customFields.getCustomField(db, existing.id);
+    }
+    return field;
+  }
   return customFields.createCustomField(db, admin, {
     label: 'Ticker',
     fieldType: 'text',
     recordTypeKey: 'company',
-    required: true,
+    required: false,
     isDefault: true,
     appliesTo: 'client',
   });
@@ -374,9 +381,23 @@ function ensureStandardMatterNameFormula(db, actor) {
   });
 }
 
+function ensureCompanyOnMatterLayouts(db, actor) {
+  customFields.ensureRecordTypes(db);
+  const types = customFields.listRecordTypes(db, { appliesTo: 'matter' });
+  for (const type of types) {
+    customFields.ensureTypeLayout(db, type.key);
+    try {
+      customFields.addStandardFieldToType(db, actor || adminActor(db, actor), type.key, 'std:client');
+    } catch {
+      // already present or not addable
+    }
+  }
+}
+
 function ensureDefaultCreateFormula(db, actor) {
   ensureCaseTypeField(db, actor);
   ensureTickerField(db, actor);
+  ensureCompanyOnMatterLayouts(db, actor);
   const raw = getSetting(db, MATTER_NAME_FORMULA_SETTING, null);
   if (raw == null || raw === '') {
     return ensureStandardMatterNameFormula(db, actor);
