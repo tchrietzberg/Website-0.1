@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Seeds users, clients, rates, billing rules, and record-type field defs.
- * No sample matters — create matters in the UI; Matter Search indexes them.
+ * Seeds users, clients, rates, billing rules, record-type field defs,
+ * and demo Open / Closed / Possible matters with time entries.
  */
 const { resetDb, setSetting, DEFAULT_DB } = require('../src/db');
 const { hashPassword } = require('../src/security');
@@ -84,7 +84,10 @@ customFields.createCustomField(db, avery, {
   recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
 });
 
+const { seedDemoMatters, counts } = require('./demoMatters');
+const demoCounts = seedDemoMatters(db);
+
 console.log(`Seeded ${dbFile}`);
 console.log(`Demo logins: *@firm.example  password: ${demoPassword}`);
 console.log('Change DEMO_PASSWORD / user passwords before any public deploy.');
-console.log('No sample matters — create matters under Matters; Matter Search uses the search index.');
+console.log('Demo matters', demoCounts, counts(db));

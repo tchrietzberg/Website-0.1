@@ -29,7 +29,7 @@ const STANDARD_FIELDS = [
   { key: 'std:client', label: 'Client', type: 'select', width: 'half' },
   { key: 'std:matter_type', label: 'Record type', type: 'select',
     options: KNOWN_RECORD_TYPE_KEYS, width: 'half', readonly: true },
-  { key: 'std:status', label: 'Status', type: 'select', options: ['open', 'closed'], width: 'half' },
+  { key: 'std:status', label: 'Status', type: 'select', options: ['open', 'closed', 'possible'], width: 'half' },
   { key: 'std:jurisdiction', label: 'Jurisdiction', type: 'text', width: 'half' },
   { key: 'std:court', label: 'Court', type: 'text', width: 'half' },
   { key: 'std:responsible_attorney', label: 'Responsible attorney', type: 'select', width: 'half' },

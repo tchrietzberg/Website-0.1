@@ -3040,7 +3040,7 @@
   function formatMatterStatusLabel(status) {
     const s = String(status || '').trim();
     if (!s) return '—';
-    // Display with an initial capital (stored values stay lowercase: open/closed).
+    // Display with an initial capital (stored values stay lowercase: open/closed/possible).
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
@@ -3299,6 +3299,7 @@
       const options = builtIn?.options || [
         { value: 'open', label: 'Open' },
         { value: 'closed', label: 'Closed' },
+        { value: 'possible', label: 'Possible' },
       ];
       return `
         <label class="matter-filter-value">Value
@@ -5085,6 +5086,8 @@
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
     const nameFormula = createSettings?.matterNameFormula || state.settings?.matterNameFormula || null;
     const formulaActive = !!(nameFormula?.enabled && (nameFormula.parts || []).length);
+    const formulaHasMatterName = (nameFormula?.parts || [])
+      .some((p) => p.kind === 'token' && p.token === 'matter_name');
     const draftName = state.createMatterDraftName || '';
     if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
       createRecordTypeKey = recordTypes[0].key;
@@ -5157,9 +5160,11 @@
             ` : ''}
             <div class="create-matter-row">
               <div class="create-matter-name-typeahead" data-matter-name-typeahead>
-                <input id="createMatterName" name="name" ${formulaActive ? 'readonly' : 'required'}
+                <input id="createMatterName" name="name" ${formulaActive && !formulaHasMatterName ? 'readonly' : 'required'}
                   value="${escapeHtml(draftName)}"
-                  placeholder="${formulaActive ? 'Fills from name fields below' : 'Type a matter name…'}"
+                  placeholder="${formulaHasMatterName
+                    ? 'Matter name'
+                    : (formulaActive ? 'Fills from name fields below' : 'Type a matter name…')}"
                   aria-label="Matter name" autocomplete="off" aria-autocomplete="list"
                   aria-expanded="false" />
                 <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
@@ -5179,6 +5184,7 @@
                 </select>
               </label>
             </div>
+            ${formulaActive ? '<p class="muted" id="createMatterNamePreview"></p>' : ''}
             ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
             <div class="grid two create-matter-custom">
               ${createFieldDefs.map((field) => `
@@ -5282,20 +5288,39 @@
       const nameInput = $('#createMatterName') || $('#createMatterSection input[name="name"]');
       const syncFormulaName = () => {
         const formEl = $('#newMatterForm');
-        if (!formulaActive || !nameInput || !formEl) return '';
+        if (!formulaActive || !formEl) return '';
         const fd = new FormData(formEl);
         const values = {};
         for (const [key, value] of fd.entries()) {
           if (String(key).startsWith('cf_')) values[key.slice(3)] = String(value || '').trim();
         }
+        const caseTypeField = (createFieldDefs || []).find((f) =>
+          String(f.label || '').toLowerCase() === 'case type'
+        );
+        const caseType = caseTypeField
+          ? String(values[caseTypeField.fieldId] ?? values[String(caseTypeField.fieldId)] ?? '').trim()
+          : '';
+        const companyId = String(state.createMatterClientId || '').trim();
+        const companyName = (clients || []).find((c) => String(c.id) === companyId)?.name || '';
         const sep = nameFormula.separator == null || nameFormula.separator === ''
           ? '-'
           : String(nameFormula.separator);
         const year = new Date().toISOString().slice(0, 4);
         const pieces = [];
         for (const part of (nameFormula.parts || [])) {
-          if (part.kind === 'token' && (part.token === 'opened_year' || part.token === 'year')) {
-            if (year) pieces.push(year);
+          if (part.kind === 'token') {
+            if (part.token === 'opened_year' || part.token === 'year') {
+              if (year) pieces.push(year);
+            } else if (part.token === 'matter_name') {
+              const v = String(nameInput?.value || '').trim();
+              if (v) pieces.push(v);
+            } else if (part.token === 'company' && companyName) {
+              pieces.push(companyName);
+            } else if (part.token === 'case_type' && caseType) {
+              pieces.push(caseType);
+            } else if (part.token === 'status') {
+              pieces.push('Open');
+            }
           } else if (part.kind === 'custom_field') {
             const v = values[part.fieldId] ?? values[String(part.fieldId)] ?? '';
             if (v) pieces.push(v);
@@ -5305,8 +5330,14 @@
         if (nameFormula.appendStatusYear && built) {
           built = `${built} - Open - ${year}`;
         }
-        nameInput.value = built;
-        state.createMatterDraftName = built;
+        const preview = $('#createMatterNamePreview');
+        if (preview) preview.textContent = built ? `Preview: ${built}` : '';
+        if (nameInput && !formulaHasMatterName) {
+          nameInput.value = built;
+          state.createMatterDraftName = built;
+        } else if (nameInput) {
+          state.createMatterDraftName = String(nameInput.value || '');
+        }
         return built;
       };
       if (nameInput) {
@@ -5362,7 +5393,7 @@
           }
         }
         let name = String(fd.get('name') || '').trim();
-        if (formulaActive) {
+        if (formulaActive && !formulaHasMatterName) {
           const sep = nameFormula.separator == null || nameFormula.separator === ''
             ? '-'
             : String(nameFormula.separator);
@@ -6138,7 +6169,7 @@
       </select>`;
     }
     if (field.key === 'std:status') {
-      const options = (field.options && field.options.length) ? field.options : ['open', 'closed'];
+      const options = (field.options && field.options.length) ? field.options : ['open', 'closed', 'possible'];
       const opts = options.map((o) => {
         const value = typeof o === 'string' ? o : (o.value ?? o);
         const label = typeof o === 'string'
@@ -9163,8 +9194,8 @@
       const used = usedFieldIds();
       const addable = availableFields.filter((f) => !used.has(Number(f.id)));
       bodyEl.innerHTML = `
-        <p class="hint">Build Create Matter names by concatenating custom fields (and Year), for example
-          <strong>Ticker-Year-Company Name-Case Type</strong>. Those fields appear on Create Matter and the name is filled automatically.</p>
+        <p class="hint">Build Create Matter names from fields and tokens, for example
+          <strong>Matter Name - Company Name - Case Type - Year - Matter Status</strong>.</p>
         <label class="check-inline">
           <input type="checkbox" id="mnfEnabled" ${draft.enabled ? 'checked' : ''} />
           Use formula when creating matters
@@ -9188,7 +9219,7 @@
               <div class="field-mgmt-row" data-part="${i}">
                 <div>
                   <strong>${escapeHtml(p.label || (p.kind === 'token' ? 'Year' : `Field ${p.fieldId}`))}</strong>
-                  <span class="muted"> · ${p.kind === 'token' ? 'Year (opened year)' : 'Custom field'}</span>
+                  <span class="muted"> · ${p.kind === 'token' ? (p.label || 'Token') : 'Custom field'}</span>
                 </div>
                 <div class="row-actions">
                   <button type="button" data-mnf-up="${i}" ${i === 0 ? 'disabled' : ''}>Up</button>
@@ -9209,6 +9240,10 @@
           </label>
           <button type="button" id="mnfAddFieldBtn" ${draft.enabled && addable.length ? '' : 'disabled'}>Add field</button>
           <button type="button" id="mnfAddYearBtn" ${draft.enabled ? '' : 'disabled'}>Add Year</button>
+          <button type="button" id="mnfAddMatterNameBtn" ${draft.enabled ? '' : 'disabled'}>Add Matter Name</button>
+          <button type="button" id="mnfAddCompanyBtn" ${draft.enabled ? '' : 'disabled'}>Add Company</button>
+          <button type="button" id="mnfAddCaseTypeBtn" ${draft.enabled ? '' : 'disabled'}>Add Case Type</button>
+          <button type="button" id="mnfAddStatusBtn" ${draft.enabled ? '' : 'disabled'}>Add Status</button>
         </div>
         <div class="stack" style="margin-top:.5rem">
           <h3 style="margin:0;font-family:var(--font);font-size:1rem">Create a field for the formula</h3>
@@ -9302,13 +9337,22 @@
           render();
         };
       }
+      const addToken = (token, label) => {
+        draft.parts.push({ kind: 'token', token, label });
+        render();
+      };
       const addYearBtn = $('#mnfAddYearBtn');
       if (addYearBtn) {
-        addYearBtn.onclick = () => {
-          draft.parts.push({ kind: 'token', token: 'opened_year', label: 'Year' });
-          render();
-        };
+        addYearBtn.onclick = () => addToken('opened_year', 'Year');
       }
+      const addMatterNameBtn = $('#mnfAddMatterNameBtn');
+      if (addMatterNameBtn) addMatterNameBtn.onclick = () => addToken('matter_name', 'Matter Name');
+      const addCompanyBtn = $('#mnfAddCompanyBtn');
+      if (addCompanyBtn) addCompanyBtn.onclick = () => addToken('company', 'Company Name');
+      const addCaseTypeBtn = $('#mnfAddCaseTypeBtn');
+      if (addCaseTypeBtn) addCaseTypeBtn.onclick = () => addToken('case_type', 'Case Type');
+      const addStatusBtn = $('#mnfAddStatusBtn');
+      if (addStatusBtn) addStatusBtn.onclick = () => addToken('status', 'Matter Status');
 
       const typeSel = $('#mnfNewFieldType');
       if (typeSel) {
