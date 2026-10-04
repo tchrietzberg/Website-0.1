@@ -31,11 +31,24 @@ describe('matters report', () => {
     para = db.prepare('SELECT * FROM users WHERE id=2').get();
   });
 
-  it('lists matter names only', () => {
+  it('lists nomenclature fields as separate columns', () => {
     const rows = reports.mattersReport(db);
     assert.equal(rows.length, 2);
-    assert.deepEqual(rows.map((r) => r.Matter).sort(), ['Alpha Matter', 'Beta Matter']);
-    assert.deepEqual(Object.keys(rows[0]), ['Matter']);
+    assert.deepEqual(Object.keys(rows[0]), [
+      'Matter Name',
+      'Company Name',
+      'Case Type',
+      'Year',
+      'Matter Status',
+    ]);
+    const alpha = rows.find((r) => r['Matter Name'] === 'Alpha Matter');
+    assert.ok(alpha);
+    assert.equal(alpha['Company Name'], 'Client A');
+    assert.equal(alpha.Year, '2026');
+    assert.equal(alpha['Matter Status'], 'Open');
+    const csv = reports.toCsv(rows);
+    assert.match(csv, /Matter Name,Company Name,Case Type,Year,Matter Status/);
+    assert.match(csv, /Alpha Matter,Client A,,2026,Open/);
   });
 
   it('swaps inverted date ranges so the full window is kept', () => {
@@ -163,9 +176,9 @@ describe('matters report', () => {
     assert.ok(Buffer.isBuffer(mattersPdf));
     assert.equal(mattersPdf.slice(0, 5).toString(), '%PDF-');
     assert.match(mattersPdf.toString('latin1'), /Matters Report/);
-    assert.match(mattersPdf.toString('latin1'), /Matter/);
+    assert.match(mattersPdf.toString('latin1'), /Matter Name/);
+    assert.match(mattersPdf.toString('latin1'), /Company Name/);
     assert.match(mattersPdf.toString('latin1'), /Alpha Matter/);
-    assert.doesNotMatch(mattersPdf.toString('latin1'), /Matter Name/);
 
     const lodestarPdf = reports.toPdf(reports.lodestarSummary(db), {
       title: 'Lodestar Summary (all matters)',

@@ -21,6 +21,15 @@ const STANDARD_MATTER_NAME_PARTS = [
   { kind: 'token', token: 'status' },
 ];
 const CASE_TYPE_OPTIONS = [
+  'Securities Class Action',
+  'Investigation',
+  'Merger',
+  'Fiduciary Duty',
+  'Appraisal',
+  'Antitrust',
+  'Derivative',
+];
+const LEGACY_CASE_TYPE_OPTIONS = [
   'Securities',
   'Class Action',
   'Investigation',
@@ -30,10 +39,14 @@ const CASE_TYPE_OPTIONS = [
   'Antitrust',
   'Derivative',
 ];
+const CASE_TYPE_REMAP = {
+  Securities: 'Securities Class Action',
+  'Class Action': 'Securities Class Action',
+};
 const DEFAULT_MATTER_NAME_FORMULA = {
-  enabled: false,
-  separator: '-',
-  parts: [],
+  enabled: true,
+  separator: NAME_SEP,
+  parts: STANDARD_MATTER_NAME_PARTS,
   appendStatusYear: false,
 };
 
@@ -89,19 +102,32 @@ function normalizeFormulaParts(parts) {
 function getMatterNameFormula(db) {
   const raw = getSetting(db, MATTER_NAME_FORMULA_SETTING, null);
   if (raw == null || raw === '') {
-    return { ...DEFAULT_MATTER_NAME_FORMULA, parts: [] };
+    return {
+      ...DEFAULT_MATTER_NAME_FORMULA,
+      parts: STANDARD_MATTER_NAME_PARTS.map((p) => ({ ...p })),
+    };
   }
   try {
     const parsed = JSON.parse(raw) || {};
-    const separator = String(parsed.separator ?? '-');
+    const separator = String(parsed.separator ?? NAME_SEP);
+    const parts = normalizeFormulaParts(parsed.parts);
+    if (!parsed.enabled || !parts.length) {
+      return {
+        ...DEFAULT_MATTER_NAME_FORMULA,
+        parts: STANDARD_MATTER_NAME_PARTS.map((p) => ({ ...p })),
+      };
+    }
     return {
-      enabled: !!parsed.enabled,
-      separator: separator.length ? separator : '-',
-      parts: normalizeFormulaParts(parsed.parts),
+      enabled: true,
+      separator: separator.length ? separator : NAME_SEP,
+      parts,
       appendStatusYear: !!parsed.appendStatusYear,
     };
   } catch {
-    return { ...DEFAULT_MATTER_NAME_FORMULA, parts: [] };
+    return {
+      ...DEFAULT_MATTER_NAME_FORMULA,
+      parts: STANDARD_MATTER_NAME_PARTS.map((p) => ({ ...p })),
+    };
   }
 }
 
@@ -158,17 +184,80 @@ function findCaseTypeField(db) {
   `).get() || null;
 }
 
+function adminActor(db, actor) {
+  if (actor?.role === 'admin') return actor;
+  return db.prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get() || actor;
+}
+
+function parseCaseTypeOptions(raw) {
+  if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter(Boolean);
+  if (raw == null || raw === '') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((v) => String(v).trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function optionsEqual(a, b) {
+  return Array.isArray(a) && Array.isArray(b)
+    && a.length === b.length
+    && a.every((v, i) => String(v) === String(b[i]));
+}
+
+function nextCaseTypeOptions(existing) {
+  if (!existing.length || optionsEqual(existing, LEGACY_CASE_TYPE_OPTIONS)
+    || optionsEqual(existing, CASE_TYPE_OPTIONS)) {
+    return CASE_TYPE_OPTIONS.slice();
+  }
+  const out = [];
+  const seen = new Set();
+  for (const raw of existing) {
+    const next = CASE_TYPE_REMAP[raw] || raw;
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
+    out.push(next);
+  }
+  return out.length ? out : CASE_TYPE_OPTIONS.slice();
+}
+
+function remapCaseTypeValues(db, fieldId) {
+  if (!fieldId) return 0;
+  let updated = 0;
+  for (const [from, to] of Object.entries(CASE_TYPE_REMAP)) {
+    const info = db.prepare(`
+      UPDATE custom_field_values SET value_text = ?
+      WHERE field_id = ? AND value_text = ?
+    `).run(to, fieldId, from);
+    updated += Number(info.changes || 0);
+  }
+  return updated;
+}
+
+function syncCaseTypeField(db, actor, existing) {
+  const admin = adminActor(db, actor);
+  const current = parseCaseTypeOptions(existing.options_json);
+  const next = nextCaseTypeOptions(current);
+  if (!optionsEqual(current, next)) {
+    customFields.updateCustomField(db, admin, existing.id, { options: next });
+  }
+  remapCaseTypeValues(db, existing.id);
+  return customFields.getCustomField(db, existing.id);
+}
+
 function ensureCaseTypeField(db, actor) {
   customFields.ensureRecordTypes(db);
   customFields.ensureTypeLayout(db, customFields.DEFAULT_RECORD_TYPE_KEY);
   const existing = findCaseTypeField(db);
-  if (existing) return customFields.getCustomField(db, existing.id);
-  return customFields.createCustomField(db, actor, {
+  const admin = adminActor(db, actor);
+  if (existing) return syncCaseTypeField(db, admin, existing);
+  return customFields.createCustomField(db, admin, {
     label: 'Case Type',
     fieldType: 'select',
     options: CASE_TYPE_OPTIONS,
     recordTypeKey: customFields.DEFAULT_RECORD_TYPE_KEY,
-    required: true,
+    required: false,
     isDefault: true,
     appliesTo: 'matter',
   });
@@ -182,6 +271,33 @@ function ensureStandardMatterNameFormula(db, actor) {
     appendStatusYear: false,
     parts: STANDARD_MATTER_NAME_PARTS,
   });
+}
+
+function ensureDefaultCreateFormula(db, actor) {
+  ensureCaseTypeField(db, actor);
+  const raw = getSetting(db, MATTER_NAME_FORMULA_SETTING, null);
+  if (raw == null || raw === '') {
+    return ensureStandardMatterNameFormula(db, actor);
+  }
+  try {
+    const parsed = JSON.parse(raw) || {};
+    const parts = normalizeFormulaParts(parsed.parts);
+    if (!parsed.enabled || !parts.length) {
+      return ensureStandardMatterNameFormula(db, actor);
+    }
+  } catch {
+    return ensureStandardMatterNameFormula(db, actor);
+  }
+  return getMatterNameFormulaConfig(db);
+}
+
+function applyDefaultCaseType(db, actor, customValues) {
+  const field = ensureCaseTypeField(db, actor);
+  const values = customValues && typeof customValues === 'object' ? customValues : {};
+  if (!customValueText(values, field.id)) {
+    values[field.id] = CASE_TYPE_OPTIONS[0];
+  }
+  return { field, customValues: values };
 }
 
 function summarizeFormulaField(f) {
@@ -280,7 +396,7 @@ function buildNameFromFormula(db, formula, {
         value = clientNameFor(db, clientId, clientName);
         if (!value) continue;
       } else if (part.token === 'case_type') {
-        value = caseTypeValue(db, customValues);
+        value = caseTypeValue(db, customValues) || CASE_TYPE_OPTIONS[0];
       } else if (part.token === 'status') {
         value = String(statusLabel || '').trim();
       }
@@ -406,7 +522,7 @@ function extractMatterName(db, storedName, formula = null) {
   const cfg = formula && typeof formula === 'object' ? formula : getMatterNameFormula(db);
   const sep = cfg.separator == null || cfg.separator === '' ? NAME_SEP : String(cfg.separator);
   const bits = String(storedName || '').split(sep).map((s) => s.trim()).filter(Boolean);
-  if (formulaHasToken(cfg, 'matter_name') && bits.length >= 5) {
+  if (formulaHasToken(cfg, 'matter_name') && bits.length >= 2) {
     const statusBit = bits[bits.length - 1];
     const yearBit = bits[bits.length - 2];
     if (/^\d{4}$/.test(yearBit) && /^(open|closed|possible)$/i.test(statusBit)) {
@@ -414,6 +530,108 @@ function extractMatterName(db, storedName, formula = null) {
     }
   }
   return cleanMatterBaseName(storedName);
+}
+
+function customValuesForMatter(db, matterId) {
+  return Object.fromEntries(
+    db.prepare('SELECT field_id, value_text FROM custom_field_values WHERE matter_id = ?')
+      .all(matterId)
+      .map((v) => [v.field_id, v.value_text])
+  );
+}
+
+function formulaPartValue(db, part, {
+  matter = {},
+  customValues = {},
+  formula = null,
+} = {}) {
+  if (part.kind === 'token') {
+    if (part.token === 'matter_name') {
+      return extractMatterName(db, matter.name, formula);
+    }
+    if (part.token === 'company') {
+      return matter.client_name || clientNameFor(db, matter.client_id) || '';
+    }
+    if (part.token === 'case_type') {
+      return caseTypeValue(db, customValues);
+    }
+    if (part.token === 'opened_year') {
+      return yearFromOpenedOn(matter.opened_on);
+    }
+    if (part.token === 'status') {
+      return formatBuiltInStatus(matter.status);
+    }
+    return '';
+  }
+  if (part.kind === 'custom_field') {
+    return customValueText(customValues, part.fieldId);
+  }
+  return '';
+}
+
+function nomenclatureColumnDefs(db) {
+  const formula = getMatterNameFormula(db);
+  const parts = (formula.enabled && formula.parts.length)
+    ? formula.parts
+    : STANDARD_MATTER_NAME_PARTS;
+  return parts.map((part) => {
+    const field = part.kind === 'custom_field'
+      ? customFields.getCustomField(db, part.fieldId)
+      : null;
+    return {
+      part,
+      key: part.kind === 'token' ? `name:${part.token}` : `name:cf:${part.fieldId}`,
+      label: formulaPartLabel(part, field),
+    };
+  });
+}
+
+function matterNomenclatureRow(db, matter, defs = null) {
+  const formula = getMatterNameFormula(db);
+  const columns = defs || nomenclatureColumnDefs(db);
+  const customValues = {
+    ...customValuesForMatter(db, matter.id),
+    ...(matter.customValues || {}),
+  };
+  const row = {};
+  for (const col of columns) {
+    row[col.label] = formulaPartValue(db, col.part, { matter, customValues, formula });
+  }
+  return row;
+}
+
+function rebuildMatterDisplayNames(db, actor, matterIds) {
+  const formula = getMatterNameFormula(db);
+  if (!formula.enabled || !formula.parts.length) return 0;
+  const ids = (Array.isArray(matterIds) ? matterIds : [matterIds])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id));
+  let updated = 0;
+  for (const id of ids) {
+    const matter = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
+    if (!matter) continue;
+    const customValues = customValuesForMatter(db, matter.id);
+    const nextName = resolveDisplayName(db, {
+      formula,
+      name: extractMatterName(db, matter.name, formula),
+      customValues,
+      openedOn: matter.opened_on,
+      clientId: matter.client_id,
+      statusLabel: formatBuiltInStatus(matter.status),
+    });
+    if (writeMatterName(db, actor, matter.id, matter.name, nextName)) {
+      updated += 1;
+    }
+    matterIndex.indexMatter(db, matter.id);
+  }
+  return updated;
+}
+
+function rebuildClientMatterNames(db, actor, clientId) {
+  const id = Number(clientId);
+  if (!Number.isFinite(id) || id <= 0) return 0;
+  const rows = db.prepare('SELECT id FROM matters WHERE client_id = ?').all(id);
+  return rebuildMatterDisplayNames(db, actor, rows.map((r) => r.id));
 }
 
 /** Matter Name - Status - Year */
@@ -507,6 +725,7 @@ function writeMatterName(db, actor, id, oldName, nextName) {
 
 function createMatter(db, actor, input = {}) {
   permissions.assertCanModifyRecords(db, actor, 'matter');
+  ensureDefaultCreateFormula(db, actor);
   const formula = getMatterNameFormula(db);
   const formulaActive = formula.enabled && formula.parts.length > 0;
   const name = String(input.name || '').trim();
@@ -542,9 +761,12 @@ function createMatter(db, actor, input = {}) {
 
   const status = normalizeMatterStatus(input.status || 'open');
   const initialStatus = formatBuiltInStatus(status);
-  const customValues = input.customValues && typeof input.customValues === 'object'
-    ? input.customValues
+  let customValues = input.customValues && typeof input.customValues === 'object'
+    ? { ...input.customValues }
     : {};
+  if (formulaActive && formulaHasToken(formula, 'case_type')) {
+    customValues = applyDefaultCaseType(db, actor, customValues).customValues;
+  }
   customFields.assertRequiredCustomValues(db, {
     appliesTo: 'matter',
     recordTypeKey: matterType,
@@ -705,9 +927,11 @@ function updateMatter(db, actor, id, patch) {
       ? String(patch.name)
       : extractMatterName(db, after.name, formula);
     if (nameChanging) assertUniqueMatterName(db, baseName, { excludeId: id });
-    const statusLabel = statusForName != null
-      ? statusForName
-      : currentStatusLabel(db, after);
+    const statusLabel = formulaHasToken(formula, 'status')
+      ? formatBuiltInStatus(after.status)
+      : (statusForName != null
+        ? statusForName
+        : currentStatusLabel(db, after));
     const nextName = resolveDisplayName(db, {
       formula,
       name: baseName,
@@ -1136,18 +1360,45 @@ function formatMatterListCell(db, matter, key, typeLabelByKey = null) {
   }
 }
 
-function exportMattersListXlsx(db, filters = {}) {
+function csvEscape(value) {
+  const s = value == null ? '' : String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildMattersListExport(db, filters = {}) {
   const { columns, keys, matters } = listMattersWithListColumns(db, filters);
   const typeLabelByKey = Object.fromEntries(
     customFields.listRecordTypes(db, { appliesTo: 'matter' })
       .map((t) => [t.key, t.label || t.key])
   );
-  const header = columns.map((c) => ({ v: c.label, t: 's' }));
-  const body = matters.map((m) => keys.map((key) => ({
-    v: formatMatterListCell(db, m, key, typeLabelByKey),
-    t: 's',
-  })));
-  return buildXlsx([header, ...body]);
+  const nameCols = nomenclatureColumnDefs(db);
+  const extraCols = columns.filter((c) => c.key !== 'name');
+  const extraKeys = keys.filter((key) => key !== 'name');
+  const header = [
+    ...nameCols.map((c) => c.label),
+    ...extraCols.map((c) => c.label),
+  ];
+  const rows = matters.map((m) => {
+    const parts = matterNomenclatureRow(db, m, nameCols);
+    return [
+      ...nameCols.map((c) => parts[c.label] || ''),
+      ...extraKeys.map((key) => formatMatterListCell(db, m, key, typeLabelByKey)),
+    ];
+  });
+  return { header, rows };
+}
+
+function exportMattersListXlsx(db, filters = {}) {
+  const { header, rows } = buildMattersListExport(db, filters);
+  return buildXlsx([
+    header.map((label) => ({ v: label, t: 's' })),
+    ...rows.map((row) => row.map((value) => ({ v: value, t: 's' }))),
+  ]);
+}
+
+function exportMattersListCsv(db, filters = {}) {
+  const { header, rows } = buildMattersListExport(db, filters);
+  return [header.map(csvEscape).join(','), ...rows.map((row) => row.map(csvEscape).join(','))].join('\n');
 }
 
 function applyMatterNomenclature(db, actor) {
@@ -1163,10 +1414,17 @@ function applyMatterNomenclature(db, actor) {
         .all(matter.id)
         .map((v) => [v.field_id, v.value_text])
     );
-    if (caseField && !String(customValues[caseField.id] || '').trim()) {
-      const value = CASE_TYPE_OPTIONS[i % CASE_TYPE_OPTIONS.length];
-      customFields.setCustomValues(db, actor, matter.id, { [caseField.id]: value });
-      customValues[caseField.id] = value;
+    if (caseField) {
+      const current = String(customValues[caseField.id] || '').trim();
+      const mapped = CASE_TYPE_REMAP[current];
+      if (mapped) {
+        customFields.setCustomValues(db, actor, matter.id, { [caseField.id]: mapped });
+        customValues[caseField.id] = mapped;
+      } else if (!current) {
+        const value = CASE_TYPE_OPTIONS[i % CASE_TYPE_OPTIONS.length];
+        customFields.setCustomValues(db, actor, matter.id, { [caseField.id]: value });
+        customValues[caseField.id] = value;
+      }
     }
     const nextName = resolveDisplayName(db, {
       formula,
@@ -1193,7 +1451,12 @@ module.exports = {
   normalizeMatterStatus,
   ensureCaseTypeField,
   ensureStandardMatterNameFormula,
+  ensureDefaultCreateFormula,
   applyMatterNomenclature,
+  nomenclatureColumnDefs,
+  matterNomenclatureRow,
+  rebuildMatterDisplayNames,
+  rebuildClientMatterNames,
   createMatter,
   updateMatter,
   deleteMatter,
@@ -1220,5 +1483,7 @@ module.exports = {
   attachCustomValuesForListColumns,
   listMattersWithListColumns,
   exportMattersListXlsx,
+  exportMattersListCsv,
+  buildMattersListExport,
   formatMatterListCell,
 };

@@ -70,5 +70,46 @@ describe('matter list columns', () => {
     const xlsx = matterSvc.exportMattersListXlsx(ctx.db, {});
     assert.ok(Buffer.isBuffer(xlsx));
     assert.ok(xlsx.length > 100);
+
+    const csv = matterSvc.exportMattersListCsv(ctx.db, {});
+    const header = csv.split('\n')[0];
+    assert.match(header, /Matter Name/);
+    assert.match(header, /Company Name/);
+    assert.match(header, /Case Type/);
+    assert.match(header, /Year/);
+    assert.match(header, /Matter Status/);
+    assert.match(header, /Client/);
+    assert.doesNotMatch(header, /(^|,)Name(,|$)/);
+  });
+
+  it('exports name-formula fields as separate excel and csv columns', () => {
+    matterSvc.ensureStandardMatterNameFormula(ctx.db, ctx.admin);
+    const caseType = matterSvc.ensureCaseTypeField(ctx.db, ctx.admin);
+    customFields.setCustomValues(ctx.db, ctx.admin, 1, {
+      [caseType.id]: 'Securities Class Action',
+    });
+    ctx.db.prepare("UPDATE matters SET name = ? WHERE id = 1").run(
+      'Alpha Matter - Client A - Securities Class Action - 2026 - Open'
+    );
+
+    const packed = matterSvc.buildMattersListExport(ctx.db, {});
+    assert.deepEqual(packed.header.slice(0, 5), [
+      'Matter Name',
+      'Company Name',
+      'Case Type',
+      'Year',
+      'Matter Status',
+    ]);
+    assert.equal(packed.rows[0][0], 'Alpha Matter');
+    assert.equal(packed.rows[0][1], 'Client A');
+    assert.equal(packed.rows[0][2], 'Securities Class Action');
+    assert.equal(packed.rows[0][3], '2026');
+    assert.equal(packed.rows[0][4], 'Open');
+
+    const csv = matterSvc.exportMattersListCsv(ctx.db, {});
+    assert.match(csv, /Alpha Matter,Client A,Securities Class Action,2026,Open/);
+    assert.ok(!matterSvc.CASE_TYPE_OPTIONS.includes('Securities'));
+    assert.ok(!matterSvc.CASE_TYPE_OPTIONS.includes('Class Action'));
+    assert.ok(matterSvc.CASE_TYPE_OPTIONS.includes('Securities Class Action'));
   });
 });

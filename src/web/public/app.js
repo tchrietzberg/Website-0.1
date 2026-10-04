@@ -5102,6 +5102,8 @@
     }
     const createTypeLabel = ((recordTypes || []).find((t) => t.key === createRecordTypeKey) || {}).label
       || createRecordTypeKey;
+    const formulaUsesCaseType = (nameFormula?.parts || [])
+      .some((p) => p.kind === 'token' && p.token === 'case_type');
     const formulaFieldIds = new Set(
       (nameFormula?.parts || [])
         .filter((p) => p.kind === 'custom_field')
@@ -5110,6 +5112,21 @@
     );
     // Ensure formula fields appear on create even if not yet on this type's list response.
     const mergedCreateFields = [...(createMatterFields || [])];
+    if (formulaUsesCaseType) {
+      const caseField = (nameFormula.availableFields || []).find((f) =>
+        String(f.label || '').toLowerCase() === 'case type'
+      ) || mergedCreateFields.find((f) => String(f.label || '').toLowerCase() === 'case type');
+      if (caseField && !mergedCreateFields.some((f) => Number(f.id) === Number(caseField.id))) {
+        mergedCreateFields.push({
+          id: caseField.id,
+          label: caseField.label || 'Case Type',
+          field_type: caseField.fieldType || caseField.field_type || 'select',
+          options: caseField.options || ['Securities Class Action', 'Investigation', 'Merger', 'Fiduciary Duty', 'Appraisal', 'Antitrust', 'Derivative'],
+          required: true,
+          isDefault: true,
+        });
+      }
+    }
     for (const part of (nameFormula?.parts || [])) {
       if (part.kind !== 'custom_field') continue;
       const id = Number(part.fieldId);
@@ -5126,22 +5143,27 @@
         isDefault: true,
       });
     }
-    const createFieldDefs = mergedCreateFields.map((f) => ({
+    const createFieldDefs = mergedCreateFields.map((f) => {
+      const isCaseType = String(f.label || '').toLowerCase() === 'case type';
+      const inNameFormula = formulaFieldIds.has(Number(f.id))
+        || (formulaUsesCaseType && isCaseType);
+      return {
       key: `cf:${f.id}`,
       label: f.label,
       type: f.field_type,
       options: f.options,
       config: f.config,
       expression: f.expression || f.config?.expression,
-      required: !!f.required || formulaFieldIds.has(Number(f.id)),
+      required: !!f.required || inNameFormula,
       fieldId: f.id,
       kind: 'custom',
       width: ['textarea', 'long_text', 'rich_text', 'formula', 'geolocation', 'multiselect']
         .includes(f.field_type) ? 'full' : 'half',
       value: null,
       readonly: SYSTEM_FIELD_TYPES.has(String(f.field_type)),
-      inNameFormula: formulaFieldIds.has(Number(f.id)),
-    }));
+      inNameFormula,
+    };
+    });
     // Put formula name fields first so they read with the name builder.
     createFieldDefs.sort((a, b) => Number(b.inNameFormula) - Number(a.inNameFormula));
 
@@ -5217,6 +5239,7 @@
                 canEditListColumns ? 'Add or remove columns' : 'List columns'
               }</button>
               <button type="button" id="exportMattersExcelBtn">Export Excel</button>
+              <button type="button" id="exportMattersCsvBtn">Export CSV</button>
             </div>
           </div>
           <div id="matterSearchResults">
@@ -5236,41 +5259,42 @@
       typeLabelByKey,
     });
     wireMatterListColumnsButton({ canEdit: canEditListColumns });
-    const exportMattersBtn = $('#exportMattersExcelBtn');
-    if (exportMattersBtn) {
-      exportMattersBtn.onclick = async () => {
-        try {
-          const params = matterBrowseQueryParams(state.matterSearch);
-          params.delete('listColumns');
-          params.set('format', 'xlsx');
-          const headers = { 'X-App-Origin': window.location.origin };
-          if (state.token && !state.cookieOnlyAuth) headers.Authorization = `Bearer ${state.token}`;
-          if (state.csrf) headers['X-CSRF-Token'] = state.csrf;
-          const res = await fetch(`/api/matters/export?${params}`, {
-            credentials: 'include',
-            headers,
-          });
-          if (!res.ok) {
-            let msg = res.statusText;
-            try {
-              const data = await res.json();
-              msg = data.message || data.error || msg;
-            } catch { /* ignore */ }
-            throw new Error(msg);
-          }
-          const blob = await res.blob();
-          const tmp = document.createElement('a');
-          tmp.href = URL.createObjectURL(blob);
-          tmp.download = 'matters.xlsx';
-          document.body.appendChild(tmp);
-          tmp.click();
-          tmp.remove();
-          URL.revokeObjectURL(tmp.href);
-        } catch (e) {
-          alert(e.message || 'Could not export matters');
+    const exportMatters = async (format) => {
+      try {
+        const params = matterBrowseQueryParams(state.matterSearch);
+        params.delete('listColumns');
+        params.set('format', format);
+        const headers = { 'X-App-Origin': window.location.origin };
+        if (state.token && !state.cookieOnlyAuth) headers.Authorization = `Bearer ${state.token}`;
+        if (state.csrf) headers['X-CSRF-Token'] = state.csrf;
+        const res = await fetch(`/api/matters/export?${params}`, {
+          credentials: 'include',
+          headers,
+        });
+        if (!res.ok) {
+          let msg = res.statusText;
+          try {
+            const data = await res.json();
+            msg = data.message || data.error || msg;
+          } catch { /* ignore */ }
+          throw new Error(msg);
         }
-      };
-    }
+        const blob = await res.blob();
+        const tmp = document.createElement('a');
+        tmp.href = URL.createObjectURL(blob);
+        tmp.download = format === 'csv' ? 'matters.csv' : 'matters.xlsx';
+        document.body.appendChild(tmp);
+        tmp.click();
+        tmp.remove();
+        URL.revokeObjectURL(tmp.href);
+      } catch (e) {
+        alert(e.message || 'Could not export matters');
+      }
+    };
+    const exportMattersBtn = $('#exportMattersExcelBtn');
+    if (exportMattersBtn) exportMattersBtn.onclick = () => exportMatters('xlsx');
+    const exportMattersCsvBtn = $('#exportMattersCsvBtn');
+    if (exportMattersCsvBtn) exportMattersCsvBtn.onclick = () => exportMatters('csv');
     const clearCreate = $('#clearCreateMatter');
     if (clearCreate) {
       clearCreate.onclick = async () => {
