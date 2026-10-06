@@ -32,6 +32,7 @@ Filled-in profile for the master build brief (Section 2):
 
 | D18 | Matters are record-based: Matter Search uses `matter_search_index` (denormalized body; no FTS5 — unavailable in Node’s SQLite); per-matter page; custom fields/layouts by record type or individual matter | No sample matters in seed. Search requires a query (index hits only). Create/update/custom values reindex the matter. Type fields apply to all matters of that `matter_type`; record fields/layouts attach to one matter. |
 | D19 | QuickBooks Online is one-way Chrono → QBO. A sandbox company loads without Intuit credentials (local `qbo_customers` / `qbo_invoices` ledger). Live OAuth is optional via Client ID. Chrono remains source of truth. | User asked to show QBO loadable in-product. Two-way / payment sync still deferred. |
+| D20 | Required matter name is `Ticker - Year - Company - Case Type - Status` (example `FRD - 2026 - FORD - Securities Class Action - Possible`). Ticker+Company live on the company contact; Case Type and Status are matter picklists (Status defaults to Possible); Year is open date. Settings formula remains optional for incomplete/legacy API creates. | Video nomenclature; more efficient than concatenating matter-level Ticker/Company custom fields. |
 
 ## Deferred
 

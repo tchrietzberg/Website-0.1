@@ -28,13 +28,14 @@ function setup() {
     VALUES ('timekeeper', 2, 45000, '2026-01-01')
   `).run();
   const tickerField = db.prepare(`
-    INSERT INTO custom_fields(api_name, label, field_type, applies_to, record_type_key, required, is_default, active)
-    VALUES ('ticker', 'Ticker', 'text', 'client', 'company', 0, 1, 1)
-  `).run();
+    SELECT id FROM custom_fields
+    WHERE api_name = 'ticker' AND IFNULL(applies_to, 'matter') = 'client'
+    LIMIT 1
+  `).get();
   db.prepare(`
     INSERT INTO client_custom_field_values(client_id, field_id, value_text)
     VALUES (1, ?, 'HLIO')
-  `).run(Number(tickerField.lastInsertRowid));
+  `).run(Number(tickerField.id));
   return {
     db,
     admin: db.prepare('SELECT * FROM users WHERE id=1').get(),

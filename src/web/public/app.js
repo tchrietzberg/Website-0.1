@@ -16,7 +16,7 @@
     createMatterDraftName: '',
     createMatterRecordTypeKey: 'billable',
     createMatterClientId: '',
-    createMatterNewClient: { name: '', recordTypeKey: 'client', email: '' },
+    createMatterNewClient: { name: '', recordTypeKey: 'company', email: '', ticker: '' },
     settingsMatterRecordTypeKey: 'billable',
     settingsContactRecordTypeKey: 'client',
     settingsRoleKey: 'attorney',
@@ -2181,7 +2181,7 @@
   }
 
   function clientSearchText(c) {
-    return [c?.name, c?.record_type, c?.recordType, c?.email]
+    return [c?.name, c?.ticker, c?.record_type, c?.recordType, c?.email]
       .filter(Boolean)
       .join(' ')
       .toLowerCase();
@@ -2607,8 +2607,8 @@
       ? String(newClientName || '').trim()
       : (selected?.name || '');
     const placeholder = allowAddNew
-      ? 'Type to find a client or enter a new name…'
-      : 'Type a few letters to find a client…';
+      ? 'Type to find a company or enter a new name…'
+      : 'Type a few letters to find a company…';
     return `
       <div class="client-typeahead${isNew ? ' is-new' : ''}${display && !isNew ? ' has-value' : ''}" data-client-typeahead>
         <div class="client-typeahead-input-wrap">
@@ -2616,19 +2616,19 @@
             value="${escapeHtml(display)}"
             placeholder="${escapeHtml(placeholder)}"
             autocomplete="off" aria-autocomplete="list" aria-expanded="false"
-            aria-label="Client" />
+            aria-label="Company" />
           <button type="button" class="client-typeahead-clear" data-client-clear
-            title="Clear client" aria-label="Clear client"
+            title="Clear company" aria-label="Clear company"
             ${display ? '' : 'hidden'}>×</button>
           <ul class="client-typeahead-list" data-client-list role="listbox" hidden></ul>
         </div>
         <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(String(selectedId || ''))}"
           data-client-id />
         <p class="hint">${allowAddNew
-          ? 'Optional — pick a match, or keep typing a new client name (saved when you create the matter).'
-          : 'Optional — suggestions appear as you type. Leave blank for none.'}</p>
+          ? 'Required — pick a company, or keep typing a new company name (saved when you create the matter).'
+          : 'Required — suggestions appear as you type.'}</p>
         ${allowAddNew ? `
-          <p class="hint client-typeahead-new-note" ${isNew ? '' : 'hidden'}>New contact — saved when you create the matter.</p>` : ''}
+          <p class="hint client-typeahead-new-note" ${isNew ? '' : 'hidden'}>New company — saved when you create the matter.</p>` : ''}
       </div>`;
   }
 
@@ -2666,8 +2666,8 @@
     let activeIndex = -1;
     let suggestions = [];
     const findPlaceholder = allowAddNew
-      ? 'Type to find a client or enter a new name…'
-      : 'Type a few letters to find a client…';
+      ? 'Type to find a company or enter a new name…'
+      : 'Type a few letters to find a company…';
 
     function emit(value) {
       if (typeof onChange === 'function') onChange(value);
@@ -2687,12 +2687,12 @@
           : String(state.createMatterNewClient?.name || search.value || '').trim();
         if (draftName) {
           state.createMatterNewClient = {
-            ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+            ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
             name: draftName,
           };
         }
         search.value = draftName;
-        search.placeholder = 'Type a new client name…';
+        search.placeholder = 'Type a new company name…';
         if (clearBtn) clearBtn.hidden = !draftName;
       } else if (next) {
         const c = clients.find((x) => String(x.id) === next);
@@ -2723,8 +2723,8 @@
       if (!needle) {
         rows.push({
           id: '',
-          label: 'None — optional',
-          detail: 'No client on this matter',
+          label: 'None',
+          detail: 'A company is required for the matter name',
           kind: 'none',
         });
         suggestions = [];
@@ -2734,7 +2734,7 @@
           rows.push({
             id: String(c.id),
             label: c.name || `Client ${c.id}`,
-            detail: [c.record_type || c.recordType, c.email].filter(Boolean).join(' · '),
+            detail: [c.ticker, c.record_type || c.recordType, c.email].filter(Boolean).join(' · '),
             kind: 'client',
           });
         }
@@ -2743,7 +2743,7 @@
             id: '',
             label: 'No clients match',
             detail: allowAddNew
-              ? 'Keep this name to create a new contact with the matter'
+              ? 'Keep this name to create a new company'
               : 'Try different letters',
             kind: 'empty',
           });
@@ -2754,7 +2754,7 @@
         if (!exact) {
           rows.push({
             id: '__new__',
-            label: `Use “${needle}” as new client`,
+            label: `Use “${needle}” as new company`,
             detail: 'Saved when you create the matter',
             kind: 'new',
           });
@@ -2798,7 +2798,7 @@
           return;
         }
         state.createMatterNewClient = {
-          ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+          ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
           name: typed,
         };
         setValue('__new__', { keepTyped: true });
@@ -2848,7 +2848,7 @@
             root.classList.add('is-new');
             root.classList.remove('has-value');
             state.createMatterNewClient = {
-              ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+              ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
               name: typed,
             };
             state.createMatterClientId = '__new__';
@@ -2891,7 +2891,7 @@
       clearBtn.onclick = (ev) => {
         ev.preventDefault();
         state.createMatterNewClient = {
-          ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+          ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
           name: '',
         };
         setValue('');
@@ -3462,7 +3462,7 @@
     state.createMatterRecordTypeKey = 'billable';
     state.createMatterDraftName = '';
     state.createMatterClientId = '';
-    state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+    state.createMatterNewClient = { name: '', recordTypeKey: 'company', email: '', ticker: '' };
     state.showCreateContact = false;
     state.view = 'matters';
     state.matterId = null;
@@ -3724,11 +3724,16 @@
       ? String(state.createMatterClientId)
       : '';
     const newClientDraft = state.createMatterNewClient || {
-      name: '', recordTypeKey: 'client', email: '',
+      name: '', recordTypeKey: 'company', email: '', ticker: '',
     };
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
     const nameFormula = createSettings?.matterNameFormula || state.settings?.matterNameFormula || null;
-    const formulaActive = !!(nameFormula?.enabled && (nameFormula.parts || []).length);
+    const nomenclature = createSettings?.matterNomenclature || state.settings?.matterNomenclature || {};
+    const caseTypeIds = new Set((nomenclature.caseTypeFieldIds || []).map(Number));
+    const statusIds = new Set((nomenclature.statusFieldIds || []).map(Number));
+    const defaultStatus = nomenclature.defaultStatus || 'Possible';
+    const nameSep = nomenclature.separator || ' - ';
+    const namePattern = nomenclature.pattern || 'Ticker - Year - Company - Case Type - Status';
     const draftName = state.createMatterDraftName || '';
     if ((recordTypes || []).length && !recordTypes.some((t) => t.key === createRecordTypeKey)) {
       createRecordTypeKey = recordTypes[0].key;
@@ -3767,24 +3772,36 @@
         isDefault: true,
       });
     }
-    const createFieldDefs = mergedCreateFields.map((f) => ({
-      key: `cf:${f.id}`,
-      label: f.label,
-      type: f.field_type,
-      options: f.options,
-      config: f.config,
-      expression: f.expression || f.config?.expression,
-      required: !!f.required || formulaFieldIds.has(Number(f.id)),
-      fieldId: f.id,
-      kind: 'custom',
-      width: ['textarea', 'long_text', 'rich_text', 'formula', 'geolocation', 'multiselect']
-        .includes(f.field_type) ? 'full' : 'half',
-      value: null,
-      readonly: SYSTEM_FIELD_TYPES.has(String(f.field_type)),
-      inNameFormula: formulaFieldIds.has(Number(f.id)),
-    }));
-    // Put formula name fields first so they read with the name builder.
-    createFieldDefs.sort((a, b) => Number(b.inNameFormula) - Number(a.inNameFormula));
+    const createFieldDefs = mergedCreateFields.map((f) => {
+      const label = String(f.label || '');
+      const apiName = String(f.api_name || f.apiName || '');
+      const isCaseType = caseTypeIds.has(Number(f.id))
+        || (!caseTypeIds.size && (apiName === 'case_type' || /^case type$/i.test(label)));
+      const isStatus = statusIds.has(Number(f.id))
+        || (!statusIds.size && (apiName === 'nomenclature_status' || /^status$/i.test(label)));
+      return {
+        key: `cf:${f.id}`,
+        label: f.label,
+        type: f.field_type,
+        options: f.options,
+        config: f.config,
+        expression: f.expression || f.config?.expression,
+        required: !!f.required || isCaseType || isStatus || formulaFieldIds.has(Number(f.id)),
+        fieldId: f.id,
+        kind: 'custom',
+        width: ['textarea', 'long_text', 'rich_text', 'formula', 'geolocation', 'multiselect']
+          .includes(f.field_type) ? 'full' : 'half',
+        value: isStatus ? defaultStatus : null,
+        readonly: SYSTEM_FIELD_TYPES.has(String(f.field_type)),
+        inNameFormula: isCaseType || isStatus || formulaFieldIds.has(Number(f.id)),
+        isCaseType,
+        isStatus,
+      };
+    });
+    createFieldDefs.sort((a, b) => {
+      const rank = (f) => (f.isCaseType ? 3 : f.isStatus ? 2 : f.inNameFormula ? 1 : 0);
+      return rank(b) - rank(a);
+    });
 
     setMainHtml(`
       <div class="card stack page-card">
@@ -3795,27 +3812,19 @@
         ${showCreate ? `
         <div id="createMatterSection" class="create-matter-panel page-section">
           <form id="newMatterForm" class="create-matter-form">
-            <label class="create-matter-label" for="createMatterName">Create Matter</label>
-            ${formulaActive ? `
-              <p class="hint">Matter name is built from:
-                ${escapeHtml((nameFormula.parts || []).map((p) => p.label || (p.kind === 'token' ? 'Year' : 'Field')).join(nameFormula.separator || '-'))}</p>
-            ` : ''}
+            <label class="create-matter-label">Create Matter</label>
+            <p class="hint">Matter name is required as
+              <strong>Ticker - Year - Company - Case Type - Status</strong>
+              (year is today’s year). Example:
+              <strong>FRD - 2026 - FORD - Securities Class Action - Possible</strong>.</p>
+            <p class="create-matter-name-preview" id="createMatterNamePreview">${escapeHtml(draftName || namePattern)}</p>
+            <input type="hidden" id="createMatterName" name="name" value="${escapeHtml(draftName)}" />
             <div class="create-matter-row">
-              <div class="create-matter-name-typeahead" data-matter-name-typeahead>
-                <input id="createMatterName" name="name" ${formulaActive ? 'readonly' : 'required'}
-                  value="${escapeHtml(draftName)}"
-                  placeholder="${formulaActive ? 'Fills from name fields below' : 'Type a matter name…'}"
-                  aria-label="Create Matter" autocomplete="off" aria-autocomplete="list"
-                  aria-expanded="false" />
-                <ul class="client-typeahead-list create-matter-name-list" data-matter-name-list
-                  role="listbox" hidden></ul>
-              </div>
               <button class="primary" type="submit">Create</button>
               <button type="button" id="clearCreateMatter">Clear</button>
             </div>
-            ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
             <div class="create-matter-meta">
-              <label class="create-matter-client-field">Client
+              <label class="create-matter-client-field">Company *
                 ${renderClientTypeahead({
                   name: 'clientId',
                   selectedId: selectedClientId,
@@ -3823,6 +3832,11 @@
                   allowAddNew: roleCanModify('contact'),
                   newClientName: newClientDraft.name || '',
                 })}
+              </label>
+              <label class="create-matter-ticker-field">Ticker *
+                <input id="createMatterTicker" name="ticker" autocomplete="off"
+                  value="${escapeHtml(newClientDraft.ticker || (clientList.find((c) => String(c.id) === selectedClientId)?.ticker) || '')}"
+                  placeholder="e.g. FRD" />
               </label>
               <label class="create-matter-type-field">Record type
                 <select name="recordTypeKey" id="createMatterTypeSelect" required>
@@ -3839,7 +3853,9 @@
             <div class="grid two create-matter-custom">
               ${createFieldDefs.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}${field.inNameFormula ? ' name-formula-field' : ''}">
-                  ${escapeHtml(field.label)}${field.required ? ' *' : ''}${field.inNameFormula ? ' <span class="muted">(name)</span>' : ''}
+                  ${escapeHtml(field.label)}${field.required ? ' *' : ''}${
+                    field.isCaseType || field.isStatus ? ' <span class="muted">(name)</span>' : ''
+                  }
                   ${renderFieldInput(field, { canEdit: true })}
                 </label>`).join('')}
             </div>
@@ -3875,94 +3891,119 @@
         state.createMatterDraftName = '';
         state.createMatterRecordTypeKey = 'billable';
         state.createMatterClientId = '';
-        state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+        state.createMatterNewClient = { name: '', recordTypeKey: 'company', email: '', ticker: '' };
         const msg = $('#newMatterMsg');
         if (msg) msg.innerHTML = '';
         await renderMatters();
-        $('#createMatterName')?.focus();
+        $('#createMatterSection [data-client-search]')?.focus();
       };
     }
     if (showCreate) {
-      const nameInput = $('#createMatterName') || $('#createMatterSection input[name="name"]');
-      const syncFormulaName = () => {
-        const formEl = $('#newMatterForm');
-        if (!formulaActive || !nameInput || !formEl) return '';
-        const fd = new FormData(formEl);
-        const values = {};
-        for (const [key, value] of fd.entries()) {
-          if (String(key).startsWith('cf_')) values[key.slice(3)] = String(value || '').trim();
+      const nameInput = $('#createMatterName');
+      const previewEl = $('#createMatterNamePreview');
+      const tickerInput = $('#createMatterTicker');
+      const caseTypeField = createFieldDefs.find((f) => f.isCaseType);
+      const statusField = createFieldDefs.find((f) => f.isStatus);
+
+      const currentCompanyName = () => {
+        const id = String(
+          document.querySelector('#createMatterSection [data-client-id]')?.value
+            || state.createMatterClientId
+            || '',
+        );
+        if (id && id !== '__new__') {
+          return String(clientList.find((c) => String(c.id) === id)?.name || '').trim();
         }
-        const sep = nameFormula.separator == null || nameFormula.separator === ''
-          ? '-'
-          : String(nameFormula.separator);
-        const year = new Date().toISOString().slice(0, 4);
-        const pieces = [];
-        for (const part of (nameFormula.parts || [])) {
-          if (part.kind === 'token' && (part.token === 'opened_year' || part.token === 'year')) {
-            if (year) pieces.push(year);
-          } else if (part.kind === 'custom_field') {
-            const v = values[part.fieldId] ?? values[String(part.fieldId)] ?? '';
-            if (v) pieces.push(v);
-          }
-        }
-        let built = pieces.join(sep);
-        if (nameFormula.appendStatusYear && built) {
-          built = `${built} - Open - ${year}`;
-        }
-        nameInput.value = built;
-        state.createMatterDraftName = built;
-        return built;
+        return String(
+          document.querySelector('#createMatterSection [data-client-search]')?.value
+            || state.createMatterNewClient?.name
+            || '',
+        ).trim();
       };
-      if (nameInput) {
-        if (formulaActive) {
-          const formEl = $('#newMatterForm');
-          if (formEl) {
-            formEl.addEventListener('input', syncFormulaName);
-            formEl.addEventListener('change', syncFormulaName);
-          }
-          syncFormulaName();
-        } else {
-          wireCreateMatterNameTypeahead(nameInput, allMatters || state.matters || []);
+
+      const syncNamePreview = () => {
+        const formEl = $('#newMatterForm');
+        const year = new Date().toISOString().slice(0, 4);
+        const ticker = String(tickerInput?.value || '').trim();
+        const company = currentCompanyName();
+        const caseType = caseTypeField && formEl
+          ? String(formEl.elements.namedItem(`cf_${caseTypeField.fieldId}`)?.value || '').trim()
+          : '';
+        const status = (statusField && formEl
+          ? String(formEl.elements.namedItem(`cf_${statusField.fieldId}`)?.value || '').trim()
+          : '') || defaultStatus;
+        const pieces = [ticker, year, company, caseType, status].filter(Boolean);
+        const complete = !!(ticker && company && caseType && status);
+        const built = pieces.join(nameSep);
+        if (nameInput) nameInput.value = complete ? built : '';
+        if (previewEl) {
+          previewEl.textContent = built || namePattern;
+          previewEl.classList.toggle('is-complete', complete);
         }
-        setTimeout(() => {
-          const focusEl = formulaActive
-            ? ($('#newMatterForm')?.querySelector('.name-formula-field input, .name-formula-field select, .name-formula-field textarea')
-              || nameInput)
-            : nameInput;
-          if (focusEl?.focus) focusEl.focus();
-          const section = $('#createMatterSection');
-          if (section && section.scrollIntoView) {
-            section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-        }, 0);
+        state.createMatterDraftName = complete ? built : '';
+        state.createMatterNewClient = {
+          ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
+          ticker,
+          name: company || state.createMatterNewClient?.name || '',
+        };
+        return complete ? built : '';
+      };
+
+      const formEl = $('#newMatterForm');
+      if (formEl) {
+        formEl.addEventListener('input', syncNamePreview);
+        formEl.addEventListener('change', syncNamePreview);
       }
+      tickerInput?.addEventListener('input', syncNamePreview);
+      syncNamePreview();
+      setTimeout(() => {
+        const focusEl = document.querySelector('#createMatterSection [data-client-search]')
+          || tickerInput
+          || formEl?.querySelector('.name-formula-field select, .name-formula-field input');
+        if (focusEl?.focus) focusEl.focus();
+        const section = $('#createMatterSection');
+        if (section && section.scrollIntoView) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 0);
       const clientPicker = wireClientTypeahead($('#createMatterSection') || main, {
         clients: clientList,
         selectedId: selectedClientId,
         allowAddNew: roleCanModify('contact'),
         onChange: (value) => {
-          const nameEl = $('#createMatterName');
-          if (nameEl && !formulaActive) state.createMatterDraftName = String(nameEl.value || '');
           state.createMatterClientId = value || '';
-          if (value === '__new__') {
+          if (value && value !== '__new__') {
+            const c = clientList.find((x) => String(x.id) === String(value));
+            if (tickerInput && c?.ticker) tickerInput.value = c.ticker;
+            state.createMatterNewClient = {
+              ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
+              name: c?.name || '',
+              ticker: tickerInput?.value || c?.ticker || '',
+            };
+          } else if (value === '__new__') {
             const typed = clientPicker?.getTypedName?.() || '';
             state.createMatterNewClient = {
-              ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+              ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
               name: typed || state.createMatterNewClient?.name || '',
             };
           }
+          syncNamePreview();
         },
       });
       const typeSelect = $('#createMatterTypeSelect');
       if (typeSelect) {
         typeSelect.onchange = async () => {
-          const nameEl = $('#createMatterName');
-          if (nameEl && !formulaActive) state.createMatterDraftName = String(nameEl.value || '');
           const typed = clientPicker?.getTypedName?.() || '';
           if (typed && (state.createMatterClientId === '__new__' || !state.createMatterClientId)) {
             state.createMatterNewClient = {
-              ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+              ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
               name: typed,
+              ticker: String(tickerInput?.value || '').trim(),
+            };
+          } else {
+            state.createMatterNewClient = {
+              ...(state.createMatterNewClient || { recordTypeKey: 'company', email: '', ticker: '' }),
+              ticker: String(tickerInput?.value || '').trim(),
             };
           }
           state.createMatterRecordTypeKey = typeSelect.value || 'billable';
@@ -3983,52 +4024,24 @@
         ev.preventDefault();
         const fd = new FormData(newMatterForm);
         const customValues = collectCustomFieldValues(newMatterForm, createFieldDefs);
-        if (formulaActive) {
-          for (const part of (nameFormula.parts || [])) {
-            if (part.kind !== 'custom_field') continue;
-            const v = String(customValues[part.fieldId] ?? customValues[String(part.fieldId)] ?? '').trim();
+        const ticker = String(fd.get('ticker') || $('#createMatterTicker')?.value || '').trim();
+        for (const field of createFieldDefs) {
+          if (field.isStatus) {
+            const v = String(customValues[field.fieldId] ?? customValues[String(field.fieldId)] ?? '').trim();
+            if (!v) customValues[field.fieldId] = defaultStatus;
+            continue;
+          }
+          if (field.isCaseType) {
+            const v = String(customValues[field.fieldId] ?? customValues[String(field.fieldId)] ?? '').trim();
             if (!v) {
-              $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(part.label || 'Name field')} is required for the matter name.</div>`;
+              $('#newMatterMsg').innerHTML = `<div class="error">${escapeHtml(field.label)} is required for the matter name.</div>`;
               return;
             }
           }
         }
-        let name = String(fd.get('name') || '').trim();
-        if (formulaActive) {
-          const sep = nameFormula.separator == null || nameFormula.separator === ''
-            ? '-'
-            : String(nameFormula.separator);
-          const year = new Date().toISOString().slice(0, 4);
-          const pieces = [];
-          for (const part of (nameFormula.parts || [])) {
-            if (part.kind === 'token' && (part.token === 'opened_year' || part.token === 'year')) {
-              if (year) pieces.push(year);
-            } else if (part.kind === 'custom_field') {
-              const v = String(customValues[part.fieldId] ?? customValues[String(part.fieldId)] ?? '').trim();
-              if (v) pieces.push(v);
-            }
-          }
-          name = pieces.join(sep);
-        }
-        if (!name) {
-          $('#newMatterMsg').innerHTML = `<div class="error">${
-            formulaActive
-              ? 'Fill the name fields to build a matter name.'
-              : 'Enter a matter name to continue.'
-          }</div>`;
-          return;
-        }
-        const existingMatter = findExactMatterMatch(allMatters || state.matters || [], name);
-        if (existingMatter) {
-          $('#newMatterMsg').innerHTML = `<div class="error">A matter named “${
-            escapeHtml(matterBaseName(existingMatter.name) || existingMatter.name)
-          }” already exists. <button type="button" class="linkish" data-open-dup-matter="${
-            existingMatter.id
-          }">Open existing matter</button></div>`;
-          $('#newMatterMsg [data-open-dup-matter]')?.addEventListener('click', () => {
-            state.showCreateMatter = false;
-            openMatter(Number(existingMatter.id));
-          });
+        if (!ticker) {
+          $('#newMatterMsg').innerHTML = '<div class="error">Ticker is required for the matter name.</div>';
+          $('#createMatterTicker')?.focus();
           return;
         }
         const typedClientName = String(
@@ -4039,7 +4052,6 @@
         let clientChoice = String(fd.get('clientId') || state.createMatterClientId || '').trim();
         let clientId = null;
         let newClientName = '';
-        // Typed text in the Client box can create a contact when no existing id is selected.
         if ((!clientChoice || clientChoice === '__new__') && typedClientName) {
           const exactTyped = findExactClientMatch(clientList, typedClientName);
           if (exactTyped) {
@@ -4048,43 +4060,80 @@
             clientChoice = '__new__';
             newClientName = typedClientName;
           } else {
-            $('#newMatterMsg').innerHTML = '<div class="error">Pick a client from the suggestions, or leave Client blank.</div>';
+            $('#newMatterMsg').innerHTML = '<div class="error">Pick a company from the suggestions.</div>';
             document.querySelector('#createMatterSection [data-client-search]')?.focus();
             return;
           }
         }
         if (clientChoice === '__new__') {
           if (!newClientName) {
-            $('#newMatterMsg').innerHTML = '<div class="error">Enter a client name in Client to continue.</div>';
+            $('#newMatterMsg').innerHTML = '<div class="error">Enter a company name to continue.</div>';
             document.querySelector('#createMatterSection [data-client-search]')?.focus();
             return;
           }
           const dupClient = findExactClientMatch(clientList, newClientName);
           if (dupClient) {
-            $('#newMatterMsg').innerHTML = `<div class="error">A contact named “${
+            $('#newMatterMsg').innerHTML = `<div class="error">A company named “${
               escapeHtml(dupClient.name)
-            }” already exists. Pick them from Client suggestions instead of adding a new one.</div>`;
+            }” already exists. Pick them from Company suggestions instead of adding a new one.</div>`;
             document.querySelector('#createMatterSection [data-client-search]')?.focus();
             return;
           }
         } else if (clientChoice) {
           clientId = Number(clientChoice);
           if (!Number.isFinite(clientId) || clientId <= 0) {
-            $('#newMatterMsg').innerHTML = '<div class="error">Pick a client from the suggestions, or leave Client blank.</div>';
+            $('#newMatterMsg').innerHTML = '<div class="error">Pick a company from the suggestions.</div>';
             document.querySelector('#createMatterSection [data-client-search]')?.focus();
             return;
           }
+        } else {
+          $('#newMatterMsg').innerHTML = '<div class="error">Company is required for the matter name.</div>';
+          document.querySelector('#createMatterSection [data-client-search]')?.focus();
+          return;
         }
-        const clientLabel = clientChoice === '__new__'
+        const companyLabel = clientChoice === '__new__'
           ? newClientName
-          : (clientId
-            ? (clientList.find((c) => Number(c.id) === clientId)?.name || 'client')
-            : null);
+          : (clientList.find((c) => Number(c.id) === clientId)?.name || typedClientName);
+        const year = new Date().toISOString().slice(0, 4);
+        const caseTypeVal = String(
+          createFieldDefs.find((f) => f.isCaseType)
+            ? (customValues[createFieldDefs.find((f) => f.isCaseType).fieldId]
+              ?? customValues[String(createFieldDefs.find((f) => f.isCaseType).fieldId)]
+              ?? '')
+            : '',
+        ).trim();
+        const statusVal = String(
+          createFieldDefs.find((f) => f.isStatus)
+            ? (customValues[createFieldDefs.find((f) => f.isStatus).fieldId]
+              ?? customValues[String(createFieldDefs.find((f) => f.isStatus).fieldId)]
+              ?? defaultStatus)
+            : defaultStatus,
+        ).trim() || defaultStatus;
+        const name = [ticker, year, companyLabel, caseTypeVal, statusVal]
+          .filter(Boolean)
+          .join(nameSep);
+        if (!caseTypeVal) {
+          $('#newMatterMsg').innerHTML = '<div class="error">Case Type is required for the matter name.</div>';
+          return;
+        }
+        const existingMatter = (allMatters || state.matters || []).find(
+          (m) => String(m.name || '').trim().toLowerCase() === name.toLowerCase()
+        );
+        if (existingMatter) {
+          $('#newMatterMsg').innerHTML = `<div class="error">A matter named “${
+            escapeHtml(existingMatter.name)
+          }” already exists. <button type="button" class="linkish" data-open-dup-matter="${
+            existingMatter.id
+          }">Open existing matter</button></div>`;
+          $('#newMatterMsg [data-open-dup-matter]')?.addEventListener('click', () => {
+            state.showCreateMatter = false;
+            openMatter(Number(existingMatter.id));
+          });
+          return;
+        }
         const sure = await confirmAction({
           title: 'Create this matter?',
-          message: clientLabel
-            ? `Create “${name}” for ${clientLabel}? You can add time and details after it’s created.`
-            : `Create “${name}” with no client? You can associate a client later on the matter page.`,
+          message: `Create “${name}” for ${companyLabel}? You can add time and details after it’s created.`,
           confirmLabel: 'Yes, create matter',
           cancelLabel: 'Not yet',
         });
@@ -4102,22 +4151,21 @@
               method: 'POST',
               body: JSON.stringify({
                 name: newClientName,
-                recordTypeKey: String(
-                  state.createMatterNewClient?.recordTypeKey || 'client',
-                ),
+                recordTypeKey: 'company',
+                ticker,
               }),
             });
             clientId = Number(createdClient?.client?.id);
             if (!Number.isFinite(clientId) || clientId <= 0) {
-              throw new Error('Could not create the new client');
+              throw new Error('Could not create the new company');
             }
           }
           const page = await api('/api/matters', {
             method: 'POST',
             body: JSON.stringify({
-              name,
               recordTypeKey,
-              ...(clientId ? { clientId } : {}),
+              clientId,
+              ticker,
               customValues,
             }),
           });
@@ -4126,7 +4174,7 @@
           state.createMatterDraftName = '';
           state.createMatterRecordTypeKey = 'billable';
           state.createMatterClientId = '';
-          state.createMatterNewClient = { name: '', recordTypeKey: 'client', email: '' };
+          state.createMatterNewClient = { name: '', recordTypeKey: 'company', email: '', ticker: '' };
           state.matterSearch = emptyMatterSearchState();
           state.matterCreateFlash = {
             title: 'Matter created',
@@ -8023,8 +8071,14 @@
       const used = usedFieldIds();
       const addable = availableFields.filter((f) => !used.has(Number(f.id)));
       bodyEl.innerHTML = `
-        <p class="hint">Build Create Matter names by concatenating custom fields (and Year), for example
-          <strong>Ticker-Year-Company Name-Case Type</strong>. Those fields appear on Create Matter and the name is filled automatically.</p>
+        <p class="hint"><strong>Required nomenclature</strong> is always
+          <strong>Ticker - Year - Company - Case Type - Status</strong>
+          (example <strong>FRD - 2026 - FORD - Securities Class Action - Possible</strong>).
+          Year is the open date (today on create). Ticker and Company come from the company record.
+          Case Type and Status are required on Create Matter (Status defaults to Possible).</p>
+        <p class="hint">Optional extra formula below is only used when a create does not yet have those parts (API/legacy). Create Matter always uses the required pattern.</p>
+        <p class="hint">Build extra Create Matter names by concatenating custom fields (and Year), for example
+          <strong>Ticker-Year-Company Name-Case Type</strong>.</p>
         <label class="check-inline">
           <input type="checkbox" id="mnfEnabled" ${draft.enabled ? 'checked' : ''} />
           Use formula when creating matters
@@ -8601,11 +8655,10 @@
       </div>
       <details class="onedrive-collapse settings-collapse" id="matterNameFormulaCard">
         <summary class="onedrive-collapse-summary">
-          <span class="onedrive-collapse-title">Matter name formula</span>
+          <span class="onedrive-collapse-title">Matter name</span>
           <span class="onedrive-collapse-meta muted">${
-            settings.matterNameFormula?.enabled
-              ? escapeHtml(settings.matterNameFormula.previewExample || 'On')
-              : 'Off — type a name on create'
+            escapeHtml(settings.matterNomenclature?.pattern
+              || 'Ticker - Year - Company - Case Type - Status')
           }</span>
         </summary>
         <div class="onedrive-collapse-body stack" id="matterNameFormulaBody"></div>
@@ -8925,20 +8978,20 @@
       id: 'matter',
       label: 'Create a matter',
       keywords: ['matter', 'create matter', 'new matter', 'open matter', 'case', 'search matters', 'filter matters', 'matter list'],
-      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). Enter a name (or, if [[Matter name formula|settings-name-formula]] is on, fill the name fields and the name is built automatically), complete required custom fields, then confirm. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field (for example Status) to narrow it.',
+      answer: 'Open [[Create Matter|create-matter]] (or the sidebar Create Matter action). The matter name is required as Ticker - Year - Company - Case Type - Status (year is today). Pick a Company, enter Ticker, Case Type, and Status (Possible is the default), then confirm. Example: FRD - 2026 - FORD - Securities Class Action - Possible. On [[Matters|matters]], Search matters shows a scrollable list of all matters; filter by Status or a custom field to narrow it.',
       links: [
         { label: 'Go to Create Matter', target: 'create-matter' },
         { label: 'Browse Matters', target: 'matters' },
-        { label: 'Matter name formula', target: 'settings-name-formula' },
+        { label: 'Matter name', target: 'settings-name-formula' },
       ],
     },
     {
       id: 'matter-name-formula',
-      label: 'Matter name formula',
-      keywords: ['matter name', 'formula', 'concatenate', 'ticker', 'create matter name', 'name parts'],
-      answer: 'Open [[Matter name formula|settings-name-formula]] in Settings: turn it on, set a separator (e.g. -), add custom fields and Year in order, or create fields there. On [[Create Matter|create-matter]] those fields appear and the matter name is built by concatenating them.',
+      label: 'Matter name nomenclature',
+      keywords: ['matter name', 'formula', 'concatenate', 'ticker', 'create matter name', 'name parts', 'nomenclature', 'FORD', 'FRD'],
+      answer: 'Create Matter requires Ticker - Year - Company - Case Type - Status. Company and Ticker live on the company record; Case Type and Status are matter picklists (Status defaults to Possible). Year is the open date. Relinking a company or changing ticker, case type, or status rebuilds the name. The optional [[Matter name formula|settings-name-formula]] is extra concatenation for legacy creates that do not yet have those parts.',
       links: [
-        { label: 'Open Matter name formula', target: 'settings-name-formula' },
+        { label: 'Open Matter name settings', target: 'settings-name-formula' },
         { label: 'Create Matter', target: 'create-matter' },
       ],
     },
