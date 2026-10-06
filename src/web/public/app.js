@@ -3527,7 +3527,7 @@
     // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
       ['billing', 'Billing', 'billing', 'Create bills'],
-      ['qbo', 'QuickBooks', 'qbo', 'Sandbox company'],
+      ['qbo', 'QuickBooks', 'qbo', 'Sandbox'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
       canManageUsers() ? ['users', 'Add a user', 'users', 'Invite people'] : null,
