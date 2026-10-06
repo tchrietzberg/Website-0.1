@@ -3469,6 +3469,39 @@ tr.click-row:hover td { background: rgba(24, 78, 74, 0.06); }
   to { opacity: 1; transform: none; }
 }
 
+.qbo-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f7fbf8 0%, #eef6f1 100%);
+}
+
+.qbo-company-name {
+  margin: 0 0 0.2rem;
+  font-size: 1.12rem;
+  font-weight: 700;
+  font-family: var(--font);
+}
+
+.qbo-invoice-sync {
+  margin-top: 0.35rem;
+}
+
+.pill[data-status="qbo"],
+.pill[data-status="sandbox"] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.pill[data-status="live"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition-duration: 0.01ms !important;

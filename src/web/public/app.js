@@ -170,6 +170,9 @@
     } else if (view === 'billing') {
       void api('/api/invoices');
       void api('/api/matters');
+    } else if (view === 'qbo') {
+      void api('/api/qbo');
+      void api('/api/settings');
     } else if (view === 'reports') {
       void api('/api/custom-reports');
       void api('/api/record-types');
@@ -3507,6 +3510,7 @@
       dashboard: `<svg ${common}><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="4.5" rx="1.4"/><rect x="13" y="10" width="7.5" height="10.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/></svg>`,
       settings: `<svg ${common}><circle cx="12" cy="12" r="3.1"/><path d="M12 3.5v2.2M12 18.3v2.2M4.9 6.5l1.6 1.6M17.5 15.9l1.6 1.6M3.5 12h2.2M18.3 12h2.2M4.9 17.5l1.6-1.6M17.5 8.1l1.6-1.6"/></svg>`,
       users: `<svg ${common}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.8 18.5c.6-3.1 2.9-4.8 5.2-4.8s4.6 1.7 5.2 4.8"/><path d="M17 8v6M14 11h6"/></svg>`,
+      qbo: `<svg ${common}><rect x="3.5" y="4" width="17" height="16" rx="2.4"/><path d="M8.5 8v8M8.5 12h5a2.6 2.6 0 1 0 0-5.2H8.5"/><path d="M14.8 16.2 16.6 8"/></svg>`,
       plus: `<svg ${common}><path d="M12 5v14M5 12h14"/></svg>`,
     };
     return icons[name] || icons.matters;
@@ -3523,6 +3527,7 @@
     // Add a user sits at the bottom of Navigate, just above Settings.
     const items = [
       ['billing', 'Billing', 'billing', 'Create bills'],
+      ['qbo', 'QuickBooks', 'qbo', 'Sandbox company'],
       roleCanView('report') ? ['reports', 'Reports', 'reports', 'Lodestar & custom'] : null,
       roleCanView('report') ? ['dashboard', 'Dashboard', 'dashboard', 'Report visuals'] : null,
       canManageUsers() ? ['users', 'Add a user', 'users', 'Invite people'] : null,
@@ -3658,6 +3663,7 @@
       else if (view === 'contact') await renderContactDetail();
       else if (view === 'time') await renderTime();
       else if (view === 'billing') await renderBilling();
+      else if (view === 'qbo') await renderQbo();
       else if (view === 'reports') await renderReports();
       else if (view === 'dashboard') await renderDashboard();
       else if (view === 'users') await renderUsers();
@@ -6561,6 +6567,239 @@
     return form;
   }
 
+  function qboStatusLabel(qbo) {
+    if (!qbo) return 'Not connected';
+    if (qbo.connected) {
+      return `${qbo.companyName || 'Connected'} · ${qbo.customerCount || 0} customers`;
+    }
+    return qbo.neverConnected ? 'Sandbox ready to load' : 'Disconnected';
+  }
+
+  async function loadQboSandbox() {
+    return api('/api/qbo/sandbox', { method: 'POST', body: '{}', cache: false });
+  }
+
+  async function sendBillToQbo(invoiceId) {
+    try {
+      return await api(`/api/qbo/invoices/${invoiceId}/send`, { method: 'POST', body: '{}', cache: false });
+    } catch (e) {
+      if (/Connect QuickBooks first/i.test(String(e.message || ''))) {
+        await loadQboSandbox();
+        return api(`/api/qbo/invoices/${invoiceId}/send`, { method: 'POST', body: '{}', cache: false });
+      }
+      throw e;
+    }
+  }
+
+  function qboSyncBadgeHtml(sync) {
+    if (!sync) return '<span class="muted">—</span>';
+    const doc = sync.qbo_doc_number || sync.qbo_id || 'sent';
+    return `<span class="pill" data-status="qbo">QBO ${escapeHtml(doc)}</span>`;
+  }
+
+  function wireQboConnectActions(root, {
+    onAfter,
+    msgSelector = '#qboMsg',
+  } = {}) {
+    const msg = () => (typeof msgSelector === 'string' ? $(msgSelector) : msgSelector);
+    const canBill = ['admin', 'billing_clerk'].includes(state.user?.role);
+    const isAdmin = state.user?.role === 'admin';
+    const setMsg = (html) => {
+      const el = msg();
+      if (el) el.innerHTML = html;
+    };
+    const after = async () => {
+      if (typeof onAfter === 'function') await onAfter();
+    };
+    root.querySelectorAll('[data-qbo-sandbox]').forEach((btn) => {
+      if (!canBill) return;
+      btn.onclick = async () => {
+        try {
+          await loadQboSandbox();
+          state.qboFlash = 'Loaded sandbox company — no Intuit credentials required.';
+          await after();
+        } catch (e) {
+          setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
+    root.querySelectorAll('[data-qbo-disconnect]').forEach((btn) => {
+      if (!canBill) return;
+      btn.onclick = async () => {
+        try {
+          await api('/api/qbo/disconnect', { method: 'POST', body: '{}', cache: false });
+          state.qboFlash = 'Disconnected from QuickBooks.';
+          await after();
+        } catch (e) {
+          setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
+    const configForm = root.querySelector('#qboConfigForm');
+    if (configForm && isAdmin) {
+      configForm.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(configForm);
+        try {
+          await api('/api/qbo/config', {
+            method: 'PATCH',
+            body: JSON.stringify({
+              clientId: String(fd.get('clientId') || ''),
+              clientSecret: String(fd.get('clientSecret') || ''),
+              environment: String(fd.get('environment') || 'sandbox'),
+            }),
+            cache: false,
+          });
+          state.qboFlash = 'QuickBooks app settings saved.';
+          await after();
+        } catch (e) {
+          setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    }
+    root.querySelectorAll('[data-qbo-intuit]').forEach((btn) => {
+      if (!canBill) return;
+      btn.onclick = async () => {
+        try {
+          const start = await api('/api/qbo/connect/start', { method: 'POST', body: '{}', cache: false });
+          if (start?.authUrl) {
+            window.location.href = start.authUrl;
+            return;
+          }
+          setMsg('<div class="error">Intuit did not return a sign-in URL.</div>');
+        } catch (e) {
+          setMsg(`<div class="error">${escapeHtml(e.message)}</div>`);
+        }
+      };
+    });
+  }
+
+  function qboConnectPanelHtml(qbo, { canBill, isAdmin, compact = false } = {}) {
+    const connected = !!qbo?.connected;
+    const env = qbo?.environment === 'production' ? 'production' : 'sandbox';
+    return `
+      ${connected ? `
+        <div class="qbo-hero">
+          <div>
+            <p class="qbo-company-name">${escapeHtml(qbo.companyName || 'QuickBooks company')}</p>
+            <p class="muted">Company ID ${escapeHtml(qbo.realmId || '—')} · ${escapeHtml(qbo.mode || 'sandbox')} · ${Number(qbo.customerCount || 0)} customers · ${Number(qbo.invoiceCount || 0)} invoices</p>
+          </div>
+          <span class="pill" data-status="sandbox">${escapeHtml((qbo.mode || 'sandbox') === 'live' ? 'Live' : 'Sandbox')}</span>
+        </div>
+        ${canBill ? '<div class="row-actions"><button type="button" data-qbo-disconnect>Disconnect</button></div>' : ''}
+      ` : `
+        <p class="lead">Load a sandbox company to try Chrono → QuickBooks without Intuit credentials. Firms can later connect a live company with an Intuit Client ID.</p>
+        ${canBill
+          ? '<div class="row-actions"><button type="button" class="primary" data-qbo-sandbox>Load sandbox company</button></div>'
+          : '<p class="hint">Ask an admin or billing clerk to load the sandbox company.</p>'}
+      `}
+      ${isAdmin ? `
+      <details class="onedrive-collapse settings-collapse" ${compact && !qbo?.clientConfigured ? '' : ''}>
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">Intuit app (optional)</span>
+          <span class="onedrive-collapse-meta muted">${
+            qbo?.clientConfigured
+              ? `Client ID ${escapeHtml(qbo.clientIdMasked || 'set')} · ${escapeHtml(qbo.clientIdSource || 'settings')}`
+              : 'Not required for sandbox'
+          }</span>
+        </summary>
+        <div class="onedrive-collapse-body stack">
+          <p class="hint">Live OAuth uses Intuit’s accounting scope. Leave blank to keep using the loadable sandbox company.</p>
+          <form id="qboConfigForm" class="grid two">
+            <label>Client ID
+              <input name="clientId" autocomplete="off" placeholder="${qbo?.clientConfigured ? '•••• saved' : 'Intuit Client ID'}" />
+            </label>
+            <label>Client secret
+              <input name="clientSecret" type="password" autocomplete="off" placeholder="${qbo?.clientConfigured ? '•••• saved' : 'Intuit Client Secret'}" />
+            </label>
+            <label class="span-all">Environment
+              <select name="environment">
+                <option value="sandbox" ${env === 'sandbox' ? 'selected' : ''}>Intuit sandbox</option>
+                <option value="production" ${env === 'production' ? 'selected' : ''}>Production</option>
+              </select>
+            </label>
+            <div class="row-actions span-all">
+              <button class="primary" type="submit">Save app settings</button>
+              ${canBill && qbo?.clientConfigured ? '<button type="button" data-qbo-intuit>Connect to Intuit</button>' : ''}
+            </div>
+          </form>
+        </div>
+      </details>` : ''}
+      <div id="qboMsg"></div>`;
+  }
+
+  async function renderQbo() {
+    const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
+    const isAdmin = state.user.role === 'admin';
+    let data = await api('/api/qbo', { cache: false });
+    if (!stillOnView('qbo')) return;
+    if (!data.connected && data.neverConnected && canBill) {
+      data = await loadQboSandbox();
+      if (!stillOnView('qbo')) return;
+      state.qboFlash = 'Loaded sandbox company — no Intuit credentials required.';
+    }
+    const flash = state.qboFlash;
+    state.qboFlash = null;
+    const customers = data.customers || [];
+    const invoices = data.invoices || [];
+    setMainHtml(`
+      <div class="card stack" id="qboPage">
+        <h1>QuickBooks</h1>
+        ${flash ? `<div class="ok-banner">${escapeHtml(flash)}</div>` : ''}
+        ${qboConnectPanelHtml(data, { canBill, isAdmin })}
+      </div>
+      ${data.connected ? `
+      <div class="card">
+        <h2>Customers</h2>
+        <p class="hint">Mapped from Chrono contacts when the sandbox company loads. Ticker is copied from the company record when present.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Customer</th><th>Ticker</th><th>QBO ID</th><th>Mode</th></tr></thead>
+          <tbody>
+            ${customers.map((c) => `
+              <tr>
+                <td>${escapeHtml(c.display_name || '')}</td>
+                <td>${escapeHtml(c.ticker || '—')}</td>
+                <td>${escapeHtml(c.qbo_id || '')}</td>
+                <td><span class="pill" data-status="${escapeHtml(c.sync_mode || 'sandbox')}">${escapeHtml(c.sync_mode || 'sandbox')}</span></td>
+              </tr>`).join('') || '<tr><td colspan="4" class="muted">No customers mapped</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>Invoices in QuickBooks</h2>
+        <p class="hint">One-way Chrono → QuickBooks. Send a bill from Billing; Chrono stays the source of truth.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Chrono</th><th>QBO Doc</th><th>Customer</th><th>Matter</th><th>Total</th><th></th></tr></thead>
+          <tbody>
+            ${invoices.map((inv) => `
+              <tr>
+                <td>${escapeHtml(inv.chrono_number || inv.qbo_doc_number || '')}</td>
+                <td>${escapeHtml(inv.qbo_doc_number || inv.qbo_id || '')}</td>
+                <td>${escapeHtml(inv.qbo_customer_name || '')}</td>
+                <td>${escapeHtml(inv.matter_name || '')}</td>
+                <td>${escapeHtml(inv.total_label || money(inv.total_cents))}</td>
+                <td class="row-actions">
+                  <button type="button" data-qbo-open-invoice="${Number(inv.invoice_id)}">Open bill</button>
+                </td>
+              </tr>`).join('') || '<tr><td colspan="6" class="muted">No bills sent yet — open Billing and Send to QuickBooks.</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>` : ''}`);
+    wireQboConnectActions(main, {
+      onAfter: () => renderQbo(),
+    });
+    main.querySelectorAll('[data-qbo-open-invoice]').forEach((btn) => {
+      btn.onclick = async () => {
+        const id = Number(btn.getAttribute('data-qbo-open-invoice'));
+        state.view = 'billing';
+        setActiveNav('billing');
+        await renderView();
+        await showInvoice(id);
+        $('#invoiceDetail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+    });
+  }
+
   async function renderBilling() {
     const canBill = ['admin', 'billing_clerk'].includes(state.user.role);
     const [invoices, matters] = await Promise.all([
@@ -6587,7 +6826,7 @@
     setMainHtml(`
       <div class="card stack">
         <h1>Billing</h1>
-        <p class="lead">Select a matter and date range, run Lodestar, then create a bill.</p>
+        <p class="lead">Select a matter and date range, run Lodestar, then create a bill. Send billed work to the loadable QuickBooks sandbox from the bill.</p>
         ${canBill ? `
         <form id="billForm" class="grid two">
           <div class="field span-all">
@@ -6619,19 +6858,20 @@
       <div class="card">
         <h2>Bills</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Number</th><th>Matter</th><th>Status</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Number</th><th>Matter</th><th>Status</th><th>QuickBooks</th><th>Total</th><th></th></tr></thead>
           <tbody>
             ${invoices.map((i) => `
               <tr>
                 <td>${escapeHtml(i.number)}</td>
                 <td>${escapeHtml(i.matter_name || i.matter_number)}<div class="muted">${escapeHtml(i.client_name || '')}</div></td>
                 <td><span class="pill" data-status="${escapeHtml(i.status)}">${escapeHtml(invoiceStageLabel(i.status))}</span></td>
+                <td>${qboSyncBadgeHtml(i.qbo)}</td>
                 <td>${money(i.total_cents)}</td>
                 <td class="row-actions">
                   <button type="button" data-open="${i.id}">Open</button>
                   ${canBill ? `<button type="button" class="danger" data-invoice-delete="${Number(i.id)}" data-invoice-number="${escapeHtml(i.number || '')}">Delete</button>` : ''}
                 </td>
-              </tr>`).join('') || '<tr><td colspan="5" class="muted">No bills yet</td></tr>'}
+              </tr>`).join('') || '<tr><td colspan="6" class="muted">No bills yet</td></tr>'}
           </tbody>
         </table></div>
       </div>
@@ -6865,6 +7105,11 @@
           <button type="button" class="primary" data-export-invoice="pdf">Download PDF</button>
           <button type="button" data-export-invoice="xlsx">Download Excel</button>
         </div>
+        <div class="qbo-invoice-sync">
+          ${inv.qbo
+            ? `<p class="ok-banner">In QuickBooks as ${escapeHtml(inv.qbo.qbo_doc_number || inv.qbo.qbo_id || 'invoice')} · ${escapeHtml(inv.qbo.qbo_customer_name || 'customer')} · ID ${escapeHtml(inv.qbo.qbo_id || '')}</p>`
+            : `<p class="hint">One-way send to the loadable QuickBooks sandbox (or a live Intuit company if connected).</p>`}
+        </div>
         <div class="row-actions" id="invActions"></div>
         <div id="invMsg"></div>
       </div>`;
@@ -6922,6 +7167,24 @@
         }
       };
       actions.appendChild(voidBtn);
+    }
+    if (canBill && actions && inv.status !== 'void' && !inv.qbo) {
+      const qboBtn = document.createElement('button');
+      qboBtn.type = 'button';
+      qboBtn.className = 'primary';
+      qboBtn.textContent = 'Send to QuickBooks';
+      qboBtn.onclick = async () => {
+        try {
+          const result = await sendBillToQbo(id);
+          const label = result?.invoice?.qbo_doc_number || result?.invoice?.qbo_id || inv.number;
+          $('#invMsg').innerHTML = `<div class="ok-banner">${result?.alreadySent ? 'Already in QuickBooks' : 'Sent to QuickBooks'} as ${escapeHtml(label)}.</div>`;
+          await renderBilling();
+          await showInvoice(id);
+        } catch (e) {
+          $('#invMsg').innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      };
+      actions.appendChild(qboBtn);
     }
     if (canBill && actions) {
       const del = document.createElement('button');
@@ -8468,6 +8731,17 @@
         <div id="settingsMsg"></div>
       </form>
 
+      ${canEditBilling ? `
+      <details class="onedrive-collapse settings-collapse" id="qboSettingsCard" open>
+        <summary class="onedrive-collapse-summary">
+          <span class="onedrive-collapse-title">QuickBooks</span>
+          <span class="onedrive-collapse-meta muted">${escapeHtml(qboStatusLabel(settings.qbo))}</span>
+        </summary>
+        <div class="onedrive-collapse-body stack" id="qboSettingsBody">
+          ${qboConnectPanelHtml(settings.qbo || { loadable: true, neverConnected: true }, { canBill: canEditBilling, isAdmin, compact: true })}
+        </div>
+      </details>` : ''}
+
       ${showClerkRates ? `
       <details class="onedrive-collapse settings-collapse" id="tkRatesSection" ${state.tkSearch.q ? 'open' : ''}>
         <summary class="onedrive-collapse-summary">
@@ -8608,6 +8882,19 @@
         },
       });
     }
+
+    const qboCard = $('#qboSettingsCard');
+    if (qboCard) {
+      const flash = state.qboFlash;
+      state.qboFlash = null;
+      if (flash) {
+        const qboMsg = $('#qboMsg', qboCard);
+        if (qboMsg) qboMsg.innerHTML = `<div class="ok-banner">${escapeHtml(flash)}</div>`;
+      }
+      wireQboConnectActions(qboCard, {
+        onAfter: () => renderSettings(),
+      });
+    }
   }
 
   async function renderAudit() {
@@ -8705,6 +8992,17 @@
       links: [
         { label: 'Go to Billing', target: 'billing' },
         { label: 'Open Settings', target: 'settings' },
+      ],
+    },
+    {
+      id: 'qbo',
+      label: 'QuickBooks',
+      keywords: ['quickbooks', 'qbo', 'intuit', 'sandbox company', 'send to quickbooks', 'accounting'],
+      answer: 'Open [[QuickBooks|qbo]] to load a sandbox company with no Intuit credentials. Contacts become customers; send a bill from [[Billing|billing]] with Send to QuickBooks. Chrono stays the source of truth (one-way). Optional live Intuit Client ID lives under [[QuickBooks settings|settings-qbo]].',
+      links: [
+        { label: 'Open QuickBooks', target: 'qbo' },
+        { label: 'Go to Billing', target: 'billing' },
+        { label: 'QuickBooks settings', target: 'settings-qbo' },
       ],
     },
     {
@@ -8838,6 +9136,8 @@
         await goAppView('contacts');
       } else if (key === 'billing') {
         await goAppView('billing');
+      } else if (key === 'qbo') {
+        await goAppView('qbo');
       } else if (key === 'reports') {
         await goAppView('reports');
       } else if (key === 'dashboard') {
@@ -8859,6 +9159,8 @@
         await focusSettings('#timeFieldsCard');
       } else if (key === 'settings-name-formula') {
         await focusSettings('#matterNameFormulaCard', { openDetails: true });
+      } else if (key === 'settings-qbo') {
+        await focusSettings('#qboSettingsCard', { openDetails: true });
       } else {
         return;
       }
