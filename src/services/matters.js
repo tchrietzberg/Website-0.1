@@ -2,6 +2,7 @@ const { allocateNumber, audit, getSetting, setSetting } = require('../db');
 const customFields = require('./customFields');
 const matterIndex = require('./matterIndex');
 const permissions = require('./permissions');
+const matterName = require('./matterName');
 
 const NAME_SEP = ' - ';
 const MATTER_NAME_FORMULA_SETTING = 'matter_name_formula';
@@ -329,6 +330,7 @@ function writeMatterName(db, actor, id, oldName, nextName) {
 
 function createMatter(db, actor, input = {}) {
   permissions.assertCanModifyRecords(db, actor, 'matter');
+  matterName.ensureStandardMatterNomenclature(db);
   const formula = getMatterNameFormula(db);
   const formulaActive = formula.enabled && formula.parts.length > 0;
   const name = String(input.name || '').trim();
@@ -358,6 +360,11 @@ function createMatter(db, actor, input = {}) {
     clientId = null;
   }
 
+  if (input.ticker) {
+    if (!clientId) throw new Error('Company is required for the matter name');
+    matterName.ensureClientTicker(db, clientId, input.ticker);
+  }
+
   const attorneyId = input.responsibleAttorneyId != null && input.responsibleAttorneyId !== ''
     ? Number(input.responsibleAttorneyId)
     : null;
@@ -372,25 +379,52 @@ function createMatter(db, actor, input = {}) {
     values: customValues,
   });
 
+  const requiredName = matterName.buildRequiredMatterName(db, {
+    clientId,
+    ticker: input.ticker,
+    company: input.companyName,
+    customValues,
+    openedOn,
+    recordTypeKey: matterType,
+  });
+  const useRequiredName = requiredName.complete;
+
   let baseName = name;
-  if (formulaActive) {
+  if (useRequiredName) {
+    baseName = requiredName.name;
+  } else if (formulaActive) {
     baseName = buildNameFromFormula(db, formula, {
       customValues,
       openedOn,
       requireAll: true,
     });
   } else if (!baseName) {
-    throw new Error('name required');
+    throw new Error(requiredName.missing[0]
+      ? `${requiredName.missing[0]} is required for the matter name`
+      : 'name required');
   }
   // Matter names never carry "No Client" or billing-month text (e.g. Aug 2026).
-  baseName = cleanMatterBaseName(baseName);
+  if (!useRequiredName) baseName = cleanMatterBaseName(baseName);
   if (!baseName) throw new Error('name required');
 
-  assertUniqueMatterName(db, baseName);
+  if (useRequiredName) {
+    const clash = db.prepare(`
+      SELECT id, name, number FROM matters WHERE lower(name) = lower(?)
+    `).get(baseName);
+    if (clash) {
+      throw new Error(
+        `A matter named “${clash.name}” already exists${clash.number ? ` (${clash.number})` : ''}`
+      );
+    }
+  } else {
+    assertUniqueMatterName(db, baseName);
+  }
 
-  const displayName = formulaActive && !formula.appendStatusYear
+  const displayName = useRequiredName
     ? baseName
-    : composeMatterName(baseName, initialStatus, openedOn);
+    : (formulaActive && !formula.appendStatusYear
+      ? baseName
+      : composeMatterName(baseName, initialStatus, openedOn));
 
   const info = db.prepare(`
     INSERT INTO matters(client_id, number, name, matter_type, jurisdiction, court, status,
@@ -411,7 +445,9 @@ function createMatter(db, actor, input = {}) {
 
   // Always run so Auto Number fields allocate even when the form omits them.
   customFields.setCustomValues(db, actor, id, customValues);
-  if (Object.keys(customValues).length || formulaActive) {
+  if (useRequiredName) {
+    matterName.rebuildMatterDisplayName(db, actor, id);
+  } else if (Object.keys(customValues).length || formulaActive) {
     const matterRow = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const statusLabel = currentStatusLabel(db, matterRow) || initialStatus;
     let nextName;
@@ -511,8 +547,10 @@ function updateMatter(db, actor, id, patch) {
     customFields.setCustomValues(db, actor, id, patch.customValues);
   }
 
-  // Keep matter name as: Matter Name - Status - Year
-  if (statusForName != null || openedOnChanging || nameChanging) {
+  // Keep matter name as Ticker - Year - Company - Case Type - Status when those
+  // parts exist; otherwise Matter Name - Status - Year.
+  const rebuilt = matterName.rebuildMatterDisplayName(db, actor, id);
+  if (!rebuilt?.complete && (statusForName != null || openedOnChanging || nameChanging)) {
     const after = db.prepare('SELECT * FROM matters WHERE id = ?').get(id);
     const baseName = patch.name !== undefined ? String(patch.name) : after.name;
     if (nameChanging) assertUniqueMatterName(db, baseName, { excludeId: id });

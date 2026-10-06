@@ -162,6 +162,7 @@ function readSettings(db) {
     billFieldConfig: invoiceSvc.getBillFieldConfig(db),
     permissions: permissions.getPermissionsSettings(db),
     matterNameFormula: matterSvc.getMatterNameFormulaConfig(db),
+    matterNomenclature: require('../services/matterName').getNomenclatureConfig(db),
   };
 }
 

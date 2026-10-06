@@ -2,6 +2,7 @@ const { audit, getSetting, setSetting } = require('../db');
 const customFields = require('./customFields');
 const permissions = require('./permissions');
 const matterIndex = require('./matterIndex');
+const matterName = require('./matterName');
 
 /** Always shown on contacts. */
 const CONTACT_CORE_FIELD = {
@@ -70,25 +71,29 @@ function getContactFieldConfig(db) {
   };
 }
 
+function attachTicker(db, client) {
+  if (!client) return client;
+  return { ...client, ticker: matterName.tickerForClient(db, client.id) };
+}
+
 function listClients(db, { q = '' } = {}) {
   const query = String(q || '').trim();
-  if (!query) {
-    return db.prepare(`
+  const rows = !query
+    ? db.prepare(`
       SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
       FROM clients
       ORDER BY name COLLATE NOCASE, id
-    `).all();
-  }
-  const like = `%${query.replace(/%/g, '')}%`;
-  return db.prepare(`
-    SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
-    FROM clients
-    WHERE name LIKE ? COLLATE NOCASE
-       OR IFNULL(email,'') LIKE ? COLLATE NOCASE
-       OR IFNULL(phone,'') LIKE ? COLLATE NOCASE
-       OR IFNULL(company,'') LIKE ? COLLATE NOCASE
-    ORDER BY name COLLATE NOCASE, id
-  `).all(like, like, like, like);
+    `).all()
+    : db.prepare(`
+      SELECT id, name, email, phone, company, notes, record_type, created_at, updated_at
+      FROM clients
+      WHERE name LIKE ? COLLATE NOCASE
+         OR IFNULL(email,'') LIKE ? COLLATE NOCASE
+         OR IFNULL(phone,'') LIKE ? COLLATE NOCASE
+         OR IFNULL(company,'') LIKE ? COLLATE NOCASE
+      ORDER BY name COLLATE NOCASE, id
+    `).all(`%${query.replace(/%/g, '')}%`, `%${query.replace(/%/g, '')}%`, `%${query.replace(/%/g, '')}%`, `%${query.replace(/%/g, '')}%`);
+  return rows.map((row) => attachTicker(db, row));
 }
 
 function getClientRow(db, id) {
@@ -153,7 +158,7 @@ function getClient(db, id, actor = null) {
   const recordTypeLabel = (recordTypes.find((t) => t.key === recordTypeKey) || {}).label
     || recordTypeKey;
   return {
-    client: { ...client, record_type: recordTypeKey },
+    client: { ...attachTicker(db, client), record_type: recordTypeKey },
     recordTypeKey,
     recordTypeLabel,
     fields: fieldDefs,
@@ -222,7 +227,9 @@ function createClient(db, actor, input = {}) {
     : {};
   const recordTypeKey = customFields.normalizeRecordTypeKey(
     db,
-    input.recordTypeKey || input.record_type || customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY,
+    input.recordTypeKey
+      || input.record_type
+      || (String(input.ticker || '').trim() ? 'company' : customFields.DEFAULT_CONTACT_RECORD_TYPE_KEY),
     { appliesTo: 'client' }
   );
 
@@ -242,6 +249,8 @@ function createClient(db, actor, input = {}) {
 
   // Always run so Auto Number fields allocate even when the form omits them.
   customFields.setClientCustomValues(db, actor, id, customValues);
+  const ticker = input.ticker != null ? String(input.ticker).trim() : '';
+  if (ticker) matterName.ensureClientTicker(db, id, ticker);
 
   audit(db, {
     actorId: actor?.id || null,
@@ -318,9 +327,16 @@ function updateClient(db, actor, id, patch = {}) {
   `).run(id);
 
   // Keep matter search / global lookup in sync when contact text changes.
-  if (patch.name !== undefined || patch.company !== undefined || patch.email !== undefined) {
+  if (patch.name !== undefined || patch.company !== undefined || patch.email !== undefined
+    || patch.ticker !== undefined || patch.customValues) {
     const linked = db.prepare('SELECT id FROM matters WHERE client_id = ?').all(id);
     for (const row of linked) matterIndex.indexMatter(db, row.id);
+  }
+  if (patch.ticker !== undefined) {
+    matterName.ensureClientTicker(db, id, patch.ticker);
+  }
+  if (patch.name !== undefined || patch.ticker !== undefined || patch.customValues) {
+    matterName.rebuildMattersForClient(db, actor, id);
   }
 
   audit(db, {

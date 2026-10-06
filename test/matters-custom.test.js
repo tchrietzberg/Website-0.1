@@ -249,8 +249,13 @@ describe('matter search and record-based fields', () => {
     const page0 = matterSvc.createMatter(db, admin, { name: 'Lean Matter' });
     assert.equal(page0.matter.client_id, null);
     assert.equal(page0.matter.client_name, null);
-    const keys = Object.values(page0.sections).flat().map((f) => f.key);
-    assert.deepEqual(keys.sort(), ['std:name', 'std:number']);
+    const fields0 = Object.values(page0.sections).flat();
+    const keys = fields0.map((f) => f.key);
+    assert.ok(keys.includes('std:name'));
+    assert.ok(keys.includes('std:number'));
+    assert.ok(fields0.some((f) => f.label === 'Case Type'));
+    assert.ok(fields0.some((f) => f.label === 'Status'));
+    assert.ok(keys.every((k) => k === 'std:name' || k === 'std:number' || String(k).startsWith('cf:')));
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:client'));
     assert.ok(page0.availableStandardFields.some((f) => f.key === 'std:court'));
     assert.ok(!page0.availableStandardFields.some((f) => f.key === 'std:matter_type'));
@@ -269,7 +274,10 @@ describe('matter search and record-based fields', () => {
 
   it('can add and delete fields on default type and matter layouts', () => {
     const type0 = customFields.getTypeLayout(db, customFields.DEFAULT_RECORD_TYPE_KEY);
-    assert.deepEqual(type0.fields.map((f) => f.fieldKey).sort(), ['std:name', 'std:number']);
+    const typeKeys = type0.fields.map((f) => f.fieldKey);
+    assert.ok(typeKeys.includes('std:name'));
+    assert.ok(typeKeys.includes('std:number'));
+    assert.ok(typeKeys.some((k) => String(k).startsWith('cf:')));
 
     const type1 = customFields.addStandardFieldToType(
       db, admin, customFields.DEFAULT_RECORD_TYPE_KEY, 'std:court'

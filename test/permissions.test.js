@@ -230,14 +230,15 @@ describe('role permissions and field permissions', () => {
   });
 
   it('lets admins deactivate custom fields', () => {
+    const before = customFields.listCustomFields(db, { recordTypeKey: 'billable' }).length;
     const field = customFields.createCustomField(db, admin, {
       label: 'Temp field',
       fieldType: 'text',
       recordTypeKey: 'billable',
     });
-    assert.equal(customFields.listCustomFields(db, { recordTypeKey: 'billable' }).length, 1);
+    assert.equal(customFields.listCustomFields(db, { recordTypeKey: 'billable' }).length, before + 1);
     customFields.deactivateCustomField(db, admin, field.id);
-    assert.equal(customFields.listCustomFields(db, { recordTypeKey: 'billable' }).length, 0);
+    assert.equal(customFields.listCustomFields(db, { recordTypeKey: 'billable' }).length, before);
   });
 
   it('hides contact custom fields per role field permissions', () => {

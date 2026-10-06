@@ -34,6 +34,7 @@ function migrate(db) {
   customFields.ensureRecordTypes(db);
   const matterIndex = require('./services/matterIndex');
   matterIndex.ensureMatterIndex(db);
+  require('./services/matterName').ensureStandardMatterNomenclature(db);
   // Rebuild when matters exist but the index is empty or out of sync (first boot / upgrade)
   const matterCount = db.prepare('SELECT COUNT(*) AS n FROM matters').get().n;
   const idxCount = db.prepare('SELECT COUNT(*) AS n FROM matter_search_index').get().n;
