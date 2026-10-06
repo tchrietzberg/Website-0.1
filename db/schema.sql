@@ -431,3 +431,32 @@ CREATE TABLE IF NOT EXISTS custom_reports (
 
 CREATE INDEX IF NOT EXISTS idx_custom_reports_active
   ON custom_reports(active, show_on_dashboard);
+
+-- QuickBooks Online: sandbox ledger + live invoice sync
+CREATE TABLE IF NOT EXISTS qbo_customers (
+  id INTEGER PRIMARY KEY,
+  client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+  qbo_id TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  ticker TEXT,
+  sync_mode TEXT NOT NULL DEFAULT 'sandbox' CHECK (sync_mode IN ('sandbox','live')),
+  last_synced_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_qbo_customers_client ON qbo_customers(client_id);
+
+CREATE TABLE IF NOT EXISTS qbo_invoices (
+  id INTEGER PRIMARY KEY,
+  invoice_id INTEGER NOT NULL UNIQUE REFERENCES invoices(id) ON DELETE CASCADE,
+  qbo_id TEXT NOT NULL,
+  qbo_doc_number TEXT,
+  qbo_customer_id TEXT,
+  qbo_customer_name TEXT,
+  total_cents INTEGER NOT NULL DEFAULT 0,
+  balance_cents INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'sent',
+  sync_mode TEXT NOT NULL DEFAULT 'sandbox' CHECK (sync_mode IN ('sandbox','live')),
+  payload_json TEXT,
+  sent_by INTEGER REFERENCES users(id),
+  sent_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_qbo_invoices_sent ON qbo_invoices(sent_at);

@@ -156,6 +156,7 @@ function readSettings(db) {
     roundingModes: ROUNDING_MODES,
     msGraphConfigured: onedrive.graphConfigured(db),
     microsoft: msAuth.connectionStatus(db),
+    qbo: require('../services/qbo').connectionStatus(db),
     email: mail.mailStatus(db),
     contactFieldConfig: clientsSvc.getContactFieldConfig(db),
     billFieldConfig: invoiceSvc.getBillFieldConfig(db),
@@ -1323,7 +1324,11 @@ function createServer(db = openDb()) {
 
       // Invoices
       if (req.method === 'GET' && pathname === '/api/invoices') {
-        return json(res, 200, invoiceSvc.listInvoices(db));
+        const qbo = require('../services/qbo');
+        return json(res, 200, invoiceSvc.listInvoices(db).map((inv) => ({
+          ...inv,
+          qbo: qbo.syncForInvoice(db, inv.id),
+        })));
       }
       if (req.method === 'GET' && pathname === '/api/billing/ready') {
         if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
@@ -1364,7 +1369,8 @@ function createServer(db = openDb()) {
         const id = Number(pathname.split('/').filter(Boolean)[2]);
         const inv = invoiceSvc.getInvoice(db, id);
         if (!inv) return json(res, 404, { error: 'not found', message: 'Invoice not found' });
-        return json(res, 200, inv);
+        const qbo = require('../services/qbo');
+        return json(res, 200, { ...inv, qbo: qbo.syncForInvoice(db, id) });
       }
       if (req.method === 'GET' && pathname.match(/^\/api\/invoices\/\d+\/export$/)) {
         const id = Number(pathname.split('/')[3]);
@@ -1437,6 +1443,58 @@ function createServer(db = openDb()) {
         } catch (e) {
           const status = /not found/i.test(e.message) ? 404 : 400;
           return json(res, status, { error: e.message, message: e.message }, req);
+        }
+      }
+
+      // QuickBooks Online
+      if (req.method === 'GET' && pathname === '/api/qbo') {
+        const qbo = require('../services/qbo');
+        return json(res, 200, qbo.getDashboard(db));
+      }
+      if (req.method === 'POST' && pathname === '/api/qbo/sandbox') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
+        try {
+          const qbo = require('../services/qbo');
+          return json(res, 200, qbo.connectSandbox(db, user));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/qbo/disconnect') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
+        const qbo = require('../services/qbo');
+        return json(res, 200, qbo.disconnect(db, user));
+      }
+      if (req.method === 'PATCH' && pathname === '/api/qbo/config') {
+        if (!roleGate(user, res, ['admin'])) return;
+        try {
+          const qbo = require('../services/qbo');
+          const body = await parseBody(req);
+          return json(res, 200, qbo.saveAppConfig(db, user, body));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/qbo/connect/start') {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
+        try {
+          const qbo = require('../services/qbo');
+          const origin = security.publicOrigin(req) || `${url.protocol}//${req.headers.host}`;
+          return json(res, 200, qbo.startOAuth(db, user, {
+            redirectUri: `${origin.replace(/\/$/, '')}/api/qbo/callback`,
+          }));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
+        }
+      }
+      if (req.method === 'POST' && pathname.match(/^\/api\/qbo\/invoices\/\d+\/send$/)) {
+        if (!roleGate(user, res, ['admin', 'billing_clerk'])) return;
+        const id = Number(pathname.split('/')[4]);
+        try {
+          const qbo = require('../services/qbo');
+          return json(res, 200, qbo.sendInvoice(db, user, id));
+        } catch (e) {
+          return json(res, 400, { error: e.message, message: e.message });
         }
       }
 

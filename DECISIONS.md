@@ -6,7 +6,7 @@ Filled-in profile for the master build brief (Section 2):
 - **Roles:** admin, attorney, paralegal, billing_clerk (no client portal)
 - **Stack:** Node ≥22.13 built-ins only (`node:sqlite`, `node:http`, `node:test`); zero npm deps
 - **Deploy:** local prototype / Docker; not production
-- **Integrations deferred:** QuickBooks API, LEDES 1998B, LawPay/Stripe
+- **Integrations:** QuickBooks one-way Chrono→QBO (loadable sandbox company; optional live Intuit OAuth). Deferred: LEDES 1998B, LawPay/Stripe
 - **OneDrive:** matter folder link + in-app browser + embed view; Microsoft connection via device-code / auth-code+PKCE (Settings). One-time Azure App (client) ID required; refresh tokens stored in firm_settings.
 - **Trust/IOLTA:** explicitly out of scope for v1 (see D2) — VERIFY WITH BAR RULES before any production use if trust funds are ever held
 
@@ -31,10 +31,11 @@ Filled-in profile for the master build brief (Section 2):
 | D17 | Native .xlsx export written from scratch (`src/xlsx.js`: minimal ZIP + SpreadsheetML) | Keeps zero-dependency principle. Currency strings exported as numeric cells with currency format so Excel can sum them. Added 2026-08-08. |
 
 | D18 | Matters are record-based: Matter Search uses `matter_search_index` (denormalized body; no FTS5 — unavailable in Node’s SQLite); per-matter page; custom fields/layouts by record type or individual matter | No sample matters in seed. Search requires a query (index hits only). Create/update/custom values reindex the matter. Type fields apply to all matters of that `matter_type`; record fields/layouts attach to one matter. |
+| D19 | QuickBooks Online is one-way Chrono → QBO. A sandbox company loads without Intuit credentials (local `qbo_customers` / `qbo_invoices` ledger). Live OAuth is optional via Client ID. Chrono remains source of truth. | User asked to show QBO loadable in-product. Two-way / payment sync still deferred. |
 
 ## Deferred
 
-- QuickBooks two-way sync (CSV export ships now; API integration later).
+- QuickBooks two-way / payment sync (one-way invoice send + loadable sandbox company ship now).
 - LEDES 1998B export (UTBMS task/activity code fields already captured per entry).
 - Split billing across payers (allocation table can be added; irrelevant to lodestar practice).
 - Timers in the UI (manual duration entry ships now).
