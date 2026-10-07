@@ -5091,6 +5091,7 @@
           <div id="newMatterMsg"></div>
         </div>` : ''}
 
+        ${showCreate ? '' : `
         <div class="page-section">
           <h2>Search matters</h2>
           <form id="matterSearch" class="matter-search-bar">
@@ -5101,7 +5102,7 @@
             <button type="button" id="clearSearch">Clear</button>
           </form>
           ${matterFilterBarHtml(filterFields, state.matterSearch)}
-        </div>
+        </div>`}
 
         <div class="page-section">
           <div class="matters-list-heading">
