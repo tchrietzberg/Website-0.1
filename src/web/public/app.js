@@ -5110,6 +5110,12 @@
     }));
     // Put formula name fields first so they read with the name builder.
     createFieldDefs.sort((a, b) => Number(b.inNameFormula) - Number(a.inNameFormula));
+    const createFormFields = createFieldDefs.filter((field) => {
+      const label = String(field.label || '').trim().toLowerCase();
+      const api = String(field.api_name || field.apiName || '').trim().toLowerCase();
+      return label !== 'case stage' && label !== 'lead plaintiff'
+        && api !== 'case_stage' && api !== 'lead_plaintiff';
+    });
 
     setMainHtml(`
       <div class="card stack page-card">
@@ -5171,13 +5177,14 @@
                   </select>
                 </label>` : ''}
             </div>
+            ${createFormFields.length ? `
             <div class="grid two create-matter-custom">
-              ${createFieldDefs.map((field) => `
+              ${createFormFields.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}${field.inNameFormula ? ' name-formula-field' : ''}">
                   ${escapeHtml(field.label)}${field.required ? ' *' : ''}${field.inNameFormula ? ' <span class="muted">(name)</span>' : ''}
                   ${renderFieldInput(field, { canEdit: true })}
                 </label>`).join('')}
-            </div>
+            </div>` : ''}
           </form>
           <div id="newMatterMsg"></div>
         </div>` : ''}
