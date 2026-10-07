@@ -544,6 +544,8 @@
     contactRecordTypes = null,
     confirmLabel = 'Yes, create matter',
     cancelLabel = 'Not yet',
+    initialClientId = '',
+    initialNewClient = null,
   } = {}) {
     let contactTypes = Array.isArray(contactRecordTypes) ? [...contactRecordTypes] : null;
     if (!contactTypes) {
@@ -566,16 +568,29 @@
     return new Promise((resolve) => {
       const existing = document.querySelector('.confirm-overlay');
       if (existing) existing.remove();
-      state.createMatterClientId = '';
-      state.createMatterNewClient = {
-        name: '',
-        recordTypeKey: defaultContactTypeKey,
-        email: '',
-      };
+      const seededClientId = String(initialClientId || '').trim();
+      const seededType = String(
+        initialNewClient?.recordTypeKey || defaultContactTypeKey,
+      ).trim() || defaultContactTypeKey;
+      if (seededClientId) {
+        state.createMatterClientId = seededClientId;
+        state.createMatterNewClient = {
+          name: String(initialNewClient?.name || '').trim(),
+          recordTypeKey: seededType,
+          email: String(initialNewClient?.email || ''),
+        };
+      } else {
+        state.createMatterClientId = '';
+        state.createMatterNewClient = {
+          name: '',
+          recordTypeKey: defaultContactTypeKey,
+          email: '',
+        };
+      }
       const clientList = [...(clients || [])];
       const allowAddNew = roleCanModify('contact');
       const typeOptionsHtml = contactTypes.map((t) => `
-        <option value="${escapeHtml(t.key)}" ${t.key === defaultContactTypeKey ? 'selected' : ''}>
+        <option value="${escapeHtml(t.key)}" ${t.key === seededType ? 'selected' : ''}>
           ${escapeHtml(t.label || t.key)}
         </option>`).join('');
       const overlay = document.createElement('div');
@@ -591,10 +606,10 @@
             <label class="confirm-client-label">Contact
               ${renderClientTypeahead({
                 name: 'confirmClientId',
-                selectedId: '',
+                selectedId: seededClientId,
                 clients: clientList,
                 allowAddNew,
-                newClientName: '',
+                newClientName: state.createMatterNewClient?.name || '',
               })}
             </label>
             ${allowAddNew ? `
@@ -608,7 +623,7 @@
             <div class="error confirm-client-error" data-confirm-client-error hidden></div>
           </div>
           <div class="confirm-actions confirm-actions--create-matter">
-            <button type="button" data-confirm-add-client>Add contact</button>
+            <button type="button" data-confirm-add-client>${seededClientId ? 'Change contact' : 'Add contact'}</button>
             <span class="confirm-actions-spacer"></span>
             <button type="button" data-confirm-cancel>${escapeHtml(cancelLabel)}</button>
             <button type="button" class="primary" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
@@ -781,7 +796,7 @@
           if (!picker) {
             picker = wireClientTypeahead(panel, {
               clients: clientList,
-              selectedId: '',
+              selectedId: state.createMatterClientId || '',
               allowAddNew,
               onChange: () => {
                 showContactError('');
@@ -3673,15 +3688,22 @@
     clients = [],
     allowAddNew = false,
     newClientName = '',
+    noun = 'contact',
   } = {}) {
     const selected = (clients || []).find((c) => String(c.id) === String(selectedId)) || null;
     const isNew = selectedId === '__new__';
     const display = isNew
       ? String(newClientName || '').trim()
       : (selected?.name || '');
-    const placeholder = allowAddNew
-      ? 'Type to find a contact or enter a new name…'
-      : 'Type a few letters to find a contact…';
+    const clientNoun = noun === 'client';
+    const placeholder = clientNoun
+      ? (allowAddNew
+        ? 'Search an existing client or type a new client name…'
+        : 'Search an existing client…')
+      : (allowAddNew
+        ? 'Type to find a contact or enter a new name…'
+        : 'Type a few letters to find a contact…');
+    const ariaLabel = clientNoun ? 'Client' : 'Contact';
     return `
       <div class="client-typeahead${isNew ? ' is-new' : ''}${display && !isNew ? ' has-value' : ''}" data-client-typeahead>
         <div class="client-typeahead-input-wrap">
@@ -3689,19 +3711,25 @@
             value="${escapeHtml(display)}"
             placeholder="${escapeHtml(placeholder)}"
             autocomplete="off" aria-autocomplete="list" aria-expanded="false"
-            aria-label="Contact" />
+            aria-label="${ariaLabel}" />
           <button type="button" class="client-typeahead-clear" data-client-clear
-            title="Clear contact" aria-label="Clear contact"
+            title="Clear ${ariaLabel.toLowerCase()}" aria-label="Clear ${ariaLabel.toLowerCase()}"
             ${display ? '' : 'hidden'}>×</button>
           <ul class="client-typeahead-list" data-client-list role="listbox" hidden></ul>
         </div>
         <input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(String(selectedId || ''))}"
           data-client-id />
-        <p class="hint">${allowAddNew
-          ? 'Optional — pick a match, or keep typing a new contact name. Choose a contact type (Client, Company, …) below when creating new.'
-          : 'Optional — suggestions appear as you type. Leave blank for none.'}</p>
+        <p class="hint">${clientNoun
+          ? (allowAddNew
+            ? 'Search to associate an existing client, or type a name to add a new client.'
+            : 'Search to associate an existing client. Leave blank for none.')
+          : (allowAddNew
+            ? 'Optional — pick a match, or keep typing a new contact name. Choose a contact type (Client, Company, …) below when creating new.'
+            : 'Optional — suggestions appear as you type. Leave blank for none.')}</p>
         ${allowAddNew ? `
-          <p class="hint client-typeahead-new-note" ${isNew ? '' : 'hidden'}>New contact — choose a contact type, then save when you create the matter.</p>` : ''}
+          <p class="hint client-typeahead-new-note" ${isNew ? '' : 'hidden'}>${clientNoun
+            ? 'New client — choose a type, then create the matter.'
+            : 'New contact — choose a contact type, then save when you create the matter.'}</p>` : ''}
       </div>`;
   }
 
@@ -3727,6 +3755,7 @@
     selectedId = '',
     allowAddNew = false,
     onChange = null,
+    noun = 'contact',
   } = {}) {
     const root = scopeEl.querySelector('[data-client-typeahead]');
     if (!root) return null;
@@ -3736,11 +3765,19 @@
     const list = root.querySelector('[data-client-list]');
     const clearBtn = root.querySelector('[data-client-clear]');
     const newNote = root.querySelector('.client-typeahead-new-note');
+    const clientNoun = noun === 'client';
     let activeIndex = -1;
     let suggestions = [];
-    const findPlaceholder = allowAddNew
-      ? 'Type to find a contact or enter a new name…'
-      : 'Type a few letters to find a contact…';
+    const findPlaceholder = clientNoun
+      ? (allowAddNew
+        ? 'Search an existing client or type a new client name…'
+        : 'Search an existing client…')
+      : (allowAddNew
+        ? 'Type to find a contact or enter a new name…'
+        : 'Type a few letters to find a contact…');
+    const newNamePlaceholder = clientNoun
+      ? 'Type a new client name…'
+      : 'Type a new contact name…';
 
     function emit(value) {
       if (typeof onChange === 'function') onChange(value);
@@ -3765,7 +3802,7 @@
           };
         }
         search.value = draftName;
-        search.placeholder = 'Type a new contact name…';
+        search.placeholder = newNamePlaceholder;
         if (clearBtn) clearBtn.hidden = !draftName;
       } else if (next) {
         const c = clients.find((x) => String(x.id) === next);
@@ -3797,7 +3834,7 @@
         rows.push({
           id: '',
           label: 'None — optional',
-          detail: 'No contact on this matter',
+          detail: clientNoun ? 'No client on this matter' : 'No contact on this matter',
           kind: 'none',
         });
         suggestions = [];
@@ -3806,7 +3843,7 @@
         for (const c of suggestions) {
           rows.push({
             id: String(c.id),
-            label: c.name || `Contact ${c.id}`,
+            label: c.name || `${clientNoun ? 'Client' : 'Contact'} ${c.id}`,
             detail: [c.record_type || c.recordType || c.record_type_key, c.email].filter(Boolean).join(' · '),
             kind: 'client',
           });
@@ -3814,9 +3851,11 @@
         if (!rows.length) {
           rows.push({
             id: '',
-            label: 'No contacts match',
+            label: clientNoun ? 'No clients match' : 'No contacts match',
             detail: allowAddNew
-              ? 'Keep this name to create a new contact with the matter'
+              ? (clientNoun
+                ? 'Keep this name to add a new client'
+                : 'Keep this name to create a new contact with the matter')
               : 'Try different letters',
             kind: 'empty',
           });
@@ -3827,8 +3866,12 @@
         if (!exact) {
           rows.push({
             id: '__new__',
-            label: `Use “${needle}” as new contact`,
-            detail: 'Choose a contact type, then create the matter',
+            label: clientNoun
+              ? `Add “${needle}” as a new client`
+              : `Use “${needle}” as new contact`,
+            detail: clientNoun
+              ? 'Choose a client type, then create the matter'
+              : 'Choose a contact type, then create the matter',
             kind: 'new',
           });
         }
@@ -4952,7 +4995,7 @@
     const showCreate = canEdit && state.showCreateMatter;
     let createRecordTypeKey = state.createMatterRecordTypeKey || 'billable';
     const requestedCreateTypeKey = createRecordTypeKey;
-    const [hits, clients, allMatters, filterFields, listColumnConfig, recordTypes, createSettings, createMatterFieldsRaw] = await Promise.all([
+    const [hits, clients, allMatters, filterFields, listColumnConfig, recordTypes, createSettings, createMatterFieldsRaw, contactRecordTypesRaw] = await Promise.all([
       api(`/api/matters?${browseParams}`),
       api('/api/clients').catch(() => state.clients || []),
       api('/api/matters'), // full list for dropdowns elsewhere
@@ -4969,6 +5012,9 @@
       showCreate
         ? api(`/api/custom-fields?appliesTo=matter&type=${encodeURIComponent(createRecordTypeKey)}`).catch(() => [])
         : Promise.resolve([]),
+      showCreate
+        ? api('/api/record-types?appliesTo=client').catch(() => [])
+        : Promise.resolve([]),
     ]);
     if (!stillOnView('matters')) return;
     state.matters = allMatters;
@@ -4981,6 +5027,29 @@
     const canEditListColumns = canCreateMatter(state.user) && roleCanModify('matter');
     const clientList = [...(clients || [])].sort((a, b) =>
       String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })
+    );
+    const canAddClient = roleCanModify('contact');
+    let contactRecordTypes = Array.isArray(contactRecordTypesRaw) ? contactRecordTypesRaw : [];
+    if (showCreate && !contactRecordTypes.length) {
+      contactRecordTypes = [
+        { key: 'client', label: 'Client' },
+        { key: 'company', label: 'Company' },
+      ];
+    }
+    const createClientTypeKey = contactRecordTypes.some(
+      (t) => t.key === state.createMatterNewClient?.recordTypeKey,
+    )
+      ? state.createMatterNewClient.recordTypeKey
+      : (contactRecordTypes.some((t) => t.key === 'client')
+        ? 'client'
+        : (contactRecordTypes[0]?.key || 'client'));
+    const creatingNewClient = canAddClient && (
+      state.createMatterClientId === '__new__'
+      || (
+        !!String(state.createMatterNewClient?.name || '').trim()
+        && !findExactClientMatch(clientList, state.createMatterNewClient?.name || '')
+        && state.createMatterClientId === '__new__'
+      )
     );
     if (createSettings && Object.keys(createSettings).length) state.settings = createSettings;
     const nameFormula = createSettings?.matterNameFormula || state.settings?.matterNameFormula || null;
@@ -5080,6 +5149,28 @@
               </label>
             </div>
             ${!formulaActive ? '<p class="hint create-matter-dup-hint">Suggestions show existing matters as you type.</p>' : ''}
+            <div class="create-matter-client-block">
+              <label class="create-matter-client-field">Client
+                ${renderClientTypeahead({
+                  name: 'createClientId',
+                  selectedId: state.createMatterClientId || '',
+                  clients: clientList,
+                  allowAddNew: canAddClient,
+                  newClientName: state.createMatterNewClient?.name || '',
+                  noun: 'client',
+                })}
+              </label>
+              ${canAddClient ? `
+                <label class="create-matter-client-type" id="createMatterClientTypeWrap" ${creatingNewClient ? '' : 'hidden'}>
+                  Client type
+                  <select id="createMatterClientType" aria-label="Client type">
+                    ${contactRecordTypes.map((t) => `
+                      <option value="${escapeHtml(t.key)}" ${t.key === createClientTypeKey ? 'selected' : ''}>
+                        ${escapeHtml(t.label || t.key)}
+                      </option>`).join('')}
+                  </select>
+                </label>` : ''}
+            </div>
             <div class="grid two create-matter-custom">
               ${createFieldDefs.map((field) => `
                 <label class="${field.width === 'full' ? 'span-all' : ''}${field.inNameFormula ? ' name-formula-field' : ''}">
@@ -5179,7 +5270,61 @@
         $('#createMatterName')?.focus();
       };
     }
+    let createClientPicker = null;
     if (showCreate) {
+      const clientField = $('#createMatterSection .create-matter-client-field');
+      const syncCreateClientType = () => {
+        const wrap = $('#createMatterClientTypeWrap');
+        if (!wrap) return;
+        const choice = String(createClientPicker?.getValue?.() || '').trim();
+        const typed = String(createClientPicker?.getTypedName?.() || '').trim();
+        const exact = typed ? findExactClientMatch(clientList, typed) : null;
+        const creating = canAddClient && (choice === '__new__' || (!!typed && !exact));
+        wrap.hidden = !creating;
+      };
+      if (clientField) {
+        createClientPicker = wireClientTypeahead(clientField, {
+          clients: clientList,
+          selectedId: state.createMatterClientId || '',
+          allowAddNew: canAddClient,
+          noun: 'client',
+          onChange: (value) => {
+            state.createMatterClientId = value || '';
+            if (value === '__new__') {
+              const typed = String(createClientPicker?.getTypedName?.() || '').trim();
+              state.createMatterNewClient = {
+                ...(state.createMatterNewClient || { email: '' }),
+                name: typed,
+                recordTypeKey: String(
+                  $('#createMatterClientType')?.value
+                    || state.createMatterNewClient?.recordTypeKey
+                    || 'client',
+                ).trim() || 'client',
+              };
+            }
+            syncCreateClientType();
+          },
+        });
+        clientField.addEventListener('input', () => {
+          if (createClientPicker?.getValue?.() === '__new__') {
+            state.createMatterNewClient = {
+              ...(state.createMatterNewClient || { recordTypeKey: 'client', email: '' }),
+              name: createClientPicker.getTypedName(),
+            };
+          }
+          syncCreateClientType();
+        });
+      }
+      const clientTypeSelect = $('#createMatterClientType');
+      if (clientTypeSelect) {
+        clientTypeSelect.onchange = () => {
+          state.createMatterNewClient = {
+            ...(state.createMatterNewClient || { name: '', email: '' }),
+            recordTypeKey: clientTypeSelect.value || 'client',
+          };
+        };
+      }
+      syncCreateClientType();
       const nameInput = $('#createMatterName') || $('#createMatterSection input[name="name"]');
       const syncFormulaName = () => {
         const formEl = $('#newMatterForm');
@@ -5300,11 +5445,37 @@
           });
           return;
         }
+        const typedClient = String(createClientPicker?.getTypedName?.() || '').trim();
+        let pageClientChoice = String(createClientPicker?.getValue?.() || '').trim();
+        const exactClient = typedClient ? findExactClientMatch(clientList, typedClient) : null;
+        if (exactClient && (!pageClientChoice || pageClientChoice === '__new__')) {
+          pageClientChoice = String(exactClient.id);
+        } else if (!pageClientChoice && typedClient && canAddClient) {
+          pageClientChoice = '__new__';
+        }
+        const clientTypeKey = String(
+          $('#createMatterClientType')?.value
+            || state.createMatterNewClient?.recordTypeKey
+            || 'client',
+        ).trim() || 'client';
+        if (pageClientChoice === '__new__') {
+          state.createMatterClientId = '__new__';
+          state.createMatterNewClient = {
+            ...(state.createMatterNewClient || { email: '' }),
+            name: typedClient,
+            recordTypeKey: clientTypeKey,
+          };
+        } else {
+          state.createMatterClientId = pageClientChoice;
+        }
         const confirmed = await confirmCreateMatter({
           matterName: name,
           clients: clientList,
+          contactRecordTypes,
           confirmLabel: 'Yes, create matter',
           cancelLabel: 'Not yet',
+          initialClientId: state.createMatterClientId,
+          initialNewClient: pageClientChoice === '__new__' ? state.createMatterNewClient : null,
         });
         if (!confirmed) return;
         let clientChoice = String(confirmed.clientChoice || '').trim();

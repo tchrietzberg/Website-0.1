@@ -1076,6 +1076,29 @@ button.mlc-remove:hover {
   -webkit-flex: 1 1 16rem;
   flex: 1 1 16rem;
   min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 650;
+}
+
+.create-matter-client-block {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+  max-width: 36rem;
+}
+
+.create-matter-client-type {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 650;
+  max-width: 16rem;
+}
+
+.create-matter-client-type select {
+  width: 100%;
+  min-height: 2.55rem;
+  font-weight: 500;
 }
 
 .create-matter-type-field {
