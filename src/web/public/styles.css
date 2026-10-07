@@ -1076,6 +1076,36 @@ button.mlc-remove:hover {
   -webkit-flex: 1 1 16rem;
   flex: 1 1 16rem;
   min-width: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 650;
+}
+
+.create-matter-client-block {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.35rem;
+  max-width: 36rem;
+}
+
+.create-matter-client-type {
+  gap: 0.35rem;
+  font-weight: 650;
+  max-width: 16rem;
+}
+
+.create-matter-client-type:not([hidden]) {
+  display: grid;
+}
+
+.create-matter-client-type[hidden] {
+  display: none !important;
+}
+
+.create-matter-client-type select {
+  width: 100%;
+  min-height: 2.55rem;
+  font-weight: 500;
 }
 
 .create-matter-type-field {
@@ -1241,6 +1271,10 @@ button.client-typeahead-clear:active {
   margin: 0.2rem 0 0;
   color: var(--accent);
   font-weight: 600;
+}
+
+.client-typeahead-new-note[hidden] {
+  display: none !important;
 }
 
 .client-typeahead.is-new .client-typeahead-input {
